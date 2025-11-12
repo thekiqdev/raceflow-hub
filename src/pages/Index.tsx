@@ -1,7 +1,22 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useNavigate } from "react-router-dom";
-import { MapPin, Calendar, Award, Users, Clock, TrendingUp, BarChart3, MessageSquare, FileText, Wifi, Award as Trophy, Facebook, Instagram, Linkedin } from "lucide-react";
+import {
+  MapPin,
+  Calendar,
+  Award,
+  Users,
+  Clock,
+  TrendingUp,
+  BarChart3,
+  MessageSquare,
+  FileText,
+  Wifi,
+  Award as Trophy,
+  Facebook,
+  Instagram,
+  Linkedin,
+} from "lucide-react";
 import heroImage from "@/assets/hero-running.jpg";
 import { useState, useEffect } from "react";
 import { format } from "date-fns";
@@ -56,9 +71,7 @@ const Index = () => {
       {/* Navigation */}
       <nav className="bg-card border-b sticky top-0 z-50 shadow-sm">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
-          <h1 className="text-2xl font-bold bg-gradient-hero bg-clip-text text-transparent">
-            RunEvents
-          </h1>
+          <h1 className="text-2xl font-bold bg-gradient-hero bg-clip-text text-transparent">RunEvents</h1>
           <div className="hidden md:flex items-center gap-6">
             <Button variant="ghost" onClick={() => navigate("/")}>
               HOME
@@ -81,14 +94,10 @@ const Index = () => {
       {/* Hero Section */}
       <section className="relative h-[600px] flex items-center justify-center overflow-hidden">
         <div className="absolute inset-0 z-0">
-          <img
-            src={heroImage}
-            alt="Corredores em ação"
-            className="w-full h-full object-cover"
-          />
+          <img src={heroImage} alt="Corredores em ação" className="w-full h-full object-cover" />
           <div className="absolute inset-0 bg-black/60" />
         </div>
-        
+
         <div className="relative z-10 container mx-auto px-4 text-center text-white">
           <h1 className="text-4xl md:text-5xl font-bold mb-6 leading-tight">
             SOMOS UMA EMPRESA DE CRONOMETRAGEM ESPORTIVA
@@ -111,18 +120,14 @@ const Index = () => {
       {/* WhatsApp Contact Section */}
       <section className="py-16 bg-muted">
         <div className="container mx-auto px-4 text-center">
-          <h2 className="text-3xl font-bold mb-4">NOSSO NÚMERO MUDOU!</h2>
+          <h2 className="text-3xl font-bold mb-4">FALE COM A GENTE!</h2>
           <div className="flex items-center justify-center gap-2 text-4xl md:text-6xl font-bold text-accent mb-4">
             <MessageSquare className="h-12 w-12 md:h-16 md:w-16" />
             <span>85 99108-4183</span>
             <MessageSquare className="h-12 w-12 md:h-16 md:w-16" />
           </div>
-          <p className="text-lg text-muted-foreground">
-            Tire suas dúvidas sobre inscrições e cronometragem
-          </p>
-          <p className="text-sm text-muted-foreground">
-            Somente whatsapp em horário comercial
-          </p>
+          <p className="text-lg text-muted-foreground">Tire suas dúvidas sobre inscrições e cronometragem</p>
+          <p className="text-sm text-muted-foreground">Somente whatsapp em horário comercial</p>
         </div>
       </section>
 
@@ -142,12 +147,16 @@ const Index = () => {
                     <Award className="h-16 w-16 text-white opacity-50" />
                   </div>
                   <CardContent className="pt-4">
-                    <h3 className="font-bold text-sm mb-2">{format(new Date(event.event_date), "dd 'DE' MMMM 'DE' yyyy", { locale: ptBR }).toUpperCase()}</h3>
+                    <h3 className="font-bold text-sm mb-2">
+                      {format(new Date(event.event_date), "dd 'DE' MMMM 'DE' yyyy", { locale: ptBR }).toUpperCase()}
+                    </h3>
                     <p className="text-xs text-muted-foreground mb-3">{event.title}</p>
                     <div className="space-y-1 text-xs mb-4">
                       <div className="flex items-center gap-2">
                         <MapPin className="h-3 w-3" />
-                        <span>{event.city} - {event.state}</span>
+                        <span>
+                          {event.city} - {event.state}
+                        </span>
                       </div>
                       <div className="flex items-center gap-2">
                         <Calendar className="h-3 w-3" />
@@ -177,7 +186,8 @@ const Index = () => {
             <div>
               <h2 className="text-3xl font-bold mb-4">CONSULTORIA DE CORRIDAS DE RUA</h2>
               <p className="text-muted-foreground mb-6">
-                A RunEvents mais que uma empresa de cronometragem esportiva. Nós temos experiência e damos suporte a todos os pontos que é preciso para a execução de qualquer evento de corrida de rua.
+                A RunEvents mais que uma empresa de cronometragem esportiva. Nós temos experiência e damos suporte a
+                todos os pontos que é preciso para a execução de qualquer evento de corrida de rua.
               </p>
               <p className="text-muted-foreground mb-8">
                 Veja o que nós podemos te ajudar em toda a logística e prepare-se uma corra será incrível!
@@ -233,9 +243,7 @@ const Index = () => {
               <CardContent className="pt-6 text-center">
                 <BarChart3 className="h-12 w-12 mx-auto mb-4 text-primary" />
                 <h3 className="font-semibold mb-2">NÚMERO DE PEITO</h3>
-                <p className="text-sm text-muted-foreground">
-                  Personalize os números com o nome do corredor.
-                </p>
+                <p className="text-sm text-muted-foreground">Personalize os números com o nome do corredor.</p>
               </CardContent>
             </Card>
 
@@ -253,9 +261,7 @@ const Index = () => {
               <CardContent className="pt-6 text-center">
                 <Wifi className="h-12 w-12 mx-auto mb-4 text-primary" />
                 <h3 className="font-semibold mb-2">RESULTADOS ONLINE</h3>
-                <p className="text-sm text-muted-foreground">
-                  Confira os resultados em tempo real pela internet.
-                </p>
+                <p className="text-sm text-muted-foreground">Confira os resultados em tempo real pela internet.</p>
               </CardContent>
             </Card>
 
@@ -294,7 +300,7 @@ const Index = () => {
             <div>
               <img src={heroImage} alt="Evento" className="rounded-lg shadow-lg" />
             </div>
-            
+
             <div className="grid grid-cols-2 gap-8">
               <div className="text-center">
                 <div className="flex items-center justify-center mb-2">
@@ -302,7 +308,9 @@ const Index = () => {
                 </div>
                 <div className="text-4xl font-bold text-secondary mb-1">290</div>
                 <p className="text-sm font-semibold">Corridas executadas</p>
-                <p className="text-xs text-muted-foreground">Confira aqui as corridas que já tivemos o prazer de executar</p>
+                <p className="text-xs text-muted-foreground">
+                  Confira aqui as corridas que já tivemos o prazer de executar
+                </p>
               </div>
 
               <div className="text-center">
@@ -311,7 +319,9 @@ const Index = () => {
                 </div>
                 <div className="text-4xl font-bold text-secondary mb-1">71500</div>
                 <p className="text-sm font-semibold">Atletas cadastrados</p>
-                <p className="text-xs text-muted-foreground">Já podemos te chamar de amigo! São milhares de atletas que já estão no nosso site</p>
+                <p className="text-xs text-muted-foreground">
+                  Já podemos te chamar de amigo! São milhares de atletas que já estão no nosso site
+                </p>
               </div>
 
               <div className="text-center">
@@ -350,15 +360,9 @@ const Index = () => {
               <Linkedin className="h-5 w-5" />
             </Button>
           </div>
-          <p className="text-sm text-center text-muted-foreground">
-            © 2024 RunEvents. Plataforma de corridas de rua.
-          </p>
+          <p className="text-sm text-center text-muted-foreground">© 2024 RunEvents. Plataforma de corridas de rua.</p>
           <div className="mt-4 text-center">
-            <Button
-              variant="link"
-              className="text-muted-foreground text-sm"
-              onClick={() => navigate("/auth")}
-            >
+            <Button variant="link" className="text-muted-foreground text-sm" onClick={() => navigate("/auth")}>
               É organizador? Clique aqui
             </Button>
           </div>
