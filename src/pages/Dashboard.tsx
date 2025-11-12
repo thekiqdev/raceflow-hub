@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Loader2, LogOut, Calendar, Users, Trophy, Settings } from "lucide-react";
@@ -17,53 +16,17 @@ const Dashboard = () => {
   const [profile, setProfile] = useState<UserProfile | null>(null);
 
   useEffect(() => {
-    checkUser();
+    // Mock data for testing
+    setProfile({
+      full_name: "João Silva",
+      roles: ["runner", "organizer"],
+    });
+    setLoading(false);
   }, []);
 
-  const checkUser = async () => {
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      if (!session) {
-        navigate("/auth");
-        return;
-      }
-
-      const { data: profileData, error: profileError } = await supabase
-        .from("profiles")
-        .select("full_name")
-        .eq("id", session.user.id)
-        .single();
-
-      if (profileError) throw profileError;
-
-      const { data: rolesData, error: rolesError } = await supabase
-        .from("user_roles")
-        .select("role")
-        .eq("user_id", session.user.id);
-
-      if (rolesError) throw rolesError;
-
-      setProfile({
-        full_name: profileData.full_name,
-        roles: rolesData.map(r => r.role),
-      });
-    } catch (error) {
-      console.error("Error loading profile:", error);
-      toast.error("Erro ao carregar perfil");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleSignOut = async () => {
-    const { error } = await supabase.auth.signOut();
-    if (error) {
-      toast.error("Erro ao fazer logout");
-    } else {
-      toast.success("Logout realizado com sucesso!");
-      navigate("/");
-    }
+  const handleSignOut = () => {
+    toast.success("Logout realizado com sucesso!");
+    navigate("/");
   };
 
   if (loading) {

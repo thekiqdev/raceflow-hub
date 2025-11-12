@@ -5,7 +5,6 @@ import { useNavigate } from "react-router-dom";
 import { Search, MapPin, Calendar, Award, Users, Zap, Shield, Clock } from "lucide-react";
 import heroImage from "@/assets/hero-running.jpg";
 import { useState, useEffect } from "react";
-import { supabase } from "@/integrations/supabase/client";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
@@ -23,22 +22,35 @@ const Index = () => {
   const [upcomingEvents, setUpcomingEvents] = useState<Event[]>([]);
 
   useEffect(() => {
-    loadUpcomingEvents();
+    // Mock upcoming events for testing
+    const mockEvents: Event[] = [
+      {
+        id: "1",
+        title: "Corrida de São Silvestre 2024",
+        event_date: "2024-12-31T07:00:00Z",
+        city: "São Paulo",
+        state: "SP",
+        banner_url: null,
+      },
+      {
+        id: "2",
+        title: "Maratona do Rio 2025",
+        event_date: "2025-06-15T06:00:00Z",
+        city: "Rio de Janeiro",
+        state: "RJ",
+        banner_url: null,
+      },
+      {
+        id: "3",
+        title: "Meia Maratona de Florianópolis",
+        event_date: "2025-09-20T07:30:00Z",
+        city: "Florianópolis",
+        state: "SC",
+        banner_url: null,
+      },
+    ];
+    setUpcomingEvents(mockEvents);
   }, []);
-
-  const loadUpcomingEvents = async () => {
-    const { data } = await supabase
-      .from("events")
-      .select("id, title, event_date, city, state, banner_url")
-      .eq("status", "published")
-      .gte("event_date", new Date().toISOString().split("T")[0])
-      .order("event_date", { ascending: true })
-      .limit(3);
-
-    if (data) {
-      setUpcomingEvents(data);
-    }
-  };
 
   return (
     <div className="min-h-screen bg-background">

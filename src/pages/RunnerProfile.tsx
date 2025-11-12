@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -70,89 +69,94 @@ const RunnerProfile = () => {
   const [achievements, setAchievements] = useState<Achievement[]>([]);
 
   useEffect(() => {
-    checkAuth();
-    loadProfile();
-    loadRegistrations();
+    // Mock data for testing
+    setProfile({
+      full_name: "João Silva",
+      cpf: "123.456.789-00",
+      phone: "(11) 98765-4321",
+      gender: "Masculino",
+      birth_date: "1990-05-15",
+    });
+
+    const mockRegistrations: Registration[] = [
+      {
+        id: "1",
+        status: "confirmed",
+        payment_status: "paid",
+        total_amount: 120.00,
+        created_at: "2024-10-15T10:00:00Z",
+        confirmation_code: "RUN2024001",
+        events: {
+          title: "Corrida de São Silvestre 2024",
+          event_date: "2024-12-31T07:00:00Z",
+          city: "São Paulo",
+          state: "SP",
+        },
+        event_categories: {
+          name: "Percurso Principal",
+          distance: "15km",
+        },
+      },
+      {
+        id: "2",
+        status: "confirmed",
+        payment_status: "paid",
+        total_amount: 85.00,
+        created_at: "2024-09-20T14:30:00Z",
+        confirmation_code: "RUN2024002",
+        events: {
+          title: "Maratona do Rio 2025",
+          event_date: "2025-06-15T06:00:00Z",
+          city: "Rio de Janeiro",
+          state: "RJ",
+        },
+        event_categories: {
+          name: "Meia Maratona",
+          distance: "21km",
+        },
+      },
+      {
+        id: "3",
+        status: "confirmed",
+        payment_status: "paid",
+        total_amount: 60.00,
+        created_at: "2024-03-10T09:00:00Z",
+        confirmation_code: "RUN2023003",
+        events: {
+          title: "Corrida do Bem",
+          event_date: "2024-04-20T07:30:00Z",
+          city: "Belo Horizonte",
+          state: "MG",
+        },
+        event_categories: {
+          name: "5K",
+          distance: "5km",
+        },
+      },
+      {
+        id: "4",
+        status: "confirmed",
+        payment_status: "paid",
+        total_amount: 95.00,
+        created_at: "2024-06-05T11:00:00Z",
+        confirmation_code: "RUN2024004",
+        events: {
+          title: "Circuito das Estações",
+          event_date: "2024-07-28T06:30:00Z",
+          city: "Curitiba",
+          state: "PR",
+        },
+        event_categories: {
+          name: "10K",
+          distance: "10km",
+        },
+      },
+    ];
+
+    setRegistrations(mockRegistrations);
+    calculateAchievements(mockRegistrations);
+    setLoading(false);
   }, []);
-
-  const checkAuth = async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) {
-      navigate("/auth");
-      return;
-    }
-
-    const { data: roles } = await supabase
-      .from("user_roles")
-      .select("role")
-      .eq("user_id", session.user.id);
-
-    const isRunner = roles?.some(r => r.role === "runner");
-    if (!isRunner) {
-      navigate("/dashboard");
-      toast.error("Acesso não autorizado");
-    }
-  };
-
-  const loadProfile = async () => {
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) return;
-
-      const { data, error } = await supabase
-        .from("profiles")
-        .select("*")
-        .eq("id", session.user.id)
-        .single();
-
-      if (error) throw error;
-      setProfile(data);
-    } catch (error) {
-      console.error("Error loading profile:", error);
-      toast.error("Erro ao carregar perfil");
-    }
-  };
-
-  const loadRegistrations = async () => {
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) return;
-
-      const { data, error } = await supabase
-        .from("registrations")
-        .select(`
-          id,
-          status,
-          payment_status,
-          total_amount,
-          created_at,
-          confirmation_code,
-          events (
-            title,
-            event_date,
-            city,
-            state
-          ),
-          event_categories (
-            name,
-            distance
-          )
-        `)
-        .eq("runner_id", session.user.id)
-        .order("created_at", { ascending: false });
-
-      if (error) throw error;
-      setRegistrations(data || []);
-      
-      // Calculate achievements based on registrations
-      calculateAchievements(data || []);
-    } catch (error) {
-      console.error("Error loading registrations:", error);
-      toast.error("Erro ao carregar inscrições");
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const calculateAchievements = (regs: Registration[]) => {
     const completedRaces = regs.filter(r => 
@@ -221,8 +225,7 @@ const RunnerProfile = () => {
     setAchievements(achievementsList);
   };
 
-  const handleSignOut = async () => {
-    await supabase.auth.signOut();
+  const handleSignOut = () => {
     navigate("/");
   };
 

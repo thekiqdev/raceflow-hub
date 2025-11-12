@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -27,34 +26,62 @@ const Events = () => {
   const [searchTerm, setSearchTerm] = useState("");
 
   useEffect(() => {
-    checkAuth();
-    loadEvents();
+    // Mock events data for testing
+    const mockEvents: Event[] = [
+      {
+        id: "1",
+        title: "Corrida de São Silvestre 2024",
+        description: "A tradicional corrida de São Silvestre que marca o fim do ano na capital paulista. 15km de pura emoção.",
+        event_date: "2024-12-31T07:00:00Z",
+        location: "Av. Paulista",
+        city: "São Paulo",
+        state: "SP",
+        banner_url: null,
+      },
+      {
+        id: "2",
+        title: "Maratona do Rio 2025",
+        description: "Meia maratona pelos principais pontos turísticos do Rio de Janeiro. Vista deslumbrante da cidade maravilhosa.",
+        event_date: "2025-06-15T06:00:00Z",
+        location: "Zona Sul",
+        city: "Rio de Janeiro",
+        state: "RJ",
+        banner_url: null,
+      },
+      {
+        id: "3",
+        title: "Meia Maratona de Florianópolis",
+        description: "Corrida à beira-mar na ilha de Florianópolis. Paisagens incríveis e clima perfeito para correr.",
+        event_date: "2025-09-20T07:30:00Z",
+        location: "Beira-mar Norte",
+        city: "Florianópolis",
+        state: "SC",
+        banner_url: null,
+      },
+      {
+        id: "4",
+        title: "Circuito das Estações - Curitiba",
+        description: "Corrida de 10km pelos parques mais bonitos de Curitiba. Evento para toda a família.",
+        event_date: "2025-03-15T06:30:00Z",
+        location: "Parque Barigui",
+        city: "Curitiba",
+        state: "PR",
+        banner_url: null,
+      },
+      {
+        id: "5",
+        title: "Corrida do Bem - Belo Horizonte",
+        description: "Corrida beneficente de 5km. Toda a arrecadação será destinada a instituições de caridade.",
+        event_date: "2025-05-10T07:00:00Z",
+        location: "Lagoa da Pampulha",
+        city: "Belo Horizonte",
+        state: "MG",
+        banner_url: null,
+      },
+    ];
+    setEvents(mockEvents);
+    setLoading(false);
   }, []);
-
-  const checkAuth = async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) {
-      navigate("/auth");
-    }
-  };
-
-  const loadEvents = async () => {
-    try {
-      const { data, error } = await supabase
-        .from("events")
-        .select("*")
-        .eq("status", "published")
-        .order("event_date", { ascending: true });
-
-      if (error) throw error;
-      setEvents(data || []);
-    } catch (error) {
-      console.error("Error loading events:", error);
-      toast.error("Erro ao carregar eventos");
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const filteredEvents = events.filter(event =>
     event.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -62,8 +89,7 @@ const Events = () => {
     event.state.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const handleSignOut = async () => {
-    await supabase.auth.signOut();
+  const handleSignOut = () => {
     navigate("/");
   };
 

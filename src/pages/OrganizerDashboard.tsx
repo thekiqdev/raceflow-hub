@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -41,175 +40,43 @@ const OrganizerDashboard = () => {
   const [userName, setUserName] = useState("");
 
   useEffect(() => {
-    checkAuth();
-    loadStatistics();
+    // Mock data for testing
+    setUserName("João Silva");
+    
+    const last30Days = eachDayOfInterval({
+      start: subDays(new Date(), 29),
+      end: new Date(),
+    });
+
+    const mockRegistrationsByDay = last30Days.map((day, index) => ({
+      date: format(day, "dd/MM", { locale: ptBR }),
+      count: Math.floor(Math.random() * 15) + (index > 20 ? 5 : 2), // Simula crescimento
+    }));
+
+    setStatistics({
+      totalRegistrations: 147,
+      totalRevenue: 12450.00,
+      averageTicket: 84.69,
+      registrationsByDay: mockRegistrationsByDay,
+      registrationsByGender: [
+        { gender: "Masculino", count: 89 },
+        { gender: "Feminino", count: 54 },
+        { gender: "Não informado", count: 4 },
+      ],
+      registrationsByAge: [
+        { ageGroup: "18-25", count: 23 },
+        { ageGroup: "26-35", count: 58 },
+        { ageGroup: "36-45", count: 42 },
+        { ageGroup: "46-55", count: 18 },
+        { ageGroup: "56+", count: 6 },
+      ],
+      upcomingEvents: 3,
+    });
+    
+    setLoading(false);
   }, []);
 
-  const checkAuth = async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) {
-      navigate("/auth");
-      return;
-    }
-
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("full_name")
-      .eq("id", session.user.id)
-      .single();
-
-    if (profile) {
-      setUserName(profile.full_name);
-    }
-
-    const { data: roles } = await supabase
-      .from("user_roles")
-      .select("role")
-      .eq("user_id", session.user.id);
-
-    const isOrganizer = roles?.some(r => r.role === "organizer" || r.role === "admin");
-    if (!isOrganizer) {
-      navigate("/dashboard");
-      toast.error("Acesso não autorizado");
-    }
-  };
-
-  const loadStatistics = async () => {
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) return;
-
-      // Get organizer's events
-      const { data: events, error: eventsError } = await supabase
-        .from("events")
-        .select("id, event_date, status")
-        .eq("organizer_id", session.user.id);
-
-      if (eventsError) throw eventsError;
-
-      const eventIds = events?.map(e => e.id) || [];
-      const upcomingEvents = events?.filter(e => 
-        new Date(e.event_date) > new Date() && e.status === "published"
-      ).length || 0;
-
-      if (eventIds.length === 0) {
-        setStatistics({
-          totalRegistrations: 0,
-          totalRevenue: 0,
-          averageTicket: 0,
-          registrationsByDay: [],
-          registrationsByGender: [],
-          registrationsByAge: [],
-          upcomingEvents,
-        });
-        setLoading(false);
-        return;
-      }
-
-      // Get registrations with runner profiles
-      const { data: registrations, error: registrationsError } = await supabase
-        .from("registrations")
-        .select(`
-          id,
-          total_amount,
-          created_at,
-          runner_id,
-          profiles!registrations_runner_id_fkey (
-            gender,
-            birth_date
-          )
-        `)
-        .in("event_id", eventIds);
-
-      if (registrationsError) throw registrationsError;
-
-      const totalRegistrations = registrations?.length || 0;
-      const totalRevenue = registrations?.reduce((sum, r) => sum + parseFloat(String(r.total_amount)), 0) || 0;
-      const averageTicket = totalRegistrations > 0 ? totalRevenue / totalRegistrations : 0;
-
-      // Registrations by day (last 30 days)
-      const last30Days = eachDayOfInterval({
-        start: subDays(new Date(), 29),
-        end: new Date(),
-      });
-
-      const registrationsByDay = last30Days.map(day => {
-        const dayStr = format(day, "yyyy-MM-dd");
-        const count = registrations?.filter(r => 
-          format(new Date(r.created_at), "yyyy-MM-dd") === dayStr
-        ).length || 0;
-        return {
-          date: format(day, "dd/MM", { locale: ptBR }),
-          count,
-        };
-      });
-
-      // Registrations by gender
-      const genderCounts: Record<string, number> = {};
-      registrations?.forEach(r => {
-        const gender = r.profiles?.gender || "Não informado";
-        genderCounts[gender] = (genderCounts[gender] || 0) + 1;
-      });
-
-      const registrationsByGender = Object.entries(genderCounts).map(([gender, count]) => ({
-        gender,
-        count,
-      }));
-
-      // Registrations by age group
-      const calculateAge = (birthDate: string) => {
-        const today = new Date();
-        const birth = new Date(birthDate);
-        let age = today.getFullYear() - birth.getFullYear();
-        const m = today.getMonth() - birth.getMonth();
-        if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) {
-          age--;
-        }
-        return age;
-      };
-
-      const ageGroups: Record<string, number> = {
-        "18-25": 0,
-        "26-35": 0,
-        "36-45": 0,
-        "46-55": 0,
-        "56+": 0,
-      };
-
-      registrations?.forEach(r => {
-        if (r.profiles?.birth_date) {
-          const age = calculateAge(r.profiles.birth_date);
-          if (age >= 18 && age <= 25) ageGroups["18-25"]++;
-          else if (age >= 26 && age <= 35) ageGroups["26-35"]++;
-          else if (age >= 36 && age <= 45) ageGroups["36-45"]++;
-          else if (age >= 46 && age <= 55) ageGroups["46-55"]++;
-          else if (age >= 56) ageGroups["56+"]++;
-        }
-      });
-
-      const registrationsByAge = Object.entries(ageGroups)
-        .map(([ageGroup, count]) => ({ ageGroup, count }))
-        .filter(item => item.count > 0);
-
-      setStatistics({
-        totalRegistrations,
-        totalRevenue,
-        averageTicket,
-        registrationsByDay,
-        registrationsByGender,
-        registrationsByAge,
-        upcomingEvents,
-      });
-    } catch (error) {
-      console.error("Error loading statistics:", error);
-      toast.error("Erro ao carregar estatísticas");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleSignOut = async () => {
-    await supabase.auth.signOut();
+  const handleSignOut = () => {
     navigate("/");
   };
 
