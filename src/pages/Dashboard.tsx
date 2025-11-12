@@ -4,6 +4,11 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Loader2, LogOut, Calendar, Users, Trophy, Settings } from "lucide-react";
 import { toast } from "sonner";
+import { BottomNav } from "@/components/runner/BottomNav";
+import { ExploreEvents } from "@/components/runner/ExploreEvents";
+import { MyRegistrations } from "@/components/runner/MyRegistrations";
+import { Results } from "@/components/runner/Results";
+import { Profile } from "@/components/runner/Profile";
 
 interface UserProfile {
   full_name: string;
@@ -14,6 +19,7 @@ const Dashboard = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [activeTab, setActiveTab] = useState("home");
 
   useEffect(() => {
     // Mock data for testing
@@ -41,6 +47,32 @@ const Dashboard = () => {
   const isOrganizer = profile?.roles.includes("organizer");
   const isRunner = profile?.roles.includes("runner");
 
+  // Mobile Runner Dashboard
+  if (isRunner && !isOrganizer && !isAdmin) {
+    const renderContent = () => {
+      switch (activeTab) {
+        case "home":
+          return <ExploreEvents />;
+        case "registrations":
+          return <MyRegistrations />;
+        case "results":
+          return <Results />;
+        case "profile":
+          return <Profile />;
+        default:
+          return <ExploreEvents />;
+      }
+    };
+
+    return (
+      <div className="min-h-screen bg-background">
+        {renderContent()}
+        <BottomNav activeTab={activeTab} onTabChange={setActiveTab} />
+      </div>
+    );
+  }
+
+  // Desktop Dashboard for Organizers and Admins
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-muted/20 to-background">
       <nav className="border-b bg-card/50 backdrop-blur-sm sticky top-0 z-50">
