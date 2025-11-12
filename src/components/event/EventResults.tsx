@@ -146,55 +146,57 @@ export function EventResults() {
   ];
 
   return (
-    <Card>
-      <CardHeader>
+    <Card className="rounded-none border-x-0">
+      <CardHeader className="container mx-auto px-4">
         <CardTitle className="flex items-center gap-2">
           <Trophy className="h-5 w-5" />
           Resultados Oficiais
         </CardTitle>
       </CardHeader>
-      <CardContent className="p-2 sm:p-6">
-        <div className="w-full">
-          <Table>
-            <TableHeader>
-              <TableRow className="text-xs">
-                <TableHead className="text-center px-1 sm:px-2">Pos.</TableHead>
-                <TableHead className="text-center px-1 sm:px-2">Nº</TableHead>
-                <TableHead className="px-1 sm:px-2">Nome</TableHead>
-                <TableHead className="px-1 sm:px-2 hidden md:table-cell">Clube</TableHead>
-                <TableHead className="text-center px-1 sm:px-2 hidden lg:table-cell">Sexo</TableHead>
-                <TableHead className="text-center px-1 sm:px-2">Cat.</TableHead>
-                <TableHead className="text-center px-1 sm:px-2">Pos. Cat.</TableHead>
-                <TableHead className="text-center px-1 sm:px-2">T. Final</TableHead>
-                <TableHead className="text-center px-1 sm:px-2 hidden sm:table-cell">Intervalo</TableHead>
-                <TableHead className="text-center px-1 sm:px-2 hidden xl:table-cell">T. Líquido</TableHead>
-                <TableHead className="text-center px-1 sm:px-2">Ritmo</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {results.map((result) => (
-                <TableRow key={result.position} className="text-xs sm:text-sm">
-                  <TableCell className="text-center font-medium px-1 sm:px-2">{result.position}.</TableCell>
-                  <TableCell className="text-center px-1 sm:px-2">{result.bib_number}</TableCell>
-                  <TableCell className="font-medium px-1 sm:px-2 truncate max-w-[120px] sm:max-w-none">{result.name}</TableCell>
-                  <TableCell className="px-1 sm:px-2 hidden md:table-cell">{result.club || "-"}</TableCell>
-                  <TableCell className="text-center px-1 sm:px-2 hidden lg:table-cell">{result.gender}</TableCell>
-                  <TableCell className="text-center px-1 sm:px-2">{result.category}</TableCell>
-                  <TableCell className="text-center font-semibold px-1 sm:px-2">{result.category_position}</TableCell>
-                  <TableCell className="text-center font-bold text-primary px-1 sm:px-2 whitespace-nowrap">
-                    {result.final_time}
-                  </TableCell>
-                  <TableCell className="text-center text-muted-foreground px-1 sm:px-2 hidden sm:table-cell whitespace-nowrap">
-                    {result.interval || "-"}
-                  </TableCell>
-                  <TableCell className="text-center font-semibold px-1 sm:px-2 hidden xl:table-cell whitespace-nowrap">
-                    {result.net_time}
-                  </TableCell>
-                  <TableCell className="text-center px-1 sm:px-2 whitespace-nowrap">{result.pace}</TableCell>
+      <CardContent className="p-0">
+        <div className="w-full overflow-x-auto">
+          <div className="container mx-auto px-4">
+            <Table>
+              <TableHeader>
+                <TableRow className="text-xs sm:text-sm">
+                  <TableHead className="text-center px-2">Pos.</TableHead>
+                  <TableHead className="text-center px-2">Nº</TableHead>
+                  <TableHead className="px-2">Nome</TableHead>
+                  <TableHead className="px-2 hidden md:table-cell">Clube</TableHead>
+                  <TableHead className="text-center px-2 hidden lg:table-cell">Sexo</TableHead>
+                  <TableHead className="text-center px-2">Cat.</TableHead>
+                  <TableHead className="text-center px-2">Pos. Cat.</TableHead>
+                  <TableHead className="text-center px-2">T. Final</TableHead>
+                  <TableHead className="text-center px-2 hidden sm:table-cell">Intervalo</TableHead>
+                  <TableHead className="text-center px-2 hidden xl:table-cell">T. Líquido</TableHead>
+                  <TableHead className="text-center px-2">Ritmo</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {results.map((result) => (
+                  <TableRow key={result.position} className="text-xs sm:text-sm">
+                    <TableCell className="text-center font-medium px-2">{result.position}.</TableCell>
+                    <TableCell className="text-center px-2">{result.bib_number}</TableCell>
+                    <TableCell className="font-medium px-2 truncate max-w-[150px] sm:max-w-none">{result.name}</TableCell>
+                    <TableCell className="px-2 hidden md:table-cell">{result.club || "-"}</TableCell>
+                    <TableCell className="text-center px-2 hidden lg:table-cell">{result.gender}</TableCell>
+                    <TableCell className="text-center px-2">{result.category}</TableCell>
+                    <TableCell className="text-center font-semibold px-2">{result.category_position}</TableCell>
+                    <TableCell className="text-center font-bold text-primary px-2 whitespace-nowrap">
+                      {result.final_time}
+                    </TableCell>
+                    <TableCell className="text-center text-muted-foreground px-2 hidden sm:table-cell whitespace-nowrap">
+                      {result.interval || "-"}
+                    </TableCell>
+                    <TableCell className="text-center font-semibold px-2 hidden xl:table-cell whitespace-nowrap">
+                      {result.net_time}
+                    </TableCell>
+                    <TableCell className="text-center px-2 whitespace-nowrap">{result.pace}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
         </div>
       </CardContent>
     </Card>

@@ -186,15 +186,17 @@ const EventDetails = () => {
 
       {/* Event Content */}
       <section className="py-12">
+        {/* Results - Full Width for finished events */}
+        {event.status === "finished" && (
+          <div className="mb-8">
+            <EventResults />
+          </div>
+        )}
+        
         <div className="container mx-auto px-4">
           <div className="grid lg:grid-cols-3 gap-8">
             {/* Main Content */}
             <div className="lg:col-span-2 space-y-8">
-              {/* Results - Show only for finished events */}
-              {event.status === "finished" && (
-                <EventResults />
-              )}
-
               {/* Description */}
               <Card>
                 <CardHeader>
