@@ -16,6 +16,7 @@ import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { useEffect, useState } from "react";
 import heroImage from "@/assets/hero-running.jpg";
+import { EventResults } from "@/components/event/EventResults";
 
 interface EventDetail {
   id: string;
@@ -65,7 +66,7 @@ const EventDetails = () => {
       state: "SP",
       banner_url: null,
       regulation_url: null,
-      status: "published",
+      status: "finished", // Change to "finished" to show results
     };
 
     const mockCategories: Category[] = [
@@ -189,6 +190,11 @@ const EventDetails = () => {
           <div className="grid lg:grid-cols-3 gap-8">
             {/* Main Content */}
             <div className="lg:col-span-2 space-y-8">
+              {/* Results - Show only for finished events */}
+              {event.status === "finished" && (
+                <EventResults />
+              )}
+
               {/* Description */}
               <Card>
                 <CardHeader>
@@ -287,30 +293,32 @@ const EventDetails = () => {
 
             {/* Sidebar */}
             <div className="space-y-6">
-              {/* Registration Card */}
-              <Card className="sticky top-24">
-                <CardHeader>
-                  <CardTitle>Inscreva-se</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="space-y-2">
-                    <p className="text-sm text-muted-foreground">A partir de:</p>
-                    <p className="text-3xl font-bold text-primary">
-                      R$ {Math.min(...categories.map((c) => c.price)).toFixed(2)}
+              {/* Registration Card - Hide for finished events */}
+              {event.status !== "finished" && (
+                <Card className="sticky top-24">
+                  <CardHeader>
+                    <CardTitle>Inscreva-se</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="space-y-2">
+                      <p className="text-sm text-muted-foreground">A partir de:</p>
+                      <p className="text-3xl font-bold text-primary">
+                        R$ {Math.min(...categories.map((c) => c.price)).toFixed(2)}
+                      </p>
+                    </div>
+                    <Button
+                      className="w-full"
+                      size="lg"
+                      onClick={() => navigate(`/auth?event=${event.id}`)}
+                    >
+                      Fazer Inscrição
+                    </Button>
+                    <p className="text-xs text-center text-muted-foreground">
+                      Você será direcionado para fazer login ou criar uma conta
                     </p>
-                  </div>
-                  <Button
-                    className="w-full"
-                    size="lg"
-                    onClick={() => navigate(`/auth?event=${event.id}`)}
-                  >
-                    Fazer Inscrição
-                  </Button>
-                  <p className="text-xs text-center text-muted-foreground">
-                    Você será direcionado para fazer login ou criar uma conta
-                  </p>
-                </CardContent>
-              </Card>
+                  </CardContent>
+                </Card>
+              )}
 
               {/* Contact Card */}
               <Card>
