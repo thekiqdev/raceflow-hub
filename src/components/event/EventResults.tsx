@@ -153,44 +153,44 @@ export function EventResults() {
           Resultados Oficiais
         </CardTitle>
       </CardHeader>
-      <CardContent>
-        <div className="overflow-x-auto">
+      <CardContent className="p-2 sm:p-6">
+        <div className="w-full">
           <Table>
             <TableHeader>
-              <TableRow>
-                <TableHead className="text-center w-20">Posição</TableHead>
-                <TableHead className="text-center w-24">Número</TableHead>
-                <TableHead className="min-w-[250px]">Nome</TableHead>
-                <TableHead className="min-w-[150px]">Clube</TableHead>
-                <TableHead className="text-center w-24">Sexo</TableHead>
-                <TableHead className="text-center w-28">Categoria</TableHead>
-                <TableHead className="text-center w-32">Posição na Categoria</TableHead>
-                <TableHead className="text-center w-32">Tempo Final</TableHead>
-                <TableHead className="text-center w-28">Intervalo</TableHead>
-                <TableHead className="text-center w-32">Tempo líquido</TableHead>
-                <TableHead className="text-center w-20">Ritmo</TableHead>
+              <TableRow className="text-xs">
+                <TableHead className="text-center px-1 sm:px-2">Pos.</TableHead>
+                <TableHead className="text-center px-1 sm:px-2">Nº</TableHead>
+                <TableHead className="px-1 sm:px-2">Nome</TableHead>
+                <TableHead className="px-1 sm:px-2 hidden md:table-cell">Clube</TableHead>
+                <TableHead className="text-center px-1 sm:px-2 hidden lg:table-cell">Sexo</TableHead>
+                <TableHead className="text-center px-1 sm:px-2">Cat.</TableHead>
+                <TableHead className="text-center px-1 sm:px-2">Pos. Cat.</TableHead>
+                <TableHead className="text-center px-1 sm:px-2">T. Final</TableHead>
+                <TableHead className="text-center px-1 sm:px-2 hidden sm:table-cell">Intervalo</TableHead>
+                <TableHead className="text-center px-1 sm:px-2 hidden xl:table-cell">T. Líquido</TableHead>
+                <TableHead className="text-center px-1 sm:px-2">Ritmo</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {results.map((result) => (
-                <TableRow key={result.position}>
-                  <TableCell className="text-center font-medium">{result.position}.</TableCell>
-                  <TableCell className="text-center">{result.bib_number}</TableCell>
-                  <TableCell className="font-medium">{result.name}</TableCell>
-                  <TableCell>{result.club || "-"}</TableCell>
-                  <TableCell className="text-center">{result.gender}</TableCell>
-                  <TableCell className="text-center">{result.category}</TableCell>
-                  <TableCell className="text-center font-semibold">{result.category_position}</TableCell>
-                  <TableCell className="text-center font-bold text-primary">
+                <TableRow key={result.position} className="text-xs sm:text-sm">
+                  <TableCell className="text-center font-medium px-1 sm:px-2">{result.position}.</TableCell>
+                  <TableCell className="text-center px-1 sm:px-2">{result.bib_number}</TableCell>
+                  <TableCell className="font-medium px-1 sm:px-2 truncate max-w-[120px] sm:max-w-none">{result.name}</TableCell>
+                  <TableCell className="px-1 sm:px-2 hidden md:table-cell">{result.club || "-"}</TableCell>
+                  <TableCell className="text-center px-1 sm:px-2 hidden lg:table-cell">{result.gender}</TableCell>
+                  <TableCell className="text-center px-1 sm:px-2">{result.category}</TableCell>
+                  <TableCell className="text-center font-semibold px-1 sm:px-2">{result.category_position}</TableCell>
+                  <TableCell className="text-center font-bold text-primary px-1 sm:px-2 whitespace-nowrap">
                     {result.final_time}
                   </TableCell>
-                  <TableCell className="text-center text-muted-foreground">
+                  <TableCell className="text-center text-muted-foreground px-1 sm:px-2 hidden sm:table-cell whitespace-nowrap">
                     {result.interval || "-"}
                   </TableCell>
-                  <TableCell className="text-center font-semibold">
+                  <TableCell className="text-center font-semibold px-1 sm:px-2 hidden xl:table-cell whitespace-nowrap">
                     {result.net_time}
                   </TableCell>
-                  <TableCell className="text-center">{result.pace}</TableCell>
+                  <TableCell className="text-center px-1 sm:px-2 whitespace-nowrap">{result.pace}</TableCell>
                 </TableRow>
               ))}
             </TableBody>
