@@ -16,6 +16,9 @@ interface Result {
   overall_position: number;
   category_position: number;
   total_participants: number;
+  bib_number: number;
+  team?: string;
+  pace: string;
 }
 
 export function Results() {
@@ -34,6 +37,9 @@ export function Results() {
         overall_position: 45,
         category_position: 12,
         total_participants: 500,
+        bib_number: 1234,
+        team: "Runners Club SP",
+        pace: "4:33 /km",
       },
       {
         id: "2",
@@ -45,6 +51,9 @@ export function Results() {
         overall_position: 23,
         category_position: 8,
         total_participants: 350,
+        bib_number: 567,
+        team: "Equipe Velocidade",
+        pace: "4:26 /km",
       },
     ];
     setResults(mockResults);
@@ -105,29 +114,53 @@ export function Results() {
               <CardContent className="p-4">
                 <div className="flex justify-between items-start mb-3">
                   <div className="flex-1">
-                    <h3 className="font-semibold text-sm mb-1">{result.event_title}</h3>
+                    <h3 className="font-semibold text-base mb-1">{result.event_title}</h3>
                     <p className="text-xs text-muted-foreground">
                       {format(new Date(result.event_date), "dd 'de' MMMM 'de' yyyy", { locale: ptBR })}
                     </p>
                   </div>
-                  <Badge variant="secondary">{result.category}</Badge>
                 </div>
+
+                {/* Participant Info */}
+                <div className="grid grid-cols-2 gap-3 mb-3">
+                  <div className="bg-muted/30 rounded-lg p-2">
+                    <div className="text-xs text-muted-foreground mb-1">Número</div>
+                    <div className="font-bold text-foreground">#{result.bib_number}</div>
+                  </div>
+                  <div className="bg-muted/30 rounded-lg p-2">
+                    <div className="text-xs text-muted-foreground mb-1">Categoria</div>
+                    <div className="font-semibold text-sm text-foreground">{result.category}</div>
+                  </div>
+                </div>
+
+                {result.team && (
+                  <div className="bg-muted/30 rounded-lg p-2 mb-3">
+                    <div className="text-xs text-muted-foreground mb-1">Equipe</div>
+                    <div className="font-semibold text-sm text-foreground">{result.team}</div>
+                  </div>
+                )}
 
                 {/* Times */}
                 <div className="bg-primary/5 rounded-lg p-3 mb-3">
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-3 gap-3">
                     <div>
-                      <div className="text-xs text-muted-foreground mb-1">Tempo Oficial</div>
-                      <div className="text-lg font-bold text-primary flex items-center gap-1">
-                        <Clock className="h-4 w-4" />
+                      <div className="text-xs text-muted-foreground mb-1">Tempo Final</div>
+                      <div className="text-base font-bold text-primary flex items-center gap-1">
+                        <Clock className="h-3.5 w-3.5" />
                         {result.official_time}
                       </div>
                     </div>
                     <div>
-                      <div className="text-xs text-muted-foreground mb-1">Tempo Líquido</div>
-                      <div className="text-lg font-bold text-primary flex items-center gap-1">
-                        <Clock className="h-4 w-4" />
+                      <div className="text-xs text-muted-foreground mb-1">Líquido</div>
+                      <div className="text-base font-bold text-primary flex items-center gap-1">
+                        <Clock className="h-3.5 w-3.5" />
                         {result.net_time}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-muted-foreground mb-1">Ritmo</div>
+                      <div className="text-base font-bold text-primary">
+                        {result.pace}
                       </div>
                     </div>
                   </div>
@@ -135,15 +168,15 @@ export function Results() {
 
                 {/* Positions */}
                 <div className="grid grid-cols-2 gap-3 mb-3">
-                  <div className="bg-muted/50 rounded-lg p-2 text-center">
-                    <div className="text-xs text-muted-foreground mb-1">Geral</div>
-                    <div className="font-semibold text-sm">
+                  <div className="bg-secondary/10 rounded-lg p-2 text-center border border-secondary/20">
+                    <div className="text-xs text-muted-foreground mb-1">Posição Geral</div>
+                    <div className="font-bold text-foreground">
                       {formatPosition(result.overall_position, result.total_participants)}
                     </div>
                   </div>
-                  <div className="bg-muted/50 rounded-lg p-2 text-center">
-                    <div className="text-xs text-muted-foreground mb-1">Categoria</div>
-                    <div className="font-semibold text-sm">
+                  <div className="bg-accent/10 rounded-lg p-2 text-center border border-accent/20">
+                    <div className="text-xs text-muted-foreground mb-1">Posição Categoria</div>
+                    <div className="font-bold text-foreground">
                       {result.category_position}º lugar
                     </div>
                   </div>
