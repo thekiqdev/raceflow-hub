@@ -302,7 +302,7 @@ const EventDetails = () => {
                   <Button
                     className="w-full"
                     size="lg"
-                    onClick={() => navigate(`/auth?event=${event.id}`)}
+                    onClick={() => navigate(`/events/${event.id}/register`)}
                   >
                     Fazer Inscrição
                   </Button>

@@ -8,6 +8,7 @@ import Auth from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
 import Events from "./pages/Events";
 import EventDetails from "./pages/EventDetails";
+import EventRegistration from "./pages/EventRegistration";
 import OrganizerDashboard from "./pages/OrganizerDashboard";
 import RunnerProfile from "./pages/RunnerProfile";
 import AdminDashboard from "./pages/AdminDashboard";
@@ -27,6 +28,7 @@ const App = () => (
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/events" element={<Events />} />
           <Route path="/events/:id" element={<EventDetails />} />
+          <Route path="/events/:id/register" element={<EventRegistration />} />
           <Route path="/organizer/dashboard" element={<OrganizerDashboard />} />
           <Route path="/runner/profile" element={<RunnerProfile />} />
           <Route path="/admin/dashboard" element={<AdminDashboard />} />
