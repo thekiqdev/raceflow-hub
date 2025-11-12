@@ -135,6 +135,18 @@ const Dashboard = () => {
             <>
               <Card className="hover:shadow-lg transition-shadow">
                 <CardHeader>
+                  <Settings className="h-8 w-8 text-primary mb-2" />
+                  <CardTitle>Dashboard Organizador</CardTitle>
+                  <CardDescription>Estatísticas e relatórios completos</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <Button className="w-full" onClick={() => navigate("/organizer/dashboard")}>
+                    Ver Dashboard
+                  </Button>
+                </CardContent>
+              </Card>
+              <Card className="hover:shadow-lg transition-shadow">
+                <CardHeader>
                   <Calendar className="h-8 w-8 text-primary mb-2" />
                   <CardTitle>Meus Eventos</CardTitle>
                   <CardDescription>Criar e gerenciar eventos</CardDescription>
