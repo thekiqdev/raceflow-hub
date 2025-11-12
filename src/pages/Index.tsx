@@ -142,7 +142,11 @@ const Index = () => {
 
             <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4 mb-8">
               {upcomingEvents.map((event) => (
-                <Card key={event.id} className="overflow-hidden hover:shadow-xl transition-all hover:-translate-y-1">
+                <Card
+                  key={event.id}
+                  className="overflow-hidden hover:shadow-xl transition-all hover:-translate-y-1 cursor-pointer"
+                  onClick={() => navigate(`/events/${event.id}`)}
+                >
                   <div className="h-48 bg-gradient-hero flex items-center justify-center">
                     <Award className="h-16 w-16 text-white opacity-50" />
                   </div>
@@ -164,7 +168,10 @@ const Index = () => {
                       </div>
                     </div>
                     <div className="flex gap-2">
-                      <Button size="sm" className="flex-1 text-xs" onClick={() => navigate("/events")}>
+                      <Button size="sm" className="flex-1 text-xs" onClick={(e) => {
+                        e.stopPropagation();
+                        navigate("/events");
+                      }}>
                         RESULTADOS INSCRITOS
                       </Button>
                     </div>
