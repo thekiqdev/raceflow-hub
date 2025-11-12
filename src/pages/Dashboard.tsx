@@ -172,6 +172,18 @@ const Dashboard = () => {
             <>
               <Card className="hover:shadow-lg transition-shadow">
                 <CardHeader>
+                  <Users className="h-8 w-8 text-primary mb-2" />
+                  <CardTitle>Meu Perfil</CardTitle>
+                  <CardDescription>Ver histórico e conquistas</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <Button className="w-full" onClick={() => navigate("/runner/profile")}>
+                    Ver Perfil
+                  </Button>
+                </CardContent>
+              </Card>
+              <Card className="hover:shadow-lg transition-shadow">
+                <CardHeader>
                   <Calendar className="h-8 w-8 text-primary mb-2" />
                   <CardTitle>Explorar Eventos</CardTitle>
                   <CardDescription>Descobrir próximas corridas</CardDescription>
@@ -189,7 +201,9 @@ const Dashboard = () => {
                   <CardDescription>Ver histórico de participações</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <Button className="w-full">Ver Histórico</Button>
+                  <Button className="w-full" onClick={() => navigate("/runner/profile")}>
+                    Ver Histórico
+                  </Button>
                 </CardContent>
               </Card>
             </>
