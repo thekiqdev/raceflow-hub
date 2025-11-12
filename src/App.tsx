@@ -10,6 +10,7 @@ import Events from "./pages/Events";
 import EventDetails from "./pages/EventDetails";
 import OrganizerDashboard from "./pages/OrganizerDashboard";
 import RunnerProfile from "./pages/RunnerProfile";
+import RunnerDashboard from "./pages/RunnerDashboard";
 import AdminDashboard from "./pages/AdminDashboard";
 import NotFound from "./pages/NotFound";
 
@@ -29,6 +30,7 @@ const App = () => (
           <Route path="/events/:id" element={<EventDetails />} />
           <Route path="/organizer/dashboard" element={<OrganizerDashboard />} />
           <Route path="/runner/profile" element={<RunnerProfile />} />
+          <Route path="/runner/dashboard" element={<RunnerDashboard />} />
           <Route path="/admin/dashboard" element={<AdminDashboard />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />

@@ -4,11 +4,6 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Loader2, LogOut, Calendar, Users, Trophy, Settings } from "lucide-react";
 import { toast } from "sonner";
-import { BottomNav } from "@/components/runner/BottomNav";
-import { ExploreEvents } from "@/components/runner/ExploreEvents";
-import { MyRegistrations } from "@/components/runner/MyRegistrations";
-import { Results } from "@/components/runner/Results";
-import { Profile } from "@/components/runner/Profile";
 
 interface UserProfile {
   full_name: string;
@@ -19,7 +14,6 @@ const Dashboard = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [activeTab, setActiveTab] = useState("home");
 
   useEffect(() => {
     // Mock data for testing
@@ -46,31 +40,6 @@ const Dashboard = () => {
   const isAdmin = profile?.roles.includes("admin");
   const isOrganizer = profile?.roles.includes("organizer");
   const isRunner = profile?.roles.includes("runner");
-
-  // Mobile Runner Dashboard
-  if (isRunner && !isOrganizer && !isAdmin) {
-    const renderContent = () => {
-      switch (activeTab) {
-        case "home":
-          return <ExploreEvents />;
-        case "registrations":
-          return <MyRegistrations />;
-        case "results":
-          return <Results />;
-        case "profile":
-          return <Profile />;
-        default:
-          return <ExploreEvents />;
-      }
-    };
-
-    return (
-      <div className="min-h-screen bg-background">
-        {renderContent()}
-        <BottomNav activeTab={activeTab} onTabChange={setActiveTab} />
-      </div>
-    );
-  }
 
   // Desktop Dashboard for Organizers and Admins
   return (
@@ -168,12 +137,12 @@ const Dashboard = () => {
               <Card className="hover:shadow-lg transition-shadow">
                 <CardHeader>
                   <Users className="h-8 w-8 text-primary mb-2" />
-                  <CardTitle>Meu Perfil</CardTitle>
-                  <CardDescription>Ver histórico e conquistas</CardDescription>
+                  <CardTitle>Painel do Corredor</CardTitle>
+                  <CardDescription>Explorar eventos, inscrições e resultados</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <Button className="w-full" onClick={() => navigate("/runner/profile")}>
-                    Ver Perfil
+                  <Button className="w-full" onClick={() => navigate("/runner/dashboard")}>
+                    Acessar Painel
                   </Button>
                 </CardContent>
               </Card>
@@ -192,12 +161,12 @@ const Dashboard = () => {
               <Card className="hover:shadow-lg transition-shadow">
                 <CardHeader>
                   <Trophy className="h-8 w-8 text-primary mb-2" />
-                  <CardTitle>Minhas Inscrições</CardTitle>
-                  <CardDescription>Ver histórico de participações</CardDescription>
+                  <CardTitle>Meu Perfil</CardTitle>
+                  <CardDescription>Ver histórico de participações e conquistas</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <Button className="w-full" onClick={() => navigate("/runner/profile")}>
-                    Ver Histórico
+                    Ver Perfil
                   </Button>
                 </CardContent>
               </Card>
