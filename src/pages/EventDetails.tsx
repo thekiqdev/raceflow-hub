@@ -17,6 +17,7 @@ import { ptBR } from "date-fns/locale";
 import { useEffect, useState } from "react";
 import heroImage from "@/assets/hero-running.jpg";
 import { EventResults } from "@/components/event/EventResults";
+import { RegistrationFlow } from "@/components/event/RegistrationFlow";
 
 interface EventDetail {
   id: string;
@@ -52,6 +53,7 @@ const EventDetails = () => {
   const [event, setEvent] = useState<EventDetail | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
   const [kits, setKits] = useState<Kit[]>([]);
+  const [isRegistrationOpen, setIsRegistrationOpen] = useState(false);
 
   useEffect(() => {
     // Mock event data
@@ -66,7 +68,7 @@ const EventDetails = () => {
       state: "SP",
       banner_url: null,
       regulation_url: null,
-      status: "finished", // Change to "finished" to show results
+      status: "published", // Change to "finished" to show results
     };
 
     const mockCategories: Category[] = [
@@ -311,7 +313,7 @@ const EventDetails = () => {
                     <Button
                       className="w-full"
                       size="lg"
-                      onClick={() => navigate(`/auth?event=${event.id}`)}
+                      onClick={() => setIsRegistrationOpen(true)}
                     >
                       Fazer Inscrição
                     </Button>
@@ -338,6 +340,22 @@ const EventDetails = () => {
           </div>
         </div>
       </section>
+
+      {/* Registration Flow Dialog */}
+      <RegistrationFlow
+        open={isRegistrationOpen}
+        onOpenChange={setIsRegistrationOpen}
+        event={{
+          id: event.id,
+          title: event.title,
+          event_date: event.event_date,
+          location: event.location,
+          city: event.city,
+          state: event.state,
+        }}
+        categories={categories}
+        kits={kits}
+      />
     </div>
   );
 };
