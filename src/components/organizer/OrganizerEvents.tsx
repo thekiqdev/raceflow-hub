@@ -20,9 +20,12 @@ import {
 import { Plus, Search, MoreVertical, Edit, Eye, Trash2, BarChart3, Calendar } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { EventFormDialog } from "./EventFormDialog";
 
 const OrganizerEvents = () => {
   const [searchQuery, setSearchQuery] = useState("");
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [selectedEvent, setSelectedEvent] = useState<any>(null);
 
   // Mock data
   const events = [
@@ -106,7 +109,10 @@ const OrganizerEvents = () => {
                 className="pl-10"
               />
             </div>
-            <Button>
+            <Button onClick={() => {
+              setSelectedEvent(null);
+              setIsDialogOpen(true);
+            }}>
               <Plus className="mr-2 h-4 w-4" />
               Criar Novo Evento
             </Button>
@@ -170,7 +176,10 @@ const OrganizerEvents = () => {
                             <Eye className="mr-2 h-4 w-4" />
                             Ver Detalhes
                           </DropdownMenuItem>
-                          <DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => {
+                            setSelectedEvent(event);
+                            setIsDialogOpen(true);
+                          }}>
                             <Edit className="mr-2 h-4 w-4" />
                             Editar
                           </DropdownMenuItem>
@@ -231,6 +240,16 @@ const OrganizerEvents = () => {
           </CardContent>
         </Card>
       </div>
+
+      <EventFormDialog
+        open={isDialogOpen}
+        onOpenChange={setIsDialogOpen}
+        event={selectedEvent}
+        onSuccess={() => {
+          // Refresh events list
+          window.location.reload();
+        }}
+      />
     </div>
   );
 };
