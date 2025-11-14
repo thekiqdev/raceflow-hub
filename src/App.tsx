@@ -13,6 +13,8 @@ import RunnerProfile from "./pages/RunnerProfile";
 import RunnerDashboard from "./pages/RunnerDashboard";
 import AdminDashboard from "./pages/AdminDashboard";
 import Quote from "./pages/Quote";
+import RegistrationQRCode from "./pages/RegistrationQRCode";
+import ValidateRegistration from "./pages/ValidateRegistration";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -34,6 +36,8 @@ const App = () => (
           <Route path="/runner/dashboard" element={<RunnerDashboard />} />
           <Route path="/admin/dashboard" element={<AdminDashboard />} />
           <Route path="/orcamento" element={<Quote />} />
+          <Route path="/registration/qrcode/:id" element={<RegistrationQRCode />} />
+          <Route path="/registration/validate/:id" element={<ValidateRegistration />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>

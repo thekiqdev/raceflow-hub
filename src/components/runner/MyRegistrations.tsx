@@ -1,9 +1,10 @@
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Calendar, MapPin, Download, RefreshCw, X, ChevronRight } from "lucide-react";
+import { Calendar, MapPin, QrCode, ChevronRight } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
@@ -20,6 +21,7 @@ interface Registration {
 }
 
 export function MyRegistrations() {
+  const navigate = useNavigate();
   const [registrations, setRegistrations] = useState<Registration[]>([]);
 
   useEffect(() => {
@@ -104,17 +106,17 @@ export function MyRegistrations() {
           </div>
         </div>
 
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" className="flex-1">
-            <Download className="h-3 w-3 mr-1" />
-            Baixar PDF
+        {registration.status === "paid" && (
+          <Button 
+            variant="outline" 
+            size="sm" 
+            className="w-full"
+            onClick={() => navigate(`/registration/qrcode/${registration.id}`)}
+          >
+            <QrCode className="h-3 w-3 mr-1" />
+            Mostrar Inscrição
           </Button>
-          {registration.status === "paid" && (
-            <Button variant="ghost" size="sm">
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-          )}
-        </div>
+        )}
       </CardContent>
     </Card>
   );
