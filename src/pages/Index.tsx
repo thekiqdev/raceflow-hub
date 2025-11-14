@@ -7,6 +7,7 @@ import { useState, useEffect } from "react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { EventFilters, EventFiltersState } from "@/components/event/EventFilters";
+import { Header } from "@/components/Header";
 interface Event {
   id: string;
   title: string;
@@ -76,27 +77,7 @@ const Index = () => {
   });
   return <div className="min-h-screen bg-background">
       {/* Navigation */}
-      <nav className="bg-card border-b sticky top-0 z-50 shadow-sm">
-        <div className="container mx-auto px-4 py-4 flex items-center justify-between">
-          <h1 className="text-2xl font-bold bg-gradient-hero bg-clip-text text-transparent">RunEvents</h1>
-          <div className="hidden md:flex items-center gap-6">
-            <Button variant="ghost" onClick={() => navigate("/")}>
-              HOME
-            </Button>
-            <Button variant="ghost" onClick={() => navigate("/events")}>
-              INSCRIÇÕES
-            </Button>
-            
-            <Button variant="ghost">ORÇAMENTO</Button>
-            <Button variant="ghost">DÚVIDAS</Button>
-            <Button variant="ghost">RESULTADOS</Button>
-          </div>
-          <Button className="bg-accent hover:bg-accent/90" size="sm">
-            <MessageSquare className="mr-2 h-4 w-4" />
-            (85) 99108-4183
-          </Button>
-        </div>
-      </nav>
+      <Header />
 
       {/* Hero Section */}
       <section className="relative h-[600px] flex items-center justify-center overflow-hidden">
