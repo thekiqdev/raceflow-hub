@@ -29,12 +29,12 @@ const FlipDigit = ({ value, label }: { value: number; label: string }) => {
   const displayValue = value.toString().padStart(2, "0");
 
   return (
-    <div className="flex flex-col items-center gap-2">
-      <div className="relative w-14 h-16 md:w-16 md:h-20">
+    <div className="flex flex-col items-center gap-1">
+      <div className="relative w-10 h-12 md:w-12 md:h-14">
         <div className="absolute inset-0 bg-background rounded-lg border border-border shadow-sm overflow-hidden">
           <div
             className={cn(
-              "absolute inset-0 flex items-center justify-center text-2xl md:text-3xl font-bold text-primary transition-all duration-300",
+              "absolute inset-0 flex items-center justify-center text-xl md:text-2xl font-bold text-primary transition-all duration-300",
               flip && "animate-[flip_0.6s_ease-in-out]"
             )}
           >
@@ -44,7 +44,7 @@ const FlipDigit = ({ value, label }: { value: number; label: string }) => {
         {/* Top separator line */}
         <div className="absolute top-1/2 left-0 right-0 h-[1px] bg-border z-10" />
       </div>
-      <span className="text-[10px] md:text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+      <span className="text-[9px] md:text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">
         {label}
       </span>
     </div>
@@ -80,22 +80,22 @@ export const FlipCountdown = ({ targetDate }: FlipCountdownProps) => {
   }, [targetDate]);
 
   return (
-    <div className="bg-card rounded-2xl p-4 md:p-6 border shadow-sm">
-      <h3 className="text-center text-base md:text-lg font-bold text-foreground mb-4 md:mb-6 tracking-tight">
+    <div className="bg-card rounded-xl p-3 md:p-4 border shadow-sm">
+      <h3 className="text-center text-sm md:text-base font-bold text-foreground mb-3 md:mb-4 tracking-tight">
         PREPARE-SE! FALTAM:
       </h3>
-      <div className="flex justify-center items-start gap-1.5 md:gap-2">
+      <div className="flex justify-center items-start gap-1 md:gap-1.5">
         <FlipDigit value={timeLeft.days} label="Dias" />
-        <div className="flex items-center pt-1 pb-7">
-          <span className="text-xl md:text-2xl font-bold text-primary/40">:</span>
+        <div className="flex items-center pt-1 pb-5">
+          <span className="text-lg md:text-xl font-bold text-primary/40">:</span>
         </div>
         <FlipDigit value={timeLeft.hours} label="Horas" />
-        <div className="flex items-center pt-1 pb-7">
-          <span className="text-xl md:text-2xl font-bold text-primary/40">:</span>
+        <div className="flex items-center pt-1 pb-5">
+          <span className="text-lg md:text-xl font-bold text-primary/40">:</span>
         </div>
         <FlipDigit value={timeLeft.minutes} label="Min" />
-        <div className="flex items-center pt-1 pb-7">
-          <span className="text-xl md:text-2xl font-bold text-primary/40">:</span>
+        <div className="flex items-center pt-1 pb-5">
+          <span className="text-lg md:text-xl font-bold text-primary/40">:</span>
         </div>
         <FlipDigit value={timeLeft.seconds} label="Seg" />
       </div>
