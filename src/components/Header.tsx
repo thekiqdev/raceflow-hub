@@ -1,10 +1,8 @@
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { MessageCircle } from "lucide-react";
-
 export function Header() {
-  return (
-    <header className="bg-black text-white py-4 sticky top-0 z-50">
+  return <header className="bg-black text-white py-4 sticky top-0 z-50">
       <div className="container mx-auto px-4 flex items-center justify-between">
         <Link to="/" className="flex items-center gap-2">
           <div className="border-2 border-white px-4 py-2">
@@ -20,9 +18,7 @@ export function Header() {
           <Link to="/events" className="hover:text-primary transition-colors">
             INSCRIÇÕES
           </Link>
-          <Link to="/" className="hover:text-primary transition-colors">
-            SERVIÇOS
-          </Link>
+          
           <Link to="/orcamento" className="hover:text-primary transition-colors">
             ORÇAMENTO
           </Link>
@@ -39,6 +35,5 @@ export function Header() {
           (85) 99108-4183
         </Button>
       </div>
-    </header>
-  );
+    </header>;
 }
