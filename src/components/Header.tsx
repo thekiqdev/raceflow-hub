@@ -12,6 +12,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { useToast } from "@/hooks/use-toast";
 export function Header() {
   const navigate = useNavigate();
@@ -104,24 +105,28 @@ export function Header() {
               <Button 
                 className="bg-green-600 hover:bg-green-700 text-white flex items-center gap-2"
               >
-                <User className="h-5 w-5" />
-                {userProfile.full_name || "Perfil"}
+                <Avatar className="h-6 w-6">
+                  <AvatarFallback className="bg-white text-green-600 text-xs font-bold">
+                    {userProfile.full_name?.charAt(0).toUpperCase() || "U"}
+                  </AvatarFallback>
+                </Avatar>
+                <span className="hidden md:inline">{userProfile.full_name || "Perfil"}</span>
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent className="w-56 bg-background z-50" align="end">
+            <DropdownMenuContent className="w-56 bg-background z-50" align="end" sideOffset={5}>
               <DropdownMenuLabel>Minha Conta</DropdownMenuLabel>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={() => navigate("/runner/dashboard")}>
                 <FileText className="mr-2 h-4 w-4" />
-                <span>Inscrições</span>
+                <span>Minhas Inscrições</span>
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => navigate("/runner/dashboard?tab=results")}>
+              <DropdownMenuItem onClick={() => navigate("/runner/dashboard")}>
                 <Trophy className="mr-2 h-4 w-4" />
-                <span>Resultados</span>
+                <span>Meus Resultados</span>
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => navigate("/runner/profile")}>
                 <UserCircle className="mr-2 h-4 w-4" />
-                <span>Perfil</span>
+                <span>Meu Perfil</span>
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={handleLogout} className="text-destructive focus:text-destructive">
