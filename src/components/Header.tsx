@@ -22,7 +22,7 @@ export function Header() {
           <Link to="/orcamento" className="hover:text-primary transition-colors">
             ORÇAMENTO
           </Link>
-          <Link to="/" className="hover:text-primary transition-colors">
+          <Link to="/faq" className="hover:text-primary transition-colors">
             DÚVIDAS
           </Link>
           <Link to="/" className="hover:text-primary transition-colors">
