@@ -1,11 +1,85 @@
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Building2, Trash2 } from "lucide-react";
+import { toast } from "sonner";
 
 const SystemSettings = () => {
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadSettings();
+  }, []);
+
+  const loadSettings = () => {
+    const savedLogo = localStorage.getItem('admin-logo');
+    if (savedLogo) {
+      setLogoUrl(savedLogo);
+    }
+    setLoading(false);
+  };
+
+  const handleLogoUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      toast.error('Por favor, selecione uma imagem válida');
+      return;
+    }
+
+    // Validate file size (max 2MB)
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error('A imagem deve ter no máximo 2MB');
+      return;
+    }
+
+    setUploading(true);
+
+    // Convert to base64 and save to localStorage
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const base64String = reader.result as string;
+      localStorage.setItem('admin-logo', base64String);
+      setLogoUrl(base64String);
+      toast.success('Logo atualizada com sucesso!');
+      
+      // Trigger a refresh of the sidebar
+      window.dispatchEvent(new Event('admin-logo-updated'));
+      setUploading(false);
+    };
+    reader.onerror = () => {
+      toast.error('Erro ao fazer upload da logo');
+      setUploading(false);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleRemoveLogo = () => {
+    localStorage.removeItem('admin-logo');
+    setLogoUrl(null);
+    toast.success('Logo removida com sucesso!');
+    
+    // Trigger a refresh of the sidebar
+    window.dispatchEvent(new Event('admin-logo-updated'));
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <div>
@@ -21,7 +95,75 @@ const SystemSettings = () => {
           <TabsTrigger value="modules">Módulos</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="general">
+        <TabsContent value="general" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Building2 className="h-5 w-5" />
+                Logo da Plataforma
+              </CardTitle>
+              <CardDescription>
+                Faça upload da logo da plataforma. Esta logo será exibida no menu lateral.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* Logo Preview */}
+              <div className="flex items-center justify-center w-full">
+                <div className="relative w-48 h-48 border-2 border-dashed border-muted rounded-lg flex items-center justify-center bg-muted/20">
+                  {logoUrl ? (
+                    <img 
+                      src={logoUrl} 
+                      alt="Logo da plataforma" 
+                      className="max-w-full max-h-full object-contain p-4"
+                    />
+                  ) : (
+                    <div className="text-center p-4">
+                      <Building2 className="h-12 w-12 mx-auto text-muted-foreground mb-2" />
+                      <p className="text-sm text-muted-foreground">Nenhuma logo</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Upload Controls */}
+              <div className="space-y-3">
+                <div>
+                  <Label htmlFor="logo-upload">Upload de Logo</Label>
+                  <div className="flex gap-2 mt-2">
+                    <Input
+                      id="logo-upload"
+                      type="file"
+                      accept="image/*"
+                      onChange={handleLogoUpload}
+                      disabled={uploading}
+                      className="flex-1"
+                    />
+                    {logoUrl && (
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        onClick={handleRemoveLogo}
+                        disabled={uploading}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    )}
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Formatos aceitos: PNG, JPG, SVG. Tamanho máximo: 2MB
+                  </p>
+                </div>
+
+                {uploading && (
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
+                    <span>Enviando logo...</span>
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
           <Card>
             <CardHeader>
               <CardTitle>Dados Institucionais</CardTitle>
