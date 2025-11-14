@@ -1,26 +1,28 @@
 import { useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import {
   User,
-  Mail,
-  Phone,
-  Calendar,
-  Edit,
   CreditCard,
   Bell,
-  HelpCircle,
   LogOut,
   ChevronRight,
   FileText,
   Shield,
   Settings,
+  Edit,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import { ProfileEditDialog } from "./profile/ProfileEditDialog";
+import { DocumentsManagement } from "./profile/DocumentsManagement";
+import { PrivacySettings } from "./profile/PrivacySettings";
+import { PaymentHistory } from "./profile/PaymentHistory";
+import { NotificationSettings } from "./profile/NotificationSettings";
+import { AccountSettings } from "./profile/AccountSettings";
 
 export function Profile() {
   const navigate = useNavigate();
@@ -33,9 +35,26 @@ export function Profile() {
     gender: "Masculino",
   });
 
+  const [openDialogs, setOpenDialogs] = useState({
+    editProfile: false,
+    documents: false,
+    privacy: false,
+    payments: false,
+    notifications: false,
+    account: false,
+  });
+
   const handleSignOut = () => {
     toast.success("Logout realizado com sucesso!");
     navigate("/");
+  };
+
+  const openDialog = (dialog: keyof typeof openDialogs) => {
+    setOpenDialogs({ ...openDialogs, [dialog]: true });
+  };
+
+  const closeDialog = (dialog: keyof typeof openDialogs) => {
+    setOpenDialogs({ ...openDialogs, [dialog]: false });
   };
 
   const MenuSection = ({ title, items }: { title: string; items: Array<{ icon: any; label: string; action: () => void; badge?: string }> }) => (
@@ -119,17 +138,17 @@ export function Profile() {
             {
               icon: User,
               label: "Meus Dados",
-              action: () => toast.info("Editar dados pessoais"),
+              action: () => openDialog("editProfile"),
             },
             {
               icon: FileText,
               label: "Documentos",
-              action: () => toast.info("Gerenciar documentos"),
+              action: () => openDialog("documents"),
             },
             {
               icon: Shield,
               label: "Privacidade (LGPD)",
-              action: () => toast.info("Configurações de privacidade"),
+              action: () => openDialog("privacy"),
             },
           ]}
         />
@@ -140,7 +159,7 @@ export function Profile() {
             {
               icon: CreditCard,
               label: "Histórico de Pagamentos",
-              action: () => toast.info("Ver pagamentos"),
+              action: () => openDialog("payments"),
             },
           ]}
         />
@@ -151,18 +170,12 @@ export function Profile() {
             {
               icon: Bell,
               label: "Notificações",
-              action: () => toast.info("Configurar notificações"),
-              badge: "3 novas",
-            },
-            {
-              icon: HelpCircle,
-              label: "Ajuda e Suporte",
-              action: () => toast.info("Central de ajuda"),
+              action: () => openDialog("notifications"),
             },
             {
               icon: Settings,
               label: "Configurações da Conta",
-              action: () => toast.info("Configurações"),
+              action: () => openDialog("account"),
             },
           ]}
         />
@@ -184,6 +197,33 @@ export function Profile() {
           RunEvents v1.0.0
         </div>
       </div>
+
+      {/* Dialogs */}
+      <ProfileEditDialog
+        open={openDialogs.editProfile}
+        onOpenChange={(open) => !open && closeDialog("editProfile")}
+        profile={profile}
+      />
+      <DocumentsManagement
+        open={openDialogs.documents}
+        onOpenChange={(open) => !open && closeDialog("documents")}
+      />
+      <PrivacySettings
+        open={openDialogs.privacy}
+        onOpenChange={(open) => !open && closeDialog("privacy")}
+      />
+      <PaymentHistory
+        open={openDialogs.payments}
+        onOpenChange={(open) => !open && closeDialog("payments")}
+      />
+      <NotificationSettings
+        open={openDialogs.notifications}
+        onOpenChange={(open) => !open && closeDialog("notifications")}
+      />
+      <AccountSettings
+        open={openDialogs.account}
+        onOpenChange={(open) => !open && closeDialog("account")}
+      />
     </div>
   );
 }
