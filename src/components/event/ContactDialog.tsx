@@ -151,7 +151,7 @@ export const ContactDialog = ({ open, onOpenChange, eventTitle }: ContactDialogP
               <MessageSquare className="h-8 w-8 text-primary" />
               <div className="text-center">
                 <div className="font-semibold">Dúvidas sobre o Evento</div>
-                <div className="text-xs text-muted-foreground">
+                <div className="text-xs text-muted-foreground hover:text-white transition-colors">
                   Fale diretamente com o organizador do evento
                 </div>
               </div>
@@ -165,7 +165,7 @@ export const ContactDialog = ({ open, onOpenChange, eventTitle }: ContactDialogP
               <HelpCircle className="h-8 w-8 text-primary" />
               <div className="text-center">
                 <div className="font-semibold">Dúvidas sobre a Plataforma</div>
-                <div className="text-xs text-muted-foreground">
+                <div className="text-xs text-muted-foreground hover:text-white transition-colors">
                   Fale com o suporte da plataforma
                 </div>
               </div>
