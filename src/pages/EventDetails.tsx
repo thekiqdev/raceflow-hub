@@ -56,6 +56,16 @@ const EventDetails = () => {
   const [categories, setCategories] = useState<Category[]>([]);
   const [kits, setKits] = useState<Kit[]>([]);
   const [isRegistrationOpen, setIsRegistrationOpen] = useState(false);
+  const [showBottomBar, setShowBottomBar] = useState(false);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      setShowBottomBar(window.scrollY > 400);
+    };
+
+    window.addEventListener("scroll", handleScroll);
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
 
   useEffect(() => {
     // Mock event data
@@ -301,7 +311,7 @@ const EventDetails = () => {
             <div className="space-y-6">
               {/* Registration Card - Hide for finished events */}
               {event.status !== "finished" && (
-                <Card className="sticky top-24">
+                <Card>
                   <CardHeader>
                     <CardTitle>Inscreva-se</CardTitle>
                   </CardHeader>
@@ -424,6 +434,33 @@ const EventDetails = () => {
         categories={categories}
         kits={kits}
       />
+
+      {/* Bottom Bar - Shows on scroll */}
+      {event.status !== "finished" && (
+        <div
+          className={`fixed bottom-0 left-0 right-0 bg-card border-t shadow-lg z-50 transition-transform duration-300 ${
+            showBottomBar ? "translate-y-0" : "translate-y-full"
+          }`}
+        >
+          <div className="container mx-auto px-4 py-4">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-sm text-muted-foreground">A partir de:</p>
+                <p className="text-2xl font-bold text-primary">
+                  R$ {Math.min(...categories.map((c) => c.price)).toFixed(2)}
+                </p>
+              </div>
+              <Button
+                size="lg"
+                onClick={() => setIsRegistrationOpen(true)}
+                className="px-8"
+              >
+                Inscreva-se Agora
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
