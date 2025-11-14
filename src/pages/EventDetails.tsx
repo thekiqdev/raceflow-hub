@@ -199,7 +199,7 @@ const EventDetails = () => {
       </section>
 
       {/* Event Content */}
-      <section className="py-12">
+      <section className="py-12 pb-28">
         {/* Results - Full Width for finished events */}
         {event.status === "finished" && (
           <div className="mb-8">
