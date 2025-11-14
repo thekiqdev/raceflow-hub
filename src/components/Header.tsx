@@ -116,15 +116,19 @@ export function Header() {
             <DropdownMenuContent className="w-56 bg-background z-50" align="end" sideOffset={5}>
               <DropdownMenuLabel>Minha Conta</DropdownMenuLabel>
               <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => navigate("/runner/dashboard")}>
+              <DropdownMenuItem onClick={() => navigate("/runner/dashboard?tab=home")}>
+                <FileText className="mr-2 h-4 w-4" />
+                <span>Explorar Eventos</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => navigate("/runner/dashboard?tab=registrations")}>
                 <FileText className="mr-2 h-4 w-4" />
                 <span>Minhas Inscrições</span>
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => navigate("/runner/dashboard")}>
+              <DropdownMenuItem onClick={() => navigate("/runner/dashboard?tab=results")}>
                 <Trophy className="mr-2 h-4 w-4" />
                 <span>Meus Resultados</span>
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => navigate("/runner/profile")}>
+              <DropdownMenuItem onClick={() => navigate("/runner/dashboard?tab=profile")}>
                 <UserCircle className="mr-2 h-4 w-4" />
                 <span>Meu Perfil</span>
               </DropdownMenuItem>
