@@ -8,6 +8,7 @@ import OrganizerDashboardOverview from "@/components/organizer/OrganizerDashboar
 import OrganizerEvents from "@/components/organizer/OrganizerEvents";
 import OrganizerRegistrations from "@/components/organizer/OrganizerRegistrations";
 import OrganizerFinancial from "@/components/organizer/OrganizerFinancial";
+import OrganizerSettings from "@/components/organizer/OrganizerSettings";
 
 const OrganizerDashboard = () => {
   const navigate = useNavigate();
@@ -34,7 +35,7 @@ const OrganizerDashboard = () => {
       case "messages":
         return <div className="text-center py-12 text-muted-foreground">Seção de Mensagens em desenvolvimento</div>;
       case "settings":
-        return <div className="text-center py-12 text-muted-foreground">Seção de Configurações em desenvolvimento</div>;
+        return <OrganizerSettings />;
       default:
         return <OrganizerDashboardOverview />;
     }
