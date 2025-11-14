@@ -73,7 +73,7 @@ export function Header() {
 
         {user && userProfile ? (
           <Button 
-            onClick={() => navigate("/runner/profile")}
+            onClick={() => navigate("/runner/dashboard")}
             className="bg-green-600 hover:bg-green-700 text-white flex items-center gap-2"
           >
             <User className="h-5 w-5" />
