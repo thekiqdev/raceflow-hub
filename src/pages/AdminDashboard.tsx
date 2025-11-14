@@ -11,6 +11,7 @@ import FinancialManagement from "@/components/admin/FinancialManagement";
 import AdvancedReports from "@/components/admin/AdvancedReports";
 import SystemSettings from "@/components/admin/SystemSettings";
 import CommunicationSupport from "@/components/admin/CommunicationSupport";
+import KnowledgeBase from "@/components/admin/KnowledgeBase";
 
 const AdminDashboard = () => {
   const navigate = useNavigate();
@@ -32,6 +33,8 @@ const AdminDashboard = () => {
         return <FinancialManagement />;
       case "reports":
         return <AdvancedReports />;
+      case "knowledge":
+        return <KnowledgeBase />;
       case "settings":
         return <SystemSettings />;
       case "support":

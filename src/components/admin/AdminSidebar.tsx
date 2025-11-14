@@ -21,6 +21,7 @@ const menuItems = [
   { id: "events", title: "Eventos", icon: Calendar },
   { id: "financial", title: "Financeiro", icon: DollarSign },
   { id: "reports", title: "Relatórios", icon: FileText },
+  { id: "knowledge", title: "Base de Conhecimento", icon: FileText },
   { id: "settings", title: "Configurações", icon: Settings },
   { id: "support", title: "Suporte", icon: MessageSquare },
 ];
