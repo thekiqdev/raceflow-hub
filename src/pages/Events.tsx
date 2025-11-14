@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader2, MapPin, Calendar as CalendarIcon, LogOut } from "lucide-react";
+import { Loader2, MapPin, Calendar as CalendarIcon } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { EventFilters, EventFiltersState } from "@/components/event/EventFilters";
+import { Header } from "@/components/Header";
 
 interface Event {
   id: string;
@@ -20,7 +20,6 @@ interface Event {
 }
 
 const Events = () => {
-  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [events, setEvents] = useState<Event[]>([]);
   const [filters, setFilters] = useState<EventFiltersState>({
@@ -107,26 +106,9 @@ const Events = () => {
     return matchesSearch && matchesCity && matchesMonth && matchesCategory;
   });
 
-  const handleSignOut = () => {
-    navigate("/");
-  };
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-muted/20 to-background">
-      <nav className="border-b bg-card/50 backdrop-blur-sm sticky top-0 z-50">
-        <div className="container mx-auto px-4 py-4 flex items-center justify-between">
-          <h1
-            className="text-2xl font-bold bg-gradient-hero bg-clip-text text-transparent cursor-pointer"
-            onClick={() => navigate("/dashboard")}
-          >
-            RunEvents
-          </h1>
-          <Button variant="outline" size="sm" onClick={handleSignOut}>
-            <LogOut className="mr-2 h-4 w-4" />
-            Sair
-          </Button>
-        </div>
-      </nav>
+      <Header />
 
       <div className="container mx-auto px-4 py-8">
         <h1 className="text-4xl font-bold mb-2 bg-gradient-hero bg-clip-text text-transparent">
