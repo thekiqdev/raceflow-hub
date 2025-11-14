@@ -19,6 +19,7 @@ import heroImage from "@/assets/hero-running.jpg";
 import { EventResults } from "@/components/event/EventResults";
 import { RegistrationFlow } from "@/components/event/RegistrationFlow";
 import { FlipCountdown } from "@/components/event/FlipCountdown";
+import { ContactDialog } from "@/components/event/ContactDialog";
 import { CreditCard, Smartphone, Barcode, Building2, Mail, Phone } from "lucide-react";
 
 interface EventDetail {
@@ -57,6 +58,7 @@ const EventDetails = () => {
   const [kits, setKits] = useState<Kit[]>([]);
   const [isRegistrationOpen, setIsRegistrationOpen] = useState(false);
   const [showBottomBar, setShowBottomBar] = useState(false);
+  const [isContactOpen, setIsContactOpen] = useState(false);
 
   useEffect(() => {
     const handleScroll = () => {
@@ -408,7 +410,12 @@ const EventDetails = () => {
                   <CardTitle className="text-base">Dúvidas sobre o evento?</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <Button variant="outline" className="w-full" size="sm">
+                  <Button 
+                    variant="outline" 
+                    className="w-full" 
+                    size="sm"
+                    onClick={() => setIsContactOpen(true)}
+                  >
                     <MessageSquare className="mr-2 h-4 w-4" />
                     Entrar em Contato
                   </Button>
@@ -461,6 +468,13 @@ const EventDetails = () => {
           </div>
         </div>
       )}
+      
+      {/* Contact Dialog */}
+      <ContactDialog 
+        open={isContactOpen} 
+        onOpenChange={setIsContactOpen}
+        eventTitle={event?.title}
+      />
     </div>
   );
 };
