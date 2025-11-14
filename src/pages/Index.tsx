@@ -1,28 +1,12 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useNavigate } from "react-router-dom";
-import {
-  MapPin,
-  Calendar,
-  Award,
-  Users,
-  Clock,
-  TrendingUp,
-  BarChart3,
-  MessageSquare,
-  FileText,
-  Wifi,
-  Award as Trophy,
-  Facebook,
-  Instagram,
-  Linkedin,
-} from "lucide-react";
+import { MapPin, Calendar, Award, Users, Clock, TrendingUp, BarChart3, MessageSquare, FileText, Wifi, Award as Trophy, Facebook, Instagram, Linkedin } from "lucide-react";
 import heroImage from "@/assets/hero-running.jpg";
 import { useState, useEffect } from "react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { EventFilters, EventFiltersState } from "@/components/event/EventFilters";
-
 interface Event {
   id: string;
   title: string;
@@ -31,7 +15,6 @@ interface Event {
   state: string;
   banner_url: string | null;
 }
-
 const Index = () => {
   const navigate = useNavigate();
   const [upcomingEvents, setUpcomingEvents] = useState<Event[]>([]);
@@ -39,76 +22,59 @@ const Index = () => {
     city: "",
     month: "",
     category: "",
-    search: "",
+    search: ""
   });
-
   useEffect(() => {
     // Mock upcoming events for testing
-    const mockEvents: Event[] = [
-      {
-        id: "1",
-        title: "Corrida de São Silvestre 2024",
-        event_date: "2024-12-31T07:00:00Z",
-        city: "São Paulo",
-        state: "SP",
-        banner_url: null,
-      },
-      {
-        id: "2",
-        title: "Maratona do Rio 2025",
-        event_date: "2025-06-15T06:00:00Z",
-        city: "Rio de Janeiro",
-        state: "RJ",
-        banner_url: null,
-      },
-      {
-        id: "3",
-        title: "Meia Maratona de Florianópolis",
-        event_date: "2025-09-20T07:30:00Z",
-        city: "Florianópolis",
-        state: "SC",
-        banner_url: null,
-      },
-      {
-        id: "4",
-        title: "Circuito das Estações - Curitiba",
-        event_date: "2025-03-15T06:30:00Z",
-        city: "Curitiba",
-        state: "PR",
-        banner_url: null,
-      },
-      {
-        id: "5",
-        title: "Corrida do Bem - Belo Horizonte",
-        event_date: "2025-05-10T07:00:00Z",
-        city: "Belo Horizonte",
-        state: "MG",
-        banner_url: null,
-      },
-    ];
+    const mockEvents: Event[] = [{
+      id: "1",
+      title: "Corrida de São Silvestre 2024",
+      event_date: "2024-12-31T07:00:00Z",
+      city: "São Paulo",
+      state: "SP",
+      banner_url: null
+    }, {
+      id: "2",
+      title: "Maratona do Rio 2025",
+      event_date: "2025-06-15T06:00:00Z",
+      city: "Rio de Janeiro",
+      state: "RJ",
+      banner_url: null
+    }, {
+      id: "3",
+      title: "Meia Maratona de Florianópolis",
+      event_date: "2025-09-20T07:30:00Z",
+      city: "Florianópolis",
+      state: "SC",
+      banner_url: null
+    }, {
+      id: "4",
+      title: "Circuito das Estações - Curitiba",
+      event_date: "2025-03-15T06:30:00Z",
+      city: "Curitiba",
+      state: "PR",
+      banner_url: null
+    }, {
+      id: "5",
+      title: "Corrida do Bem - Belo Horizonte",
+      event_date: "2025-05-10T07:00:00Z",
+      city: "Belo Horizonte",
+      state: "MG",
+      banner_url: null
+    }];
     setUpcomingEvents(mockEvents);
   }, []);
-
   const cities = Array.from(new Set(upcomingEvents.map(e => e.city))).sort();
   const categories = ["5K", "10K", "Meia Maratona", "Maratona", "Trail Run"];
-
   const filteredUpcomingEvents = upcomingEvents.filter(event => {
-    const matchesSearch = 
-      event.title.toLowerCase().includes(filters.search.toLowerCase()) ||
-      event.city.toLowerCase().includes(filters.search.toLowerCase());
-    
+    const matchesSearch = event.title.toLowerCase().includes(filters.search.toLowerCase()) || event.city.toLowerCase().includes(filters.search.toLowerCase());
     const matchesCity = !filters.city || filters.city === "all" || event.city === filters.city;
-    
     const eventMonth = event.event_date ? format(new Date(event.event_date), "MM") : "";
     const matchesMonth = !filters.month || filters.month === "all" || eventMonth === filters.month;
-    
     const matchesCategory = !filters.category || filters.category === "all";
-    
     return matchesSearch && matchesCity && matchesMonth && matchesCategory;
   });
-
-  return (
-    <div className="min-h-screen bg-background">
+  return <div className="min-h-screen bg-background">
       {/* Navigation */}
       <nav className="bg-card border-b sticky top-0 z-50 shadow-sm">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
@@ -120,7 +86,7 @@ const Index = () => {
             <Button variant="ghost" onClick={() => navigate("/events")}>
               INSCRIÇÕES
             </Button>
-            <Button variant="ghost">SERVIÇOS</Button>
+            
             <Button variant="ghost">ORÇAMENTO</Button>
             <Button variant="ghost">DÚVIDAS</Button>
             <Button variant="ghost">RESULTADOS</Button>
@@ -177,27 +143,19 @@ const Index = () => {
         <h2 className="text-3xl font-bold mb-8 text-center">Calendário de Eventos</h2>
         
         <div className="mb-8 max-w-4xl mx-auto">
-          <EventFilters
-            filters={filters}
-            onFiltersChange={setFilters}
-            cities={cities}
-            categories={categories}
-          />
+          <EventFilters filters={filters} onFiltersChange={setFilters} cities={cities} categories={categories} />
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredUpcomingEvents.map((event) => (
-                <Card
-                  key={event.id}
-                  className="overflow-hidden hover:shadow-xl transition-all hover:-translate-y-1 cursor-pointer"
-                  onClick={() => navigate(`/events/${event.id}`)}
-                >
+          {filteredUpcomingEvents.map(event => <Card key={event.id} className="overflow-hidden hover:shadow-xl transition-all hover:-translate-y-1 cursor-pointer" onClick={() => navigate(`/events/${event.id}`)}>
                   <div className="h-48 bg-gradient-hero flex items-center justify-center">
                     <Award className="h-16 w-16 text-white opacity-50" />
                   </div>
                   <CardContent className="pt-4">
                     <h3 className="font-bold text-sm mb-2">
-                      {format(new Date(event.event_date), "dd 'DE' MMMM 'DE' yyyy", { locale: ptBR }).toUpperCase()}
+                      {format(new Date(event.event_date), "dd 'DE' MMMM 'DE' yyyy", {
+                locale: ptBR
+              }).toUpperCase()}
                     </h3>
                     <p className="text-xs text-muted-foreground mb-3">{event.title}</p>
                     <div className="space-y-1 text-xs mb-4">
@@ -213,16 +171,15 @@ const Index = () => {
                       </div>
                     </div>
                     <div className="flex gap-2">
-                      <Button size="sm" className="flex-1 text-xs" onClick={(e) => {
-                        e.stopPropagation();
-                        navigate("/events");
-                      }}>
+                      <Button size="sm" className="flex-1 text-xs" onClick={e => {
+                e.stopPropagation();
+                navigate("/events");
+              }}>
                         RESULTADOS INSCRITOS
                       </Button>
                     </div>
                   </CardContent>
-                </Card>
-              ))}
+                </Card>)}
             </div>
           </section>
 
@@ -418,8 +375,6 @@ const Index = () => {
           </div>
         </div>
       </footer>
-    </div>
-  );
+    </div>;
 };
-
 export default Index;
