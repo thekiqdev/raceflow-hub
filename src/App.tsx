@@ -12,6 +12,7 @@ import OrganizerDashboard from "./pages/OrganizerDashboard";
 import RunnerProfile from "./pages/RunnerProfile";
 import RunnerDashboard from "./pages/RunnerDashboard";
 import AdminDashboard from "./pages/AdminDashboard";
+import Quote from "./pages/Quote";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -32,6 +33,7 @@ const App = () => (
           <Route path="/runner/profile" element={<RunnerProfile />} />
           <Route path="/runner/dashboard" element={<RunnerDashboard />} />
           <Route path="/admin/dashboard" element={<AdminDashboard />} />
+          <Route path="/orcamento" element={<Quote />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>
