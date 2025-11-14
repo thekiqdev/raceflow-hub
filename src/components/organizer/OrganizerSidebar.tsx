@@ -35,24 +35,22 @@ export function OrganizerSidebar({ activeSection, onSectionChange }: OrganizerSi
 
   useEffect(() => {
     loadOrganizerLogo();
+    
+    // Listen for logo updates
+    const handleLogoUpdate = () => {
+      loadOrganizerLogo();
+    };
+    
+    window.addEventListener('organizer-logo-updated', handleLogoUpdate);
+    return () => {
+      window.removeEventListener('organizer-logo-updated', handleLogoUpdate);
+    };
   }, []);
 
-  const loadOrganizerLogo = async () => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      const { data, error } = await supabase
-        .from('organizer_settings')
-        .select('logo_url')
-        .eq('organizer_id', user.id)
-        .single();
-
-      if (data?.logo_url) {
-        setLogoUrl(data.logo_url);
-      }
-    } catch (error) {
-      console.error('Error loading logo:', error);
+  const loadOrganizerLogo = () => {
+    const savedLogo = localStorage.getItem('organizer-logo');
+    if (savedLogo) {
+      setLogoUrl(savedLogo);
     }
   };
 

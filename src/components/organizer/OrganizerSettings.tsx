@@ -4,9 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Upload, Building2, Trash2 } from "lucide-react";
+import { Building2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import { supabase } from "@/integrations/supabase/client";
 
 export default function OrganizerSettings() {
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
@@ -17,111 +16,58 @@ export default function OrganizerSettings() {
     loadSettings();
   }, []);
 
-  const loadSettings = async () => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      const { data, error } = await supabase
-        .from('organizer_settings')
-        .select('logo_url')
-        .eq('organizer_id', user.id)
-        .single();
-
-      if (data?.logo_url) {
-        setLogoUrl(data.logo_url);
-      }
-    } catch (error) {
-      console.error('Error loading settings:', error);
-    } finally {
-      setLoading(false);
+  const loadSettings = () => {
+    const savedLogo = localStorage.getItem('organizer-logo');
+    if (savedLogo) {
+      setLogoUrl(savedLogo);
     }
+    setLoading(false);
   };
 
-  const handleLogoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    try {
-      const file = event.target.files?.[0];
-      if (!file) return;
+  const handleLogoUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
 
-      // Validate file type
-      if (!file.type.startsWith('image/')) {
-        toast.error('Por favor, selecione uma imagem válida');
-        return;
-      }
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      toast.error('Por favor, selecione uma imagem válida');
+      return;
+    }
 
-      // Validate file size (max 2MB)
-      if (file.size > 2 * 1024 * 1024) {
-        toast.error('A imagem deve ter no máximo 2MB');
-        return;
-      }
+    // Validate file size (max 2MB)
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error('A imagem deve ter no máximo 2MB');
+      return;
+    }
 
-      setUploading(true);
+    setUploading(true);
 
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('Usuário não autenticado');
-
-      // Upload to storage
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${user.id}-${Date.now()}.${fileExt}`;
-      const filePath = `${user.id}/${fileName}`;
-
-      const { error: uploadError } = await supabase.storage
-        .from('organizer-logos')
-        .upload(filePath, file);
-
-      if (uploadError) throw uploadError;
-
-      // Get public URL
-      const { data: { publicUrl } } = supabase.storage
-        .from('organizer-logos')
-        .getPublicUrl(filePath);
-
-      // Save to database
-      const { error: dbError } = await supabase
-        .from('organizer_settings')
-        .upsert({
-          organizer_id: user.id,
-          logo_url: publicUrl,
-          updated_at: new Date().toISOString(),
-        });
-
-      if (dbError) throw dbError;
-
-      setLogoUrl(publicUrl);
+    // Convert to base64 and save to localStorage
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const base64String = reader.result as string;
+      localStorage.setItem('organizer-logo', base64String);
+      setLogoUrl(base64String);
       toast.success('Logo atualizada com sucesso!');
       
       // Trigger a refresh of the sidebar
       window.dispatchEvent(new Event('organizer-logo-updated'));
-    } catch (error: any) {
-      console.error('Error uploading logo:', error);
-      toast.error('Erro ao fazer upload da logo');
-    } finally {
       setUploading(false);
-    }
+    };
+    reader.onerror = () => {
+      toast.error('Erro ao fazer upload da logo');
+      setUploading(false);
+    };
+    reader.readAsDataURL(file);
   };
 
-  const handleRemoveLogo = async () => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      // Remove from database
-      const { error } = await supabase
-        .from('organizer_settings')
-        .update({ logo_url: null })
-        .eq('organizer_id', user.id);
-
-      if (error) throw error;
-
-      setLogoUrl(null);
-      toast.success('Logo removida com sucesso!');
-      
-      // Trigger a refresh of the sidebar
-      window.dispatchEvent(new Event('organizer-logo-updated'));
-    } catch (error) {
-      console.error('Error removing logo:', error);
-      toast.error('Erro ao remover logo');
-    }
+  const handleRemoveLogo = () => {
+    localStorage.removeItem('organizer-logo');
+    setLogoUrl(null);
+    toast.success('Logo removida com sucesso!');
+    
+    // Trigger a refresh of the sidebar
+    window.dispatchEvent(new Event('organizer-logo-updated'));
   };
 
   if (loading) {
