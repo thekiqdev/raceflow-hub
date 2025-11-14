@@ -1,11 +1,21 @@
 import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { User, LogIn } from "lucide-react";
+import { User, LogIn, FileText, Trophy, UserCircle, LogOut } from "lucide-react";
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import type { User as SupabaseUser } from "@supabase/supabase-js";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { useToast } from "@/hooks/use-toast";
 export function Header() {
   const navigate = useNavigate();
+  const { toast } = useToast();
   const [user, setUser] = useState<SupabaseUser | null>(null);
   const [userProfile, setUserProfile] = useState<any>(null);
 
@@ -43,6 +53,23 @@ export function Header() {
     }
   };
 
+  const handleLogout = async () => {
+    const { error } = await supabase.auth.signOut();
+    if (error) {
+      toast({
+        title: "Erro ao sair",
+        description: error.message,
+        variant: "destructive",
+      });
+    } else {
+      toast({
+        title: "Logout realizado",
+        description: "Você saiu da sua conta com sucesso.",
+      });
+      navigate("/");
+    }
+  };
+
   return <header className="bg-black text-white py-4 sticky top-0 z-50">
       <div className="container mx-auto px-4 flex items-center justify-between">
         <Link to="/" className="flex items-center gap-2">
@@ -72,13 +99,37 @@ export function Header() {
         </nav>
 
         {user && userProfile ? (
-          <Button 
-            onClick={() => navigate("/runner/dashboard")}
-            className="bg-green-600 hover:bg-green-700 text-white flex items-center gap-2"
-          >
-            <User className="h-5 w-5" />
-            {userProfile.full_name || "Perfil"}
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button 
+                className="bg-green-600 hover:bg-green-700 text-white flex items-center gap-2"
+              >
+                <User className="h-5 w-5" />
+                {userProfile.full_name || "Perfil"}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent className="w-56 bg-background z-50" align="end">
+              <DropdownMenuLabel>Minha Conta</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => navigate("/runner/dashboard")}>
+                <FileText className="mr-2 h-4 w-4" />
+                <span>Inscrições</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => navigate("/runner/dashboard?tab=results")}>
+                <Trophy className="mr-2 h-4 w-4" />
+                <span>Resultados</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => navigate("/runner/profile")}>
+                <UserCircle className="mr-2 h-4 w-4" />
+                <span>Perfil</span>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={handleLogout} className="text-destructive focus:text-destructive">
+                <LogOut className="mr-2 h-4 w-4" />
+                <span>Sair</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         ) : (
           <Button 
             onClick={() => navigate("/auth")}
