@@ -1,13 +1,13 @@
 import { useState, useEffect } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Search, MapPin, Calendar, DollarSign, ChevronRight, SlidersHorizontal } from "lucide-react";
+import { MapPin, Calendar, DollarSign, ChevronRight } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import heroImage from "@/assets/hero-running.jpg";
+import { EventFilters, EventFiltersState } from "@/components/event/EventFilters";
 
 interface Event {
   id: string;
@@ -21,8 +21,13 @@ interface Event {
 
 export function ExploreEvents() {
   const navigate = useNavigate();
-  const [searchQuery, setSearchQuery] = useState("");
   const [events, setEvents] = useState<Event[]>([]);
+  const [filters, setFilters] = useState<EventFiltersState>({
+    city: "",
+    month: "",
+    category: "",
+    search: "",
+  });
 
   useEffect(() => {
     // Mock events data
@@ -67,47 +72,41 @@ export function ExploreEvents() {
     setEvents(mockEvents);
   }, []);
 
-  const filteredEvents = events.filter((event) =>
-    event.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    event.city.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const cities = Array.from(new Set(events.map(e => e.city))).sort();
+  const categories = ["5K", "10K", "Meia Maratona", "Maratona", "Trail Run"];
+
+  const filteredEvents = events.filter((event) => {
+    const matchesSearch = 
+      event.title.toLowerCase().includes(filters.search.toLowerCase()) ||
+      event.city.toLowerCase().includes(filters.search.toLowerCase());
+    
+    const matchesCity = !filters.city || filters.city === "all" || event.city === filters.city;
+    
+    const eventMonth = event.event_date ? format(new Date(event.event_date), "MM") : "";
+    const matchesMonth = !filters.month || filters.month === "all" || eventMonth === filters.month;
+    
+    const matchesCategory = !filters.category || filters.category === "all";
+    
+    return matchesSearch && matchesCity && matchesMonth && matchesCategory;
+  });
 
   return (
     <div className="pb-20">
-      {/* Header with Search */}
+      {/* Header with Filters */}
       <div className="bg-gradient-hero p-6 pb-8">
         <h1 className="text-2xl font-bold text-white mb-4">Explorar Corridas</h1>
-        
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
-          <Input
-            placeholder="Procure por nome, cidade ou data"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-10 bg-white"
-          />
-        </div>
       </div>
 
       {/* Filters */}
       <div className="px-4 -mt-4 mb-4">
         <Card className="shadow-lg">
           <CardContent className="p-4">
-            <div className="flex gap-2 overflow-x-auto">
-              <Badge variant="secondary" className="whitespace-nowrap">
-                📍 Todas as cidades
-              </Badge>
-              <Badge variant="secondary" className="whitespace-nowrap">
-                📅 Próximos eventos
-              </Badge>
-              <Badge variant="secondary" className="whitespace-nowrap">
-                🏃 5K - 10K
-              </Badge>
-              <Button variant="ghost" size="sm" className="whitespace-nowrap">
-                <SlidersHorizontal className="h-4 w-4 mr-2" />
-                Filtros
-              </Button>
-            </div>
+            <EventFilters
+              filters={filters}
+              onFiltersChange={setFilters}
+              cities={cities}
+              categories={categories}
+            />
           </CardContent>
         </Card>
       </div>

@@ -2,11 +2,11 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Loader2, Search, MapPin, Calendar as CalendarIcon, LogOut } from "lucide-react";
+import { Loader2, MapPin, Calendar as CalendarIcon, LogOut } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { EventFilters, EventFiltersState } from "@/components/event/EventFilters";
 
 interface Event {
   id: string;
@@ -23,7 +23,12 @@ const Events = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [events, setEvents] = useState<Event[]>([]);
-  const [searchTerm, setSearchTerm] = useState("");
+  const [filters, setFilters] = useState<EventFiltersState>({
+    city: "",
+    month: "",
+    category: "",
+    search: "",
+  });
 
   useEffect(() => {
     // Mock events data for testing
@@ -83,11 +88,24 @@ const Events = () => {
     setLoading(false);
   }, []);
 
-  const filteredEvents = events.filter(event =>
-    event.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    event.city.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    event.state.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const cities = Array.from(new Set(events.map(e => e.city))).sort();
+  const categories = ["5K", "10K", "Meia Maratona", "Maratona", "Trail Run"];
+
+  const filteredEvents = events.filter(event => {
+    const matchesSearch = 
+      event.title.toLowerCase().includes(filters.search.toLowerCase()) ||
+      event.city.toLowerCase().includes(filters.search.toLowerCase()) ||
+      event.state.toLowerCase().includes(filters.search.toLowerCase());
+    
+    const matchesCity = !filters.city || filters.city === "all" || event.city === filters.city;
+    
+    const eventMonth = event.event_date ? format(new Date(event.event_date), "MM") : "";
+    const matchesMonth = !filters.month || filters.month === "all" || eventMonth === filters.month;
+    
+    const matchesCategory = !filters.category || filters.category === "all";
+    
+    return matchesSearch && matchesCity && matchesMonth && matchesCategory;
+  });
 
   const handleSignOut = () => {
     navigate("/");
@@ -111,21 +129,20 @@ const Events = () => {
       </nav>
 
       <div className="container mx-auto px-4 py-8">
-        <div className="mb-8">
-          <h2 className="text-3xl font-bold mb-2">Explorar Eventos</h2>
-          <p className="text-muted-foreground mb-4">
-            Encontre a próxima corrida perfeita para você
-          </p>
-          
-          <div className="relative max-w-md">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
-            <Input
-              placeholder="Buscar por nome, cidade ou estado..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10"
-            />
-          </div>
+        <h1 className="text-4xl font-bold mb-2 bg-gradient-hero bg-clip-text text-transparent">
+          Eventos Disponíveis
+        </h1>
+        <p className="text-muted-foreground mb-8">
+          Encontre sua próxima corrida e faça sua inscrição
+        </p>
+
+        <div className="mb-8 max-w-4xl">
+          <EventFilters
+            filters={filters}
+            onFiltersChange={setFilters}
+            cities={cities}
+            categories={categories}
+          />
         </div>
 
         {loading ? (
@@ -135,7 +152,7 @@ const Events = () => {
         ) : filteredEvents.length === 0 ? (
           <div className="text-center py-12">
             <p className="text-muted-foreground">
-              {searchTerm ? "Nenhum evento encontrado" : "Nenhum evento disponível no momento"}
+              {filters.search ? "Nenhum evento encontrado" : "Nenhum evento disponível no momento"}
             </p>
           </div>
         ) : (

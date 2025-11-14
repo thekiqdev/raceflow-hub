@@ -21,6 +21,7 @@ import heroImage from "@/assets/hero-running.jpg";
 import { useState, useEffect } from "react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { EventFilters, EventFiltersState } from "@/components/event/EventFilters";
 
 interface Event {
   id: string;
@@ -34,6 +35,12 @@ interface Event {
 const Index = () => {
   const navigate = useNavigate();
   const [upcomingEvents, setUpcomingEvents] = useState<Event[]>([]);
+  const [filters, setFilters] = useState<EventFiltersState>({
+    city: "",
+    month: "",
+    category: "",
+    search: "",
+  });
 
   useEffect(() => {
     // Mock upcoming events for testing
@@ -62,9 +69,43 @@ const Index = () => {
         state: "SC",
         banner_url: null,
       },
+      {
+        id: "4",
+        title: "Circuito das Estações - Curitiba",
+        event_date: "2025-03-15T06:30:00Z",
+        city: "Curitiba",
+        state: "PR",
+        banner_url: null,
+      },
+      {
+        id: "5",
+        title: "Corrida do Bem - Belo Horizonte",
+        event_date: "2025-05-10T07:00:00Z",
+        city: "Belo Horizonte",
+        state: "MG",
+        banner_url: null,
+      },
     ];
     setUpcomingEvents(mockEvents);
   }, []);
+
+  const cities = Array.from(new Set(upcomingEvents.map(e => e.city))).sort();
+  const categories = ["5K", "10K", "Meia Maratona", "Maratona", "Trail Run"];
+
+  const filteredUpcomingEvents = upcomingEvents.filter(event => {
+    const matchesSearch = 
+      event.title.toLowerCase().includes(filters.search.toLowerCase()) ||
+      event.city.toLowerCase().includes(filters.search.toLowerCase());
+    
+    const matchesCity = !filters.city || filters.city === "all" || event.city === filters.city;
+    
+    const eventMonth = event.event_date ? format(new Date(event.event_date), "MM") : "";
+    const matchesMonth = !filters.month || filters.month === "all" || eventMonth === filters.month;
+    
+    const matchesCategory = !filters.category || filters.category === "all";
+    
+    return matchesSearch && matchesCity && matchesMonth && matchesCategory;
+  });
 
   return (
     <div className="min-h-screen bg-background">
@@ -131,17 +172,21 @@ const Index = () => {
         </div>
       </section>
 
-      {/* Calendar Section */}
-      {upcomingEvents.length > 0 && (
-        <section className="py-16 bg-background">
-          <div className="container mx-auto px-4">
-            <div className="text-center mb-12">
-              <h2 className="text-3xl font-bold mb-2">CALENDÁRIO DE PROVAS</h2>
-              <p className="text-muted-foreground">INSCRIÇÕES - INSCRITOS - RESULTADOS</p>
-            </div>
+      {/* Calendar Section - Upcoming Events */}
+      <section className="container mx-auto px-4 py-16">
+        <h2 className="text-3xl font-bold mb-8 text-center">Calendário de Eventos</h2>
+        
+        <div className="mb-8 max-w-4xl mx-auto">
+          <EventFilters
+            filters={filters}
+            onFiltersChange={setFilters}
+            cities={cities}
+            categories={categories}
+          />
+        </div>
 
-            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4 mb-8">
-              {upcomingEvents.map((event) => (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {filteredUpcomingEvents.map((event) => (
                 <Card
                   key={event.id}
                   className="overflow-hidden hover:shadow-xl transition-all hover:-translate-y-1 cursor-pointer"
@@ -179,9 +224,7 @@ const Index = () => {
                 </Card>
               ))}
             </div>
-          </div>
-        </section>
-      )}
+          </section>
 
       {/* Consultoria Section */}
       <section className="py-16 bg-muted/50">
