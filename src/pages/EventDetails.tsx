@@ -18,6 +18,8 @@ import { useEffect, useState } from "react";
 import heroImage from "@/assets/hero-running.jpg";
 import { EventResults } from "@/components/event/EventResults";
 import { RegistrationFlow } from "@/components/event/RegistrationFlow";
+import { FlipCountdown } from "@/components/event/FlipCountdown";
+import { CreditCard, Smartphone, Barcode, Building2, Mail, Phone } from "lucide-react";
 
 interface EventDetail {
   id: string;
@@ -323,6 +325,72 @@ const EventDetails = () => {
                   </CardContent>
                 </Card>
               )}
+
+              {/* Countdown Timer */}
+              {event.status !== "finished" && (
+                <FlipCountdown targetDate={event.event_date} />
+              )}
+
+              {/* Payment Methods */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <CreditCard className="h-5 w-5" />
+                    Formas de Pagamento
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="flex items-center gap-3 p-2 rounded-lg hover:bg-muted/50 transition-colors">
+                    <CreditCard className="h-5 w-5 text-primary" />
+                    <span className="text-sm">Cartão de Crédito</span>
+                  </div>
+                  <div className="flex items-center gap-3 p-2 rounded-lg hover:bg-muted/50 transition-colors">
+                    <Smartphone className="h-5 w-5 text-primary" />
+                    <span className="text-sm">PIX</span>
+                  </div>
+                  <div className="flex items-center gap-3 p-2 rounded-lg hover:bg-muted/50 transition-colors">
+                    <Barcode className="h-5 w-5 text-primary" />
+                    <span className="text-sm">Boleto Bancário</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-4 pt-4 border-t">
+                    Parcele em até 12x no cartão de crédito
+                  </p>
+                </CardContent>
+              </Card>
+
+              {/* Organizer Details */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <Building2 className="h-5 w-5" />
+                    Organizador
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
+                      <Building2 className="h-6 w-6 text-primary" />
+                    </div>
+                    <div>
+                      <h4 className="font-semibold">RunEvents Organizadora</h4>
+                      <p className="text-xs text-muted-foreground">Eventos Esportivos</p>
+                    </div>
+                  </div>
+                  <div className="space-y-2 pt-2 border-t">
+                    <div className="flex items-center gap-2 text-sm">
+                      <Mail className="h-4 w-4 text-muted-foreground" />
+                      <span className="text-muted-foreground">contato@runevents.com</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-sm">
+                      <Phone className="h-4 w-4 text-muted-foreground" />
+                      <span className="text-muted-foreground">(85) 99108-4183</span>
+                    </div>
+                  </div>
+                  <p className="text-xs text-muted-foreground leading-relaxed pt-2 border-t">
+                    Organizamos eventos esportivos há mais de 10 anos, com foco em proporcionar experiências únicas para corredores de todos os níveis.
+                  </p>
+                </CardContent>
+              </Card>
 
               {/* Contact Card */}
               <Card>
