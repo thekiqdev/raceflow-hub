@@ -145,13 +145,13 @@ export const ContactDialog = ({ open, onOpenChange, eventTitle }: ContactDialogP
             
             <Button
               variant="outline"
-              className="w-full h-auto py-6 flex flex-col items-center gap-2"
+              className="w-full h-auto py-6 flex flex-col items-center gap-2 group"
               onClick={() => handleSelectType("event")}
             >
               <MessageSquare className="h-8 w-8 text-primary" />
               <div className="text-center">
                 <div className="font-semibold">Dúvidas sobre o Evento</div>
-                <div className="text-xs text-muted-foreground hover:text-white transition-colors">
+                <div className="text-xs text-muted-foreground group-hover:text-white transition-colors">
                   Fale diretamente com o organizador do evento
                 </div>
               </div>
@@ -159,13 +159,13 @@ export const ContactDialog = ({ open, onOpenChange, eventTitle }: ContactDialogP
 
             <Button
               variant="outline"
-              className="w-full h-auto py-6 flex flex-col items-center gap-2"
+              className="w-full h-auto py-6 flex flex-col items-center gap-2 group"
               onClick={() => handleSelectType("platform")}
             >
               <HelpCircle className="h-8 w-8 text-primary" />
               <div className="text-center">
                 <div className="font-semibold">Dúvidas sobre a Plataforma</div>
-                <div className="text-xs text-muted-foreground hover:text-white transition-colors">
+                <div className="text-xs text-muted-foreground group-hover:text-white transition-colors">
                   Fale com o suporte da plataforma
                 </div>
               </div>
