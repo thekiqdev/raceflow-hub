@@ -1,62 +1,161 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Search, Download, Edit, Eye, CheckCircle, XCircle, Ban, ExternalLink, BarChart } from "lucide-react";
+import { Search, Download, Edit, Eye, CheckCircle, XCircle, Ban, ExternalLink, BarChart, Loader2 } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
+import { EventViewEditDialog } from "./EventViewEditDialog";
 
 const EventManagement = () => {
   const [searchTerm, setSearchTerm] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [events, setEvents] = useState<any[]>([]);
+  const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
+  const [dialogMode, setDialogMode] = useState<"view" | "edit">("view");
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const { toast } = useToast();
 
-  // Mock data
-  const events = [
-    { 
-      id: 1, 
-      title: "Corrida de São Silvestre 2024", 
-      organizer: "Maria Santos", 
-      date: "2024-12-31", 
-      city: "São Paulo", 
-      status: "ativo",
-      registrations: 523,
-      revenue: 128000,
-      avgTicket: 245
-    },
-    { 
-      id: 2, 
-      title: "Maratona do Rio 2025", 
-      organizer: "Carlos Eventos", 
-      date: "2025-06-15", 
-      city: "Rio de Janeiro", 
-      status: "pendente",
-      registrations: 0,
-      revenue: 0,
-      avgTicket: 0
-    },
-    { 
-      id: 3, 
-      title: "Meia Maratona de Curitiba", 
-      organizer: "Maria Santos", 
-      date: "2025-03-20", 
-      city: "Curitiba", 
-      status: "ativo",
-      registrations: 287,
-      revenue: 65000,
-      avgTicket: 226
-    },
-  ];
+  useEffect(() => {
+    loadEvents();
+  }, []);
+
+  const loadEvents = async () => {
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from("events")
+        .select(`
+          *,
+          profiles(full_name),
+          event_categories(id),
+          registrations(id, total_amount)
+        `)
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+
+      const eventsWithStats = data?.map((event) => {
+        const registrations = event.registrations || [];
+        const registrationCount = registrations.length;
+        const revenue = registrations.reduce((sum, reg) => sum + Number(reg.total_amount || 0), 0);
+        const avgTicket = registrationCount > 0 ? revenue / registrationCount : 0;
+
+        return {
+          id: event.id,
+          title: event.title,
+          organizer: event.profiles?.full_name || "Desconhecido",
+          date: event.event_date,
+          city: event.city,
+          status: event.status,
+          registrations: registrationCount,
+          revenue,
+          avgTicket,
+        };
+      }) || [];
+
+      setEvents(eventsWithStats);
+    } catch (error: any) {
+      toast({
+        title: "Erro ao carregar eventos",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleApprove = async (eventId: string) => {
+    try {
+      const { error } = await supabase
+        .from("events")
+        .update({ status: "published" })
+        .eq("id", eventId);
+
+      if (error) throw error;
+
+      toast({
+        title: "Evento aprovado",
+        description: "O evento foi publicado com sucesso.",
+      });
+      loadEvents();
+    } catch (error: any) {
+      toast({
+        title: "Erro ao aprovar evento",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleReject = async (eventId: string) => {
+    try {
+      const { error } = await supabase
+        .from("events")
+        .update({ status: "cancelled" })
+        .eq("id", eventId);
+
+      if (error) throw error;
+
+      toast({
+        title: "Evento reprovado",
+        description: "O evento foi cancelado.",
+      });
+      loadEvents();
+    } catch (error: any) {
+      toast({
+        title: "Erro ao reprovar evento",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleViewEvent = (eventId: string) => {
+    setSelectedEventId(eventId);
+    setDialogMode("view");
+    setDialogOpen(true);
+  };
+
+  const handleEditEvent = (eventId: string) => {
+    setSelectedEventId(eventId);
+    setDialogMode("edit");
+    setDialogOpen(true);
+  };
+
+  const filteredEvents = events.filter((event) =>
+    event.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    event.organizer.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    event.city.toLowerCase().includes(searchTerm.toLowerCase())
+  );
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case "ativo":
+      case "published":
         return "default";
-      case "pendente":
+      case "draft":
         return "secondary";
-      case "finalizado":
+      case "finished":
         return "outline";
+      case "cancelled":
+        return "destructive";
       default:
         return "secondary";
     }
+  };
+
+  const getStatusLabel = (status: string) => {
+    const labels: any = {
+      draft: "rascunho",
+      published: "publicado",
+      ongoing: "em andamento",
+      finished: "finalizado",
+      cancelled: "cancelado",
+    };
+    return labels[status] || status;
   };
 
   return (
@@ -87,68 +186,96 @@ const EventManagement = () => {
           </div>
         </CardHeader>
         <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Evento</TableHead>
-                <TableHead>Organizador</TableHead>
-                <TableHead>Data</TableHead>
-                <TableHead>Cidade</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Inscrições</TableHead>
-                <TableHead>Faturamento</TableHead>
-                <TableHead>Ticket Médio</TableHead>
-                <TableHead>Ações</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {events.map((event) => (
-                <TableRow key={event.id}>
-                  <TableCell className="font-medium">{event.title}</TableCell>
-                  <TableCell>{event.organizer}</TableCell>
-                  <TableCell>{new Date(event.date).toLocaleDateString('pt-BR')}</TableCell>
-                  <TableCell>{event.city}</TableCell>
-                  <TableCell>
-                    <Badge variant={getStatusColor(event.status)}>
-                      {event.status}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>{event.registrations}</TableCell>
-                  <TableCell>R$ {event.revenue.toLocaleString()}</TableCell>
-                  <TableCell>R$ {event.avgTicket}</TableCell>
-                  <TableCell>
-                    <div className="flex gap-1">
-                      {event.status === "pendente" ? (
-                        <>
-                          <Button size="icon" variant="ghost" title="Aprovar">
-                            <CheckCircle className="h-4 w-4 text-green-500" />
-                          </Button>
-                          <Button size="icon" variant="ghost" title="Reprovar">
-                            <XCircle className="h-4 w-4 text-red-500" />
-                          </Button>
-                        </>
-                      ) : (
-                        <>
-                          <Button size="icon" variant="ghost" title="Visualizar">
-                            <Eye className="h-4 w-4" />
-                          </Button>
-                          <Button size="icon" variant="ghost" title="Estatísticas">
-                            <BarChart className="h-4 w-4" />
-                          </Button>
-                          <Button size="icon" variant="ghost" title="Bloquear">
-                            <Ban className="h-4 w-4" />
-                          </Button>
-                          <Button size="icon" variant="ghost" title="Ver página pública">
-                            <ExternalLink className="h-4 w-4" />
-                          </Button>
-                        </>
-                      )}
-                    </div>
-                  </TableCell>
+          {loading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-8 w-8 animate-spin" />
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Evento</TableHead>
+                  <TableHead>Organizador</TableHead>
+                  <TableHead>Data</TableHead>
+                  <TableHead>Cidade</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Inscrições</TableHead>
+                  <TableHead>Faturamento</TableHead>
+                  <TableHead>Ticket Médio</TableHead>
+                  <TableHead>Ações</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {filteredEvents.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={9} className="text-center text-muted-foreground">
+                      Nenhum evento encontrado
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  filteredEvents.map((event) => (
+                    <TableRow key={event.id}>
+                      <TableCell className="font-medium">{event.title}</TableCell>
+                      <TableCell>{event.organizer}</TableCell>
+                      <TableCell>{new Date(event.date).toLocaleDateString('pt-BR')}</TableCell>
+                      <TableCell>{event.city}</TableCell>
+                      <TableCell>
+                        <Badge variant={getStatusColor(event.status)}>
+                          {getStatusLabel(event.status)}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>{event.registrations}</TableCell>
+                      <TableCell>R$ {event.revenue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</TableCell>
+                      <TableCell>R$ {event.avgTicket.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</TableCell>
+                      <TableCell>
+                        <div className="flex gap-1">
+                          {event.status === "draft" ? (
+                            <>
+                              <Button 
+                                size="icon" 
+                                variant="ghost" 
+                                title="Aprovar"
+                                onClick={() => handleApprove(event.id)}
+                              >
+                                <CheckCircle className="h-4 w-4 text-green-500" />
+                              </Button>
+                              <Button 
+                                size="icon" 
+                                variant="ghost" 
+                                title="Reprovar"
+                                onClick={() => handleReject(event.id)}
+                              >
+                                <XCircle className="h-4 w-4 text-red-500" />
+                              </Button>
+                            </>
+                          ) : (
+                            <>
+                              <Button 
+                                size="icon" 
+                                variant="ghost" 
+                                title="Visualizar"
+                                onClick={() => handleViewEvent(event.id)}
+                              >
+                                <Eye className="h-4 w-4" />
+                              </Button>
+                              <Button 
+                                size="icon" 
+                                variant="ghost" 
+                                title="Editar"
+                                onClick={() => handleEditEvent(event.id)}
+                              >
+                                <Edit className="h-4 w-4" />
+                              </Button>
+                            </>
+                          )}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          )}
         </CardContent>
       </Card>
 
@@ -208,6 +335,14 @@ const EventManagement = () => {
           </CardContent>
         </Card>
       </div>
+
+      <EventViewEditDialog
+        eventId={selectedEventId}
+        mode={dialogMode}
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        onSuccess={loadEvents}
+      />
     </div>
   );
 };
