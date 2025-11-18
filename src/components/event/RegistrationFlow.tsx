@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -9,6 +9,7 @@ import { Separator } from "@/components/ui/separator";
 import { CheckCircle2, Calendar, MapPin, Ticket, Download } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { supabase } from "@/integrations/supabase/client";
 
 interface Category {
   id: string;
@@ -64,6 +65,39 @@ export function RegistrationFlow({
   });
 
   const totalPrice = (selectedCategory?.price || 0) + (selectedKit?.price || 0);
+
+  // Load user data when dialog opens
+  useEffect(() => {
+    const loadUserData = async () => {
+      if (!open) return;
+
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("id", user.id)
+        .maybeSingle();
+
+      if (profile) {
+        setFormData({
+          fullName: profile.full_name || "",
+          email: user.email || "",
+          phone: profile.phone || "",
+          cpf: profile.cpf || "",
+        });
+      } else {
+        // If no profile, at least set the email
+        setFormData((prev) => ({
+          ...prev,
+          email: user.email || "",
+        }));
+      }
+    };
+
+    loadUserData();
+  }, [open]);
 
   const handleCategorySelect = (category: Category) => {
     setSelectedCategory(category);
