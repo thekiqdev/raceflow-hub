@@ -12,6 +12,7 @@ import AdvancedReports from "@/components/admin/AdvancedReports";
 import SystemSettings from "@/components/admin/SystemSettings";
 import CommunicationSupport from "@/components/admin/CommunicationSupport";
 import KnowledgeBase from "@/components/admin/KnowledgeBase";
+import HomeCustomization from "@/components/admin/HomeCustomization";
 
 const AdminDashboard = () => {
   const navigate = useNavigate();
@@ -35,6 +36,8 @@ const AdminDashboard = () => {
         return <AdvancedReports />;
       case "knowledge":
         return <KnowledgeBase />;
+      case "customize":
+        return <HomeCustomization />;
       case "settings":
         return <SystemSettings />;
       case "support":

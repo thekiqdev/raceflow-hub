@@ -1,4 +1,4 @@
-import { LayoutDashboard, Users, Calendar, DollarSign, FileText, Settings, MessageSquare, Building2 } from "lucide-react";
+import { LayoutDashboard, Users, Calendar, DollarSign, FileText, Settings, MessageSquare, Building2, Palette } from "lucide-react";
 import { useState, useEffect } from "react";
 import {
   Sidebar,
@@ -24,6 +24,7 @@ const menuItems = [
   { id: "financial", title: "Financeiro", icon: DollarSign },
   { id: "reports", title: "Relatórios", icon: FileText },
   { id: "knowledge", title: "Base de Conhecimento", icon: FileText },
+  { id: "customize", title: "Personalizar", icon: Palette },
   { id: "settings", title: "Configurações", icon: Settings },
   { id: "support", title: "Suporte", icon: MessageSquare },
 ];

@@ -143,6 +143,69 @@ export type Database = {
           },
         ]
       }
+      home_page_settings: {
+        Row: {
+          consultoria_description: string | null
+          consultoria_title: string | null
+          created_at: string | null
+          hero_image_url: string | null
+          hero_subtitle: string | null
+          hero_title: string
+          id: string
+          stats_cities: string | null
+          stats_cities_label: string | null
+          stats_events: string | null
+          stats_events_label: string | null
+          stats_runners: string | null
+          stats_runners_label: string | null
+          stats_years: string | null
+          stats_years_label: string | null
+          updated_at: string | null
+          whatsapp_number: string | null
+          whatsapp_text: string | null
+        }
+        Insert: {
+          consultoria_description?: string | null
+          consultoria_title?: string | null
+          created_at?: string | null
+          hero_image_url?: string | null
+          hero_subtitle?: string | null
+          hero_title?: string
+          id?: string
+          stats_cities?: string | null
+          stats_cities_label?: string | null
+          stats_events?: string | null
+          stats_events_label?: string | null
+          stats_runners?: string | null
+          stats_runners_label?: string | null
+          stats_years?: string | null
+          stats_years_label?: string | null
+          updated_at?: string | null
+          whatsapp_number?: string | null
+          whatsapp_text?: string | null
+        }
+        Update: {
+          consultoria_description?: string | null
+          consultoria_title?: string | null
+          created_at?: string | null
+          hero_image_url?: string | null
+          hero_subtitle?: string | null
+          hero_title?: string
+          id?: string
+          stats_cities?: string | null
+          stats_cities_label?: string | null
+          stats_events?: string | null
+          stats_events_label?: string | null
+          stats_runners?: string | null
+          stats_runners_label?: string | null
+          stats_years?: string | null
+          stats_years_label?: string | null
+          updated_at?: string | null
+          whatsapp_number?: string | null
+          whatsapp_text?: string | null
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           birth_date: string
