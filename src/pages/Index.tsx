@@ -9,6 +9,11 @@ import { ptBR } from "date-fns/locale";
 import { EventFilters, EventFiltersState } from "@/components/event/EventFilters";
 import { Header } from "@/components/Header";
 import { supabase } from "@/integrations/supabase/client";
+import { VisualEditorProvider } from "@/contexts/VisualEditorContext";
+import { EditableText } from "@/components/visual-editor/EditableText";
+import { EditableImage } from "@/components/visual-editor/EditableImage";
+import { EditorToolbar } from "@/components/visual-editor/EditorToolbar";
+import { toast } from "sonner";
 interface Event {
   id: string;
   title: string;
@@ -19,6 +24,7 @@ interface Event {
 }
 const Index = () => {
   const navigate = useNavigate();
+  const [isAdmin, setIsAdmin] = useState(false);
   const [upcomingEvents, setUpcomingEvents] = useState<Event[]>([]);
   const [filters, setFilters] = useState<EventFiltersState>({
     city: "",
@@ -45,6 +51,7 @@ const Index = () => {
   });
   useEffect(() => {
     loadPageSettings();
+    checkAdminRole();
     // Mock upcoming events for testing
     const mockEvents: Event[] = [{
       id: "1",
@@ -85,6 +92,20 @@ const Index = () => {
     setUpcomingEvents(mockEvents);
   }, []);
 
+  const checkAdminRole = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    const { data: roles } = await supabase
+      .from('user_roles')
+      .select('role')
+      .eq('user_id', user.id)
+      .eq('role', 'admin')
+      .maybeSingle();
+
+    setIsAdmin(!!roles);
+  };
+
   const loadPageSettings = async () => {
     try {
       const { data, error } = await supabase
@@ -117,6 +138,34 @@ const Index = () => {
       console.error("Erro ao carregar configurações:", error);
     }
   };
+
+  const handleSaveChanges = async (editedContent: Record<string, any>) => {
+    const { error } = await supabase
+      .from('home_page_settings')
+      .update({
+        hero_title: editedContent.hero_title,
+        hero_subtitle: editedContent.hero_subtitle,
+        hero_image_url: editedContent.hero_image_url,
+        whatsapp_text: editedContent.whatsapp_text,
+        consultoria_title: editedContent.consultoria_title,
+        consultoria_description: editedContent.consultoria_description,
+        stats_events: editedContent.stats_events,
+        stats_events_label: editedContent.stats_events_label,
+        stats_runners: editedContent.stats_runners,
+        stats_runners_label: editedContent.stats_runners_label,
+        stats_cities: editedContent.stats_cities,
+        stats_cities_label: editedContent.stats_cities_label,
+        stats_years: editedContent.stats_years,
+        stats_years_label: editedContent.stats_years_label,
+      })
+      .eq('id', '00000000-0000-0000-0000-000000000001');
+
+    if (error) {
+      throw error;
+    }
+
+    await loadPageSettings();
+  };
   const cities = Array.from(new Set(upcomingEvents.map(e => e.city))).sort();
   const categories = ["5K", "10K", "Meia Maratona", "Maratona", "Trail Run"];
   const filteredUpcomingEvents = upcomingEvents.filter(event => {
@@ -127,24 +176,37 @@ const Index = () => {
     const matchesCategory = !filters.category || filters.category === "all";
     return matchesSearch && matchesCity && matchesMonth && matchesCategory;
   });
-  return <div className="min-h-screen bg-background">
+  const content = (
+    <div className="min-h-screen bg-background">
+      {isAdmin && <EditorToolbar />}
       {/* Navigation */}
       <Header />
 
       {/* Hero Section */}
       <section className="relative h-[600px] flex items-center justify-center overflow-hidden">
         <div className="absolute inset-0 z-0">
-          <img src={pageSettings.hero_image_url} alt="Corredores em ação" className="w-full h-full object-cover" />
+          <EditableImage
+            contentKey="hero_image_url"
+            defaultValue={pageSettings.hero_image_url}
+            className="w-full h-full object-cover"
+            alt="Corredores em ação"
+          />
           <div className="absolute inset-0 bg-black/60" />
         </div>
 
         <div className="relative z-10 container mx-auto px-4 text-center text-white">
-          <h1 className="text-4xl md:text-5xl font-bold mb-6 leading-tight">
-            {pageSettings.hero_title}
-          </h1>
-          <p className="text-lg md:text-xl mb-8 max-w-3xl mx-auto">
-            {pageSettings.hero_subtitle}
-          </p>
+          <EditableText
+            contentKey="hero_title"
+            defaultValue={pageSettings.hero_title}
+            as="h1"
+            className="text-4xl md:text-5xl font-bold mb-6 leading-tight"
+          />
+          <EditableText
+            contentKey="hero_subtitle"
+            defaultValue={pageSettings.hero_subtitle}
+            as="p"
+            className="text-lg md:text-xl mb-8 max-w-3xl mx-auto"
+          />
           <Button size="lg" className="shadow-lg">
             SAIBA MAIS
           </Button>
@@ -166,7 +228,12 @@ const Index = () => {
             <span>{pageSettings.whatsapp_number}</span>
             <MessageSquare className="h-12 w-12 md:h-16 md:w-16" />
           </div>
-          <p className="text-lg text-muted-foreground">{pageSettings.whatsapp_text}</p>
+          <EditableText
+            contentKey="whatsapp_text"
+            defaultValue={pageSettings.whatsapp_text}
+            as="p"
+            className="text-lg text-muted-foreground"
+          />
           <p className="text-sm text-muted-foreground">Somente whatsapp em horário comercial</p>
         </div>
       </section>
@@ -224,10 +291,19 @@ const Index = () => {
               <img src={heroImage} alt="Consultoria" className="rounded-lg shadow-lg" />
             </div>
             <div>
-              <h2 className="text-3xl font-bold mb-4">{pageSettings.consultoria_title}</h2>
-              <p className="text-muted-foreground mb-6">
-                {pageSettings.consultoria_description}
-              </p>
+              <EditableText
+                contentKey="consultoria_title"
+                defaultValue={pageSettings.consultoria_title}
+                as="h2"
+                className="text-3xl font-bold mb-4"
+              />
+              <EditableText
+                contentKey="consultoria_description"
+                defaultValue={pageSettings.consultoria_description}
+                as="p"
+                className="text-muted-foreground mb-6"
+                multiline
+              />
               <p className="text-muted-foreground mb-8">
                 Veja o que nós podemos te ajudar em toda a logística e prepare-se uma corra será incrível!
               </p>
@@ -345,8 +421,17 @@ const Index = () => {
                 <div className="flex items-center justify-center mb-2">
                   <Users className="h-12 w-12 text-secondary" />
                 </div>
-                <div className="text-4xl font-bold text-secondary mb-1">{pageSettings.stats_events}</div>
-                <p className="text-sm font-semibold">{pageSettings.stats_events_label}</p>
+                <EditableText
+                  contentKey="stats_events"
+                  defaultValue={pageSettings.stats_events}
+                  className="text-4xl font-bold text-secondary mb-1"
+                />
+                <EditableText
+                  contentKey="stats_events_label"
+                  defaultValue={pageSettings.stats_events_label}
+                  as="p"
+                  className="text-sm font-semibold"
+                />
                 <p className="text-xs text-muted-foreground">
                   Confira aqui as corridas que já tivemos o prazer de executar
                 </p>
@@ -356,8 +441,17 @@ const Index = () => {
                 <div className="flex items-center justify-center mb-2">
                   <Trophy className="h-12 w-12 text-secondary" />
                 </div>
-                <div className="text-4xl font-bold text-secondary mb-1">{pageSettings.stats_runners}</div>
-                <p className="text-sm font-semibold">{pageSettings.stats_runners_label}</p>
+                <EditableText
+                  contentKey="stats_runners"
+                  defaultValue={pageSettings.stats_runners}
+                  className="text-4xl font-bold text-secondary mb-1"
+                />
+                <EditableText
+                  contentKey="stats_runners_label"
+                  defaultValue={pageSettings.stats_runners_label}
+                  as="p"
+                  className="text-sm font-semibold"
+                />
                 <p className="text-xs text-muted-foreground">
                   Já podemos te chamar de amigo! São milhares de atletas que já estão no nosso site
                 </p>
@@ -367,8 +461,17 @@ const Index = () => {
                 <div className="flex items-center justify-center mb-2">
                   <TrendingUp className="h-12 w-12 text-secondary" />
                 </div>
-                <div className="text-4xl font-bold text-secondary mb-1">{pageSettings.stats_years}</div>
-                <p className="text-sm font-semibold">{pageSettings.stats_years_label}</p>
+                <EditableText
+                  contentKey="stats_years"
+                  defaultValue={pageSettings.stats_years}
+                  className="text-4xl font-bold text-secondary mb-1"
+                />
+                <EditableText
+                  contentKey="stats_years_label"
+                  defaultValue={pageSettings.stats_years_label}
+                  as="p"
+                  className="text-sm font-semibold"
+                />
                 <p className="text-xs text-muted-foreground">Realizamos em média 40 corridas por ano</p>
               </div>
 
@@ -376,8 +479,17 @@ const Index = () => {
                 <div className="flex items-center justify-center mb-2">
                   <MapPin className="h-12 w-12 text-secondary" />
                 </div>
-                <div className="text-4xl font-bold text-secondary mb-1">{pageSettings.stats_cities}</div>
-                <p className="text-sm font-semibold">{pageSettings.stats_cities_label}</p>
+                <EditableText
+                  contentKey="stats_cities"
+                  defaultValue={pageSettings.stats_cities}
+                  className="text-4xl font-bold text-secondary mb-1"
+                />
+                <EditableText
+                  contentKey="stats_cities_label"
+                  defaultValue={pageSettings.stats_cities_label}
+                  as="p"
+                  className="text-sm font-semibold"
+                />
                 <p className="text-xs text-muted-foreground">Já atuamos em 47 cidades que ficam no Ceará</p>
               </div>
             </div>
@@ -407,6 +519,20 @@ const Index = () => {
           </div>
         </div>
       </footer>
-    </div>;
+    </div>
+  );
+
+  if (!isAdmin) {
+    return content;
+  }
+
+  return (
+    <VisualEditorProvider 
+      initialContent={pageSettings}
+      onSave={handleSaveChanges}
+    >
+      {content}
+    </VisualEditorProvider>
+  );
 };
 export default Index;
