@@ -206,6 +206,44 @@ export type Database = {
         }
         Relationships: []
       }
+      kit_pickup_locations: {
+        Row: {
+          address: string
+          created_at: string | null
+          id: string
+          kit_id: string
+          latitude: number | null
+          longitude: number | null
+          pickup_date: string
+        }
+        Insert: {
+          address: string
+          created_at?: string | null
+          id?: string
+          kit_id: string
+          latitude?: number | null
+          longitude?: number | null
+          pickup_date: string
+        }
+        Update: {
+          address?: string
+          created_at?: string | null
+          id?: string
+          kit_id?: string
+          latitude?: number | null
+          longitude?: number | null
+          pickup_date?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "kit_pickup_locations_kit_id_fkey"
+            columns: ["kit_id"]
+            isOneToOne: false
+            referencedRelation: "event_kits"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       kit_products: {
         Row: {
           created_at: string | null
