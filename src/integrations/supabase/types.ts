@@ -206,6 +206,70 @@ export type Database = {
         }
         Relationships: []
       }
+      kit_products: {
+        Row: {
+          created_at: string | null
+          description: string | null
+          id: string
+          kit_id: string
+          name: string
+          type: string
+        }
+        Insert: {
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          kit_id: string
+          name: string
+          type: string
+        }
+        Update: {
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          kit_id?: string
+          name?: string
+          type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "kit_products_kit_id_fkey"
+            columns: ["kit_id"]
+            isOneToOne: false
+            referencedRelation: "event_kits"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      product_variants: {
+        Row: {
+          created_at: string | null
+          id: string
+          name: string
+          product_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          name: string
+          product_id: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          name?: string
+          product_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "product_variants_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "kit_products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           birth_date: string

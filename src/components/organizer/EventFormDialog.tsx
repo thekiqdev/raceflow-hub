@@ -55,11 +55,25 @@ interface Modality {
   price: number;
 }
 
+interface ProductVariant {
+  id?: string;
+  name: string;
+}
+
+interface Product {
+  id?: string;
+  name: string;
+  description: string;
+  type: 'variable' | 'unique';
+  variants: ProductVariant[];
+}
+
 interface Kit {
   id?: string;
   name: string;
   description: string;
   price: number;
+  products: Product[];
 }
 
 interface EventFormDialogProps {
@@ -109,7 +123,7 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess }: EventF
   };
 
   const addKit = () => {
-    setKits([...kits, { name: "", description: "", price: 0 }]);
+    setKits([...kits, { name: "", description: "", price: 0, products: [] }]);
   };
 
   const removeKit = (index: number) => {
@@ -119,6 +133,68 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess }: EventF
   const updateKit = (index: number, field: keyof Kit, value: any) => {
     const updated = [...kits];
     updated[index] = { ...updated[index], [field]: value };
+    setKits(updated);
+  };
+
+  const addProduct = (kitIndex: number) => {
+    const updated = [...kits];
+    updated[kitIndex].products.push({
+      name: "",
+      description: "",
+      type: "unique",
+      variants: [],
+    });
+    setKits(updated);
+  };
+
+  const removeProduct = (kitIndex: number, productIndex: number) => {
+    const updated = [...kits];
+    updated[kitIndex].products = updated[kitIndex].products.filter(
+      (_, i) => i !== productIndex
+    );
+    setKits(updated);
+  };
+
+  const updateProduct = (
+    kitIndex: number,
+    productIndex: number,
+    field: keyof Product,
+    value: any
+  ) => {
+    const updated = [...kits];
+    updated[kitIndex].products[productIndex] = {
+      ...updated[kitIndex].products[productIndex],
+      [field]: value,
+    };
+    setKits(updated);
+  };
+
+  const addVariant = (kitIndex: number, productIndex: number) => {
+    const updated = [...kits];
+    updated[kitIndex].products[productIndex].variants.push({ name: "" });
+    setKits(updated);
+  };
+
+  const removeVariant = (
+    kitIndex: number,
+    productIndex: number,
+    variantIndex: number
+  ) => {
+    const updated = [...kits];
+    updated[kitIndex].products[productIndex].variants = updated[kitIndex].products[
+      productIndex
+    ].variants.filter((_, i) => i !== variantIndex);
+    setKits(updated);
+  };
+
+  const updateVariant = (
+    kitIndex: number,
+    productIndex: number,
+    variantIndex: number,
+    value: string
+  ) => {
+    const updated = [...kits];
+    updated[kitIndex].products[productIndex].variants[variantIndex].name = value;
     setKits(updated);
   };
 
@@ -186,14 +262,56 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess }: EventF
 
       // Insert kits
       if (kits.length > 0) {
-        const kitsData = kits.map((k) => ({
-          ...k,
-          event_id: eventId,
-        }));
+        for (const kit of kits) {
+          const kitData = {
+            name: kit.name,
+            description: kit.description,
+            price: kit.price,
+            event_id: eventId,
+          };
 
-        const { error } = await supabase.from("event_kits").insert(kitsData);
+          const { data: insertedKit, error: kitError } = await supabase
+            .from("event_kits")
+            .insert([kitData])
+            .select()
+            .single();
 
-        if (error) throw error;
+          if (kitError) throw kitError;
+
+          // Insert products for this kit
+          if (kit.products.length > 0) {
+            for (const product of kit.products) {
+              const productData = {
+                kit_id: insertedKit.id,
+                name: product.name,
+                description: product.description,
+                type: product.type,
+              };
+
+              const { data: insertedProduct, error: productError } = await supabase
+                .from("kit_products")
+                .insert([productData])
+                .select()
+                .single();
+
+              if (productError) throw productError;
+
+              // Insert variants if it's a variable product
+              if (product.type === "variable" && product.variants.length > 0) {
+                const variantsData = product.variants.map((v) => ({
+                  product_id: insertedProduct.id,
+                  name: v.name,
+                }));
+
+                const { error: variantsError } = await supabase
+                  .from("product_variants")
+                  .insert(variantsData);
+
+                if (variantsError) throw variantsError;
+              }
+            }
+          }
+        }
       }
 
       toast({
@@ -564,52 +682,234 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess }: EventF
                             </Button>
                           </div>
                         </CardHeader>
-                        <CardContent className="space-y-3">
-                          <div>
-                            <label className="text-sm font-medium">
-                              Nome do Kit
-                            </label>
-                            <Input
-                              placeholder="Ex: Kit Básico, Kit Premium"
-                              value={kit.name}
-                              onChange={(e) =>
-                                updateKit(index, "name", e.target.value)
-                              }
-                            />
-                          </div>
+                         <CardContent className="space-y-4">
+                           <div>
+                             <label className="text-sm font-medium">
+                               Nome do Kit
+                             </label>
+                             <Input
+                               placeholder="Ex: Kit Básico, Kit Premium"
+                               value={kit.name}
+                               onChange={(e) =>
+                                 updateKit(index, "name", e.target.value)
+                               }
+                             />
+                           </div>
 
-                          <div>
-                            <label className="text-sm font-medium">
-                              Descrição / Itens Inclusos
-                            </label>
-                            <Textarea
-                              placeholder="Ex: Camisa, medalha, squeeze, número de peito"
-                              value={kit.description}
-                              onChange={(e) =>
-                                updateKit(index, "description", e.target.value)
-                              }
-                            />
-                          </div>
+                           <div>
+                             <label className="text-sm font-medium">
+                               Descrição / Itens Inclusos
+                             </label>
+                             <Textarea
+                               placeholder="Ex: Camisa, medalha, squeeze, número de peito"
+                               value={kit.description}
+                               onChange={(e) =>
+                                 updateKit(index, "description", e.target.value)
+                               }
+                             />
+                           </div>
 
-                          <div>
-                            <label className="text-sm font-medium">
-                              Preço Adicional (R$)
-                            </label>
-                            <Input
-                              type="number"
-                              step="0.01"
-                              placeholder="0.00"
-                              value={kit.price}
-                              onChange={(e) =>
-                                updateKit(
-                                  index,
-                                  "price",
-                                  parseFloat(e.target.value) || 0
-                                )
-                              }
-                            />
-                          </div>
-                        </CardContent>
+                           <div>
+                             <label className="text-sm font-medium">
+                               Preço do Kit (R$)
+                             </label>
+                             <Input
+                               type="number"
+                               step="0.01"
+                               placeholder="0.00"
+                               value={kit.price}
+                               onChange={(e) =>
+                                 updateKit(
+                                   index,
+                                   "price",
+                                   parseFloat(e.target.value) || 0
+                                 )
+                               }
+                             />
+                           </div>
+
+                           {/* Products Section */}
+                           <div className="border-t pt-4">
+                             <div className="flex justify-between items-center mb-3">
+                               <label className="text-sm font-medium">
+                                 Produtos do Kit
+                               </label>
+                               <Button
+                                 type="button"
+                                 variant="outline"
+                                 size="sm"
+                                 onClick={() => addProduct(index)}
+                               >
+                                 <Plus className="mr-1 h-3 w-3" />
+                                 Adicionar Produto
+                               </Button>
+                             </div>
+
+                             {kit.products.length === 0 ? (
+                               <p className="text-sm text-muted-foreground text-center py-4">
+                                 Nenhum produto adicionado
+                               </p>
+                             ) : (
+                               <div className="space-y-3">
+                                 {kit.products.map((product, pIndex) => (
+                                   <div
+                                     key={pIndex}
+                                     className="border rounded-lg p-3 space-y-3 bg-muted/30"
+                                   >
+                                     <div className="flex justify-between items-start">
+                                       <span className="text-sm font-medium">
+                                         Produto {pIndex + 1}
+                                       </span>
+                                       <Button
+                                         type="button"
+                                         variant="ghost"
+                                         size="icon"
+                                         className="h-6 w-6"
+                                         onClick={() =>
+                                           removeProduct(index, pIndex)
+                                         }
+                                       >
+                                         <Trash2 className="h-3 w-3" />
+                                       </Button>
+                                     </div>
+
+                                     <Input
+                                       placeholder="Nome do produto"
+                                       value={product.name}
+                                       onChange={(e) =>
+                                         updateProduct(
+                                           index,
+                                           pIndex,
+                                           "name",
+                                           e.target.value
+                                         )
+                                       }
+                                     />
+
+                                     <Textarea
+                                       placeholder="Descrição do produto"
+                                       className="min-h-[60px]"
+                                       value={product.description}
+                                       onChange={(e) =>
+                                         updateProduct(
+                                           index,
+                                           pIndex,
+                                           "description",
+                                           e.target.value
+                                         )
+                                       }
+                                     />
+
+                                     <div className="space-y-2">
+                                       <label className="text-xs font-medium">
+                                         Tipo de Produto
+                                       </label>
+                                       <div className="flex gap-2">
+                                         <Button
+                                           type="button"
+                                           size="sm"
+                                           variant={
+                                             product.type === "unique"
+                                               ? "default"
+                                               : "outline"
+                                           }
+                                           onClick={() =>
+                                             updateProduct(
+                                               index,
+                                               pIndex,
+                                               "type",
+                                               "unique"
+                                             )
+                                           }
+                                         >
+                                           Único
+                                         </Button>
+                                         <Button
+                                           type="button"
+                                           size="sm"
+                                           variant={
+                                             product.type === "variable"
+                                               ? "default"
+                                               : "outline"
+                                           }
+                                           onClick={() => {
+                                             updateProduct(
+                                               index,
+                                               pIndex,
+                                               "type",
+                                               "variable"
+                                             );
+                                             if (product.variants.length === 0) {
+                                               addVariant(index, pIndex);
+                                             }
+                                           }}
+                                         >
+                                           Variável
+                                         </Button>
+                                       </div>
+                                     </div>
+
+                                     {product.type === "variable" && (
+                                       <div className="space-y-2">
+                                         <div className="flex justify-between items-center">
+                                           <label className="text-xs font-medium">
+                                             Variantes (ex: P, M, G)
+                                           </label>
+                                           <Button
+                                             type="button"
+                                             variant="ghost"
+                                             size="sm"
+                                             onClick={() =>
+                                               addVariant(index, pIndex)
+                                             }
+                                           >
+                                             <Plus className="mr-1 h-3 w-3" />
+                                             Variante
+                                           </Button>
+                                         </div>
+                                         <div className="space-y-2">
+                                           {product.variants.map((variant, vIndex) => (
+                                             <div
+                                               key={vIndex}
+                                               className="flex gap-2"
+                                             >
+                                               <Input
+                                                 placeholder="Ex: P, M, G, Azul, Vermelho"
+                                                 value={variant.name}
+                                                 onChange={(e) =>
+                                                   updateVariant(
+                                                     index,
+                                                     pIndex,
+                                                     vIndex,
+                                                     e.target.value
+                                                   )
+                                                 }
+                                               />
+                                               <Button
+                                                 type="button"
+                                                 variant="ghost"
+                                                 size="icon"
+                                                 onClick={() =>
+                                                   removeVariant(
+                                                     index,
+                                                     pIndex,
+                                                     vIndex
+                                                   )
+                                                 }
+                                               >
+                                                 <Trash2 className="h-4 w-4" />
+                                               </Button>
+                                             </div>
+                                           ))}
+                                         </div>
+                                       </div>
+                                     )}
+                                   </div>
+                                 ))}
+                               </div>
+                             )}
+                           </div>
+                         </CardContent>
                       </Card>
                     ))}
                   </div>
