@@ -65,6 +65,7 @@ interface Product {
   name: string;
   description: string;
   type: 'variable' | 'unique';
+  image_url: string;
   variants: ProductVariant[];
 }
 
@@ -142,6 +143,7 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess }: EventF
       name: "",
       description: "",
       type: "unique",
+      image_url: "",
       variants: [],
     });
     setKits(updated);
@@ -286,6 +288,7 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess }: EventF
                 name: product.name,
                 description: product.description,
                 type: product.type,
+                image_url: product.image_url || null,
               };
 
               const { data: insertedProduct, error: productError } = await supabase
@@ -799,6 +802,45 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess }: EventF
                                          )
                                        }
                                      />
+
+                                     <div className="space-y-2">
+                                       <label className="text-xs font-medium">
+                                         Imagem do Produto
+                                       </label>
+                                       <div className="flex gap-2">
+                                         <Input
+                                           placeholder="URL da imagem do produto"
+                                           value={product.image_url}
+                                           onChange={(e) =>
+                                             updateProduct(
+                                               index,
+                                               pIndex,
+                                               "image_url",
+                                               e.target.value
+                                             )
+                                           }
+                                         />
+                                         <Button
+                                           type="button"
+                                           variant="outline"
+                                           size="icon"
+                                         >
+                                           <Upload className="h-4 w-4" />
+                                         </Button>
+                                       </div>
+                                       {product.image_url && (
+                                         <div className="rounded border p-2">
+                                           <img
+                                             src={product.image_url}
+                                             alt={product.name}
+                                             className="h-20 w-20 object-cover rounded"
+                                             onError={(e) => {
+                                               e.currentTarget.style.display = 'none';
+                                             }}
+                                           />
+                                         </div>
+                                       )}
+                                     </div>
 
                                      <div className="space-y-2">
                                        <label className="text-xs font-medium">
