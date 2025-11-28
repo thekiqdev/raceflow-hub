@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
-import { ArrowLeft, Users, DollarSign, Package, CreditCard } from "lucide-react";
+import { ArrowLeft, Users, DollarSign, Package, CreditCard, Smartphone } from "lucide-react";
 import { toast } from "sonner";
 import {
   Table,
@@ -63,6 +63,8 @@ const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
   const [kitRevenues, setKitRevenues] = useState<KitRevenue[]>([]);
   const [totalRevenue, setTotalRevenue] = useState(0);
   const [paidCount, setPaidCount] = useState(0);
+  const [pixRevenue, setPixRevenue] = useState(0);
+  const [creditCardRevenue, setCreditCardRevenue] = useState(0);
 
   useEffect(() => {
     loadEventDetails();
@@ -100,13 +102,23 @@ const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
       // Calculate metrics
       let total = 0;
       let paid = 0;
+      let pixTotal = 0;
+      let creditCardTotal = 0;
       const categoryMap = new Map<string, { count: number; revenue: number }>();
       const kitMap = new Map<string, { count: number; revenue: number }>();
 
       regs?.forEach((reg) => {
         if (reg.payment_status === "paid") {
           paid++;
-          total += Number(reg.total_amount);
+          const amount = Number(reg.total_amount);
+          total += amount;
+
+          // Calculate revenue by payment method
+          if (reg.payment_method === "pix") {
+            pixTotal += amount;
+          } else if (reg.payment_method === "credit_card") {
+            creditCardTotal += amount;
+          }
 
           // Category revenue
           const categoryKey = reg.event_categories.name;
@@ -140,6 +152,8 @@ const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
 
       setTotalRevenue(total);
       setPaidCount(paid);
+      setPixRevenue(pixTotal);
+      setCreditCardRevenue(creditCardTotal);
 
       setCategoryRevenues(
         Array.from(categoryMap.entries()).map(([name, data]) => ({
@@ -206,7 +220,7 @@ const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
       </div>
 
       {/* Summary Cards */}
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
         <Card className="p-6">
           <div className="flex items-center justify-between">
             <div>
@@ -253,6 +267,40 @@ const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
               </p>
             </div>
             <Package className="h-8 w-8 text-orange-600" />
+          </div>
+        </Card>
+
+        <Card className="p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-muted-foreground">
+                Receita PIX
+              </p>
+              <p className="text-3xl font-bold text-blue-600">
+                {formatCurrency(pixRevenue)}
+              </p>
+              <p className="text-xs text-muted-foreground mt-1">
+                {pixRevenue > 0 ? `${((pixRevenue / totalRevenue) * 100).toFixed(1)}% do total` : '-'}
+              </p>
+            </div>
+            <Smartphone className="h-8 w-8 text-blue-600" />
+          </div>
+        </Card>
+
+        <Card className="p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-muted-foreground">
+                Receita Cartão
+              </p>
+              <p className="text-3xl font-bold text-purple-600">
+                {formatCurrency(creditCardRevenue)}
+              </p>
+              <p className="text-xs text-muted-foreground mt-1">
+                {creditCardRevenue > 0 ? `${((creditCardRevenue / totalRevenue) * 100).toFixed(1)}% do total` : '-'}
+              </p>
+            </div>
+            <CreditCard className="h-8 w-8 text-purple-600" />
           </div>
         </Card>
       </div>
