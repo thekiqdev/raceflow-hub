@@ -47,12 +47,19 @@ const eventFormSchema = z.object({
 
 type EventFormValues = z.infer<typeof eventFormSchema>;
 
+interface Batch {
+  id?: string;
+  price: number;
+  valid_from: string;
+}
+
 interface Modality {
   id?: string;
   name: string;
   distance: string;
   max_participants: number | null;
   price: number;
+  batches: Batch[];
 }
 
 interface ProductVariant {
@@ -118,7 +125,7 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess }: EventF
   const addModality = () => {
     setModalities([
       ...modalities,
-      { name: "", distance: "", max_participants: null, price: 0 },
+      { name: "", distance: "", max_participants: null, price: 0, batches: [] },
     ]);
   };
 
@@ -235,6 +242,37 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess }: EventF
     setPickupLocations(updated);
   };
 
+  const addBatch = (modalityIndex: number) => {
+    const updated = [...modalities];
+    updated[modalityIndex].batches.push({
+      price: 0,
+      valid_from: "",
+    });
+    setModalities(updated);
+  };
+
+  const removeBatch = (modalityIndex: number, batchIndex: number) => {
+    const updated = [...modalities];
+    updated[modalityIndex].batches = updated[modalityIndex].batches.filter(
+      (_, i) => i !== batchIndex
+    );
+    setModalities(updated);
+  };
+
+  const updateBatch = (
+    modalityIndex: number,
+    batchIndex: number,
+    field: keyof Batch,
+    value: any
+  ) => {
+    const updated = [...modalities];
+    updated[modalityIndex].batches[batchIndex] = {
+      ...updated[modalityIndex].batches[batchIndex],
+      [field]: value,
+    };
+    setModalities(updated);
+  };
+
   const onSubmit = async (values: EventFormValues) => {
     setIsSubmitting(true);
     try {
@@ -285,16 +323,38 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess }: EventF
 
       // Insert modalities
       if (modalities.length > 0) {
-        const modalitiesData = modalities.map((m) => ({
-          ...m,
-          event_id: eventId,
-        }));
+        for (const modality of modalities) {
+          const modalityData = {
+            name: modality.name,
+            distance: modality.distance,
+            max_participants: modality.max_participants,
+            price: modality.price,
+            event_id: eventId,
+          };
 
-        const { error } = await supabase
-          .from("event_categories")
-          .insert(modalitiesData);
+          const { data: insertedModality, error: modalityError } = await supabase
+            .from("event_categories")
+            .insert([modalityData])
+            .select()
+            .single();
 
-        if (error) throw error;
+          if (modalityError) throw modalityError;
+
+          // Insert batches for this modality
+          if (modality.batches.length > 0) {
+            const batchesData = modality.batches.map((batch) => ({
+              category_id: insertedModality.id,
+              price: batch.price,
+              valid_from: batch.valid_from,
+            }));
+
+            const { error: batchesError } = await supabase
+              .from("category_batches")
+              .insert(batchesData);
+
+            if (batchesError) throw batchesError;
+          }
+        }
       }
 
       // Insert kits
@@ -675,7 +735,7 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess }: EventF
                             </div>
                             <div>
                               <label className="text-sm font-medium">
-                                Valor (R$)
+                                Valor Inicial (R$)
                               </label>
                               <Input
                                 type="number"
@@ -691,6 +751,92 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess }: EventF
                                 }
                               />
                             </div>
+                          </div>
+
+                          {/* Batches Section */}
+                          <div className="border-t pt-4 mt-4">
+                            <div className="flex justify-between items-center mb-3">
+                              <div>
+                                <label className="text-sm font-medium">
+                                  Lotes
+                                </label>
+                                <p className="text-xs text-muted-foreground">
+                                  Configure a virada de lotes por data
+                                </p>
+                              </div>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => addBatch(index)}
+                              >
+                                <Plus className="mr-1 h-3 w-3" />
+                                Adicionar Lote
+                              </Button>
+                            </div>
+
+                            {modality.batches.length === 0 ? (
+                              <p className="text-sm text-muted-foreground text-center py-3 bg-muted/30 rounded-lg">
+                                Nenhum lote configurado
+                              </p>
+                            ) : (
+                              <div className="space-y-2">
+                                {modality.batches.map((batch, bIndex) => (
+                                  <div
+                                    key={bIndex}
+                                    className="flex gap-2 items-start p-3 border rounded-lg bg-muted/30"
+                                  >
+                                    <div className="flex-1 grid grid-cols-2 gap-2">
+                                      <div>
+                                        <label className="text-xs font-medium text-muted-foreground">
+                                          Valor (R$)
+                                        </label>
+                                        <Input
+                                          type="number"
+                                          step="0.01"
+                                          placeholder="0.00"
+                                          value={batch.price}
+                                          onChange={(e) =>
+                                            updateBatch(
+                                              index,
+                                              bIndex,
+                                              "price",
+                                              parseFloat(e.target.value) || 0
+                                            )
+                                          }
+                                        />
+                                      </div>
+                                      <div>
+                                        <label className="text-xs font-medium text-muted-foreground">
+                                          Válido a partir de
+                                        </label>
+                                        <Input
+                                          type="datetime-local"
+                                          value={batch.valid_from}
+                                          onChange={(e) =>
+                                            updateBatch(
+                                              index,
+                                              bIndex,
+                                              "valid_from",
+                                              e.target.value
+                                            )
+                                          }
+                                        />
+                                      </div>
+                                    </div>
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-8 w-8 mt-4"
+                                      onClick={() => removeBatch(index, bIndex)}
+                                    >
+                                      <Trash2 className="h-3 w-3 text-destructive" />
+                                    </Button>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
                           </div>
                         </CardContent>
                       </Card>

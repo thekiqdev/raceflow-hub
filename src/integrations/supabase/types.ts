@@ -14,6 +14,38 @@ export type Database = {
   }
   public: {
     Tables: {
+      category_batches: {
+        Row: {
+          category_id: string
+          created_at: string | null
+          id: string
+          price: number
+          valid_from: string
+        }
+        Insert: {
+          category_id: string
+          created_at?: string | null
+          id?: string
+          price: number
+          valid_from: string
+        }
+        Update: {
+          category_id?: string
+          created_at?: string | null
+          id?: string
+          price?: number
+          valid_from?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "category_batches_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "event_categories"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       event_categories: {
         Row: {
           created_at: string | null
