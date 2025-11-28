@@ -17,15 +17,29 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Plus, Search, MoreVertical, Edit, Eye, Trash2, BarChart3, Calendar } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Plus, Search, MoreVertical, Edit, Eye, Trash2, BarChart3, Calendar, Award } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { EventFormDialog } from "./EventFormDialog";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 
 const OrganizerEvents = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<any>(null);
+  const [isResultDialogOpen, setIsResultDialogOpen] = useState(false);
+  const [resultUrl, setResultUrl] = useState("");
+  const [eventForResult, setEventForResult] = useState<any>(null);
 
   // Mock data
   const events = [
@@ -88,6 +102,32 @@ const OrganizerEvents = () => {
     event.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
     event.city.toLowerCase().includes(searchQuery.toLowerCase())
   );
+
+  const handleSendResult = async () => {
+    if (!resultUrl.trim()) {
+      toast.error("Por favor, insira o link dos resultados");
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from("events")
+        .update({ result_url: resultUrl })
+        .eq("id", eventForResult.id);
+
+      if (error) throw error;
+
+      toast.success("Link de resultados enviado com sucesso!");
+      setIsResultDialogOpen(false);
+      setResultUrl("");
+      setEventForResult(null);
+      // Refresh events list
+      window.location.reload();
+    } catch (error) {
+      console.error("Error updating result URL:", error);
+      toast.error("Erro ao enviar link de resultados");
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -187,6 +227,14 @@ const OrganizerEvents = () => {
                             <BarChart3 className="mr-2 h-4 w-4" />
                             Estatísticas
                           </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => {
+                            setEventForResult(event);
+                            setResultUrl("");
+                            setIsResultDialogOpen(true);
+                          }}>
+                            <Award className="mr-2 h-4 w-4" />
+                            Enviar Resultado
+                          </DropdownMenuItem>
                           <DropdownMenuItem className="text-destructive">
                             <Trash2 className="mr-2 h-4 w-4" />
                             Excluir
@@ -250,6 +298,37 @@ const OrganizerEvents = () => {
           window.location.reload();
         }}
       />
+
+      {/* Result URL Dialog */}
+      <Dialog open={isResultDialogOpen} onOpenChange={setIsResultDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Enviar Resultado do Evento</DialogTitle>
+            <DialogDescription>
+              Insira o link para os resultados de {eventForResult?.title}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="result-url">Link dos Resultados</Label>
+              <Input
+                id="result-url"
+                placeholder="https://exemplo.com/resultados"
+                value={resultUrl}
+                onChange={(e) => setResultUrl(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsResultDialogOpen(false)}>
+              Cancelar
+            </Button>
+            <Button onClick={handleSendResult}>
+              Enviar Resultado
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

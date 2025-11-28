@@ -130,6 +130,7 @@ export type Database = {
           location: string
           organizer_id: string
           regulation_url: string | null
+          result_url: string | null
           state: string
           status: Database["public"]["Enums"]["event_status"] | null
           title: string
@@ -145,6 +146,7 @@ export type Database = {
           location: string
           organizer_id: string
           regulation_url?: string | null
+          result_url?: string | null
           state: string
           status?: Database["public"]["Enums"]["event_status"] | null
           title: string
@@ -160,6 +162,7 @@ export type Database = {
           location?: string
           organizer_id?: string
           regulation_url?: string | null
+          result_url?: string | null
           state?: string
           status?: Database["public"]["Enums"]["event_status"] | null
           title?: string
