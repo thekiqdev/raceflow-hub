@@ -5,9 +5,10 @@ import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, Calendar, MapPin, User, CheckCircle, XCircle, AlertCircle } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
-
 export default function ValidateRegistration() {
-  const { id } = useParams();
+  const {
+    id
+  } = useParams();
   const navigate = useNavigate();
 
   // Mock data - will be replaced with real data from backend
@@ -25,22 +26,14 @@ export default function ValidateRegistration() {
     status: "paid",
     payment_status: "paid",
     total_amount: 89.90,
-    kit_collected: false,
+    kit_collected: false
   };
-
   const isConfirmed = registration.status === "paid" && registration.payment_status === "paid";
-
-  return (
-    <div className="min-h-screen bg-background">
+  return <div className="min-h-screen bg-background">
       {/* Header */}
       <div className="bg-gradient-hero p-4 sticky top-0 z-10">
         <div className="flex items-center gap-3">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => navigate(-1)}
-            className="text-white hover:bg-white/20"
-          >
+          <Button variant="ghost" size="icon" onClick={() => navigate(-1)} className="text-white hover:bg-white/20">
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <h1 className="text-xl font-bold text-white">Validação de Inscrição</h1>
@@ -53,8 +46,7 @@ export default function ValidateRegistration() {
         <Card className={isConfirmed ? "border-green-500 bg-green-50" : "border-yellow-500 bg-yellow-50"}>
           <CardContent className="pt-6">
             <div className="flex flex-col items-center gap-3">
-              {isConfirmed ? (
-                <>
+              {isConfirmed ? <>
                   <CheckCircle className="h-16 w-16 text-green-600" />
                   <div className="text-center">
                     <h2 className="text-xl font-bold text-green-800">Inscrição Confirmada</h2>
@@ -65,9 +57,7 @@ export default function ValidateRegistration() {
                   <Badge className="bg-green-600 text-white text-base px-4 py-1">
                     Status: CONFIRMADA
                   </Badge>
-                </>
-              ) : (
-                <>
+                </> : <>
                   <AlertCircle className="h-16 w-16 text-yellow-600" />
                   <div className="text-center">
                     <h2 className="text-xl font-bold text-yellow-800">Inscrição Pendente</h2>
@@ -78,8 +68,7 @@ export default function ValidateRegistration() {
                   <Badge className="bg-yellow-600 text-white text-base px-4 py-1">
                     Status: PENDENTE
                   </Badge>
-                </>
-              )}
+                </>}
             </div>
           </CardContent>
         </Card>
@@ -95,8 +84,8 @@ export default function ValidateRegistration() {
               <Calendar className="h-4 w-4 text-muted-foreground" />
               <span>
                 {format(new Date(registration.event_date), "dd 'de' MMMM 'de' yyyy 'às' HH:mm", {
-                  locale: ptBR,
-                })}
+                locale: ptBR
+              })}
               </span>
             </div>
             <div className="flex items-center gap-2 text-sm">
@@ -112,10 +101,7 @@ export default function ValidateRegistration() {
             <CardTitle className="text-lg">Detalhes da Inscrição</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
-            <div className="flex justify-between text-sm">
-              <span className="text-muted-foreground">Nº de Peito:</span>
-              <span className="text-2xl font-bold text-primary">{registration.bib_number}</span>
-            </div>
+            
             <div className="flex justify-between text-sm">
               <span className="text-muted-foreground">Categoria:</span>
               <span className="font-medium">{registration.category}</span>
@@ -162,13 +148,10 @@ export default function ValidateRegistration() {
         </Card>
 
         {/* Actions */}
-        {isConfirmed && !registration.kit_collected && (
-          <Button className="w-full" size="lg">
+        {isConfirmed && !registration.kit_collected && <Button className="w-full" size="lg">
             <CheckCircle className="h-5 w-5 mr-2" />
             Confirmar Retirada do Kit
-          </Button>
-        )}
+          </Button>}
       </div>
-    </div>
-  );
+    </div>;
 }
