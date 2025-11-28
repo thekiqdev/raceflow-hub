@@ -2,12 +2,13 @@ import { useState, useEffect } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { MapPin, Calendar, DollarSign, ChevronRight } from "lucide-react";
+import { MapPin, Calendar, DollarSign, ChevronRight, Trophy } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { format } from "date-fns";
+import { format, isPast } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import heroImage from "@/assets/hero-running.jpg";
 import { EventFilters, EventFiltersState } from "@/components/event/EventFilters";
+import { supabase } from "@/integrations/supabase/client";
 
 interface Event {
   id: string;
@@ -16,7 +17,8 @@ interface Event {
   city: string;
   state: string;
   banner_url: string | null;
-  price_from: number;
+  result_url: string | null;
+  status: string;
 }
 
 export function ExploreEvents() {
@@ -30,56 +32,28 @@ export function ExploreEvents() {
   });
 
   useEffect(() => {
-    // Mock events data
-    const mockEvents: Event[] = [
-      {
-        id: "1",
-        title: "Corrida de São Silvestre 2024",
-        event_date: "2024-12-31T07:00:00Z",
-        city: "São Paulo",
-        state: "SP",
-        banner_url: null,
-        price_from: 59.90,
-      },
-      {
-        id: "2",
-        title: "Maratona do Rio 2025",
-        event_date: "2025-06-15T06:00:00Z",
-        city: "Rio de Janeiro",
-        state: "RJ",
-        banner_url: null,
-        price_from: 120.00,
-      },
-      {
-        id: "3",
-        title: "Meia Maratona de Florianópolis",
-        event_date: "2025-09-20T07:30:00Z",
-        city: "Florianópolis",
-        state: "SC",
-        banner_url: null,
-        price_from: 80.00,
-      },
-      {
-        id: "4",
-        title: "Circuito das Estações - Primavera",
-        event_date: "2025-10-15T06:30:00Z",
-        city: "Curitiba",
-        state: "PR",
-        banner_url: null,
-        price_from: 45.00,
-      },
-    ];
-    setEvents(mockEvents);
+    loadEvents();
   }, []);
+
+  const loadEvents = async () => {
+    try {
+      const { data, error } = await supabase
+        .from("events")
+        .select("id, title, event_date, city, state, banner_url, result_url, status")
+        .eq("status", "published")
+        .order("event_date", { ascending: true });
+
+      if (error) throw error;
+      setEvents(data || []);
+    } catch (error) {
+      console.error("Error loading events:", error);
+    }
+  };
 
   const cities = Array.from(new Set(events.map(e => e.city))).sort();
   const categories = ["5K", "10K", "Meia Maratona", "Maratona", "Trail Run"];
 
   const filteredEvents = events.filter((event) => {
-    const matchesSearch = 
-      event.title.toLowerCase().includes(filters.search.toLowerCase()) ||
-      event.city.toLowerCase().includes(filters.search.toLowerCase());
-    
     const matchesCity = !filters.city || filters.city === "all" || event.city === filters.city;
     
     const eventMonth = event.event_date ? format(new Date(event.event_date), "MM") : "";
@@ -87,8 +61,18 @@ export function ExploreEvents() {
     
     const matchesCategory = !filters.category || filters.category === "all";
     
-    return matchesSearch && matchesCity && matchesMonth && matchesCategory;
+    return matchesCity && matchesMonth && matchesCategory;
   });
+
+  const getEventStatus = (event: Event) => {
+    if (event.result_url) {
+      return { label: "Resultado Disponível", variant: "default" as const, icon: Trophy };
+    }
+    if (isPast(new Date(event.event_date))) {
+      return { label: "Inscrições Finalizadas", variant: "secondary" as const };
+    }
+    return { label: "Inscrições Abertas", variant: "default" as const };
+  };
 
   return (
     <div className="pb-20">
@@ -132,7 +116,19 @@ export function ExploreEvents() {
               
               <div className="flex-1 p-4 flex flex-col justify-between">
                 <div>
-                  <h3 className="font-semibold text-sm mb-2 line-clamp-2">{event.title}</h3>
+                  <div className="flex items-start justify-between gap-2 mb-2">
+                    <h3 className="font-semibold text-sm line-clamp-2 flex-1">{event.title}</h3>
+                    {(() => {
+                      const status = getEventStatus(event);
+                      const StatusIcon = status.icon;
+                      return (
+                        <Badge variant={status.variant} className="flex items-center gap-1 text-xs whitespace-nowrap">
+                          {StatusIcon && <StatusIcon className="h-3 w-3" />}
+                          {status.label}
+                        </Badge>
+                      );
+                    })()}
+                  </div>
                   
                   <div className="space-y-1 text-xs text-muted-foreground">
                     <div className="flex items-center gap-1">
@@ -146,11 +142,7 @@ export function ExploreEvents() {
                   </div>
                 </div>
                 
-                <div className="flex items-center justify-between mt-2">
-                  <div className="flex items-center gap-1 text-primary font-semibold text-sm">
-                    <DollarSign className="h-3 w-3" />
-                    <span>A partir de R$ {event.price_from.toFixed(2)}</span>
-                  </div>
+                <div className="flex items-center justify-end mt-2">
                   <ChevronRight className="h-4 w-4 text-muted-foreground" />
                 </div>
               </div>
