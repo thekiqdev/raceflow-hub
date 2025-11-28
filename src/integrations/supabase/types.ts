@@ -210,8 +210,8 @@ export type Database = {
         Row: {
           address: string
           created_at: string | null
+          event_id: string
           id: string
-          kit_id: string
           latitude: number | null
           longitude: number | null
           pickup_date: string
@@ -219,8 +219,8 @@ export type Database = {
         Insert: {
           address: string
           created_at?: string | null
+          event_id: string
           id?: string
-          kit_id: string
           latitude?: number | null
           longitude?: number | null
           pickup_date: string
@@ -228,18 +228,18 @@ export type Database = {
         Update: {
           address?: string
           created_at?: string | null
+          event_id?: string
           id?: string
-          kit_id?: string
           latitude?: number | null
           longitude?: number | null
           pickup_date?: string
         }
         Relationships: [
           {
-            foreignKeyName: "kit_pickup_locations_kit_id_fkey"
-            columns: ["kit_id"]
+            foreignKeyName: "kit_pickup_locations_event_id_fkey"
+            columns: ["event_id"]
             isOneToOne: false
-            referencedRelation: "event_kits"
+            referencedRelation: "events"
             referencedColumns: ["id"]
           },
         ]
