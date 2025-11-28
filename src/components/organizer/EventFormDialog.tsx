@@ -755,12 +755,10 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess }: EventF
 
                           {/* Batches Section */}
                           <div className="border-t pt-4 mt-4">
-                            <div className="flex justify-between items-center mb-3">
+                            <div className="flex justify-between items-start mb-4">
                               <div>
-                                <label className="text-sm font-medium">
-                                  Lotes
-                                </label>
-                                <p className="text-xs text-muted-foreground">
+                                <h4 className="text-base font-semibold mb-1">Lotes</h4>
+                                <p className="text-sm text-muted-foreground">
                                   Configure a virada de lotes por data
                                 </p>
                               </div>
@@ -770,73 +768,67 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess }: EventF
                                 size="sm"
                                 onClick={() => addBatch(index)}
                               >
-                                <Plus className="mr-1 h-3 w-3" />
+                                <Plus className="mr-2 h-4 w-4" />
                                 Adicionar Lote
                               </Button>
                             </div>
 
-                            {modality.batches.length === 0 ? (
-                              <p className="text-sm text-muted-foreground text-center py-3 bg-muted/30 rounded-lg">
-                                Nenhum lote configurado
-                              </p>
-                            ) : (
-                              <div className="space-y-2">
-                                {modality.batches.map((batch, bIndex) => (
-                                  <div
-                                    key={bIndex}
-                                    className="flex gap-2 items-start p-3 border rounded-lg bg-muted/30"
-                                  >
-                                    <div className="flex-1 grid grid-cols-2 gap-2">
-                                      <div>
-                                        <label className="text-xs font-medium text-muted-foreground">
-                                          Valor (R$)
-                                        </label>
-                                        <Input
-                                          type="number"
-                                          step="0.01"
-                                          placeholder="0.00"
-                                          value={batch.price}
-                                          onChange={(e) =>
-                                            updateBatch(
-                                              index,
-                                              bIndex,
-                                              "price",
-                                              parseFloat(e.target.value) || 0
-                                            )
-                                          }
-                                        />
-                                      </div>
-                                      <div>
-                                        <label className="text-xs font-medium text-muted-foreground">
-                                          Válido a partir de
-                                        </label>
-                                        <Input
-                                          type="datetime-local"
-                                          value={batch.valid_from}
-                                          onChange={(e) =>
-                                            updateBatch(
-                                              index,
-                                              bIndex,
-                                              "valid_from",
-                                              e.target.value
-                                            )
-                                          }
-                                        />
-                                      </div>
+                            <div className="space-y-3">
+                              {modality.batches.map((batch, bIndex) => (
+                                <div
+                                  key={bIndex}
+                                  className="flex gap-3 items-start p-4 border rounded-lg bg-background"
+                                >
+                                  <div className="flex-1 grid grid-cols-2 gap-4">
+                                    <div>
+                                      <label className="text-sm font-medium mb-2 block">
+                                        Valor (R$)
+                                      </label>
+                                      <Input
+                                        type="number"
+                                        step="0.01"
+                                        placeholder="200"
+                                        value={batch.price}
+                                        onChange={(e) =>
+                                          updateBatch(
+                                            index,
+                                            bIndex,
+                                            "price",
+                                            parseFloat(e.target.value) || 0
+                                          )
+                                        }
+                                      />
                                     </div>
-                                    <Button
-                                      type="button"
-                                      variant="ghost"
-                                      size="icon"
-                                      className="h-8 w-8 mt-4"
-                                      onClick={() => removeBatch(index, bIndex)}
-                                    >
-                                      <Trash2 className="h-3 w-3 text-destructive" />
-                                    </Button>
+                                    <div>
+                                      <label className="text-sm font-medium mb-2 block">
+                                        Válido a partir de
+                                      </label>
+                                      <Input
+                                        type="datetime-local"
+                                        value={batch.valid_from}
+                                        onChange={(e) =>
+                                          updateBatch(
+                                            index,
+                                            bIndex,
+                                            "valid_from",
+                                            e.target.value
+                                          )
+                                        }
+                                      />
+                                    </div>
                                   </div>
-                                ))}
-                              </div>
-                            )}
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-10 w-10 text-destructive hover:text-destructive hover:bg-destructive/10"
+                                    onClick={() => removeBatch(index, bIndex)}
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                </div>
+                              ))}
+                            </div>
                           </div>
                         </CardContent>
                       </Card>
