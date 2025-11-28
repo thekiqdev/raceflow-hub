@@ -32,6 +32,7 @@ interface EventDetail {
   state: string;
   banner_url: string | null;
   regulation_url: string | null;
+  result_url: string | null;
   status: string;
 }
 
@@ -82,6 +83,7 @@ const EventDetails = () => {
       state: "SP",
       banner_url: null,
       regulation_url: null,
+      result_url: null,
       status: "published", // Change to "finished" to show results
     };
 
@@ -403,6 +405,30 @@ const EventDetails = () => {
                   </p>
                 </CardContent>
               </Card>
+
+              {/* Results Card - Show when result_url exists */}
+              {event.result_url && (
+                <Card className="border-2 border-primary">
+                  <CardHeader>
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <Trophy className="h-5 w-5 text-primary" />
+                      Resultados Disponíveis
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <Button 
+                      className="w-full" 
+                      size="lg"
+                      asChild
+                    >
+                      <a href={event.result_url} target="_blank" rel="noopener noreferrer">
+                        <Trophy className="mr-2 h-4 w-4" />
+                        Ver Resultados
+                      </a>
+                    </Button>
+                  </CardContent>
+                </Card>
+              )}
 
               {/* Contact Card */}
               <Card>
