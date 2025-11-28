@@ -9,6 +9,7 @@ import OrganizerEvents from "@/components/organizer/OrganizerEvents";
 import OrganizerRegistrations from "@/components/organizer/OrganizerRegistrations";
 import OrganizerFinancial from "@/components/organizer/OrganizerFinancial";
 import OrganizerSettings from "@/components/organizer/OrganizerSettings";
+import OrganizerReports from "@/components/organizer/OrganizerReports";
 
 const OrganizerDashboard = () => {
   const navigate = useNavigate();
@@ -29,7 +30,7 @@ const OrganizerDashboard = () => {
       case "financial":
         return <OrganizerFinancial />;
       case "reports":
-        return <div className="text-center py-12 text-muted-foreground">Seção de Relatórios em desenvolvimento</div>;
+        return <OrganizerReports />;
       case "results":
         return <div className="text-center py-12 text-muted-foreground">Seção de Resultados em desenvolvimento</div>;
       case "messages":

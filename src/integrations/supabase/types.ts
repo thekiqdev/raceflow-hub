@@ -387,6 +387,7 @@ export type Database = {
           event_id: string
           id: string
           kit_id: string | null
+          payment_method: Database["public"]["Enums"]["payment_method"] | null
           payment_status: Database["public"]["Enums"]["payment_status"] | null
           registered_by: string
           runner_id: string
@@ -401,6 +402,7 @@ export type Database = {
           event_id: string
           id?: string
           kit_id?: string | null
+          payment_method?: Database["public"]["Enums"]["payment_method"] | null
           payment_status?: Database["public"]["Enums"]["payment_status"] | null
           registered_by: string
           runner_id: string
@@ -415,6 +417,7 @@ export type Database = {
           event_id?: string
           id?: string
           kit_id?: string | null
+          payment_method?: Database["public"]["Enums"]["payment_method"] | null
           payment_status?: Database["public"]["Enums"]["payment_status"] | null
           registered_by?: string
           runner_id?: string
@@ -505,6 +508,7 @@ export type Database = {
     Enums: {
       app_role: "admin" | "organizer" | "runner"
       event_status: "draft" | "published" | "ongoing" | "finished" | "cancelled"
+      payment_method: "pix" | "credit_card" | "boleto"
       payment_status: "pending" | "paid" | "refunded" | "failed"
       registration_status:
         | "pending"
@@ -641,6 +645,7 @@ export const Constants = {
     Enums: {
       app_role: ["admin", "organizer", "runner"],
       event_status: ["draft", "published", "ongoing", "finished", "cancelled"],
+      payment_method: ["pix", "credit_card", "boleto"],
       payment_status: ["pending", "paid", "refunded", "failed"],
       registration_status: [
         "pending",
