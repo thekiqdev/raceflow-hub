@@ -12,6 +12,7 @@ import {
   Calendar
 } from "lucide-react";
 import { toast } from "sonner";
+import EventDetailedReport from "./EventDetailedReport";
 import {
   Bar,
   BarChart,
@@ -69,6 +70,7 @@ const OrganizerReports = () => {
     paidRegistrations: 0,
   });
   const [eventRevenues, setEventRevenues] = useState<EventRevenue[]>([]);
+  const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
 
   useEffect(() => {
     loadFinancialData();
@@ -189,6 +191,15 @@ const OrganizerReports = () => {
       <div className="flex items-center justify-center py-12">
         <div className="text-muted-foreground">Carregando relatórios...</div>
       </div>
+    );
+  }
+
+  if (selectedEventId) {
+    return (
+      <EventDetailedReport
+        eventId={selectedEventId}
+        onBack={() => setSelectedEventId(null)}
+      />
     );
   }
 
@@ -362,7 +373,7 @@ const OrganizerReports = () => {
                 </Button>
               </div>
               
-              {eventRevenues.length > 0 ? (
+                  {eventRevenues.length > 0 ? (
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -371,6 +382,7 @@ const OrganizerReports = () => {
                       <TableHead className="text-right">Inscrições</TableHead>
                       <TableHead className="text-right">Receita Total</TableHead>
                       <TableHead className="text-right">Ticket Médio</TableHead>
+                      <TableHead className="text-right">Ações</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -390,6 +402,15 @@ const OrganizerReports = () => {
                         </TableCell>
                         <TableCell className="text-right">
                           {formatCurrency(event.totalRevenue / event.registrations)}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setSelectedEventId(event.eventId)}
+                          >
+                            Ver Detalhes
+                          </Button>
                         </TableCell>
                       </TableRow>
                     ))}
