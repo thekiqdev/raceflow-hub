@@ -83,7 +83,6 @@ interface Kit {
   description: string;
   price: number;
   products: Product[];
-  pickupLocations: PickupLocation[];
 }
 
 interface EventFormDialogProps {
@@ -98,6 +97,7 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess }: EventF
   const [activeTab, setActiveTab] = useState("info");
   const [modalities, setModalities] = useState<Modality[]>([]);
   const [kits, setKits] = useState<Kit[]>([]);
+  const [pickupLocations, setPickupLocations] = useState<PickupLocation[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const form = useForm<EventFormValues>({
@@ -133,7 +133,7 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess }: EventF
   };
 
   const addKit = () => {
-    setKits([...kits, { name: "", description: "", price: 0, products: [], pickupLocations: [] }]);
+    setKits([...kits, { name: "", description: "", price: 0, products: [] }]);
   };
 
   const removeKit = (index: number) => {
@@ -209,32 +209,30 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess }: EventF
     setKits(updated);
   };
 
-  const addPickupLocation = (kitIndex: number) => {
-    const updated = [...kits];
-    updated[kitIndex].pickupLocations.push({
-      address: "",
-      pickup_date: "",
-      latitude: "",
-      longitude: "",
-    });
-    setKits(updated);
+  const addPickupLocation = () => {
+    setPickupLocations([
+      ...pickupLocations,
+      {
+        address: "",
+        pickup_date: "",
+        latitude: "",
+        longitude: "",
+      },
+    ]);
   };
 
-  const removePickupLocation = (kitIndex: number, locationIndex: number) => {
-    const updated = [...kits];
-    updated[kitIndex].pickupLocations.splice(locationIndex, 1);
-    setKits(updated);
+  const removePickupLocation = (locationIndex: number) => {
+    setPickupLocations(pickupLocations.filter((_, i) => i !== locationIndex));
   };
 
   const updatePickupLocation = (
-    kitIndex: number,
     locationIndex: number,
     field: keyof PickupLocation,
     value: string
   ) => {
-    const updated = [...kits];
-    updated[kitIndex].pickupLocations[locationIndex][field] = value as never;
-    setKits(updated);
+    const updated = [...pickupLocations];
+    updated[locationIndex][field] = value as never;
+    setPickupLocations(updated);
   };
 
   const onSubmit = async (values: EventFormValues) => {
@@ -352,23 +350,24 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess }: EventF
             }
           }
 
-          // Insert pickup locations for this kit
-          if (kit.pickupLocations.length > 0) {
-            const locationData = kit.pickupLocations.map((location) => ({
-              kit_id: insertedKit.id,
-              address: location.address,
-              pickup_date: location.pickup_date,
-              latitude: location.latitude ? parseFloat(location.latitude) : null,
-              longitude: location.longitude ? parseFloat(location.longitude) : null,
-            }));
-
-            const { error: locationError } = await supabase
-              .from("kit_pickup_locations")
-              .insert(locationData);
-
-            if (locationError) throw locationError;
-          }
         }
+      }
+
+      // Insert pickup locations (universal for all kits)
+      if (pickupLocations.length > 0) {
+        const locationData = pickupLocations.map((location) => ({
+          event_id: eventId,
+          address: location.address,
+          pickup_date: location.pickup_date,
+          latitude: location.latitude ? parseFloat(location.latitude) : null,
+          longitude: location.longitude ? parseFloat(location.longitude) : null,
+        }));
+
+        const { error: locationError } = await supabase
+          .from("kit_pickup_locations")
+          .insert(locationData);
+
+        if (locationError) throw locationError;
       }
 
       toast({
@@ -406,10 +405,11 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess }: EventF
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
             <Tabs value={activeTab} onValueChange={setActiveTab}>
-              <TabsList className="grid w-full grid-cols-5">
+              <TabsList className="grid w-full grid-cols-6">
                 <TabsTrigger value="info">Informações</TabsTrigger>
                 <TabsTrigger value="modalities">Modalidades</TabsTrigger>
                 <TabsTrigger value="kits">Kits</TabsTrigger>
+                <TabsTrigger value="pickup">Retirada</TabsTrigger>
                 <TabsTrigger value="payment">Valores</TabsTrigger>
                 <TabsTrigger value="publish">Publicação</TabsTrigger>
               </TabsList>
@@ -1005,143 +1005,6 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess }: EventF
                                 </div>
                               )}
                             </div>
-
-                            {/* Pickup Locations Section */}
-                            <div className="border-t pt-4">
-                              <div className="flex justify-between items-center mb-3">
-                                <label className="text-sm font-medium">
-                                  Locais de Retirada do Kit
-                                </label>
-                                <Button
-                                  type="button"
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => addPickupLocation(index)}
-                                >
-                                  <Plus className="mr-1 h-3 w-3" />
-                                  Adicionar Local
-                                </Button>
-                              </div>
-
-                              {kit.pickupLocations.length === 0 ? (
-                                <p className="text-sm text-muted-foreground text-center py-4">
-                                  Nenhum local de retirada adicionado
-                                </p>
-                              ) : (
-                                <div className="space-y-3">
-                                  {kit.pickupLocations.map((location, lIndex) => (
-                                    <div
-                                      key={lIndex}
-                                      className="border rounded-lg p-3 space-y-3 bg-muted/30"
-                                    >
-                                      <div className="flex justify-between items-start">
-                                        <span className="text-sm font-medium">
-                                          Local {lIndex + 1}
-                                        </span>
-                                        <Button
-                                          type="button"
-                                          variant="ghost"
-                                          size="icon"
-                                          className="h-6 w-6"
-                                          onClick={() =>
-                                            removePickupLocation(index, lIndex)
-                                          }
-                                        >
-                                          <Trash2 className="h-3 w-3" />
-                                        </Button>
-                                      </div>
-
-                                      <div className="space-y-2">
-                                        <label className="text-xs font-medium">
-                                          Endereço
-                                        </label>
-                                        <Textarea
-                                          placeholder="Endereço completo do local de retirada"
-                                          className="min-h-[60px]"
-                                          value={location.address}
-                                          onChange={(e) =>
-                                            updatePickupLocation(
-                                              index,
-                                              lIndex,
-                                              "address",
-                                              e.target.value
-                                            )
-                                          }
-                                        />
-                                      </div>
-
-                                      <div className="space-y-2">
-                                        <label className="text-xs font-medium">
-                                          Data e Hora da Retirada
-                                        </label>
-                                        <Input
-                                          type="datetime-local"
-                                          value={location.pickup_date}
-                                          onChange={(e) =>
-                                            updatePickupLocation(
-                                              index,
-                                              lIndex,
-                                              "pickup_date",
-                                              e.target.value
-                                            )
-                                          }
-                                        />
-                                      </div>
-
-                                      <div className="grid grid-cols-2 gap-2">
-                                        <div className="space-y-2">
-                                          <label className="text-xs font-medium">
-                                            Latitude
-                                          </label>
-                                          <Input
-                                            placeholder="-23.550520"
-                                            value={location.latitude}
-                                            onChange={(e) =>
-                                              updatePickupLocation(
-                                                index,
-                                                lIndex,
-                                                "latitude",
-                                                e.target.value
-                                              )
-                                            }
-                                          />
-                                        </div>
-                                        <div className="space-y-2">
-                                          <label className="text-xs font-medium">
-                                            Longitude
-                                          </label>
-                                          <Input
-                                            placeholder="-46.633308"
-                                            value={location.longitude}
-                                            onChange={(e) =>
-                                              updatePickupLocation(
-                                                index,
-                                                lIndex,
-                                                "longitude",
-                                                e.target.value
-                                              )
-                                            }
-                                          />
-                                        </div>
-                                      </div>
-
-                                      {location.latitude && location.longitude && (
-                                        <div className="rounded border overflow-hidden">
-                                          <iframe
-                                            width="100%"
-                                            height="200"
-                                            frameBorder="0"
-                                            style={{ border: 0 }}
-                                            src={`https://www.google.com/maps?q=${location.latitude},${location.longitude}&output=embed`}
-                                            allowFullScreen
-                                          />
-                                        </div>
-                                      )}
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
                           </CardContent>
                       </Card>
                     ))}
@@ -1149,7 +1012,120 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess }: EventF
                 )}
               </TabsContent>
 
-              {/* Tab 4: Valores e Pagamento */}
+              {/* Tab 4: Pickup Locations */}
+              <TabsContent value="pickup" className="space-y-4">
+                <div className="flex justify-between items-center">
+                  <div>
+                    <h3 className="text-lg font-semibold">Locais de Retirada dos Kits</h3>
+                    <p className="text-sm text-muted-foreground">
+                      Configure os locais e horários para retirada (válido para todos os kits do evento)
+                    </p>
+                  </div>
+                  <Button type="button" onClick={addPickupLocation} size="sm">
+                    <Plus className="mr-2 h-4 w-4" />
+                    Adicionar Local
+                  </Button>
+                </div>
+
+                {pickupLocations.length === 0 ? (
+                  <Card>
+                    <CardContent className="pt-6 text-center text-muted-foreground">
+                      Nenhum local de retirada adicionado ainda
+                    </CardContent>
+                  </Card>
+                ) : (
+                  <div className="space-y-4">
+                    {pickupLocations.map((location, index) => (
+                      <Card key={index}>
+                        <CardHeader className="pb-3">
+                          <div className="flex justify-between items-center">
+                            <CardTitle className="text-base">
+                              Local {index + 1}
+                            </CardTitle>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => removePickupLocation(index)}
+                            >
+                              <Trash2 className="h-4 w-4 text-destructive" />
+                            </Button>
+                          </div>
+                        </CardHeader>
+                        <CardContent className="space-y-3">
+                          <div>
+                            <label className="text-sm font-medium">Endereço</label>
+                            <Textarea
+                              placeholder="Endereço completo do local de retirada"
+                              className="min-h-[80px]"
+                              value={location.address}
+                              onChange={(e) =>
+                                updatePickupLocation(index, "address", e.target.value)
+                              }
+                            />
+                          </div>
+
+                          <div>
+                            <label className="text-sm font-medium">
+                              Data e Hora da Retirada
+                            </label>
+                            <Input
+                              type="datetime-local"
+                              value={location.pickup_date}
+                              onChange={(e) =>
+                                updatePickupLocation(index, "pickup_date", e.target.value)
+                              }
+                            />
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <label className="text-sm font-medium">Latitude</label>
+                              <Input
+                                placeholder="-23.550520"
+                                value={location.latitude}
+                                onChange={(e) =>
+                                  updatePickupLocation(index, "latitude", e.target.value)
+                                }
+                              />
+                            </div>
+                            <div>
+                              <label className="text-sm font-medium">Longitude</label>
+                              <Input
+                                placeholder="-46.633308"
+                                value={location.longitude}
+                                onChange={(e) =>
+                                  updatePickupLocation(index, "longitude", e.target.value)
+                                }
+                              />
+                            </div>
+                          </div>
+
+                          {location.latitude && location.longitude && (
+                            <div>
+                              <label className="text-sm font-medium mb-2 block">
+                                Visualização no Mapa
+                              </label>
+                              <div className="rounded border overflow-hidden">
+                                <iframe
+                                  width="100%"
+                                  height="300"
+                                  frameBorder="0"
+                                  style={{ border: 0 }}
+                                  src={`https://www.google.com/maps?q=${location.latitude},${location.longitude}&output=embed`}
+                                  allowFullScreen
+                                />
+                              </div>
+                            </div>
+                          )}
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                )}
+              </TabsContent>
+
+              {/* Tab 5: Valores e Pagamento */}
               <TabsContent value="payment" className="space-y-4">
                 <Card>
                   <CardHeader>
@@ -1190,7 +1166,7 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess }: EventF
                 </Card>
               </TabsContent>
 
-              {/* Tab 5: Publicação */}
+              {/* Tab 6: Publicação */}
               <TabsContent value="publish" className="space-y-4">
                 <FormField
                   control={form.control}
