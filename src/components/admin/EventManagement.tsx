@@ -4,7 +4,16 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Search, Download, Edit, Eye, CheckCircle, XCircle, Ban, ExternalLink, BarChart, Loader2 } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Search, Download, Edit, Eye, CheckCircle, XCircle, Ban, ExternalLink, BarChart, Loader2, Award } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { EventViewEditDialog } from "./EventViewEditDialog";
@@ -16,6 +25,9 @@ const EventManagement = () => {
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [dialogMode, setDialogMode] = useState<"view" | "edit">("view");
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [isResultDialogOpen, setIsResultDialogOpen] = useState(false);
+  const [resultUrl, setResultUrl] = useState("");
+  const [eventForResult, setEventForResult] = useState<any>(null);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -124,6 +136,41 @@ const EventManagement = () => {
     setSelectedEventId(eventId);
     setDialogMode("edit");
     setDialogOpen(true);
+  };
+
+  const handleSendResult = async () => {
+    if (!resultUrl.trim()) {
+      toast({
+        title: "Erro",
+        description: "Por favor, insira o link dos resultados",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from("events")
+        .update({ result_url: resultUrl })
+        .eq("id", eventForResult.id);
+
+      if (error) throw error;
+
+      toast({
+        title: "Sucesso",
+        description: "Link de resultados enviado com sucesso!",
+      });
+      setIsResultDialogOpen(false);
+      setResultUrl("");
+      setEventForResult(null);
+      loadEvents();
+    } catch (error: any) {
+      toast({
+        title: "Erro ao enviar link de resultados",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
   };
 
   const filteredEvents = events.filter((event) =>
@@ -266,6 +313,18 @@ const EventManagement = () => {
                               >
                                 <Edit className="h-4 w-4" />
                               </Button>
+                              <Button 
+                                size="icon" 
+                                variant="ghost" 
+                                title="Enviar Resultado"
+                                onClick={() => {
+                                  setEventForResult(event);
+                                  setResultUrl("");
+                                  setIsResultDialogOpen(true);
+                                }}
+                              >
+                                <Award className="h-4 w-4 text-yellow-500" />
+                              </Button>
                             </>
                           )}
                         </div>
@@ -343,6 +402,37 @@ const EventManagement = () => {
         onOpenChange={setDialogOpen}
         onSuccess={loadEvents}
       />
+
+      {/* Result URL Dialog */}
+      <Dialog open={isResultDialogOpen} onOpenChange={setIsResultDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Enviar Resultado do Evento</DialogTitle>
+            <DialogDescription>
+              Insira o link para os resultados de {eventForResult?.title}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="result-url">Link dos Resultados</Label>
+              <Input
+                id="result-url"
+                placeholder="https://exemplo.com/resultados"
+                value={resultUrl}
+                onChange={(e) => setResultUrl(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsResultDialogOpen(false)}>
+              Cancelar
+            </Button>
+            <Button onClick={handleSendResult}>
+              Enviar Resultado
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
