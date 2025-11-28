@@ -42,18 +42,6 @@ export function EventFilters({ filters, onFiltersChange, cities, categories = []
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-2">
-        <div className="relative flex-1">
-          <Input
-            placeholder="Buscar por nome do evento..."
-            value={filters.search}
-            onChange={(e) => onFiltersChange({ ...filters, search: e.target.value })}
-            className="pl-10"
-          />
-          <Filter className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-        </div>
-      </div>
-
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         <Select
           value={filters.city}
