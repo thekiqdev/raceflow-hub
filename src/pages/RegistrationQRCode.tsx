@@ -5,9 +5,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ArrowLeft, Calendar, MapPin, User } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
-
 export default function RegistrationQRCode() {
-  const { id } = useParams();
+  const {
+    id
+  } = useParams();
   const navigate = useNavigate();
 
   // Mock data - will be replaced with real data from backend
@@ -20,23 +21,16 @@ export default function RegistrationQRCode() {
     bib_number: "1234",
     runner_name: "João da Silva",
     runner_cpf: "123.456.789-00",
-    status: "paid",
+    status: "paid"
   };
 
   // URL that will be encoded in QR code
   const validationUrl = `${window.location.origin}/registration/validate/${registration.id}`;
-
-  return (
-    <div className="min-h-screen bg-background">
+  return <div className="min-h-screen bg-background">
       {/* Header */}
       <div className="bg-gradient-hero p-4 sticky top-0 z-10">
         <div className="flex items-center gap-3">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => navigate(-1)}
-            className="text-white hover:bg-white/20"
-          >
+          <Button variant="ghost" size="icon" onClick={() => navigate(-1)} className="text-white hover:bg-white/20">
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <h1 className="text-xl font-bold text-white">Minha Inscrição</h1>
@@ -55,17 +49,9 @@ export default function RegistrationQRCode() {
           </CardHeader>
           <CardContent className="flex flex-col items-center gap-4">
             <div className="bg-white p-4 rounded-lg">
-              <QRCodeSVG
-                value={validationUrl}
-                size={256}
-                level="H"
-                includeMargin={true}
-              />
+              <QRCodeSVG value={validationUrl} size={256} level="H" includeMargin={true} />
             </div>
-            <div className="text-center">
-              <p className="text-2xl font-bold text-primary">{registration.bib_number}</p>
-              <p className="text-sm text-muted-foreground">Número de Peito</p>
-            </div>
+            
           </CardContent>
         </Card>
 
@@ -79,8 +65,8 @@ export default function RegistrationQRCode() {
               <Calendar className="h-4 w-4 text-muted-foreground" />
               <span>
                 {format(new Date(registration.event_date), "dd 'de' MMMM 'de' yyyy 'às' HH:mm", {
-                  locale: ptBR,
-                })}
+                locale: ptBR
+              })}
               </span>
             </div>
             <div className="flex items-center gap-2 text-sm">
@@ -130,6 +116,5 @@ export default function RegistrationQRCode() {
           </CardContent>
         </Card>
       </div>
-    </div>
-  );
+    </div>;
 }
