@@ -14,11 +14,13 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { useToast } from "@/hooks/use-toast";
+import { LoginDialog } from "@/components/LoginDialog";
 export function Header() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const [user, setUser] = useState<SupabaseUser | null>(null);
   const [userProfile, setUserProfile] = useState<any>(null);
+  const [loginDialogOpen, setLoginDialogOpen] = useState(false);
 
   useEffect(() => {
     // Check current session
@@ -140,13 +142,16 @@ export function Header() {
             </DropdownMenuContent>
           </DropdownMenu>
         ) : (
-          <Button 
-            onClick={() => navigate("/auth")}
-            className="bg-green-600 hover:bg-green-700 text-white flex items-center gap-2"
-          >
-            <LogIn className="h-5 w-5" />
-            Entrar
-          </Button>
+          <>
+            <Button 
+              onClick={() => setLoginDialogOpen(true)}
+              className="bg-green-600 hover:bg-green-700 text-white flex items-center gap-2"
+            >
+              <LogIn className="h-5 w-5" />
+              Entrar
+            </Button>
+            <LoginDialog open={loginDialogOpen} onOpenChange={setLoginDialogOpen} />
+          </>
         )}
       </div>
     </header>;
