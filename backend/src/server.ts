@@ -23,8 +23,10 @@ const PORT = process.env.API_PORT || 3001;
 // CORS - Must be before other middleware to handle preflight requests
 // Allow multiple origins for development
 const allowedOrigins = process.env.CORS_ORIGIN 
-  ? process.env.CORS_ORIGIN.split(',')
+  ? process.env.CORS_ORIGIN.split(',').map(origin => origin.trim())
   : ['http://localhost:5173', 'http://localhost:8080', 'http://localhost:3000'];
+
+const isProduction = process.env.NODE_ENV === 'production';
 
 app.use(cors({
   origin: (origin, callback) => {
@@ -34,8 +36,15 @@ app.use(cors({
     if (allowedOrigins.indexOf(origin) !== -1) {
       callback(null, true);
     } else {
-      console.warn(`CORS: Blocked origin ${origin}`);
-      callback(null, true); // Allow all in development, restrict in production
+      if (isProduction) {
+        // Em produção, realmente bloquear origens não permitidas
+        console.warn(`CORS: Blocked origin ${origin} in production`);
+        callback(new Error('Not allowed by CORS'), false);
+      } else {
+        // Em desenvolvimento, permitir tudo para facilitar testes
+        console.warn(`CORS: Allowing origin ${origin} in development`);
+        callback(null, true);
+      }
     }
   },
   credentials: true,
