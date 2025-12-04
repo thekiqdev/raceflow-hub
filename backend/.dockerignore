@@ -20,4 +20,13 @@ scripts/*.ts
 scripts/*.js.map
 scripts/*.d.ts
 scripts/*.d.ts.map
+# Exclude frontend files if build context is root
+../package.json
+../package-lock.json
+../node_modules
+../src
+../public
+../vite.config.ts
+../tsconfig*.json
+../index.html
 

@@ -1,15 +1,16 @@
-# Backend Dockerfile
+# Backend Dockerfile (for root build context)
+# Use this if Easypanel build context is set to "/" (root)
 FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# Copy package files (only from backend directory)
-COPY package.json package-lock.json* ./
-COPY tsconfig.json ./
+# Copy package files from backend directory
+COPY backend/package.json backend/package-lock.json* ./
+COPY backend/tsconfig.json ./
 
-# Verify we have the correct package.json (should be raceflow-backend, not vite_react_shadcn_ts)
+# Verify we have the correct package.json
 RUN if [ "$(cat package.json | grep -o '"name"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | cut -d'"' -f4)" != "raceflow-backend" ]; then \
-      echo "ERROR: Wrong package.json detected! Expected 'raceflow-backend' but got:"; \
+      echo "ERROR: Wrong package.json detected!"; \
       cat package.json | grep '"name"'; \
       exit 1; \
     fi
@@ -17,9 +18,9 @@ RUN if [ "$(cat package.json | grep -o '"name"[[:space:]]*:[[:space:]]*"[^"]*"' 
 # Install dependencies
 RUN npm ci
 
-# Copy source code (only backend files)
-COPY src ./src
-COPY scripts ./scripts
+# Copy source code from backend directory
+COPY backend/src ./src
+COPY backend/scripts ./scripts
 
 # Build TypeScript
 RUN npm run build
@@ -33,14 +34,7 @@ RUN apk add --no-cache wget
 WORKDIR /app
 
 # Copy package files
-COPY package.json package-lock.json* ./
-
-# Verify we have the correct package.json
-RUN if [ "$(cat package.json | grep -o '"name"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | cut -d'"' -f4)" != "raceflow-backend" ]; then \
-      echo "ERROR: Wrong package.json detected!"; \
-      cat package.json | grep '"name"'; \
-      exit 1; \
-    fi
+COPY backend/package.json backend/package-lock.json* ./
 
 # Install only production dependencies
 RUN npm ci --omit=dev
