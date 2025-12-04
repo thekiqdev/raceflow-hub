@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -26,64 +26,67 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { Plus, Search, MoreVertical, Edit, Eye, Trash2, BarChart3, Calendar, Award } from "lucide-react";
+import { Plus, Search, MoreVertical, Edit, Eye, Trash2, BarChart3, Calendar, Award, Loader2 } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { EventFormDialog } from "./EventFormDialog";
-import { supabase } from "@/integrations/supabase/client";
+import { getEvents, updateEvent, deleteEvent, type Event } from "@/lib/api/events";
+import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 
 const OrganizerEvents = () => {
+  const { user } = useAuth();
+  const [loading, setLoading] = useState(true);
+  const [events, setEvents] = useState<Event[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [selectedEvent, setSelectedEvent] = useState<any>(null);
+  const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
   const [isResultDialogOpen, setIsResultDialogOpen] = useState(false);
   const [resultUrl, setResultUrl] = useState("");
-  const [eventForResult, setEventForResult] = useState<any>(null);
+  const [eventForResult, setEventForResult] = useState<Event | null>(null);
+  const [isDeleting, setIsDeleting] = useState<string | null>(null);
 
-  // Mock data
-  const events = [
-    {
-      id: "1",
-      title: "Corrida do Sol 2024",
-      date: new Date(2024, 11, 15),
-      city: "São Paulo",
-      state: "SP",
-      status: "published" as const,
-      registrations: 89,
-      revenue: 7565.00,
-    },
-    {
-      id: "2",
-      title: "Meia Maratona das Flores",
-      date: new Date(2024, 11, 22),
-      city: "Rio de Janeiro",
-      state: "RJ",
-      status: "published" as const,
-      registrations: 34,
-      revenue: 3230.00,
-    },
-    {
-      id: "3",
-      title: "Trail Run Montanha",
-      date: new Date(2025, 0, 10),
-      city: "Belo Horizonte",
-      state: "MG",
-      status: "draft" as const,
-      registrations: 0,
-      revenue: 0,
-    },
-    {
-      id: "4",
-      title: "Corrida Noturna Cidade",
-      date: new Date(2024, 10, 20),
-      city: "Curitiba",
-      state: "PR",
-      status: "finished" as const,
-      registrations: 124,
-      revenue: 9450.00,
-    },
-  ];
+  useEffect(() => {
+    loadEvents();
+  }, []);
+
+  const loadEvents = async () => {
+    if (!user) {
+      console.log("❌ No user, skipping loadEvents");
+      return;
+    }
+
+    try {
+      setLoading(true);
+      console.log("🔄 Loading events for organizer:", user.id);
+      
+      const response = await getEvents({ organizer_id: user.id });
+
+      console.log("📥 Full response:", response);
+      console.log("📥 Response success:", response.success);
+      console.log("📥 Response data:", response.data);
+      console.log("📥 Response data type:", typeof response.data);
+      console.log("📥 Response data is array:", Array.isArray(response.data));
+      console.log("📥 Response data length:", response.data?.length);
+
+      if (response.success && response.data) {
+        const eventsArray = Array.isArray(response.data) ? response.data : [];
+        console.log("✅ Events loaded:", eventsArray.length, "events");
+        console.log("✅ Events data:", eventsArray);
+        setEvents(eventsArray);
+      } else {
+        console.error("❌ Error loading events:", response);
+        toast.error(response.error || "Erro ao carregar eventos");
+        setEvents([]);
+      }
+    } catch (error) {
+      console.error("❌ Exception loading events:", error);
+      toast.error("Erro ao carregar eventos");
+      setEvents([]);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -100,32 +103,55 @@ const OrganizerEvents = () => {
 
   const filteredEvents = events.filter(event =>
     event.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    event.city.toLowerCase().includes(searchQuery.toLowerCase())
+    event.city.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    event.state.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   const handleSendResult = async () => {
-    if (!resultUrl.trim()) {
+    if (!resultUrl.trim() || !eventForResult) {
       toast.error("Por favor, insira o link dos resultados");
       return;
     }
 
     try {
-      const { error } = await supabase
-        .from("events")
-        .update({ result_url: resultUrl })
-        .eq("id", eventForResult.id);
+      const response = await updateEvent(eventForResult.id, { result_url: resultUrl });
 
-      if (error) throw error;
+      if (!response.success) {
+        throw new Error(response.error || "Erro ao atualizar evento");
+      }
 
       toast.success("Link de resultados enviado com sucesso!");
       setIsResultDialogOpen(false);
       setResultUrl("");
       setEventForResult(null);
       // Refresh events list
-      window.location.reload();
-    } catch (error) {
+      loadEvents();
+    } catch (error: any) {
       console.error("Error updating result URL:", error);
-      toast.error("Erro ao enviar link de resultados");
+      toast.error(error.message || "Erro ao enviar link de resultados");
+    }
+  };
+
+  const handleDeleteEvent = async (eventId: string) => {
+    if (!confirm("Tem certeza que deseja excluir este evento? Esta ação não pode ser desfeita.")) {
+      return;
+    }
+
+    try {
+      setIsDeleting(eventId);
+      const response = await deleteEvent(eventId);
+
+      if (!response.success) {
+        throw new Error(response.error || "Erro ao excluir evento");
+      }
+
+      toast.success("Evento excluído com sucesso!");
+      loadEvents();
+    } catch (error: any) {
+      console.error("Error deleting event:", error);
+      toast.error(error.message || "Erro ao excluir evento");
+    } finally {
+      setIsDeleting(null);
     }
   };
 
@@ -165,88 +191,106 @@ const OrganizerEvents = () => {
         <CardHeader>
           <CardTitle>Meus Eventos</CardTitle>
           <CardDescription>
-            {filteredEvents.length} {filteredEvents.length === 1 ? "evento encontrado" : "eventos encontrados"}
+            {loading ? "Carregando..." : `${filteredEvents.length} ${filteredEvents.length === 1 ? "evento encontrado" : "eventos encontrados"}`}
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Nome do Evento</TableHead>
-                  <TableHead>Data</TableHead>
-                  <TableHead>Localização</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Inscrições</TableHead>
-                  <TableHead className="text-right">Faturamento</TableHead>
-                  <TableHead className="text-right">Ações</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredEvents.map((event) => (
-                  <TableRow key={event.id}>
-                    <TableCell className="font-medium">{event.title}</TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <Calendar className="h-4 w-4 text-muted-foreground" />
-                        {format(event.date, "dd 'de' MMM, yyyy", { locale: ptBR })}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      {event.city}, {event.state}
-                    </TableCell>
-                    <TableCell>{getStatusBadge(event.status)}</TableCell>
-                    <TableCell className="text-right">
-                      <span className="font-medium">{event.registrations}</span>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <span className="font-semibold text-secondary">
-                        R$ {event.revenue.toFixed(2)}
-                      </span>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon">
-                            <MoreVertical className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem>
-                            <Eye className="mr-2 h-4 w-4" />
-                            Ver Detalhes
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => {
-                            setSelectedEvent(event);
-                            setIsDialogOpen(true);
-                          }}>
-                            <Edit className="mr-2 h-4 w-4" />
-                            Editar
-                          </DropdownMenuItem>
-                          <DropdownMenuItem>
-                            <BarChart3 className="mr-2 h-4 w-4" />
-                            Estatísticas
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => {
-                            setEventForResult(event);
-                            setResultUrl("");
-                            setIsResultDialogOpen(true);
-                          }}>
-                            <Award className="mr-2 h-4 w-4" />
-                            Enviar Resultado
-                          </DropdownMenuItem>
-                          <DropdownMenuItem className="text-destructive">
-                            <Trash2 className="mr-2 h-4 w-4" />
-                            Excluir
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </TableCell>
+          {loading ? (
+            <div className="flex items-center justify-center h-64">
+              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            </div>
+          ) : filteredEvents.length === 0 ? (
+            <div className="text-center py-12 text-muted-foreground">
+              {searchQuery ? "Nenhum evento encontrado com essa busca" : "Você ainda não criou nenhum evento"}
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Nome do Evento</TableHead>
+                    <TableHead>Data</TableHead>
+                    <TableHead>Localização</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="text-right">Inscrições</TableHead>
+                    <TableHead className="text-right">Faturamento</TableHead>
+                    <TableHead className="text-right">Ações</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
+                </TableHeader>
+                <TableBody>
+                  {filteredEvents.map((event) => (
+                    <TableRow key={event.id}>
+                      <TableCell className="font-medium">{event.title}</TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <Calendar className="h-4 w-4 text-muted-foreground" />
+                          {format(new Date(event.event_date), "dd 'de' MMM, yyyy", { locale: ptBR })}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        {event.city}, {event.state}
+                      </TableCell>
+                      <TableCell>{getStatusBadge(event.status || "draft")}</TableCell>
+                      <TableCell className="text-right">
+                        <span className="font-medium">{event.confirmed_registrations || event.registration_count || 0}</span>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <span className="font-semibold text-secondary">
+                          R$ {(event.revenue || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </span>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon" disabled={isDeleting === event.id}>
+                              {isDeleting === event.id ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <MoreVertical className="h-4 w-4" />
+                              )}
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem>
+                              <Eye className="mr-2 h-4 w-4" />
+                              Ver Detalhes
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => {
+                              setSelectedEvent(event);
+                              setIsDialogOpen(true);
+                            }}>
+                              <Edit className="mr-2 h-4 w-4" />
+                              Editar
+                            </DropdownMenuItem>
+                            <DropdownMenuItem>
+                              <BarChart3 className="mr-2 h-4 w-4" />
+                              Estatísticas
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => {
+                              setEventForResult(event);
+                              setResultUrl(event.result_url || "");
+                              setIsResultDialogOpen(true);
+                            }}>
+                              <Award className="mr-2 h-4 w-4" />
+                              Enviar Resultado
+                            </DropdownMenuItem>
+                            <DropdownMenuItem 
+                              className="text-destructive"
+                              onClick={() => handleDeleteEvent(event.id)}
+                              disabled={isDeleting === event.id}
+                            >
+                              <Trash2 className="mr-2 h-4 w-4" />
+                              Excluir
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -270,7 +314,7 @@ const OrganizerEvents = () => {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-primary">
-              {events.reduce((sum, e) => sum + e.registrations, 0)}
+              {events.reduce((sum, e) => sum + (e.confirmed_registrations || e.registration_count || 0), 0)}
             </div>
             <p className="text-xs text-muted-foreground">Todos os eventos</p>
           </CardContent>
@@ -282,7 +326,7 @@ const OrganizerEvents = () => {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-secondary">
-              R$ {events.reduce((sum, e) => sum + e.revenue, 0).toFixed(2)}
+              R$ {events.reduce((sum, e) => sum + (e.revenue || 0), 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </div>
             <p className="text-xs text-muted-foreground">Acumulado</p>
           </CardContent>
@@ -291,11 +335,19 @@ const OrganizerEvents = () => {
 
       <EventFormDialog
         open={isDialogOpen}
-        onOpenChange={setIsDialogOpen}
+        onOpenChange={(open) => {
+          setIsDialogOpen(open);
+          if (!open) {
+            setSelectedEvent(null);
+          }
+        }}
         event={selectedEvent}
-        onSuccess={() => {
+        onSuccess={async () => {
+          setSelectedEvent(null);
+          // Small delay to ensure backend has processed the event
+          await new Promise(resolve => setTimeout(resolve, 300));
           // Refresh events list
-          window.location.reload();
+          await loadEvents();
         }}
       />
 

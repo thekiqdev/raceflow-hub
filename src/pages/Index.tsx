@@ -8,7 +8,9 @@ import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { EventFilters, EventFiltersState } from "@/components/event/EventFilters";
 import { Header } from "@/components/Header";
-import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
+import { getHomePageSettings, updateHomePageSettings } from "@/lib/api/homePageSettings";
+import { getEvents } from "@/lib/api/events";
 import { VisualEditorProvider } from "@/contexts/VisualEditorContext";
 import { EditableText } from "@/components/visual-editor/EditableText";
 import { EditableImage } from "@/components/visual-editor/EditableImage";
@@ -24,7 +26,8 @@ interface Event {
 }
 const Index = () => {
   const navigate = useNavigate();
-  const [isAdmin, setIsAdmin] = useState(false);
+  const { user } = useAuth();
+  const isAdmin = user?.roles?.includes('admin') || false;
   const [upcomingEvents, setUpcomingEvents] = useState<Event[]>([]);
   const [filters, setFilters] = useState<EventFiltersState>({
     city: "",
@@ -51,71 +54,32 @@ const Index = () => {
   });
   useEffect(() => {
     loadPageSettings();
-    checkAdminRole();
-    // Mock upcoming events for testing
-    const mockEvents: Event[] = [{
-      id: "1",
-      title: "Corrida de São Silvestre 2024",
-      event_date: "2024-12-31T07:00:00Z",
-      city: "São Paulo",
-      state: "SP",
-      banner_url: null
-    }, {
-      id: "2",
-      title: "Maratona do Rio 2025",
-      event_date: "2025-06-15T06:00:00Z",
-      city: "Rio de Janeiro",
-      state: "RJ",
-      banner_url: null
-    }, {
-      id: "3",
-      title: "Meia Maratona de Florianópolis",
-      event_date: "2025-09-20T07:30:00Z",
-      city: "Florianópolis",
-      state: "SC",
-      banner_url: null
-    }, {
-      id: "4",
-      title: "Circuito das Estações - Curitiba",
-      event_date: "2025-03-15T06:30:00Z",
-      city: "Curitiba",
-      state: "PR",
-      banner_url: null
-    }, {
-      id: "5",
-      title: "Corrida do Bem - Belo Horizonte",
-      event_date: "2025-05-10T07:00:00Z",
-      city: "Belo Horizonte",
-      state: "MG",
-      banner_url: null
-    }];
-    setUpcomingEvents(mockEvents);
+    loadUpcomingEvents(); // Load events from API instead of mock
   }, []);
 
-  const checkAdminRole = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
-
-    const { data: roles } = await supabase
-      .from('user_roles')
-      .select('role')
-      .eq('user_id', user.id)
-      .eq('role', 'admin')
-      .maybeSingle();
-
-    setIsAdmin(!!roles);
+  const loadUpcomingEvents = async () => {
+    try {
+      const response = await getEvents({ status: 'published' });
+      if (response.success && response.data) {
+        setUpcomingEvents(response.data);
+      }
+    } catch (error) {
+      console.error("Erro ao carregar eventos:", error);
+      toast.error("Erro ao carregar eventos");
+    }
   };
 
   const loadPageSettings = async () => {
     try {
-      const { data, error } = await supabase
-        .from("home_page_settings")
-        .select("*")
-        .single();
+      const response = await getHomePageSettings();
 
-      if (error) throw error;
+      if (!response.success) {
+        console.warn('Failed to load page settings:', response.error);
+        return; // Use default settings if API fails
+      }
 
-      if (data) {
+      if (response.data) {
+        const data = response.data;
         setPageSettings({
           hero_title: data.hero_title || pageSettings.hero_title,
           hero_subtitle: data.hero_subtitle || pageSettings.hero_subtitle,
@@ -140,9 +104,8 @@ const Index = () => {
   };
 
   const handleSaveChanges = async (editedContent: Record<string, any>) => {
-    const { error } = await supabase
-      .from('home_page_settings')
-      .update({
+    try {
+      const response = await updateHomePageSettings({
         hero_title: editedContent.hero_title,
         hero_subtitle: editedContent.hero_subtitle,
         hero_image_url: editedContent.hero_image_url,
@@ -157,14 +120,19 @@ const Index = () => {
         stats_cities_label: editedContent.stats_cities_label,
         stats_years: editedContent.stats_years,
         stats_years_label: editedContent.stats_years_label,
-      })
-      .eq('id', '00000000-0000-0000-0000-000000000001');
+      });
 
-    if (error) {
+      if (!response.success) {
+        throw new Error(response.error || 'Erro ao salvar configurações');
+      }
+
+      await loadPageSettings();
+      toast.success('Configurações salvas com sucesso!');
+    } catch (error) {
+      console.error('Erro ao salvar configurações:', error);
+      toast.error('Erro ao salvar configurações');
       throw error;
     }
-
-    await loadPageSettings();
   };
   const cities = Array.from(new Set(upcomingEvents.map(e => e.city))).sort();
   const categories = ["5K", "10K", "Meia Maratona", "Maratona", "Trail Run"];

@@ -1,29 +1,32 @@
 import { useState, useEffect } from "react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Separator } from "@/components/ui/separator";
-import { CheckCircle2, Calendar, MapPin, Ticket, Download } from "lucide-react";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { CheckCircle2, Calendar, MapPin, Ticket, Download, ChevronDown, ChevronUp } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
+import { getOwnProfile, getPublicProfileByCpf } from "@/lib/api/profiles";
+import { createRegistration } from "@/lib/api/registrations";
+import { getEventCategories, EventCategory, CategoryBatch } from "@/lib/api/eventCategories";
+import { EventKit, KitProduct, ProductVariant } from "@/lib/api/eventKits";
 
-interface Category {
-  id: string;
-  name: string;
-  distance: string;
-  price: number;
-  max_participants: number | null;
+// Re-export ProductVariant type for use in component
+type ProductVariantType = ProductVariant;
+import { toast } from "sonner";
+
+interface Category extends EventCategory {
+  batches?: CategoryBatch[];
 }
 
-interface Kit {
-  id: string;
-  name: string;
-  description: string | null;
-  price: number;
+interface Kit extends EventKit {
+  products?: KitProduct[];
 }
 
 interface EventInfo {
@@ -33,6 +36,7 @@ interface EventInfo {
   location: string;
   city: string;
   state: string;
+  status?: string;
 }
 
 interface RegistrationFlowProps {
@@ -43,20 +47,57 @@ interface RegistrationFlowProps {
   kits: Kit[];
 }
 
-const SHIRT_SIZES = ["PP", "P", "M", "G", "GG", "XG"];
+// Tamanhos serão obtidos das variações do produto selecionado
+
+// Helper function to format price
+const formatPrice = (price: number): string => {
+  if (price === 0) return "Grátis";
+  return `R$ ${price.toFixed(2).replace('.', ',')}`;
+};
 
 export function RegistrationFlow({
   open,
   onOpenChange,
   event,
-  categories,
+  categories: initialCategories,
   kits,
 }: RegistrationFlowProps) {
+  const { user, login, register } = useAuth();
   const [step, setStep] = useState(1);
   const [selectedCategory, setSelectedCategory] = useState<Category | null>(null);
+  const [selectedBatch, setSelectedBatch] = useState<CategoryBatch | null>(null);
   const [selectedKit, setSelectedKit] = useState<Kit | null>(null);
+  const [expandedKits, setExpandedKits] = useState<Set<string>>(new Set());
+  const [selectedProducts, setSelectedProducts] = useState<Map<string, { productId: string; variantId?: string }>>(new Map());
+  // State for cascading variant selection: { productId: { attributeName: selectedValue } }
+  const [variantSelections, setVariantSelections] = useState<Map<string, Record<string, string>>>(new Map());
   const [shirtSize, setShirtSize] = useState("");
   const [confirmationCode, setConfirmationCode] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [categories, setCategories] = useState<Category[]>(initialCategories || []);
+  const [loadingCategories, setLoadingCategories] = useState(false);
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [loginData, setLoginData] = useState({
+    email: "",
+    password: "",
+  });
+  const [isRegistering, setIsRegistering] = useState(false); // Toggle between login and register
+  const [registerData, setRegisterData] = useState({
+    fullName: "",
+    email: "",
+    password: "",
+    confirmPassword: "",
+    cpf: "",
+    phone: "",
+    birthDate: "",
+    gender: "",
+  });
+  const [lgpdConsent, setLgpdConsent] = useState(false);
+  const [isRegisteringAccount, setIsRegisteringAccount] = useState(false);
+  const [isRegisteringOther, setIsRegisteringOther] = useState(false);
+  const [searchCpf, setSearchCpf] = useState("");
+  const [isSearchingProfile, setIsSearchingProfile] = useState(false);
+  const [otherPersonId, setOtherPersonId] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     fullName: "",
     email: "",
@@ -64,51 +105,356 @@ export function RegistrationFlow({
     cpf: "",
   });
 
-  const totalPrice = (selectedCategory?.price || 0) + (selectedKit?.price || 0);
+  // Calculate total price based on selected batch or category price
+  const categoryPrice = selectedBatch?.price || selectedCategory?.price || 0;
+  const totalPrice = categoryPrice + (selectedKit?.price || 0);
 
-  // Load user data when dialog opens
+  // Debug: Log quando o modal abre ou categorias mudam
+  useEffect(() => {
+    if (open) {
+      console.log('🔍 RegistrationFlow opened:', {
+        eventId: event.id,
+        eventTitle: event.title,
+        initialCategoriesCount: initialCategories.length,
+        initialCategories: initialCategories,
+        currentCategoriesCount: categories.length,
+        currentCategories: categories,
+        kitsCount: kits.length,
+        kits: kits,
+      });
+      
+      // Debug kits and products
+      kits.forEach((kit, index) => {
+        console.log(`📦 Kit ${index + 1}:`, {
+          id: kit.id,
+          name: kit.name,
+          productsCount: kit.products?.length || 0,
+          products: kit.products?.map(p => ({
+            id: p.id,
+            name: p.name,
+            type: p.type,
+            variantsCount: p.variants?.length || 0,
+            variants: p.variants,
+          })),
+        });
+      });
+    }
+  }, [open, event, initialCategories, categories, kits]);
+
+  // Sincronizar categorias com props quando mudarem
+  useEffect(() => {
+    if (initialCategories && initialCategories.length > 0) {
+      console.log('🔄 Atualizando categorias das props:', initialCategories.length);
+      setCategories(initialCategories);
+    }
+  }, [initialCategories]);
+
+  // Recarregar categorias quando o modal abre se estiverem vazias
+  useEffect(() => {
+    const loadCategories = async () => {
+      if (open && event.id && categories.length === 0 && !loadingCategories) {
+        console.log('🔄 Recarregando categorias porque estão vazias...');
+        setLoadingCategories(true);
+        try {
+          const response = await getEventCategories(event.id);
+          console.log('🔄 Categorias recarregadas:', response);
+          if (response.success && response.data) {
+            setCategories(response.data);
+            console.log('✅ Categorias atualizadas:', response.data.length);
+          } else {
+            console.error('❌ Erro ao recarregar categorias:', response.error);
+            toast.error('Erro ao carregar categorias. Tente novamente.');
+          }
+        } catch (error) {
+          console.error('❌ Erro ao recarregar categorias:', error);
+          toast.error('Erro ao carregar categorias. Tente novamente.');
+        } finally {
+          setLoadingCategories(false);
+        }
+      }
+    };
+
+    loadCategories();
+  }, [open, event.id]);
+
+  // Load user data when dialog opens or user logs in
   useEffect(() => {
     const loadUserData = async () => {
-      if (!open) return;
+      if (!open || !user) {
+        // Reset form data if user is not logged in
+        if (!user && open) {
+          setFormData({
+            fullName: "",
+            email: "",
+            phone: "",
+            cpf: "",
+          });
+        }
+        return;
+      }
 
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("*")
-        .eq("id", user.id)
-        .maybeSingle();
-
-      if (profile) {
-        setFormData({
-          fullName: profile.full_name || "",
-          email: user.email || "",
-          phone: profile.phone || "",
-          cpf: profile.cpf || "",
-        });
-      } else {
-        // If no profile, at least set the email
-        setFormData((prev) => ({
-          ...prev,
-          email: user.email || "",
-        }));
+      try {
+        const profileResponse = await getOwnProfile();
+        
+        if (profileResponse.success && profileResponse.data) {
+          const profile = profileResponse.data;
+          setFormData({
+            fullName: profile.full_name || "",
+            email: user.email || "",
+            phone: profile.phone || "",
+            cpf: profile.cpf || "",
+          });
+        } else {
+          // If no profile, at least set the email
+          setFormData((prev) => ({
+            ...prev,
+            email: user.email || "",
+          }));
+        }
+      } catch (error) {
+        console.error("Error loading user profile:", error);
+        // Set email if available
+        if (user.email) {
+          setFormData((prev) => ({
+            ...prev,
+            email: user.email || "",
+          }));
+        }
       }
     };
 
     loadUserData();
-  }, [open]);
+  }, [open, user]);
 
   const handleCategorySelect = (category: Category) => {
+    // Check if category is full
+    const isFull = category.max_participants !== null && 
+                  category.available_spots !== null && 
+                  category.available_spots <= 0;
+    
+    if (isFull) {
+      toast.error("Esta categoria está esgotada. Por favor, escolha outra categoria.");
+      return;
+    }
+    
     setSelectedCategory(category);
+    // Reset batch selection when changing category
+    setSelectedBatch(null);
+    
+    // If category has valid batches, select the first one automatically
+    if (category.batches && category.batches.length > 0) {
+      const now = new Date();
+      // Filtrar lotes ativos (data já chegou) e ordenar por data (mais recente primeiro)
+      const activeBatches = category.batches
+        .filter(batch => {
+          if (!batch.valid_from) return false;
+          const batchDate = new Date(batch.valid_from);
+          return !isNaN(batchDate.getTime()) && batchDate <= now;
+        })
+        .sort((a, b) => {
+          const dateA = new Date(a.valid_from!);
+          const dateB = new Date(b.valid_from!);
+          // Ordenar do mais recente para o mais antigo
+          return dateB.getTime() - dateA.getTime();
+        });
+      
+      if (activeBatches.length > 0) {
+        // Auto-select o lote mais recente ativo
+        setSelectedBatch(activeBatches[0]);
+      }
+    }
   };
 
-  const handleKitSelect = (kit: Kit) => {
+  const handleBatchSelect = (batch: CategoryBatch) => {
+    setSelectedBatch(batch);
+  };
+
+  const toggleKitExpansion = (kitId: string, e?: React.MouseEvent) => {
+    // Prevent event propagation to avoid triggering kit selection
+    if (e) {
+      e.stopPropagation();
+    }
+    setExpandedKits(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(kitId)) {
+        newSet.delete(kitId);
+      } else {
+        newSet.add(kitId);
+      }
+      return newSet;
+    });
+  };
+
+  const handleProductSelect = (productId: string, kitId: string) => {
+    setSelectedProducts(prev => {
+      const newMap = new Map(prev);
+      const current = newMap.get(kitId);
+      
+      // If clicking the same product, deselect it
+      if (current?.productId === productId) {
+        newMap.delete(kitId);
+      } else {
+        // Select new product (clear variant if it was a variable product)
+        newMap.set(kitId, { productId });
+      }
+      return newMap;
+    });
+  };
+
+  const handleVariantSelect = (variantId: string, productId: string, kitId: string) => {
+    setSelectedProducts(prev => {
+      const newMap = new Map(prev);
+      newMap.set(kitId, { productId, variantId });
+      return newMap;
+    });
+    // Also update shirtSize for compatibility
+    setShirtSize(variantId);
+  };
+
+  const handleKitSelect = (kit: Kit, skipValidation = false) => {
+    // If skipValidation is true, just select the kit (used when expanding to show products)
+    if (skipValidation) {
+      setSelectedKit(kit);
+      return;
+    }
+    
+    // Check if kit has variable products that need variant selection
+    if (kit.products && kit.products.length > 0) {
+      const variableProducts = kit.products.filter(p => p.type === 'variable' && p.variants && p.variants.length > 0);
+      if (variableProducts.length > 0) {
+        const selectedProduct = selectedProducts.get(kit.id);
+        // Only allow selection if at least one variant is selected (since we don't require product selection anymore)
+        if (!selectedProduct?.variantId) {
+          // Don't show error, just don't allow final selection
+          // User can still expand to see products and select variants
+          return;
+        }
+      }
+    }
+    
     setSelectedKit(kit);
   };
 
   const handleInputChange = (field: string, value: string) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const handleLogin = async () => {
+    if (!loginData.email || !loginData.password) {
+      toast.error("Por favor, preencha email e senha");
+      return;
+    }
+
+    setIsLoggingIn(true);
+    try {
+      const success = await login(loginData.email, loginData.password);
+      if (success) {
+        // Login successful - user data will be loaded by useEffect
+        setLoginData({ email: "", password: "" });
+        setIsRegisteringOther(false);
+      }
+    } catch (error) {
+      console.error("Login error:", error);
+      toast.error("Erro ao fazer login. Tente novamente.");
+    } finally {
+      setIsLoggingIn(false);
+    }
+  };
+
+  const handleRegister = async () => {
+    if (!registerData.fullName || !registerData.email || !registerData.password || !registerData.cpf || !registerData.phone) {
+      toast.error("Por favor, preencha todos os campos obrigatórios");
+      return;
+    }
+
+    if (registerData.password !== registerData.confirmPassword) {
+      toast.error("As senhas não coincidem");
+      return;
+    }
+
+    if (!lgpdConsent) {
+      toast.error("Você precisa concordar com os termos de privacidade");
+      return;
+    }
+
+    setIsRegisteringAccount(true);
+    try {
+      const success = await register({
+        email: registerData.email,
+        password: registerData.password,
+        full_name: registerData.fullName,
+        cpf: registerData.cpf.replace(/\D/g, ""),
+        phone: registerData.phone.replace(/\D/g, ""),
+        birth_date: registerData.birthDate || undefined,
+        gender: registerData.gender || undefined,
+        lgpd_consent: lgpdConsent,
+      });
+
+      if (success) {
+        // Registration successful - user data will be loaded by useEffect
+        setRegisterData({
+          fullName: "",
+          email: "",
+          password: "",
+          confirmPassword: "",
+          cpf: "",
+          phone: "",
+          birthDate: "",
+          gender: "",
+        });
+        setLgpdConsent(false);
+        setIsRegistering(false); // Switch back to login view
+      }
+    } catch (error) {
+      console.error("Registration error:", error);
+      toast.error("Erro ao criar conta. Tente novamente.");
+    } finally {
+      setIsRegisteringAccount(false);
+    }
+  };
+
+  const handleSearchProfile = async () => {
+    if (!searchCpf) {
+      toast.error("Por favor, informe o CPF");
+      return;
+    }
+
+    setIsSearchingProfile(true);
+    try {
+      const response = await getPublicProfileByCpf(searchCpf);
+      if (response.success && response.data) {
+        const profile = response.data;
+        setFormData({
+          fullName: profile.full_name || "",
+          email: profile.email || "",
+          phone: profile.phone || "",
+          cpf: profile.cpf || "",
+        });
+        setOtherPersonId(profile.id);
+        toast.success("Perfil encontrado!");
+      } else {
+        toast.error(response.error || "Perfil não encontrado ou não está público");
+        setFormData({
+          fullName: "",
+          email: "",
+          phone: "",
+          cpf: "",
+        });
+        setOtherPersonId(null);
+      }
+    } catch (error) {
+      console.error("Error searching profile:", error);
+      toast.error("Erro ao buscar perfil. Tente novamente.");
+      setFormData({
+        fullName: "",
+        email: "",
+        phone: "",
+        cpf: "",
+      });
+      setOtherPersonId(null);
+    } finally {
+      setIsSearchingProfile(false);
+    }
   };
 
   const handleNextStep = () => {
@@ -119,36 +465,130 @@ export function RegistrationFlow({
     setStep((prev) => prev - 1);
   };
 
-  const handleSubmit = () => {
-    // Generate confirmation code
-    const code = `CONF-${Math.random().toString(36).substring(2, 10).toUpperCase()}`;
-    setConfirmationCode(code);
-    handleNextStep();
+  const handleSubmit = async () => {
+    if (!user || !selectedCategory) {
+      toast.error("Erro: usuário não autenticado ou categoria não selecionada");
+      return;
+    }
+
+    // ETAPA 7.1: Validate if event is open for registrations
+    if (event.status) {
+      if (event.status === "draft") {
+        toast.error("Este evento ainda não está aberto para inscrições.");
+        return;
+      }
+
+      if (event.status === "finished" || event.status === "cancelled") {
+        toast.error("Este evento não está mais aceitando inscrições.");
+        return;
+      }
+
+      // Only 'published' and 'ongoing' statuses allow registrations
+      if (event.status !== "published" && event.status !== "ongoing") {
+        toast.error("Este evento não está aberto para inscrições no momento.");
+        return;
+      }
+    }
+
+    // Validate event date (don't allow registration in past events)
+    const eventDate = new Date(event.event_date);
+    const now = new Date();
+    if (eventDate < now) {
+      toast.error("Não é possível se inscrever em eventos que já aconteceram.");
+      return;
+    }
+
+    // Validate if category is still available
+    if (selectedCategory.max_participants !== null && 
+        selectedCategory.available_spots !== null && 
+        selectedCategory.available_spots <= 0) {
+      toast.error("Esta categoria está esgotada. Por favor, escolha outra categoria.");
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      // Create registration
+      // Use otherPersonId if registering for someone else, otherwise use logged user id
+      const runnerId = otherPersonId || user.id;
+      
+      const registrationData = {
+        event_id: event.id,
+        runner_id: runnerId,
+        category_id: selectedCategory.id,
+        kit_id: selectedKit?.id,
+        payment_method: "pix" as const, // Default payment method, can be changed later
+        total_amount: totalPrice,
+      };
+
+      const response = await createRegistration(registrationData);
+
+      if (!response.success) {
+        throw new Error(response.error || "Erro ao criar inscrição");
+      }
+
+      // Generate confirmation code (use the one from API if available, otherwise generate)
+      const code = response.data?.confirmation_code || 
+        `CONF-${Math.random().toString(36).substring(2, 10).toUpperCase()}`;
+      setConfirmationCode(code);
+      
+      toast.success("Inscrição realizada com sucesso!");
+      handleNextStep();
+    } catch (error: any) {
+      console.error("Error creating registration:", error);
+      toast.error(error.message || "Erro ao finalizar inscrição");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleReset = () => {
     setStep(1);
     setSelectedCategory(null);
+    setSelectedBatch(null);
     setSelectedKit(null);
+    setExpandedKits(new Set());
+    setSelectedProducts(new Map());
     setShirtSize("");
     setConfirmationCode("");
     setFormData({ fullName: "", email: "", phone: "", cpf: "" });
     onOpenChange(false);
   };
 
+  // Reset step when modal closes
+  useEffect(() => {
+    if (!open) {
+      setStep(1);
+      setSelectedCategory(null);
+      setSelectedBatch(null);
+      setSelectedKit(null);
+      setExpandedKits(new Set());
+      setSelectedProducts(new Map());
+      setShirtSize("");
+      setConfirmationCode("");
+    }
+  }, [open]);
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="text-2xl">
-            {step === 4 ? "Confirmação de Inscrição" : `Inscrição - ${event.title}`}
+            {step === 5 ? "Confirmação de Inscrição" : `Inscrição - ${event.title}`}
           </DialogTitle>
+          <DialogDescription>
+            {step === 1 && "Faça login ou crie uma conta para continuar"}
+            {step === 2 && "Selecione a modalidade desejada"}
+            {step === 3 && "Escolha o kit e configure os produtos"}
+            {step === 4 && "Revise seus dados e finalize a inscrição"}
+            {step === 5 && "Sua inscrição foi confirmada com sucesso"}
+          </DialogDescription>
         </DialogHeader>
 
         {/* Progress Indicator */}
-        {step < 4 && (
+        {step < 5 && (
           <div className="flex items-center justify-between mb-6">
-            {[1, 2, 3].map((s) => (
+            {[1, 2, 3, 4].map((s) => (
               <div key={s} className="flex items-center flex-1">
                 <div
                   className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${
@@ -159,7 +599,7 @@ export function RegistrationFlow({
                 >
                   {s}
                 </div>
-                {s < 3 && (
+                {s < 4 && (
                   <div
                     className={`flex-1 h-1 mx-2 ${
                       step > s ? "bg-primary" : "bg-muted"
@@ -171,46 +611,406 @@ export function RegistrationFlow({
           </div>
         )}
 
-        {/* Step 1: Category Selection */}
+        {/* Step 1: Personal Data (Login/Register) */}
         {step === 1 && (
-          <div className="space-y-4">
-            <h3 className="text-lg font-semibold">Escolha a Modalidade</h3>
-            <div className="grid gap-4">
-              {categories.map((category) => (
-                <Card
-                  key={category.id}
-                  className={`cursor-pointer transition-all hover:shadow-md ${
-                    selectedCategory?.id === category.id
-                      ? "ring-2 ring-primary"
-                      : ""
-                  }`}
-                  onClick={() => handleCategorySelect(category)}
-                >
-                  <CardContent className="p-4 flex justify-between items-center">
-                    <div>
-                      <h4 className="font-semibold">{category.name}</h4>
-                      <p className="text-sm text-muted-foreground">
-                        {category.distance}
-                      </p>
+          <div className="space-y-6">
+            <div>
+              <h3 className="text-lg font-semibold mb-4">Dados Pessoais</h3>
+              
+              {/* Only show login/register if user is not logged in */}
+              {!user && (
+                <>
+                  {/* Toggle between Login and Register */}
+                  <div className="flex gap-2 mb-4 border-b">
+                    <button
+                      type="button"
+                      onClick={() => setIsRegistering(false)}
+                      className={`px-4 py-2 font-medium transition-colors ${
+                        !isRegistering
+                          ? "border-b-2 border-primary text-primary"
+                          : "text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      Entrar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsRegistering(true)}
+                      className={`px-4 py-2 font-medium transition-colors ${
+                        isRegistering
+                          ? "border-b-2 border-primary text-primary"
+                          : "text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      Criar Conta
+                    </button>
+                  </div>
+
+                  {!isRegistering ? (
+                    // Login Form
+                    <div className="grid gap-4">
+                  <div>
+                    <Label htmlFor="loginEmail">Email *</Label>
+                    <Input
+                      id="loginEmail"
+                      type="email"
+                      value={loginData.email}
+                      onChange={(e) => setLoginData(prev => ({ ...prev, email: e.target.value }))}
+                      placeholder="seu@email.com"
+                      className="mt-1"
+                      disabled={isLoggingIn}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="loginPassword">Senha *</Label>
+                    <Input
+                      id="loginPassword"
+                      type="password"
+                      value={loginData.password}
+                      onChange={(e) => setLoginData(prev => ({ ...prev, password: e.target.value }))}
+                      placeholder="Sua senha"
+                      className="mt-1"
+                      disabled={isLoggingIn}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && loginData.email && loginData.password) {
+                          handleLogin();
+                        }
+                      }}
+                    />
+                  </div>
+                  <Button
+                    onClick={handleLogin}
+                    disabled={!loginData.email || !loginData.password || isLoggingIn}
+                    className="w-full"
+                  >
+                    {isLoggingIn ? "Entrando..." : "Entrar"}
+                  </Button>
                     </div>
-                    <div className="text-right">
-                      <p className="text-xl font-bold text-primary">
-                        R$ {category.price.toFixed(2)}
-                      </p>
-                      {category.max_participants && (
-                        <p className="text-xs text-muted-foreground">
-                          Vagas limitadas
-                        </p>
-                      )}
+                  ) : (
+                    // Register Form
+                    <div className="grid gap-4">
+                      <div>
+                        <Label htmlFor="registerFullName">Nome Completo *</Label>
+                        <Input
+                          id="registerFullName"
+                          value={registerData.fullName}
+                          onChange={(e) => setRegisterData(prev => ({ ...prev, fullName: e.target.value }))}
+                          placeholder="Seu nome completo"
+                          className="mt-1"
+                          disabled={isRegisteringAccount}
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="registerEmail">Email *</Label>
+                        <Input
+                          id="registerEmail"
+                          type="email"
+                          value={registerData.email}
+                          onChange={(e) => setRegisterData(prev => ({ ...prev, email: e.target.value }))}
+                          placeholder="seu@email.com"
+                          className="mt-1"
+                          disabled={isRegisteringAccount}
+                        />
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <Label htmlFor="registerPassword">Senha *</Label>
+                          <Input
+                            id="registerPassword"
+                            type="password"
+                            value={registerData.password}
+                            onChange={(e) => setRegisterData(prev => ({ ...prev, password: e.target.value }))}
+                            placeholder="Mínimo 6 caracteres"
+                            className="mt-1"
+                            disabled={isRegisteringAccount}
+                          />
+                        </div>
+                        <div>
+                          <Label htmlFor="registerConfirmPassword">Confirmar Senha *</Label>
+                          <Input
+                            id="registerConfirmPassword"
+                            type="password"
+                            value={registerData.confirmPassword}
+                            onChange={(e) => setRegisterData(prev => ({ ...prev, confirmPassword: e.target.value }))}
+                            placeholder="Confirme sua senha"
+                            className="mt-1"
+                            disabled={isRegisteringAccount}
+                          />
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <Label htmlFor="registerCpf">CPF *</Label>
+                          <Input
+                            id="registerCpf"
+                            value={registerData.cpf}
+                            onChange={(e) => setRegisterData(prev => ({ ...prev, cpf: e.target.value }))}
+                            placeholder="000.000.000-00"
+                            className="mt-1"
+                            disabled={isRegisteringAccount}
+                          />
+                        </div>
+                        <div>
+                          <Label htmlFor="registerPhone">Telefone *</Label>
+                          <Input
+                            id="registerPhone"
+                            value={registerData.phone}
+                            onChange={(e) => setRegisterData(prev => ({ ...prev, phone: e.target.value }))}
+                            placeholder="(00) 00000-0000"
+                            className="mt-1"
+                            disabled={isRegisteringAccount}
+                          />
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <Label htmlFor="registerBirthDate">Data de Nascimento</Label>
+                          <Input
+                            id="registerBirthDate"
+                            type="date"
+                            value={registerData.birthDate}
+                            onChange={(e) => setRegisterData(prev => ({ ...prev, birthDate: e.target.value }))}
+                            className="mt-1"
+                            disabled={isRegisteringAccount}
+                          />
+                        </div>
+                        <div>
+                          <Label htmlFor="registerGender">Gênero</Label>
+                          <select
+                            id="registerGender"
+                            value={registerData.gender}
+                            onChange={(e) => setRegisterData(prev => ({ ...prev, gender: e.target.value }))}
+                            className="mt-1 flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                            disabled={isRegisteringAccount}
+                          >
+                            <option value="">Selecione</option>
+                            <option value="M">Masculino</option>
+                            <option value="F">Feminino</option>
+                            <option value="O">Outro</option>
+                          </select>
+                        </div>
+                      </div>
+                      <div className="flex items-start gap-2">
+                        <input
+                          type="checkbox"
+                          id="lgpdConsent"
+                          checked={lgpdConsent}
+                          onChange={(e) => setLgpdConsent(e.target.checked)}
+                          className="mt-1"
+                          disabled={isRegisteringAccount}
+                        />
+                        <Label htmlFor="lgpdConsent" className="text-sm cursor-pointer">
+                          Concordo com os termos de privacidade e tratamento de dados pessoais (LGPD) *
+                        </Label>
+                      </div>
+                      <Button
+                        type="button"
+                        onClick={handleRegister}
+                        disabled={
+                          !registerData.fullName ||
+                          !registerData.email ||
+                          !registerData.password ||
+                          !registerData.confirmPassword ||
+                          !registerData.cpf ||
+                          !registerData.phone ||
+                          !lgpdConsent ||
+                          isRegisteringAccount
+                        }
+                        className="w-full"
+                      >
+                        {isRegisteringAccount ? "Criando conta..." : "Criar Conta"}
+                      </Button>
                     </div>
-                  </CardContent>
-                </Card>
-              ))}
+                  )}
+                </>
+              )}
             </div>
+
+            {/* Show user data if logged in */}
+            {user && (
+              <>
+                <Separator />
+                <div>
+                  <h3 className="text-lg font-semibold mb-4">Meus Dados</h3>
+                  <div className="grid gap-4">
+                    <div>
+                      <Label htmlFor="fullName">Nome Completo *</Label>
+                      <Input
+                        id="fullName"
+                        value={formData.fullName}
+                        disabled
+                        className="mt-1 bg-muted"
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <Label htmlFor="email">Email *</Label>
+                        <Input
+                          id="email"
+                          type="email"
+                          value={formData.email}
+                          disabled
+                          className="mt-1 bg-muted"
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="phone">Telefone *</Label>
+                        <Input
+                          id="phone"
+                          value={formData.phone}
+                          disabled
+                          className="mt-1 bg-muted"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <Label htmlFor="cpf">CPF *</Label>
+                      <Input
+                        id="cpf"
+                        value={formData.cpf}
+                        disabled
+                        className="mt-1 bg-muted"
+                      />
+                    </div>
+                  </div>
+                  
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      setIsRegisteringOther(true);
+                      setFormData({
+                        fullName: "",
+                        email: "",
+                        phone: "",
+                        cpf: "",
+                      });
+                      setOtherPersonId(null);
+                    }}
+                    className="w-full mt-4"
+                  >
+                    Inscrever outra pessoa
+                  </Button>
+                </div>
+              </>
+            )}
+
+            {/* Register other person section */}
+            {user && isRegisteringOther && (
+              <>
+                <Separator />
+                <div>
+                  <h3 className="text-lg font-semibold mb-4">Inscrever Outra Pessoa</h3>
+                  <div className="grid gap-4">
+                    <div>
+                      <Label htmlFor="searchCpf">CPF da pessoa *</Label>
+                      <div className="flex gap-2 mt-1">
+                        <Input
+                          id="searchCpf"
+                          value={searchCpf}
+                          onChange={(e) => setSearchCpf(e.target.value)}
+                          placeholder="000.000.000-00"
+                          disabled={isSearchingProfile}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' && searchCpf) {
+                              handleSearchProfile();
+                            }
+                          }}
+                        />
+                        <Button
+                          type="button"
+                          onClick={handleSearchProfile}
+                          disabled={!searchCpf || isSearchingProfile}
+                        >
+                          {isSearchingProfile ? "Buscando..." : "Buscar"}
+                        </Button>
+                      </div>
+                    </div>
+                    {otherPersonId && (
+                      <>
+                        <div>
+                          <Label htmlFor="otherFullName">Nome Completo *</Label>
+                          <Input
+                            id="otherFullName"
+                            value={formData.fullName}
+                            disabled
+                            className="mt-1 bg-muted"
+                          />
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <Label htmlFor="otherEmail">Email *</Label>
+                            <Input
+                              id="otherEmail"
+                              type="email"
+                              value={formData.email}
+                              disabled
+                              className="mt-1 bg-muted"
+                            />
+                          </div>
+                          <div>
+                            <Label htmlFor="otherPhone">Telefone *</Label>
+                            <Input
+                              id="otherPhone"
+                              value={formData.phone}
+                              disabled
+                              className="mt-1 bg-muted"
+                            />
+                          </div>
+                        </div>
+                        <div>
+                          <Label htmlFor="otherCpf">CPF *</Label>
+                          <Input
+                            id="otherCpf"
+                            value={formData.cpf}
+                            disabled
+                            className="mt-1 bg-muted"
+                          />
+                        </div>
+                      </>
+                    )}
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      setIsRegisteringOther(false);
+                      setSearchCpf("");
+                      setOtherPersonId(null);
+                      // Reload user data
+                      if (user) {
+                        const loadUserData = async () => {
+                          try {
+                            const profileResponse = await getOwnProfile();
+                            if (profileResponse.success && profileResponse.data) {
+                              const profile = profileResponse.data;
+                              setFormData({
+                                fullName: profile.full_name || "",
+                                email: user.email || "",
+                                phone: profile.phone || "",
+                                cpf: profile.cpf || "",
+                              });
+                            }
+                          } catch (error) {
+                            console.error("Error loading user profile:", error);
+                          }
+                        };
+                        loadUserData();
+                      }
+                    }}
+                    className="w-full mt-4"
+                  >
+                    Voltar para meus dados
+                  </Button>
+                </div>
+              </>
+            )}
+
+            {/* Navigation button */}
             <div className="flex justify-end pt-4">
               <Button
                 onClick={handleNextStep}
-                disabled={!selectedCategory}
+                disabled={!user || (isRegisteringOther && !otherPersonId)}
                 className="min-w-32"
               >
                 Próximo
@@ -219,66 +1019,544 @@ export function RegistrationFlow({
           </div>
         )}
 
-        {/* Step 2: Kit & Shirt Size Selection */}
+        {/* Step 2: Category Selection */}
         {step === 2 && (
+          <div className="space-y-4">
+            <h3 className="text-lg font-semibold">Escolha a Modalidade</h3>
+            {loadingCategories ? (
+              <Card>
+                <CardContent className="py-8 text-center">
+                  <p className="text-muted-foreground">Carregando categorias...</p>
+                </CardContent>
+              </Card>
+            ) : categories.length === 0 ? (
+              <Card>
+                <CardContent className="py-8 text-center">
+                  <p className="text-muted-foreground mb-2">
+                    Nenhuma categoria disponível para este evento.
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    Entre em contato com o organizador para mais informações.
+                  </p>
+                  <Button
+                    variant="outline"
+                    className="mt-4"
+                    onClick={async () => {
+                      setLoadingCategories(true);
+                      try {
+                        const response = await getEventCategories(event.id);
+                        if (response.success && response.data) {
+                          setCategories(response.data);
+                          toast.success('Categorias recarregadas!');
+                        } else {
+                          toast.error('Erro ao recarregar categorias');
+                        }
+                      } catch (error) {
+                        toast.error('Erro ao recarregar categorias');
+                      } finally {
+                        setLoadingCategories(false);
+                      }
+                    }}
+                  >
+                    Tentar Novamente
+                  </Button>
+                </CardContent>
+              </Card>
+            ) : (
+              <>
+                <div className="grid gap-4">
+                  {categories.map((category) => {
+                    const isFull = category.max_participants !== null && 
+                                  category.available_spots !== null && 
+                                  category.available_spots <= 0;
+                    
+                    return (
+                      <Card
+                        key={category.id}
+                        className={`transition-all hover:shadow-md ${
+                          isFull 
+                            ? "opacity-60 cursor-not-allowed" 
+                            : "cursor-pointer"
+                        } ${
+                          selectedCategory?.id === category.id
+                            ? "ring-2 ring-primary"
+                            : ""
+                        }`}
+                        onClick={() => !isFull && handleCategorySelect(category)}
+                      >
+                      <CardContent className="p-4 flex justify-between items-center">
+                        <div>
+                          <h4 className="font-semibold">{category.name}</h4>
+                          <p className="text-sm text-muted-foreground">
+                            {category.distance}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          {(() => {
+                            const now = new Date();
+                            // Filtrar lotes ativos (data já chegou) e ordenar por data (mais recente primeiro)
+                            const activeBatches = (category.batches || [])
+                              .filter(batch => {
+                                if (!batch.valid_from) return false;
+                                const batchDate = new Date(batch.valid_from);
+                                return !isNaN(batchDate.getTime()) && batchDate <= now;
+                              })
+                              .sort((a, b) => {
+                                const dateA = new Date(a.valid_from!);
+                                const dateB = new Date(b.valid_from!);
+                                // Ordenar do mais recente para o mais antigo
+                                return dateB.getTime() - dateA.getTime();
+                              });
+                            
+                            // Se houver lotes ativos, mostrar APENAS o mais recente (ocultar anteriores)
+                            if (activeBatches.length > 0) {
+                              const currentBatch = activeBatches[0]; // Lote mais recente ativo
+                              const isSelected = selectedCategory?.id === category.id && selectedBatch?.id === currentBatch.id;
+                              
+                              // Calcular o número do lote (baseado na ordem original de criação)
+                              const allBatches = (category.batches || [])
+                                .filter(b => b.valid_from)
+                                .sort((a, b) => {
+                                  const dateA = new Date(a.valid_from!);
+                                  const dateB = new Date(b.valid_from!);
+                                  return dateA.getTime() - dateB.getTime();
+                                });
+                              const batchNumber = allBatches.findIndex(b => b.id === currentBatch.id) + 1;
+                              
+                              return (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleCategorySelect(category);
+                                    handleBatchSelect(currentBatch);
+                                  }}
+                                  className={`text-left px-2 py-1 rounded text-sm transition-all ${
+                                    isSelected
+                                      ? "bg-primary text-primary-foreground font-semibold"
+                                      : "bg-muted hover:bg-muted/80"
+                                  }`}
+                                >
+                                  <div className="flex justify-between items-center">
+                                    <span>{batchNumber}º lote</span>
+                                    <span className="font-bold ml-2">
+                                      {formatPrice(currentBatch.price)}
+                                    </span>
+                                  </div>
+                                </button>
+                              );
+                            }
+                            
+                            // Se não houver lotes ativos, mostrar apenas o preço inicial
+                            return (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleCategorySelect(category);
+                                  setSelectedBatch(null);
+                                }}
+                                className={`text-left px-2 py-1 rounded text-sm transition-all ${
+                                  selectedCategory?.id === category.id && !selectedBatch
+                                    ? "bg-primary text-primary-foreground font-semibold"
+                                    : "bg-muted hover:bg-muted/80"
+                                }`}
+                              >
+                                <div className="flex justify-between items-center">
+                                  <span>Preço inicial</span>
+                                  <span className="font-bold ml-2">
+                                    {formatPrice(category.price)}
+                                  </span>
+                                </div>
+                              </button>
+                            );
+                          })()}
+                        </div>
+                      </CardContent>
+                    </Card>
+                    );
+                  })}
+                </div>
+                <div className="flex justify-between pt-4">
+                  <Button
+                    variant="outline"
+                    onClick={handlePreviousStep}
+                  >
+                    Voltar
+                  </Button>
+                  <Button
+                    onClick={handleNextStep}
+                    disabled={!selectedCategory || (() => {
+                      // If category has active batches, require batch selection
+                      if (selectedCategory.batches && selectedCategory.batches.length > 0) {
+                        const now = new Date();
+                        const activeBatches = selectedCategory.batches
+                          .filter(batch => {
+                            if (!batch.valid_from) return false;
+                            const batchDate = new Date(batch.valid_from);
+                            return !isNaN(batchDate.getTime()) && batchDate <= now;
+                          })
+                          .sort((a, b) => {
+                            const dateA = new Date(a.valid_from!);
+                            const dateB = new Date(b.valid_from!);
+                            return dateB.getTime() - dateA.getTime();
+                          });
+                        if (activeBatches.length > 0) {
+                          // Se houver lote ativo, deve estar selecionado
+                          return !selectedBatch || selectedBatch.id !== activeBatches[0].id;
+                        }
+                      }
+                      return false;
+                    })()}
+                    className="min-w-32"
+                  >
+                    Próximo
+                  </Button>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        {/* Step 3: Kit & Shirt Size Selection */}
+        {step === 3 && (
           <div className="space-y-6">
             <div>
               <h3 className="text-lg font-semibold mb-4">Escolha o Kit</h3>
-              <div className="grid gap-4">
-                {kits.map((kit) => (
-                  <Card
-                    key={kit.id}
-                    className={`cursor-pointer transition-all hover:shadow-md ${
-                      selectedKit?.id === kit.id ? "ring-2 ring-primary" : ""
-                    }`}
-                    onClick={() => handleKitSelect(kit)}
-                  >
-                    <CardContent className="p-4 flex justify-between items-start">
-                      <div className="flex-1">
-                        <h4 className="font-semibold">{kit.name}</h4>
-                        <p className="text-sm text-muted-foreground mt-1">
-                          {kit.description}
-                        </p>
-                      </div>
-                      <div className="text-right ml-4">
-                        <p className="text-xl font-bold text-primary">
-                          {kit.price === 0
-                            ? "Incluso"
-                            : `+ R$ ${kit.price.toFixed(2)}`}
-                        </p>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
+              {kits.length === 0 ? (
+                <Card>
+                  <CardContent className="py-8 text-center">
+                    <p className="text-muted-foreground">Nenhum kit disponível para este evento.</p>
+                  </CardContent>
+                </Card>
+              ) : (
+                <div className="grid gap-4">
+                  {kits.map((kit) => {
+                    const isExpanded = expandedKits.has(kit.id);
+                    const isSelected = selectedKit?.id === kit.id;
+                    const kitProducts = kit.products || [];
+                    const hasVariableProducts = kitProducts.some(p => p.type === 'variable');
+                    const selectedProduct = selectedProducts.get(kit.id);
+                    const selectedProductData = selectedProduct ? kitProducts.find(p => p.id === selectedProduct.productId) : null;
+                    const needsVariantSelection = selectedProductData?.type === 'variable' && !selectedProduct?.variantId;
+                    
+                    return (
+                      <Card
+                        key={kit.id}
+                        className={`transition-all hover:shadow-md ${
+                          isSelected ? "ring-2 ring-primary" : ""
+                        }`}
+                      >
+                        {kitProducts.length > 0 ? (
+                          <Collapsible 
+                            open={isExpanded} 
+                            onOpenChange={(open) => {
+                              console.log('🔄 Collapsible onOpenChange:', { kitId: kit.id, kitName: kit.name, open, isExpanded });
+                              if (open) {
+                                setExpandedKits(prev => {
+                                  const newSet = new Set(prev);
+                                  newSet.add(kit.id);
+                                  console.log('✅ Kit expandido:', kit.id, 'Expanded kits:', Array.from(newSet));
+                                  return newSet;
+                                });
+                              } else {
+                                setExpandedKits(prev => {
+                                  const newSet = new Set(prev);
+                                  newSet.delete(kit.id);
+                                  console.log('❌ Kit colapsado:', kit.id, 'Expanded kits:', Array.from(newSet));
+                                  return newSet;
+                                });
+                              }
+                            }}
+                          >
+                            <CollapsibleTrigger asChild>
+                              <button
+                                type="button"
+                                className="w-full text-left p-4 flex justify-between items-start cursor-pointer hover:bg-muted/50 transition-colors"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  // Also select the kit when clicking to expand (skip validation to allow viewing products)
+                                  console.log('🔘 CollapsibleTrigger clicked:', { kitId: kit.id, kitName: kit.name, isSelected });
+                                  if (!isSelected) {
+                                    handleKitSelect(kit, true);
+                                  }
+                                }}
+                              >
+                                <div className="flex-1">
+                                  <div className="flex items-center gap-2">
+                                    <h4 className="font-semibold">{kit.name}</h4>
+                                    {isSelected && (
+                                      <Badge variant="default" className="text-xs">Kit Selecionado</Badge>
+                                    )}
+                                  </div>
+                                  {kit.description && (
+                                    <p className="text-sm text-muted-foreground mt-1">
+                                      {kit.description}
+                                    </p>
+                                  )}
+                                  <p className="text-xs text-muted-foreground mt-1">
+                                    {kitProducts.length} produto{kitProducts.length > 1 ? 's' : ''} disponível{kitProducts.length > 1 ? 'eis' : ''}
+                                  </p>
+                                </div>
+                                <div className="flex items-center gap-2 ml-4">
+                                  <div className="text-right">
+                                    <p className="text-xl font-bold text-primary">
+                                      {kit.price === 0
+                                        ? "Incluso"
+                                        : `+ ${formatPrice(kit.price)}`}
+                                    </p>
+                                  </div>
+                                  <div className="ml-2">
+                                    {isExpanded ? (
+                                      <ChevronUp className="h-5 w-5 text-muted-foreground" />
+                                    ) : (
+                                      <ChevronDown className="h-5 w-5 text-muted-foreground" />
+                                    )}
+                                  </div>
+                                </div>
+                              </button>
+                            </CollapsibleTrigger>
+                          
+                            <CollapsibleContent>
+                              <div className="px-4 pb-4 space-y-4 border-t">
+                                <div className="pt-4 space-y-4">
+                                  {/* Show products with their info */}
+                                  {kitProducts.map((product) => (
+                                    <div key={product.id} className="space-y-3">
+                                      <div className="space-y-1">
+                                        <h5 className="font-semibold text-base">{product.name}</h5>
+                                        {product.description && (
+                                          <p className="text-sm text-muted-foreground">
+                                            {product.description}
+                                          </p>
+                                        )}
+                                      </div>
+                                      
+                                      {/* Show variants if product is variable */}
+                                      {product.type === 'variable' && product.variants && product.variants.length > 0 && (() => {
+                                        // Use saved variant_attributes if available, otherwise reconstruct from variants
+                                        const savedAttributeNames = (product as any).variant_attributes as string[] | undefined;
+                                        
+                                        let attributeOrder: string[] = [];
+                                        
+                                        if (savedAttributeNames && savedAttributeNames.length > 0) {
+                                          // Use saved attribute names
+                                          attributeOrder = savedAttributeNames;
+                                        } else {
+                                          // Fallback: Extract attribute order from variants
+                                          // The variant_group_name is the first attribute, and name contains all values separated by " - "
+                                          
+                                          // First, collect all unique variant_group_name values (first attribute)
+                                          const firstAttributes = new Set<string>();
+                                          product.variants.forEach(variant => {
+                                            if (variant.variant_group_name) {
+                                              firstAttributes.add(variant.variant_group_name);
+                                            }
+                                          });
+                                          
+                                          // Use the first variant_group_name as the first attribute
+                                          if (firstAttributes.size > 0) {
+                                            attributeOrder.push(Array.from(firstAttributes)[0]);
+                                          }
+                                          
+                                          // Parse variant names to extract additional attributes
+                                          // Find the maximum number of values in any variant name
+                                          let maxValues = 0;
+                                          product.variants.forEach(variant => {
+                                            const values = variant.name.split(' - ').map(v => v.trim());
+                                            maxValues = Math.max(maxValues, values.length);
+                                          });
+                                          
+                                          // For each position after the first, use generic names
+                                          for (let i = 1; i < maxValues; i++) {
+                                            attributeOrder.push(`Atributo ${i + 1}`);
+                                          }
+                                        }
+                                        
+                                        // Get current selections for this product
+                                        const productKey = `${kit.id}-${product.id}`;
+                                        const selections = variantSelections.get(productKey) || {};
+                                        
+                                        // Filter variants based on previous selections
+                                        const getAvailableVariants = (attributeIndex: number): ProductVariant[] => {
+                                          return product.variants.filter(variant => {
+                                            const variantValues = variant.name.split(' - ').map(v => v.trim());
+                                            
+                                            // Check all previous attributes
+                                            for (let i = 0; i < attributeIndex; i++) {
+                                              const attrName = attributeOrder[i];
+                                              const selectedValue = selections[attrName];
+                                              
+                                              if (selectedValue) {
+                                                // All attributes use values from the variant name
+                                                if (variantValues[i]?.trim() !== selectedValue) {
+                                                  return false;
+                                                }
+                                              }
+                                            }
+                                            
+                                            // Check availability
+                                            return variant.available_quantity === null || variant.available_quantity > 0;
+                                          });
+                                        };
+                                        
+                                        // Get available values for current attribute
+                                        const getAvailableValues = (attributeIndex: number): string[] => {
+                                          const availableVariants = getAvailableVariants(attributeIndex);
+                                          const values = new Set<string>();
+                                          
+                                          availableVariants.forEach(variant => {
+                                            // Always parse the variant name to get values
+                                            const variantValues = variant.name.split(' - ').map(v => v.trim());
+                                            
+                                            // All attributes use values from the variant name
+                                            if (variantValues[attributeIndex]) {
+                                              values.add(variantValues[attributeIndex]);
+                                            }
+                                          });
+                                          
+                                          return Array.from(values).sort();
+                                        };
+                                        
+                                        return (
+                                          <div className="space-y-4 ml-2">
+                                            {attributeOrder.map((attrName, attrIndex) => {
+                                              const availableValues = getAvailableValues(attrIndex);
+                                              const selectedValue = selections[attrName];
+                                              
+                                              // Don't show this attribute if previous attribute is not selected
+                                              if (attrIndex > 0) {
+                                                const prevAttrName = attributeOrder[attrIndex - 1];
+                                                if (!selections[prevAttrName]) {
+                                                  return null;
+                                                }
+                                              }
+                                              
+                                              return (
+                                                <div key={attrName} className="space-y-2">
+                                                  <Label className="text-sm font-semibold">
+                                                    {attrName}
+                                                  </Label>
+                                                  <RadioGroup
+                                                    value={selectedValue || ""}
+                                                    onValueChange={(value) => {
+                                                      const newSelections = { ...selections };
+                                                      newSelections[attrName] = value;
+                                                      
+                                                      // Clear subsequent selections when a previous one changes
+                                                      attributeOrder.slice(attrIndex + 1).forEach(clearAttr => {
+                                                        delete newSelections[clearAttr];
+                                                      });
+                                                      
+                                                      setVariantSelections(new Map(variantSelections.set(productKey, newSelections)));
+                                                      
+                                                      // Find the final variant if all attributes are selected
+                                                      if (Object.keys(newSelections).length === attributeOrder.length) {
+                                                        const finalVariant = product.variants.find(v => {
+                                                          const variantValues = v.name.split(' - ').map(val => val.trim());
+                                                          
+                                                          // Check all attributes
+                                                          for (let i = 0; i < attributeOrder.length; i++) {
+                                                            const attrName = attributeOrder[i];
+                                                            const selectedValue = newSelections[attrName];
+                                                            if (variantValues[i]?.trim() !== selectedValue) {
+                                                              return false;
+                                                            }
+                                                          }
+                                                          
+                                                          return true;
+                                                        });
+                                                        
+                                                        if (finalVariant) {
+                                                          handleVariantSelect(finalVariant.id, product.id, kit.id);
+                                                        }
+                                                      }
+                                                    }}
+                                                    className={`grid gap-3 ${
+                                                      availableValues.length <= 3 ? 'grid-cols-3' : 
+                                                      availableValues.length <= 4 ? 'grid-cols-4' : 
+                                                      availableValues.length <= 6 ? 'grid-cols-6' : 'grid-cols-3'
+                                                    }`}
+                                                  >
+                                                    {availableValues.map((value) => {
+                                                      const isSelected = selectedValue === value;
+                                                      
+                                                      return (
+                                                        <div key={value}>
+                                                          <RadioGroupItem
+                                                            value={value}
+                                                            id={`${productKey}-${attrName}-${value}`}
+                                                            className="peer sr-only"
+                                                          />
+                                                          <Label
+                                                            htmlFor={`${productKey}-${attrName}-${value}`}
+                                                            className={`flex flex-col items-center justify-center rounded-md border-2 px-3 py-2 cursor-pointer transition-all ${
+                                                              isSelected
+                                                                ? "border-primary bg-primary text-primary-foreground"
+                                                                : "border-muted bg-background hover:bg-accent hover:text-accent-foreground"
+                                                            }`}
+                                                          >
+                                                            <span className="font-medium">{value}</span>
+                                                          </Label>
+                                                        </div>
+                                                      );
+                                                    })}
+                                                  </RadioGroup>
+                                                </div>
+                                              );
+                                            })}
+                                          </div>
+                                        );
+                                      })()}
+                                    </div>
+                                  ))}
+                                  
+                                  {/* Show message if no products */}
+                                  {kitProducts.length === 0 && (
+                                    <div className="text-center py-4 text-muted-foreground">
+                                      <p>Nenhum produto disponível para este kit.</p>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </CollapsibleContent>
+                          </Collapsible>
+                        ) : (
+                          <CardContent 
+                            className="p-4 cursor-pointer hover:bg-muted/50 transition-colors"
+                            onClick={() => handleKitSelect(kit)}
+                          >
+                            <div className="flex justify-between items-start">
+                              <div className="flex-1">
+                                <div className="flex items-center gap-2">
+                                  <h4 className="font-semibold">{kit.name}</h4>
+                                  {isSelected && (
+                                    <Badge variant="default" className="text-xs">Kit Selecionado</Badge>
+                                  )}
+                                </div>
+                                {kit.description && (
+                                  <p className="text-sm text-muted-foreground mt-1">
+                                    {kit.description}
+                                  </p>
+                                )}
+                              </div>
+                              <div className="text-right ml-4">
+                                <p className="text-xl font-bold text-primary">
+                                  {kit.price === 0
+                                    ? "Incluso"
+                                    : `+ ${formatPrice(kit.price)}`}
+                                </p>
+                              </div>
+                            </div>
+                          </CardContent>
+                        )}
+                      </Card>
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
-            <div>
-              <Label htmlFor="shirt-size" className="text-base font-semibold">
-                Tamanho da Camisa
-              </Label>
-              <RadioGroup
-                value={shirtSize}
-                onValueChange={setShirtSize}
-                className="grid grid-cols-6 gap-3 mt-3"
-              >
-                {SHIRT_SIZES.map((size) => (
-                  <div key={size}>
-                    <RadioGroupItem
-                      value={size}
-                      id={size}
-                      className="peer sr-only"
-                    />
-                    <Label
-                      htmlFor={size}
-                      className="flex items-center justify-center rounded-md border-2 border-muted bg-background px-3 py-2 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-primary peer-data-[state=checked]:bg-primary peer-data-[state=checked]:text-primary-foreground cursor-pointer transition-all"
-                    >
-                      {size}
-                    </Label>
-                  </div>
-                ))}
-              </RadioGroup>
-            </div>
 
             <div className="flex justify-between pt-4">
               <Button variant="outline" onClick={handlePreviousStep}>
@@ -286,7 +1564,23 @@ export function RegistrationFlow({
               </Button>
               <Button
                 onClick={handleNextStep}
-                disabled={!selectedKit || !shirtSize}
+                disabled={(() => {
+                  if (!selectedKit) return true;
+                  
+                  // Check if kit has variable products that need variant selection
+                  if (selectedKit.products && selectedKit.products.length > 0) {
+                    const variableProducts = selectedKit.products.filter(p => p.type === 'variable' && p.variants && p.variants.length > 0);
+                    if (variableProducts.length > 0) {
+                      // Check if at least one variant is selected (since we don't require product selection anymore)
+                      const selectedProduct = selectedProducts.get(selectedKit.id);
+                      if (!selectedProduct?.variantId) {
+                        return true; // Disable if no variant is selected
+                      }
+                    }
+                  }
+                  
+                  return false;
+                })()}
                 className="min-w-32"
               >
                 Próximo
@@ -295,56 +1589,99 @@ export function RegistrationFlow({
           </div>
         )}
 
-        {/* Step 3: Checkout */}
-        {step === 3 && (
+        {/* Step 4: Checkout */}
+        {step === 4 && (
           <div className="space-y-6">
             <div>
               <h3 className="text-lg font-semibold mb-4">Dados Pessoais</h3>
-              <div className="grid gap-4">
-                <div>
-                  <Label htmlFor="fullName">Nome Completo *</Label>
-                  <Input
-                    id="fullName"
-                    value={formData.fullName}
-                    onChange={(e) => handleInputChange("fullName", e.target.value)}
-                    placeholder="Seu nome completo"
-                    className="mt-1"
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
+              
+              {!user ? (
+                // User not logged in - show login form
+                <div className="grid gap-4">
                   <div>
-                    <Label htmlFor="email">Email *</Label>
+                    <Label htmlFor="loginEmail">Email *</Label>
                     <Input
-                      id="email"
+                      id="loginEmail"
                       type="email"
-                      value={formData.email}
-                      onChange={(e) => handleInputChange("email", e.target.value)}
+                      value={loginData.email}
+                      onChange={(e) => setLoginData(prev => ({ ...prev, email: e.target.value }))}
                       placeholder="seu@email.com"
                       className="mt-1"
+                      disabled={isLoggingIn}
                     />
                   </div>
                   <div>
-                    <Label htmlFor="phone">Telefone *</Label>
+                    <Label htmlFor="loginPassword">Senha *</Label>
                     <Input
-                      id="phone"
-                      value={formData.phone}
-                      onChange={(e) => handleInputChange("phone", e.target.value)}
-                      placeholder="(00) 00000-0000"
+                      id="loginPassword"
+                      type="password"
+                      value={loginData.password}
+                      onChange={(e) => setLoginData(prev => ({ ...prev, password: e.target.value }))}
+                      placeholder="Sua senha"
                       className="mt-1"
+                      disabled={isLoggingIn}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && loginData.email && loginData.password) {
+                          handleLogin();
+                        }
+                      }}
                     />
                   </div>
+                  <Button
+                    type="button"
+                    onClick={handleLogin}
+                    disabled={!loginData.email || !loginData.password || isLoggingIn}
+                    className="w-full"
+                  >
+                    {isLoggingIn ? "Entrando..." : "Entrar"}
+                  </Button>
+                    </div>
+                  ) : (
+                // User logged in - show user data (disabled fields)
+                <div className="space-y-4">
+                  <div className="grid gap-4">
+                    <div>
+                      <Label htmlFor="fullName">Nome Completo *</Label>
+                      <Input
+                        id="fullName"
+                        value={formData.fullName}
+                        disabled
+                        className="mt-1 bg-muted"
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <Label htmlFor="email">Email *</Label>
+                        <Input
+                          id="email"
+                          type="email"
+                          value={formData.email}
+                          disabled
+                          className="mt-1 bg-muted"
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="phone">Telefone *</Label>
+                        <Input
+                          id="phone"
+                          value={formData.phone}
+                          disabled
+                          className="mt-1 bg-muted"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <Label htmlFor="cpf">CPF *</Label>
+                      <Input
+                        id="cpf"
+                        value={formData.cpf}
+                        disabled
+                        className="mt-1 bg-muted"
+                      />
+                    </div>
+                  </div>
                 </div>
-                <div>
-                  <Label htmlFor="cpf">CPF *</Label>
-                  <Input
-                    id="cpf"
-                    value={formData.cpf}
-                    onChange={(e) => handleInputChange("cpf", e.target.value)}
-                    placeholder="000.000.000-00"
-                    className="mt-1"
-                  />
-                </div>
-              </div>
+              )}
             </div>
 
             <Separator />
@@ -354,32 +1691,90 @@ export function RegistrationFlow({
               <Card>
                 <CardContent className="p-4 space-y-3">
                   <div className="flex justify-between">
-                    <span className="text-muted-foreground">Modalidade:</span>
+                    <span>Modalidade:</span>
                     <span className="font-medium">{selectedCategory?.name}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-muted-foreground">Kit:</span>
+                    <span>Kit:</span>
                     <span className="font-medium">{selectedKit?.name}</span>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Tamanho:</span>
-                    <span className="font-medium">{shirtSize}</span>
-                  </div>
+                  {/* Display selected product and variant attributes */}
+                  {selectedKit && selectedKit.products && selectedKit.products.length > 0 && (() => {
+                    const selectedProduct = selectedProducts.get(selectedKit.id);
+                    if (selectedProduct?.variantId) {
+                      // Find the selected variant
+                      const product = selectedKit.products.find(p => p.id === selectedProduct.productId);
+                      const variant = product?.variants?.find(v => v.id === selectedProduct.variantId);
+                      
+                      if (variant && product) {
+                        // Get attribute names from product
+                        const attributeNames = (product as any).variant_attributes as string[] | undefined;
+                        
+                        // Parse variant name to get values
+                        const variantValues = variant.name.split(' - ').map(v => v.trim());
+                        
+                        // Build compact display string
+                        if (product.type === 'variable' && attributeNames && attributeNames.length > 0) {
+                          const variantDetails = attributeNames
+                            .map((attrName, idx) => {
+                              const value = variantValues[idx];
+                              return value ? `${attrName}: ${value}` : null;
+                            })
+                            .filter(Boolean)
+                            .join(', ');
+                          
+                          return (
+                            <div className="flex justify-between text-xs">
+                              <span className="text-foreground/80">{product.name}</span>
+                              <span className="text-muted-foreground">{variantDetails}</span>
+                            </div>
+                          );
+                        } else if (variant) {
+                          // Fallback: show product and variant name
+                          return (
+                            <div className="flex justify-between text-xs">
+                              <span className="text-foreground/80">{product.name}</span>
+                              <span className="text-muted-foreground">{variant.name}</span>
+                            </div>
+                          );
+                        }
+                      }
+                    }
+                    return null;
+                  })()}
                   <Separator />
                   <div className="flex justify-between items-center">
-                    <span className="text-muted-foreground">Valor da modalidade:</span>
-                    <span>R$ {selectedCategory?.price.toFixed(2)}</span>
+                    <span>Valor da modalidade:</span>
+                    <span>
+                      {formatPrice(selectedBatch?.price || selectedCategory?.price || 0)}
+                      {selectedBatch && (() => {
+                        // Encontrar o número do lote baseado na ordem original de criação
+                        const allBatches = (selectedCategory?.batches || [])
+                          .filter(batch => batch.valid_from)
+                          .sort((a, b) => {
+                            const dateA = new Date(a.valid_from!);
+                            const dateB = new Date(b.valid_from!);
+                            return dateA.getTime() - dateB.getTime();
+                          });
+                        const batchIndex = allBatches.findIndex(b => b.id === selectedBatch.id);
+                        return batchIndex >= 0 ? (
+                          <span className="text-xs text-muted-foreground ml-1">
+                            ({batchIndex + 1}º lote)
+                          </span>
+                        ) : null;
+                      })()}
+                    </span>
                   </div>
                   {selectedKit && selectedKit.price > 0 && (
                     <div className="flex justify-between items-center">
-                      <span className="text-muted-foreground">Valor do kit:</span>
-                      <span>R$ {selectedKit.price.toFixed(2)}</span>
+                      <span>Valor do kit:</span>
+                      <span>{formatPrice(selectedKit.price)}</span>
                     </div>
                   )}
                   <Separator />
                   <div className="flex justify-between items-center text-lg font-bold">
                     <span>Total:</span>
-                    <span className="text-primary">R$ {totalPrice.toFixed(2)}</span>
+                    <span className="text-primary">{formatPrice(totalPrice)}</span>
                   </div>
                 </CardContent>
               </Card>
@@ -392,21 +1787,24 @@ export function RegistrationFlow({
               <Button
                 onClick={handleSubmit}
                 disabled={
+                  !user || // User must be logged in
+                  isSubmitting ||
                   !formData.fullName ||
                   !formData.email ||
                   !formData.phone ||
-                  !formData.cpf
+                  !formData.cpf ||
+                  (isRegisteringOther && !otherPersonId) // If registering other person, must have found profile
                 }
                 className="min-w-32"
               >
-                Finalizar Inscrição
+                {isSubmitting ? "Processando..." : "Finalizar Inscrição"}
               </Button>
             </div>
           </div>
         )}
 
-        {/* Step 4: Confirmation Ticket */}
-        {step === 4 && (
+        {/* Step 5: Confirmation Ticket */}
+        {step === 5 && (
           <div className="space-y-6 text-center">
             <div className="flex justify-center">
               <CheckCircle2 className="w-20 h-20 text-accent" />
@@ -465,13 +1863,53 @@ export function RegistrationFlow({
                     <span className="text-muted-foreground">Kit:</span>
                     <span className="font-medium">{selectedKit?.name}</span>
                   </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Tamanho:</span>
-                    <span className="font-medium">{shirtSize}</span>
-                  </div>
+                  {/* Display selected product and variant attributes */}
+                  {selectedKit && selectedKit.products && selectedKit.products.length > 0 && (() => {
+                    const selectedProduct = selectedProducts.get(selectedKit.id);
+                    if (selectedProduct?.variantId) {
+                      // Find the selected variant
+                      const product = selectedKit.products.find(p => p.id === selectedProduct.productId);
+                      const variant = product?.variants?.find(v => v.id === selectedProduct.variantId);
+                      
+                      if (variant && product) {
+                        // Get attribute names from product
+                        const attributeNames = (product as any).variant_attributes as string[] | undefined;
+                        
+                        // Parse variant name to get values
+                        const variantValues = variant.name.split(' - ').map(v => v.trim());
+                        
+                        // Build compact display string
+                        if (product.type === 'variable' && attributeNames && attributeNames.length > 0) {
+                          const variantDetails = attributeNames
+                            .map((attrName, idx) => {
+                              const value = variantValues[idx];
+                              return value ? `${attrName}: ${value}` : null;
+                            })
+                            .filter(Boolean)
+                            .join(', ');
+                          
+                          return (
+                            <div className="flex justify-between text-xs">
+                              <span className="text-foreground/80">{product.name}</span>
+                              <span className="text-muted-foreground">{variantDetails}</span>
+                            </div>
+                          );
+                        } else if (variant) {
+                          // Fallback: show product and variant name
+                          return (
+                            <div className="flex justify-between text-xs">
+                              <span className="text-foreground/80">{product.name}</span>
+                              <span className="text-muted-foreground">{variant.name}</span>
+                            </div>
+                          );
+                        }
+                      }
+                    }
+                    return null;
+                  })()}
                   <div className="flex justify-between text-sm font-bold pt-2">
                     <span>Total Pago:</span>
-                    <span className="text-primary">R$ {totalPrice.toFixed(2)}</span>
+                    <span className="text-primary">{formatPrice(totalPrice)}</span>
                   </div>
                 </div>
               </CardContent>

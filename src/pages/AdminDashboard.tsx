@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { LogOut } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
 import { AdminSidebar } from "@/components/admin/AdminSidebar";
 import DashboardOverview from "@/components/admin/DashboardOverview";
 import UserManagement from "@/components/admin/UserManagement";
@@ -16,9 +17,11 @@ import HomeCustomization from "@/components/admin/HomeCustomization";
 
 const AdminDashboard = () => {
   const navigate = useNavigate();
+  const { logout } = useAuth();
   const [activeSection, setActiveSection] = useState("overview");
 
-  const handleSignOut = () => {
+  const handleSignOut = async () => {
+    await logout();
     navigate("/");
   };
 

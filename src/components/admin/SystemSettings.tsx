@@ -6,27 +6,124 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Building2, Trash2 } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Building2, Trash2, Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import { getSystemSettings, updateSystemSettings, type SystemSettings as SystemSettingsType } from "@/lib/api/systemSettings";
 
 const SystemSettings = () => {
+  const [settings, setSettings] = useState<SystemSettingsType | null>(null);
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  
+  // Form states
+  const [generalForm, setGeneralForm] = useState({
+    platform_name: "",
+    contact_email: "",
+    contact_phone: "",
+    company_address: "",
+    company_city: "",
+    company_state: "",
+    company_zip: "",
+    company_country: "",
+  });
+  
+  const [emailForm, setEmailForm] = useState({
+    smtp_host: "",
+    smtp_port: "",
+    smtp_user: "",
+    smtp_password: "",
+    smtp_from_email: "",
+    smtp_from_name: "",
+    smtp_secure: true,
+  });
+  
+  const [paymentForm, setPaymentForm] = useState({
+    payment_gateway: "stripe",
+    payment_test_mode: true,
+    payment_public_key: "",
+    payment_secret_key: "",
+  });
+  
+  const [modulesForm, setModulesForm] = useState<Record<string, boolean>>({
+    coupons: false,
+    refunds: false,
+    support: false,
+    notifications: false,
+    analytics: false,
+  });
 
   useEffect(() => {
     loadSettings();
   }, []);
 
-  const loadSettings = () => {
-    const savedLogo = localStorage.getItem('admin-logo');
-    if (savedLogo) {
-      setLogoUrl(savedLogo);
+  const loadSettings = async () => {
+    setLoading(true);
+    try {
+      const response = await getSystemSettings();
+      if (response.success && response.data) {
+        const data = response.data;
+        setSettings(data);
+        
+        // Set logo URL
+        if (data.platform_logo_url) {
+          setLogoUrl(data.platform_logo_url);
+          localStorage.setItem('admin-logo', data.platform_logo_url);
+        } else {
+          const savedLogo = localStorage.getItem('admin-logo');
+          if (savedLogo) {
+            setLogoUrl(savedLogo);
+          }
+        }
+        
+        // Populate forms
+        setGeneralForm({
+          platform_name: data.platform_name || "",
+          contact_email: data.contact_email || "",
+          contact_phone: data.contact_phone || "",
+          company_address: data.company_address || "",
+          company_city: data.company_city || "",
+          company_state: data.company_state || "",
+          company_zip: data.company_zip || "",
+          company_country: data.company_country || "Brasil",
+        });
+        
+        setEmailForm({
+          smtp_host: data.smtp_host || "",
+          smtp_port: data.smtp_port?.toString() || "",
+          smtp_user: data.smtp_user || "",
+          smtp_password: data.smtp_password || "",
+          smtp_from_email: data.smtp_from_email || "",
+          smtp_from_name: data.smtp_from_name || "",
+          smtp_secure: data.smtp_secure ?? true,
+        });
+        
+        setPaymentForm({
+          payment_gateway: data.payment_gateway || "stripe",
+          payment_test_mode: data.payment_test_mode ?? true,
+          payment_public_key: data.payment_public_key || "",
+          payment_secret_key: data.payment_secret_key || "",
+        });
+        
+        setModulesForm(data.enabled_modules || {
+          coupons: false,
+          refunds: false,
+          support: false,
+          notifications: false,
+          analytics: false,
+        });
+      }
+    } catch (error) {
+      console.error("Erro ao carregar configurações:", error);
+      toast.error("Erro ao carregar configurações");
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
-  const handleLogoUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleLogoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
@@ -44,38 +141,171 @@ const SystemSettings = () => {
 
     setUploading(true);
 
-    // Convert to base64 and save to localStorage
+    // Convert to base64
     const reader = new FileReader();
-    reader.onloadend = () => {
+    reader.onloadend = async () => {
       const base64String = reader.result as string;
-      localStorage.setItem('admin-logo', base64String);
-      setLogoUrl(base64String);
-      toast.success('Logo atualizada com sucesso!');
       
-      // Trigger a refresh of the sidebar
-      window.dispatchEvent(new Event('admin-logo-updated'));
-      setUploading(false);
+      try {
+        // Save to backend
+        const response = await updateSystemSettings({
+          platform_logo_url: base64String,
+        });
+        
+        if (response.success) {
+          localStorage.setItem('admin-logo', base64String);
+          setLogoUrl(base64String);
+          if (response.data) {
+            setSettings(response.data);
+          }
+          toast.success('Logo atualizada com sucesso!');
+          window.dispatchEvent(new Event('admin-logo-updated'));
+        } else {
+          toast.error(response.error || 'Erro ao atualizar logo');
+        }
+      } catch (error) {
+        toast.error('Erro ao fazer upload da logo');
+      } finally {
+        setUploading(false);
+      }
     };
     reader.onerror = () => {
-      toast.error('Erro ao fazer upload da logo');
+      toast.error('Erro ao processar imagem');
       setUploading(false);
     };
     reader.readAsDataURL(file);
   };
 
-  const handleRemoveLogo = () => {
-    localStorage.removeItem('admin-logo');
-    setLogoUrl(null);
-    toast.success('Logo removida com sucesso!');
-    
-    // Trigger a refresh of the sidebar
-    window.dispatchEvent(new Event('admin-logo-updated'));
+  const handleRemoveLogo = async () => {
+    try {
+      const response = await updateSystemSettings({
+        platform_logo_url: null,
+      });
+      
+      if (response.success) {
+        localStorage.removeItem('admin-logo');
+        setLogoUrl(null);
+        if (response.data) {
+          setSettings(response.data);
+        }
+        toast.success('Logo removida com sucesso!');
+        window.dispatchEvent(new Event('admin-logo-updated'));
+      } else {
+        toast.error(response.error || 'Erro ao remover logo');
+      }
+    } catch (error) {
+      toast.error('Erro ao remover logo');
+    }
+  };
+  
+  const handleSaveGeneral = async () => {
+    setSaving(true);
+    try {
+      const response = await updateSystemSettings({
+        platform_name: generalForm.platform_name,
+        contact_email: generalForm.contact_email || null,
+        contact_phone: generalForm.contact_phone || null,
+        company_address: generalForm.company_address || null,
+        company_city: generalForm.company_city || null,
+        company_state: generalForm.company_state || null,
+        company_zip: generalForm.company_zip || null,
+        company_country: generalForm.company_country,
+      });
+      
+      if (response.success) {
+        if (response.data) {
+          setSettings(response.data);
+        }
+        toast.success('Configurações gerais salvas com sucesso!');
+      } else {
+        toast.error(response.error || 'Erro ao salvar configurações');
+      }
+    } catch (error) {
+      toast.error('Erro ao salvar configurações');
+    } finally {
+      setSaving(false);
+    }
+  };
+  
+  const handleSaveEmail = async () => {
+    setSaving(true);
+    try {
+      const response = await updateSystemSettings({
+        smtp_host: emailForm.smtp_host || null,
+        smtp_port: emailForm.smtp_port ? parseInt(emailForm.smtp_port) : null,
+        smtp_user: emailForm.smtp_user || null,
+        smtp_password: emailForm.smtp_password || null,
+        smtp_from_email: emailForm.smtp_from_email || null,
+        smtp_from_name: emailForm.smtp_from_name || null,
+        smtp_secure: emailForm.smtp_secure,
+      });
+      
+      if (response.success) {
+        if (response.data) {
+          setSettings(response.data);
+        }
+        toast.success('Configurações de e-mail salvas com sucesso!');
+      } else {
+        toast.error(response.error || 'Erro ao salvar configurações');
+      }
+    } catch (error) {
+      toast.error('Erro ao salvar configurações');
+    } finally {
+      setSaving(false);
+    }
+  };
+  
+  const handleSavePayment = async () => {
+    setSaving(true);
+    try {
+      const response = await updateSystemSettings({
+        payment_gateway: paymentForm.payment_gateway,
+        payment_test_mode: paymentForm.payment_test_mode,
+        payment_public_key: paymentForm.payment_public_key || null,
+        payment_secret_key: paymentForm.payment_secret_key || null,
+      });
+      
+      if (response.success) {
+        if (response.data) {
+          setSettings(response.data);
+        }
+        toast.success('Configurações de pagamento salvas com sucesso!');
+      } else {
+        toast.error(response.error || 'Erro ao salvar configurações');
+      }
+    } catch (error) {
+      toast.error('Erro ao salvar configurações');
+    } finally {
+      setSaving(false);
+    }
+  };
+  
+  const handleSaveModules = async () => {
+    setSaving(true);
+    try {
+      const response = await updateSystemSettings({
+        enabled_modules: modulesForm,
+      });
+      
+      if (response.success) {
+        if (response.data) {
+          setSettings(response.data);
+        }
+        toast.success('Configurações de módulos salvas com sucesso!');
+      } else {
+        toast.error(response.error || 'Erro ao salvar configurações');
+      }
+    } catch (error) {
+      toast.error('Erro ao salvar configurações');
+    } finally {
+      setSaving(false);
+    }
   };
 
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
       </div>
     );
   }
@@ -171,30 +401,84 @@ const SystemSettings = () => {
             </CardHeader>
             <CardContent className="space-y-4">
               <div>
-                <label className="text-sm font-medium">Nome da Plataforma</label>
-                <Input defaultValue="RunEvents" className="mt-2" />
+                <Label htmlFor="platform_name">Nome da Plataforma</Label>
+                <Input 
+                  id="platform_name"
+                  value={generalForm.platform_name}
+                  onChange={(e) => setGeneralForm({ ...generalForm, platform_name: e.target.value })}
+                  className="mt-2" 
+                />
               </div>
               <div>
-                <label className="text-sm font-medium">E-mail de Contato</label>
-                <Input type="email" defaultValue="contato@runevents.com" className="mt-2" />
+                <Label htmlFor="contact_email">E-mail de Contato</Label>
+                <Input 
+                  id="contact_email"
+                  type="email" 
+                  value={generalForm.contact_email}
+                  onChange={(e) => setGeneralForm({ ...generalForm, contact_email: e.target.value })}
+                  className="mt-2" 
+                />
               </div>
               <div>
-                <label className="text-sm font-medium">Telefone</label>
-                <Input defaultValue="(11) 98765-4321" className="mt-2" />
+                <Label htmlFor="contact_phone">Telefone</Label>
+                <Input 
+                  id="contact_phone"
+                  value={generalForm.contact_phone}
+                  onChange={(e) => setGeneralForm({ ...generalForm, contact_phone: e.target.value })}
+                  className="mt-2" 
+                />
               </div>
               <div>
-                <label className="text-sm font-medium">Endereço</label>
-                <Input defaultValue="Av. Paulista, 1000 - São Paulo, SP" className="mt-2" />
+                <Label htmlFor="company_address">Endereço</Label>
+                <Input 
+                  id="company_address"
+                  value={generalForm.company_address}
+                  onChange={(e) => setGeneralForm({ ...generalForm, company_address: e.target.value })}
+                  className="mt-2" 
+                />
               </div>
-              <div>
-                <label className="text-sm font-medium">Redes Sociais</label>
-                <div className="grid gap-2 mt-2">
-                  <Input placeholder="Instagram" defaultValue="@runevents" />
-                  <Input placeholder="Facebook" defaultValue="facebook.com/runevents" />
-                  <Input placeholder="Twitter" defaultValue="@runevents" />
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="company_city">Cidade</Label>
+                  <Input 
+                    id="company_city"
+                    value={generalForm.company_city}
+                    onChange={(e) => setGeneralForm({ ...generalForm, company_city: e.target.value })}
+                    className="mt-2" 
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="company_state">Estado</Label>
+                  <Input 
+                    id="company_state"
+                    value={generalForm.company_state}
+                    onChange={(e) => setGeneralForm({ ...generalForm, company_state: e.target.value })}
+                    className="mt-2" 
+                  />
                 </div>
               </div>
-              <Button>Salvar Alterações</Button>
+              <div>
+                <Label htmlFor="company_zip">CEP</Label>
+                <Input 
+                  id="company_zip"
+                  value={generalForm.company_zip}
+                  onChange={(e) => setGeneralForm({ ...generalForm, company_zip: e.target.value })}
+                  className="mt-2" 
+                />
+              </div>
+              <div>
+                <Label htmlFor="company_country">País</Label>
+                <Input 
+                  id="company_country"
+                  value={generalForm.company_country}
+                  onChange={(e) => setGeneralForm({ ...generalForm, company_country: e.target.value })}
+                  className="mt-2" 
+                />
+              </div>
+              <Button onClick={handleSaveGeneral} disabled={saving}>
+                {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Salvar Alterações
+              </Button>
             </CardContent>
           </Card>
         </TabsContent>
@@ -207,37 +491,77 @@ const SystemSettings = () => {
             </CardHeader>
             <CardContent className="space-y-4">
               <div>
-                <label className="text-sm font-medium">Servidor SMTP</label>
-                <Input defaultValue="smtp.gmail.com" className="mt-2" />
+                <Label htmlFor="smtp_host">Servidor SMTP</Label>
+                <Input 
+                  id="smtp_host"
+                  value={emailForm.smtp_host}
+                  onChange={(e) => setEmailForm({ ...emailForm, smtp_host: e.target.value })}
+                  className="mt-2" 
+                />
               </div>
               <div>
-                <label className="text-sm font-medium">Porta</label>
-                <Input defaultValue="587" className="mt-2" />
+                <Label htmlFor="smtp_port">Porta</Label>
+                <Input 
+                  id="smtp_port"
+                  type="number"
+                  value={emailForm.smtp_port}
+                  onChange={(e) => setEmailForm({ ...emailForm, smtp_port: e.target.value })}
+                  className="mt-2" 
+                />
               </div>
               <div>
-                <label className="text-sm font-medium">Usuário</label>
-                <Input defaultValue="noreply@runevents.com" className="mt-2" />
+                <Label htmlFor="smtp_user">Usuário</Label>
+                <Input 
+                  id="smtp_user"
+                  value={emailForm.smtp_user}
+                  onChange={(e) => setEmailForm({ ...emailForm, smtp_user: e.target.value })}
+                  className="mt-2" 
+                />
               </div>
               <div>
-                <label className="text-sm font-medium">Senha</label>
-                <Input type="password" defaultValue="********" className="mt-2" />
+                <Label htmlFor="smtp_password">Senha</Label>
+                <Input 
+                  id="smtp_password"
+                  type="password" 
+                  value={emailForm.smtp_password}
+                  onChange={(e) => setEmailForm({ ...emailForm, smtp_password: e.target.value })}
+                  className="mt-2" 
+                />
               </div>
-              <div className="space-y-2">
-                <h4 className="font-medium">Notificações Automáticas</h4>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm">Confirmação de Inscrição</span>
-                  <Switch defaultChecked />
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm">Lembrete de Evento</span>
-                  <Switch defaultChecked />
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm">Confirmação de Pagamento</span>
-                  <Switch defaultChecked />
-                </div>
+              <div>
+                <Label htmlFor="smtp_from_email">E-mail Remetente</Label>
+                <Input 
+                  id="smtp_from_email"
+                  type="email"
+                  value={emailForm.smtp_from_email}
+                  onChange={(e) => setEmailForm({ ...emailForm, smtp_from_email: e.target.value })}
+                  className="mt-2" 
+                />
               </div>
-              <Button>Salvar Configurações</Button>
+              <div>
+                <Label htmlFor="smtp_from_name">Nome Remetente</Label>
+                <Input 
+                  id="smtp_from_name"
+                  value={emailForm.smtp_from_name}
+                  onChange={(e) => setEmailForm({ ...emailForm, smtp_from_name: e.target.value })}
+                  className="mt-2" 
+                />
+              </div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label htmlFor="smtp_secure">Conexão Segura (TLS/SSL)</Label>
+                  <p className="text-sm text-muted-foreground">Habilitar conexão segura</p>
+                </div>
+                <Switch 
+                  id="smtp_secure"
+                  checked={emailForm.smtp_secure}
+                  onCheckedChange={(checked) => setEmailForm({ ...emailForm, smtp_secure: checked })}
+                />
+              </div>
+              <Button onClick={handleSaveEmail} disabled={saving}>
+                {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Salvar Configurações
+              </Button>
             </CardContent>
           </Card>
         </TabsContent>
@@ -250,26 +574,55 @@ const SystemSettings = () => {
             </CardHeader>
             <CardContent className="space-y-4">
               <div>
-                <label className="text-sm font-medium">Gateway Ativo</label>
-                <select className="mt-2 w-full h-10 rounded-md border border-input bg-background px-3 py-2">
-                  <option>Mercado Pago</option>
-                  <option>PagSeguro</option>
-                  <option>Stripe</option>
-                </select>
+                <Label htmlFor="payment_gateway">Gateway Ativo</Label>
+                <Select 
+                  value={paymentForm.payment_gateway}
+                  onValueChange={(value) => setPaymentForm({ ...paymentForm, payment_gateway: value })}
+                >
+                  <SelectTrigger className="mt-2">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="stripe">Stripe</SelectItem>
+                    <SelectItem value="mercadopago">Mercado Pago</SelectItem>
+                    <SelectItem value="pagseguro">PagSeguro</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label htmlFor="payment_test_mode">Modo de Teste</Label>
+                  <p className="text-sm text-muted-foreground">Usar credenciais de teste</p>
+                </div>
+                <Switch 
+                  id="payment_test_mode"
+                  checked={paymentForm.payment_test_mode}
+                  onCheckedChange={(checked) => setPaymentForm({ ...paymentForm, payment_test_mode: checked })}
+                />
               </div>
               <div>
-                <label className="text-sm font-medium">API Key Pública</label>
-                <Input defaultValue="pk_test_***" className="mt-2" />
+                <Label htmlFor="payment_public_key">API Key Pública</Label>
+                <Input 
+                  id="payment_public_key"
+                  value={paymentForm.payment_public_key}
+                  onChange={(e) => setPaymentForm({ ...paymentForm, payment_public_key: e.target.value })}
+                  className="mt-2" 
+                />
               </div>
               <div>
-                <label className="text-sm font-medium">API Key Privada</label>
-                <Input type="password" defaultValue="sk_test_***" className="mt-2" />
+                <Label htmlFor="payment_secret_key">API Key Privada</Label>
+                <Input 
+                  id="payment_secret_key"
+                  type="password" 
+                  value={paymentForm.payment_secret_key}
+                  onChange={(e) => setPaymentForm({ ...paymentForm, payment_secret_key: e.target.value })}
+                  className="mt-2" 
+                />
               </div>
-              <div>
-                <label className="text-sm font-medium">Comissão da Plataforma (%)</label>
-                <Input type="number" defaultValue="5" className="mt-2" />
-              </div>
-              <Button>Salvar Configurações</Button>
+              <Button onClick={handleSavePayment} disabled={saving}>
+                {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Salvar Configurações
+              </Button>
             </CardContent>
           </Card>
         </TabsContent>
@@ -286,37 +639,55 @@ const SystemSettings = () => {
                   <p className="font-medium">Sistema de Cupons</p>
                   <p className="text-sm text-muted-foreground">Permitir desconto nas inscrições</p>
                 </div>
-                <Switch defaultChecked />
+                <Switch 
+                  checked={modulesForm.coupons || false}
+                  onCheckedChange={(checked) => setModulesForm({ ...modulesForm, coupons: checked })}
+                />
               </div>
               <div className="flex items-center justify-between">
                 <div>
                   <p className="font-medium">Reembolsos</p>
                   <p className="text-sm text-muted-foreground">Processar cancelamentos e devoluções</p>
                 </div>
-                <Switch defaultChecked />
+                <Switch 
+                  checked={modulesForm.refunds || false}
+                  onCheckedChange={(checked) => setModulesForm({ ...modulesForm, refunds: checked })}
+                />
               </div>
               <div className="flex items-center justify-between">
                 <div>
                   <p className="font-medium">Sistema de Suporte</p>
                   <p className="text-sm text-muted-foreground">Chamados e atendimento ao cliente</p>
                 </div>
-                <Switch defaultChecked />
+                <Switch 
+                  checked={modulesForm.support || false}
+                  onCheckedChange={(checked) => setModulesForm({ ...modulesForm, support: checked })}
+                />
               </div>
               <div className="flex items-center justify-between">
                 <div>
                   <p className="font-medium">Notificações Push</p>
                   <p className="text-sm text-muted-foreground">Alertas em tempo real</p>
                 </div>
-                <Switch />
+                <Switch 
+                  checked={modulesForm.notifications || false}
+                  onCheckedChange={(checked) => setModulesForm({ ...modulesForm, notifications: checked })}
+                />
               </div>
               <div className="flex items-center justify-between">
                 <div>
                   <p className="font-medium">Análise de Dados</p>
                   <p className="text-sm text-muted-foreground">Dashboard e relatórios avançados</p>
                 </div>
-                <Switch defaultChecked />
+                <Switch 
+                  checked={modulesForm.analytics || false}
+                  onCheckedChange={(checked) => setModulesForm({ ...modulesForm, analytics: checked })}
+                />
               </div>
-              <Button>Salvar Alterações</Button>
+              <Button onClick={handleSaveModules} disabled={saving}>
+                {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Salvar Alterações
+              </Button>
             </CardContent>
           </Card>
         </TabsContent>
@@ -326,3 +697,4 @@ const SystemSettings = () => {
 };
 
 export default SystemSettings;
+

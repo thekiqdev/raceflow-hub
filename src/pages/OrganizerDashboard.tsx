@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { LogOut } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
 import { OrganizerSidebar } from "@/components/organizer/OrganizerSidebar";
 import OrganizerDashboardOverview from "@/components/organizer/OrganizerDashboardOverview";
 import OrganizerEvents from "@/components/organizer/OrganizerEvents";
@@ -13,9 +14,11 @@ import OrganizerReports from "@/components/organizer/OrganizerReports";
 
 const OrganizerDashboard = () => {
   const navigate = useNavigate();
+  const { logout } = useAuth();
   const [activeSection, setActiveSection] = useState("dashboard");
 
-  const handleSignOut = () => {
+  const handleSignOut = async () => {
+    await logout();
     navigate("/");
   };
 

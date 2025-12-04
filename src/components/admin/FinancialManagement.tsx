@@ -1,109 +1,244 @@
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { DollarSign, TrendingUp, TrendingDown, CheckCircle, XCircle, Clock } from "lucide-react";
+import { DollarSign, TrendingUp, TrendingDown, CheckCircle, XCircle, Clock, Loader2 } from "lucide-react";
+import { toast } from "sonner";
+import {
+  getFinancialOverview,
+  getWithdrawRequests,
+  getRefundRequests,
+  approveWithdrawal,
+  rejectWithdrawal,
+  approveRefund,
+  rejectRefund,
+  getFinancialSettings,
+  updateFinancialSettings,
+  type FinancialOverview as FinancialOverviewType,
+  type WithdrawRequest,
+  type RefundRequest,
+  type FinancialSettings,
+} from "@/lib/api/financial";
+
 const FinancialManagement = () => {
-  // Mock data
-  const withdrawRequests = [{
-    id: 1,
-    organizer: "Maria Santos",
-    amount: 8500,
-    fee: 425,
-    method: "PIX",
-    date: "2024-12-15",
-    status: "pendente"
-  }, {
-    id: 2,
-    organizer: "Carlos Eventos",
-    amount: 19800,
-    fee: 990,
-    method: "TED",
-    date: "2024-12-14",
-    status: "aprovado"
-  }];
-  const refundRequests = [{
-    id: 1,
-    athlete: "Pedro Silva",
-    event: "Corrida de São Silvestre",
-    amount: 245,
-    reason: "Lesão",
-    date: "2024-12-10",
-    status: "em_analise"
-  }, {
-    id: 2,
-    athlete: "Ana Costa",
-    event: "Maratona do Rio",
-    amount: 350,
-    reason: "Imprevisto familiar",
-    date: "2024-12-12",
-    status: "aprovado"
-  }];
-  return <div className="space-y-6">
+  const [loading, setLoading] = useState(true);
+  const [overview, setOverview] = useState<FinancialOverviewType | null>(null);
+  const [withdrawRequests, setWithdrawRequests] = useState<WithdrawRequest[]>([]);
+  const [refundRequests, setRefundRequests] = useState<RefundRequest[]>([]);
+  const [settings, setSettings] = useState<FinancialSettings | null>(null);
+  const [activeTab, setActiveTab] = useState("withdrawals");
+  const [settingsForm, setSettingsForm] = useState({
+    commission_percentage: 5,
+    min_withdraw_amount: 100,
+  });
+
+  useEffect(() => {
+    loadData();
+  }, [activeTab]);
+
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      const [overviewRes, withdrawalsRes, refundsRes, settingsRes] = await Promise.all([
+        getFinancialOverview(),
+        getWithdrawRequests(),
+        getRefundRequests(),
+        activeTab === "settings" ? getFinancialSettings() : Promise.resolve({ success: false }),
+      ]);
+
+      if (overviewRes.success && overviewRes.data) {
+        setOverview(overviewRes.data);
+      }
+
+      if (withdrawalsRes.success && withdrawalsRes.data) {
+        setWithdrawRequests(withdrawalsRes.data);
+      }
+
+      if (refundsRes.success && refundsRes.data) {
+        setRefundRequests(refundsRes.data);
+      }
+
+      if (activeTab === "settings" && settingsRes.success && settingsRes.data) {
+        setSettings(settingsRes.data);
+        setSettingsForm({
+          commission_percentage: settingsRes.data.commission_percentage,
+          min_withdraw_amount: settingsRes.data.min_withdraw_amount,
+        });
+      }
+    } catch (error) {
+      console.error("Erro ao carregar dados financeiros:", error);
+      toast.error("Erro ao carregar dados financeiros");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleApproveWithdrawal = async (requestId: string) => {
+    try {
+      const response = await approveWithdrawal(requestId);
+      if (response.success) {
+        toast.success("Saque aprovado com sucesso!");
+        loadData();
+      } else {
+        toast.error(response.error || "Erro ao aprovar saque");
+      }
+    } catch (error) {
+      toast.error("Erro ao aprovar saque");
+    }
+  };
+
+  const handleRejectWithdrawal = async (requestId: string) => {
+    try {
+      const response = await rejectWithdrawal(requestId);
+      if (response.success) {
+        toast.success("Saque rejeitado com sucesso!");
+        loadData();
+      } else {
+        toast.error(response.error || "Erro ao rejeitar saque");
+      }
+    } catch (error) {
+      toast.error("Erro ao rejeitar saque");
+    }
+  };
+
+  const handleApproveRefund = async (requestId: string) => {
+    try {
+      const response = await approveRefund(requestId);
+      if (response.success) {
+        toast.success("Reembolso aprovado com sucesso!");
+        loadData();
+      } else {
+        toast.error(response.error || "Erro ao aprovar reembolso");
+      }
+    } catch (error) {
+      toast.error("Erro ao aprovar reembolso");
+    }
+  };
+
+  const handleRejectRefund = async (requestId: string) => {
+    try {
+      const response = await rejectRefund(requestId);
+      if (response.success) {
+        toast.success("Reembolso rejeitado com sucesso!");
+        loadData();
+      } else {
+        toast.error(response.error || "Erro ao rejeitar reembolso");
+      }
+    } catch (error) {
+      toast.error("Erro ao rejeitar reembolso");
+    }
+  };
+
+  const handleSaveSettings = async () => {
+    try {
+      const response = await updateFinancialSettings(settingsForm);
+      if (response.success && response.data) {
+        setSettings(response.data);
+        toast.success("Configurações salvas com sucesso!");
+      } else {
+        toast.error(response.error || "Erro ao salvar configurações");
+      }
+    } catch (error) {
+      toast.error("Erro ao salvar configurações");
+    }
+  };
+
+  const formatCurrency = (value: number) => {
+    return new Intl.NumberFormat('pt-BR', {
+      style: 'currency',
+      currency: 'BRL',
+    }).format(value);
+  };
+
+  const getStatusLabel = (status: string) => {
+    const statusMap: Record<string, string> = {
+      pending: 'pendente',
+      approved: 'aprovado',
+      rejected: 'rejeitado',
+      em_analise: 'em análise',
+      aprovado: 'aprovado',
+      rejeitado: 'rejeitado',
+    };
+    return statusMap[status] || status;
+  };
+  if (loading && !overview) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <span className="ml-2 text-muted-foreground">Carregando dados financeiros...</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
       <div>
         <h2 className="text-3xl font-bold mb-2">Gestão Financeira</h2>
         <p className="text-muted-foreground">Controle de receitas, saques e reembolsos</p>
       </div>
 
       {/* Visão Geral */}
-      <div className="grid gap-4 md:grid-cols-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Arrecadado</CardTitle>
-            <DollarSign className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">R$ 547.000</div>
-            <p className="text-xs text-muted-foreground flex items-center gap-1">
-              <TrendingUp className="h-3 w-3 text-green-500" />
-              <span className="text-green-500">+12%</span> vs mês anterior
-            </p>
-          </CardContent>
-        </Card>
+      {overview && (
+        <div className="grid gap-4 md:grid-cols-4">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Total Arrecadado</CardTitle>
+              <DollarSign className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{formatCurrency(overview.total_revenue)}</div>
+              <p className="text-xs text-muted-foreground">
+                Receita total da plataforma
+              </p>
+            </CardContent>
+          </Card>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Comissões da Plataforma</CardTitle>
-            <DollarSign className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">R$ 27.350</div>
-            <p className="text-xs text-muted-foreground">
-              5% das transações
-            </p>
-          </CardContent>
-        </Card>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Comissões da Plataforma</CardTitle>
+              <DollarSign className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{formatCurrency(overview.platform_commissions)}</div>
+              <p className="text-xs text-muted-foreground">
+                {settings ? `${settings.commission_percentage}%` : '5%'} das transações
+              </p>
+            </CardContent>
+          </Card>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Saques Realizados</CardTitle>
-            <TrendingDown className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">R$ 485.200</div>
-            <p className="text-xs text-muted-foreground">
-              88,7% do total arrecadado
-            </p>
-          </CardContent>
-        </Card>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Saques Realizados</CardTitle>
+              <TrendingDown className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{formatCurrency(overview.total_withdrawals)}</div>
+              <p className="text-xs text-muted-foreground">
+                Total de saques aprovados
+              </p>
+            </CardContent>
+          </Card>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Saldo Disponível</CardTitle>
-            <DollarSign className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">R$ 34.450</div>
-            <p className="text-xs text-muted-foreground">
-              Aguardando saque
-            </p>
-          </CardContent>
-        </Card>
-      </div>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Saldo Disponível</CardTitle>
+              <DollarSign className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{formatCurrency(overview.available_balance)}</div>
+              <p className="text-xs text-muted-foreground">
+                {overview.pending_withdrawals > 0 && `${formatCurrency(overview.pending_withdrawals)} pendentes`}
+                {overview.pending_withdrawals === 0 && 'Aguardando saque'}
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
-      <Tabs defaultValue="withdrawals" className="space-y-4">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
         <TabsList>
           <TabsTrigger value="withdrawals">Solicitações de Saque</TabsTrigger>
           <TabsTrigger value="refunds">Reembolsos</TabsTrigger>
@@ -132,31 +267,59 @@ const FinancialManagement = () => {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {withdrawRequests.map(request => <TableRow key={request.id}>
-                      <TableCell className="font-medium">{request.organizer}</TableCell>
-                      <TableCell>R$ {request.amount.toLocaleString()}</TableCell>
-                      <TableCell>R$ {request.fee.toLocaleString()}</TableCell>
-                      <TableCell className="font-bold">R$ {(request.amount - request.fee).toLocaleString()}</TableCell>
-                      <TableCell>
-                        <Badge variant="outline">{request.method}</Badge>
+                  {loading ? (
+                    <TableRow>
+                      <TableCell colSpan={8} className="text-center py-8">
+                        <Loader2 className="h-6 w-6 animate-spin mx-auto" />
                       </TableCell>
-                      <TableCell>{new Date(request.date).toLocaleDateString('pt-BR')}</TableCell>
-                      <TableCell>
-                        <Badge variant={request.status === "aprovado" ? "default" : "secondary"}>
-                          {request.status}
-                        </Badge>
+                    </TableRow>
+                  ) : withdrawRequests.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                        Nenhuma solicitação de saque encontrada
                       </TableCell>
-                      <TableCell>
-                        {request.status === "pendente" && <div className="flex gap-1">
-                            <Button size="icon" variant="ghost" title="Aprovar">
-                              <CheckCircle className="h-4 w-4 text-green-500" />
-                            </Button>
-                            <Button size="icon" variant="ghost" title="Rejeitar">
-                              <XCircle className="h-4 w-4 text-red-500" />
-                            </Button>
-                          </div>}
-                      </TableCell>
-                    </TableRow>)}
+                    </TableRow>
+                  ) : (
+                    withdrawRequests.map((request) => (
+                      <TableRow key={request.id}>
+                        <TableCell className="font-medium">{request.organizer_name || 'N/A'}</TableCell>
+                        <TableCell>{formatCurrency(request.amount)}</TableCell>
+                        <TableCell>{formatCurrency(request.fee)}</TableCell>
+                        <TableCell className="font-bold">{formatCurrency(request.net_amount)}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline">{request.payment_method}</Badge>
+                        </TableCell>
+                        <TableCell>{new Date(request.requested_at).toLocaleDateString('pt-BR')}</TableCell>
+                        <TableCell>
+                          <Badge variant={request.status === "approved" ? "default" : request.status === "pending" ? "secondary" : "destructive"}>
+                            {getStatusLabel(request.status)}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          {request.status === "pending" && (
+                            <div className="flex gap-1">
+                              <Button 
+                                size="icon" 
+                                variant="ghost" 
+                                title="Aprovar"
+                                onClick={() => handleApproveWithdrawal(request.id)}
+                              >
+                                <CheckCircle className="h-4 w-4 text-green-500" />
+                              </Button>
+                              <Button 
+                                size="icon" 
+                                variant="ghost" 
+                                title="Rejeitar"
+                                onClick={() => handleRejectWithdrawal(request.id)}
+                              >
+                                <XCircle className="h-4 w-4 text-red-500" />
+                              </Button>
+                            </div>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
                 </TableBody>
               </Table>
             </CardContent>
@@ -184,28 +347,56 @@ const FinancialManagement = () => {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {refundRequests.map(request => <TableRow key={request.id}>
-                      <TableCell className="font-medium">{request.athlete}</TableCell>
-                      <TableCell>{request.event}</TableCell>
-                      <TableCell>R$ {request.amount}</TableCell>
-                      <TableCell>{request.reason}</TableCell>
-                      <TableCell>{new Date(request.date).toLocaleDateString('pt-BR')}</TableCell>
-                      <TableCell>
-                        <Badge variant={request.status === "aprovado" ? "default" : request.status === "em_analise" ? "secondary" : "outline"}>
-                          {request.status.replace("_", " ")}
-                        </Badge>
+                  {loading ? (
+                    <TableRow>
+                      <TableCell colSpan={7} className="text-center py-8">
+                        <Loader2 className="h-6 w-6 animate-spin mx-auto" />
                       </TableCell>
-                      <TableCell>
-                        {request.status === "em_analise" && <div className="flex gap-1">
-                            <Button size="icon" variant="ghost" title="Aprovar">
-                              <CheckCircle className="h-4 w-4 text-green-500" />
-                            </Button>
-                            <Button size="icon" variant="ghost" title="Recusar">
-                              <XCircle className="h-4 w-4 text-red-500" />
-                            </Button>
-                          </div>}
+                    </TableRow>
+                  ) : refundRequests.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                        Nenhuma solicitação de reembolso encontrada
                       </TableCell>
-                    </TableRow>)}
+                    </TableRow>
+                  ) : (
+                    refundRequests.map((request) => (
+                      <TableRow key={request.id}>
+                        <TableCell className="font-medium">{request.athlete_name || 'N/A'}</TableCell>
+                        <TableCell>{request.event_title || 'N/A'}</TableCell>
+                        <TableCell>{formatCurrency(request.amount)}</TableCell>
+                        <TableCell>{request.reason}</TableCell>
+                        <TableCell>{new Date(request.requested_at).toLocaleDateString('pt-BR')}</TableCell>
+                        <TableCell>
+                          <Badge variant={request.status === "aprovado" ? "default" : request.status === "em_analise" ? "secondary" : "destructive"}>
+                            {getStatusLabel(request.status)}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          {request.status === "em_analise" && (
+                            <div className="flex gap-1">
+                              <Button 
+                                size="icon" 
+                                variant="ghost" 
+                                title="Aprovar"
+                                onClick={() => handleApproveRefund(request.id)}
+                              >
+                                <CheckCircle className="h-4 w-4 text-green-500" />
+                              </Button>
+                              <Button 
+                                size="icon" 
+                                variant="ghost" 
+                                title="Recusar"
+                                onClick={() => handleRejectRefund(request.id)}
+                              >
+                                <XCircle className="h-4 w-4 text-red-500" />
+                              </Button>
+                            </div>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
                 </TableBody>
               </Table>
             </CardContent>
@@ -223,16 +414,26 @@ const FinancialManagement = () => {
               <CardContent className="space-y-4">
                 <div>
                   <label className="text-sm font-medium">Percentual de Comissão</label>
-                  <Input type="number" defaultValue="5" className="mt-2" />
+                  <Input 
+                    type="number" 
+                    value={settingsForm.commission_percentage}
+                    onChange={(e) => setSettingsForm({ ...settingsForm, commission_percentage: parseFloat(e.target.value) || 0 })}
+                    className="mt-2" 
+                  />
                   <p className="text-xs text-muted-foreground mt-1">Percentual sobre cada inscrição</p>
                 </div>
                 <div>
                   <label className="text-sm font-medium">Valor Mínimo para Saque</label>
-                  <Input type="number" defaultValue="100" className="mt-2" />
+                  <Input 
+                    type="number" 
+                    value={settingsForm.min_withdraw_amount}
+                    onChange={(e) => setSettingsForm({ ...settingsForm, min_withdraw_amount: parseFloat(e.target.value) || 0 })}
+                    className="mt-2" 
+                  />
                   <p className="text-xs text-muted-foreground mt-1">Valor mínimo em reais</p>
                 </div>
                 
-                <Button>Salvar Configurações</Button>
+                <Button onClick={handleSaveSettings}>Salvar Configurações</Button>
               </CardContent>
             </Card>
 
@@ -258,6 +459,8 @@ const FinancialManagement = () => {
           </div>
         </TabsContent>
       </Tabs>
-    </div>;
+    </div>
+  );
 };
+
 export default FinancialManagement;

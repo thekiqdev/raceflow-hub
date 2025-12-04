@@ -11,7 +11,6 @@ import {
 } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
 import { useEffect, useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
 
 interface OrganizerSidebarProps {
   activeSection: string;

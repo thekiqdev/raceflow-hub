@@ -1,23 +1,20 @@
 import { useState, useEffect } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 import { 
   DollarSign, 
   CreditCard, 
   Smartphone, 
   Package, 
   FileText,
-  TrendingUp,
-  Calendar
+  Loader2
 } from "lucide-react";
 import { toast } from "sonner";
 import EventDetailedReport from "./EventDetailedReport";
 import {
   Bar,
   BarChart,
-  Line,
-  LineChart,
   Pie,
   PieChart,
   Cell,
@@ -26,7 +23,6 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
-  Legend,
 } from "recharts";
 import {
   Table,
@@ -39,28 +35,17 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
-
-interface FinancialSummary {
-  totalRevenue: number;
-  pixRevenue: number;
-  creditCardRevenue: number;
-  boletoRevenue: number;
-  kitRevenue: number;
-  totalRegistrations: number;
-  paidRegistrations: number;
-}
-
-interface EventRevenue {
-  eventId: string;
-  eventTitle: string;
-  eventDate: string;
-  totalRevenue: number;
-  registrations: number;
-}
+import {
+  getOrganizerFinancialSummary,
+  getOrganizerEventRevenues,
+  type OrganizerFinancialSummary,
+  type OrganizerEventRevenue,
+} from "@/lib/api/organizer";
 
 const OrganizerReports = () => {
+  const { user } = useAuth();
   const [loading, setLoading] = useState(true);
-  const [summary, setSummary] = useState<FinancialSummary>({
+  const [summary, setSummary] = useState<OrganizerFinancialSummary>({
     totalRevenue: 0,
     pixRevenue: 0,
     creditCardRevenue: 0,
@@ -69,103 +54,38 @@ const OrganizerReports = () => {
     totalRegistrations: 0,
     paidRegistrations: 0,
   });
-  const [eventRevenues, setEventRevenues] = useState<EventRevenue[]>([]);
+  const [eventRevenues, setEventRevenues] = useState<OrganizerEventRevenue[]>([]);
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
 
   useEffect(() => {
-    loadFinancialData();
-  }, []);
+    if (user) {
+      loadFinancialData();
+    }
+  }, [user]);
 
   const loadFinancialData = async () => {
+    if (!user) return;
+
     try {
       setLoading(true);
       
-      // Get current user
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      const [summaryResponse, revenuesResponse] = await Promise.all([
+        getOrganizerFinancialSummary(),
+        getOrganizerEventRevenues(),
+      ]);
 
-      // Get organizer's events
-      const { data: events, error: eventsError } = await supabase
-        .from("events")
-        .select("id, title, event_date")
-        .eq("organizer_id", user.id);
+      if (summaryResponse.success && summaryResponse.data) {
+        setSummary(summaryResponse.data);
+      } else {
+        toast.error(summaryResponse.error || "Erro ao carregar resumo financeiro");
+      }
 
-      if (eventsError) throw eventsError;
-
-      const eventIds = events?.map(e => e.id) || [];
-
-      // Get all registrations for organizer's events
-      const { data: registrations, error: registrationsError } = await supabase
-        .from("registrations")
-        .select("*, kit_id, payment_method, payment_status, total_amount, event_id")
-        .in("event_id", eventIds);
-
-      if (registrationsError) throw registrationsError;
-
-      // Calculate summary
-      let totalRevenue = 0;
-      let pixRevenue = 0;
-      let creditCardRevenue = 0;
-      let boletoRevenue = 0;
-      let kitRevenue = 0;
-      let paidRegistrations = 0;
-
-      registrations?.forEach(reg => {
-        if (reg.payment_status === "paid") {
-          paidRegistrations++;
-          totalRevenue += Number(reg.total_amount);
-
-          if (reg.payment_method === "pix") {
-            pixRevenue += Number(reg.total_amount);
-          } else if (reg.payment_method === "credit_card") {
-            creditCardRevenue += Number(reg.total_amount);
-          } else if (reg.payment_method === "boleto") {
-            boletoRevenue += Number(reg.total_amount);
-          }
-
-          if (reg.kit_id) {
-            kitRevenue += Number(reg.total_amount);
-          }
-        }
-      });
-
-      setSummary({
-        totalRevenue,
-        pixRevenue,
-        creditCardRevenue,
-        boletoRevenue,
-        kitRevenue,
-        totalRegistrations: registrations?.length || 0,
-        paidRegistrations,
-      });
-
-      // Calculate revenue by event
-      const eventRevenueMap = new Map<string, EventRevenue>();
-      
-      registrations?.forEach(reg => {
-        if (reg.payment_status === "paid") {
-          const event = events?.find(e => e.id === reg.event_id);
-          if (event) {
-            const existing = eventRevenueMap.get(reg.event_id);
-            if (existing) {
-              existing.totalRevenue += Number(reg.total_amount);
-              existing.registrations += 1;
-            } else {
-              eventRevenueMap.set(reg.event_id, {
-                eventId: reg.event_id,
-                eventTitle: event.title,
-                eventDate: event.event_date,
-                totalRevenue: Number(reg.total_amount),
-                registrations: 1,
-              });
-            }
-          }
-        }
-      });
-
-      setEventRevenues(Array.from(eventRevenueMap.values()));
-
-    } catch (error) {
+      if (revenuesResponse.success && revenuesResponse.data) {
+        setEventRevenues(revenuesResponse.data);
+      } else {
+        toast.error(revenuesResponse.error || "Erro ao carregar receitas por evento");
+      }
+    } catch (error: any) {
       console.error("Error loading financial data:", error);
       toast.error("Erro ao carregar dados financeiros");
     } finally {
@@ -189,7 +109,7 @@ const OrganizerReports = () => {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <div className="text-muted-foreground">Carregando relatórios...</div>
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
       </div>
     );
   }
@@ -245,7 +165,9 @@ const OrganizerReports = () => {
                 {formatCurrency(summary.pixRevenue)}
               </p>
               <p className="text-xs text-muted-foreground mt-1">
-                {((summary.pixRevenue / summary.totalRevenue) * 100).toFixed(1)}% do total
+                {summary.totalRevenue > 0 
+                  ? `${((summary.pixRevenue / summary.totalRevenue) * 100).toFixed(1)}% do total`
+                  : '0% do total'}
               </p>
             </div>
             <div className="h-12 w-12 rounded-full bg-green-500/10 flex items-center justify-center">
@@ -264,7 +186,9 @@ const OrganizerReports = () => {
                 {formatCurrency(summary.creditCardRevenue)}
               </p>
               <p className="text-xs text-muted-foreground mt-1">
-                {((summary.creditCardRevenue / summary.totalRevenue) * 100).toFixed(1)}% do total
+                {summary.totalRevenue > 0 
+                  ? `${((summary.creditCardRevenue / summary.totalRevenue) * 100).toFixed(1)}% do total`
+                  : '0% do total'}
               </p>
             </div>
             <div className="h-12 w-12 rounded-full bg-blue-500/10 flex items-center justify-center">
@@ -373,7 +297,7 @@ const OrganizerReports = () => {
                 </Button>
               </div>
               
-                  {eventRevenues.length > 0 ? (
+              {eventRevenues.length > 0 ? (
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -401,7 +325,7 @@ const OrganizerReports = () => {
                           {formatCurrency(event.totalRevenue)}
                         </TableCell>
                         <TableCell className="text-right">
-                          {formatCurrency(event.totalRevenue / event.registrations)}
+                          {formatCurrency(event.avgTicket)}
                         </TableCell>
                         <TableCell className="text-right">
                           <Button

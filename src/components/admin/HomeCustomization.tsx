@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { supabase } from "@/integrations/supabase/client";
+import { getHomePageSettings, updateHomePageSettings } from "@/lib/api/homePageSettings";
 import { toast } from "sonner";
 import { Loader2, Image as ImageIcon, Eye, Edit } from "lucide-react";
 import { VisualEditorProvider } from "@/contexts/VisualEditorContext";
@@ -40,14 +40,10 @@ const HomeCustomization = () => {
 
   const loadSettings = async () => {
     try {
-      const { data, error } = await supabase
-        .from("home_page_settings")
-        .select("*")
-        .single();
+      const response = await getHomePageSettings();
 
-      if (error) throw error;
-
-      if (data) {
+      if (response.success && response.data) {
+        const data = response.data;
         setSettings({
           hero_title: data.hero_title || "",
           hero_subtitle: data.hero_subtitle || "",
@@ -77,17 +73,16 @@ const HomeCustomization = () => {
   const handleSave = async () => {
     setSaving(true);
     try {
-      const { error } = await supabase
-        .from("home_page_settings")
-        .update(settings)
-        .eq("id", "00000000-0000-0000-0000-000000000001");
+      const response = await updateHomePageSettings(settings);
 
-      if (error) throw error;
-
-      toast.success("Configurações salvas com sucesso!");
-    } catch (error) {
+      if (response.success) {
+        toast.success("Configurações salvas com sucesso!");
+      } else {
+        throw new Error(response.error || "Erro ao salvar configurações");
+      }
+    } catch (error: any) {
       console.error("Erro ao salvar configurações:", error);
-      toast.error("Erro ao salvar configurações");
+      toast.error(error.message || "Erro ao salvar configurações");
     } finally {
       setSaving(false);
     }
@@ -99,16 +94,15 @@ const HomeCustomization = () => {
 
   const handleSaveChanges = async (editedContent: Record<string, any>) => {
     try {
-      const { error } = await supabase
-        .from("home_page_settings")
-        .update(editedContent)
-        .eq("id", "00000000-0000-0000-0000-000000000001");
+      const response = await updateHomePageSettings(editedContent);
 
-      if (error) throw error;
+      if (!response.success) {
+        throw new Error(response.error || "Erro ao salvar configurações");
+      }
       
       // Recarregar as configurações após salvar
       await loadSettings();
-    } catch (error) {
+    } catch (error: any) {
       console.error("Erro ao salvar:", error);
       throw error;
     }

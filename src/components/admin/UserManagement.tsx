@@ -1,32 +1,130 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Search, Download, Edit, Eye, Lock, Unlock, CheckCircle, XCircle, RotateCcw } from "lucide-react";
+import { Search, Download, Edit, Eye, Lock, Unlock, CheckCircle, XCircle, RotateCcw, Loader2 } from "lucide-react";
+import { toast } from "sonner";
+import {
+  getOrganizers,
+  getAthletes,
+  getAdmins,
+  approveOrganizer,
+  blockUser,
+  unblockUser,
+  resetUserPassword,
+  type UserWithStats,
+} from "@/lib/api/userManagement";
 
 const UserManagement = () => {
   const [searchTerm, setSearchTerm] = useState("");
+  const [activeTab, setActiveTab] = useState("organizers");
+  const [loading, setLoading] = useState(false);
+  const [organizers, setOrganizers] = useState<UserWithStats[]>([]);
+  const [athletes, setAthletes] = useState<UserWithStats[]>([]);
+  const [admins, setAdmins] = useState<UserWithStats[]>([]);
 
-  // Mock data
-  const organizers = [
-    { id: 1, name: "Maria Santos", email: "maria@eventos.com", cnpj: "12.345.678/0001-90", status: "ativo", events: 5, registrations: 243, revenue: 85000 },
-    { id: 2, name: "João Corridas", email: "joao@corridas.com", cnpj: "98.765.432/0001-10", status: "pendente", events: 0, registrations: 0, revenue: 0 },
-    { id: 3, name: "Carlos Eventos", email: "carlos@sport.com", cnpj: "55.444.333/0001-22", status: "ativo", events: 12, registrations: 567, revenue: 198000 },
-  ];
+  useEffect(() => {
+    loadData();
+  }, [activeTab, searchTerm]);
 
-  const athletes = [
-    { id: 1, name: "Pedro Silva", cpf: "123.456.789-00", email: "pedro@email.com", status: "ativo", registrations: 8 },
-    { id: 2, name: "Ana Costa", cpf: "987.654.321-00", email: "ana@email.com", status: "ativo", registrations: 15 },
-    { id: 3, name: "Lucas Oliveira", cpf: "456.789.123-00", email: "lucas@email.com", status: "bloqueado", registrations: 3 },
-  ];
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      if (activeTab === "organizers") {
+        const response = await getOrganizers(searchTerm || undefined);
+        if (response.success && response.data) {
+          setOrganizers(response.data);
+        } else {
+          toast.error("Erro ao carregar organizadores");
+        }
+      } else if (activeTab === "athletes") {
+        const response = await getAthletes(searchTerm || undefined);
+        if (response.success && response.data) {
+          setAthletes(response.data);
+        } else {
+          toast.error("Erro ao carregar atletas");
+        }
+      } else if (activeTab === "admins") {
+        const response = await getAdmins();
+        if (response.success && response.data) {
+          setAdmins(response.data);
+        } else {
+          toast.error("Erro ao carregar administradores");
+        }
+      }
+    } catch (error) {
+      console.error("Erro ao carregar dados:", error);
+      toast.error("Erro ao carregar dados");
+    } finally {
+      setLoading(false);
+    }
+  };
 
-  const admins = [
-    { id: 1, name: "Super Admin", email: "admin@runevents.com", role: "super_admin", status: "ativo" },
-    { id: 2, name: "Admin Financeiro", email: "financeiro@runevents.com", role: "financial", status: "ativo" },
-  ];
+  const handleApproveOrganizer = async (userId: string) => {
+    try {
+      const response = await approveOrganizer(userId);
+      if (response.success) {
+        toast.success("Organizador aprovado com sucesso!");
+        loadData();
+      } else {
+        toast.error(response.error || "Erro ao aprovar organizador");
+      }
+    } catch (error) {
+      toast.error("Erro ao aprovar organizador");
+    }
+  };
+
+  const handleBlockUser = async (userId: string) => {
+    try {
+      const response = await blockUser(userId);
+      if (response.success) {
+        toast.success("Usuário bloqueado com sucesso!");
+        loadData();
+      } else {
+        toast.error(response.error || "Erro ao bloquear usuário");
+      }
+    } catch (error) {
+      toast.error("Erro ao bloquear usuário");
+    }
+  };
+
+  const handleUnblockUser = async (userId: string) => {
+    try {
+      const response = await unblockUser(userId);
+      if (response.success) {
+        toast.success("Usuário desbloqueado com sucesso!");
+        loadData();
+      } else {
+        toast.error(response.error || "Erro ao desbloquear usuário");
+      }
+    } catch (error) {
+      toast.error("Erro ao desbloquear usuário");
+    }
+  };
+
+  const formatCurrency = (value: number) => {
+    return new Intl.NumberFormat('pt-BR', {
+      style: 'currency',
+      currency: 'BRL',
+    }).format(value);
+  };
+
+  const formatCPF = (cpf: string) => {
+    if (!cpf) return '-';
+    return cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
+  };
+
+  const getStatusLabel = (status: string) => {
+    const statusMap: Record<string, string> = {
+      active: 'ativo',
+      pending: 'pendente',
+      blocked: 'bloqueado',
+    };
+    return statusMap[status] || status;
+  };
 
   return (
     <div className="space-y-6">
@@ -35,7 +133,7 @@ const UserManagement = () => {
         <p className="text-muted-foreground">Gerenciar organizadores, atletas e administradores</p>
       </div>
 
-      <Tabs defaultValue="organizers" className="space-y-4">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
         <TabsList>
           <TabsTrigger value="organizers">Organizadores</TabsTrigger>
           <TabsTrigger value="athletes">Atletas</TabsTrigger>
@@ -70,7 +168,7 @@ const UserManagement = () => {
                   <TableRow>
                     <TableHead>Nome</TableHead>
                     <TableHead>Email</TableHead>
-                    <TableHead>CNPJ</TableHead>
+                    <TableHead>CPF</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Eventos</TableHead>
                     <TableHead>Inscrições</TableHead>
@@ -79,47 +177,88 @@ const UserManagement = () => {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {organizers.map((org) => (
-                    <TableRow key={org.id}>
-                      <TableCell className="font-medium">{org.name}</TableCell>
-                      <TableCell>{org.email}</TableCell>
-                      <TableCell>{org.cnpj}</TableCell>
-                      <TableCell>
-                        <Badge variant={org.status === "ativo" ? "default" : "secondary"}>
-                          {org.status}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>{org.events}</TableCell>
-                      <TableCell>{org.registrations}</TableCell>
-                      <TableCell>R$ {org.revenue.toLocaleString()}</TableCell>
-                      <TableCell>
-                        <div className="flex gap-1">
-                          {org.status === "pendente" ? (
-                            <>
-                              <Button size="icon" variant="ghost" title="Aprovar">
-                                <CheckCircle className="h-4 w-4 text-green-500" />
-                              </Button>
-                              <Button size="icon" variant="ghost" title="Reprovar">
-                                <XCircle className="h-4 w-4 text-red-500" />
-                              </Button>
-                            </>
-                          ) : (
-                            <>
-                              <Button size="icon" variant="ghost" title="Visualizar">
-                                <Eye className="h-4 w-4" />
-                              </Button>
-                              <Button size="icon" variant="ghost" title="Editar">
-                                <Edit className="h-4 w-4" />
-                              </Button>
-                              <Button size="icon" variant="ghost" title="Redefinir senha">
-                                <RotateCcw className="h-4 w-4" />
-                              </Button>
-                            </>
-                          )}
-                        </div>
+                  {loading ? (
+                    <TableRow>
+                      <TableCell colSpan={8} className="text-center py-8">
+                        <Loader2 className="h-6 w-6 animate-spin mx-auto" />
                       </TableCell>
                     </TableRow>
-                  ))}
+                  ) : organizers.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                        Nenhum organizador encontrado
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    organizers.map((org) => (
+                      <TableRow key={org.id}>
+                        <TableCell className="font-medium">{org.name}</TableCell>
+                        <TableCell>{org.email}</TableCell>
+                        <TableCell>{formatCPF(org.cpf || '')}</TableCell>
+                        <TableCell>
+                          <Badge variant={org.status === "active" ? "default" : org.status === "pending" ? "secondary" : "destructive"}>
+                            {getStatusLabel(org.status)}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>{org.events || 0}</TableCell>
+                        <TableCell>{org.registrations || 0}</TableCell>
+                        <TableCell>{formatCurrency(org.revenue || 0)}</TableCell>
+                        <TableCell>
+                          <div className="flex gap-1">
+                            {org.status === "pending" ? (
+                              <>
+                                <Button 
+                                  size="icon" 
+                                  variant="ghost" 
+                                  title="Aprovar"
+                                  onClick={() => handleApproveOrganizer(org.id)}
+                                >
+                                  <CheckCircle className="h-4 w-4 text-green-500" />
+                                </Button>
+                                <Button 
+                                  size="icon" 
+                                  variant="ghost" 
+                                  title="Reprovar"
+                                  onClick={() => handleBlockUser(org.id)}
+                                >
+                                  <XCircle className="h-4 w-4 text-red-500" />
+                                </Button>
+                              </>
+                            ) : (
+                              <>
+                                <Button size="icon" variant="ghost" title="Visualizar">
+                                  <Eye className="h-4 w-4" />
+                                </Button>
+                                <Button size="icon" variant="ghost" title="Editar">
+                                  <Edit className="h-4 w-4" />
+                                </Button>
+                                {org.status === "active" && (
+                                  <Button 
+                                    size="icon" 
+                                    variant="ghost" 
+                                    title="Bloquear"
+                                    onClick={() => handleBlockUser(org.id)}
+                                  >
+                                    <Lock className="h-4 w-4 text-red-500" />
+                                  </Button>
+                                )}
+                                {org.status === "blocked" && (
+                                  <Button 
+                                    size="icon" 
+                                    variant="ghost" 
+                                    title="Desbloquear"
+                                    onClick={() => handleUnblockUser(org.id)}
+                                  >
+                                    <Unlock className="h-4 w-4 text-green-500" />
+                                  </Button>
+                                )}
+                              </>
+                            )}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
                 </TableBody>
               </Table>
             </CardContent>
@@ -161,38 +300,62 @@ const UserManagement = () => {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {athletes.map((athlete) => (
-                    <TableRow key={athlete.id}>
-                      <TableCell className="font-medium">{athlete.name}</TableCell>
-                      <TableCell>{athlete.cpf}</TableCell>
-                      <TableCell>{athlete.email}</TableCell>
-                      <TableCell>
-                        <Badge variant={athlete.status === "ativo" ? "default" : "destructive"}>
-                          {athlete.status}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>{athlete.registrations}</TableCell>
-                      <TableCell>
-                        <div className="flex gap-1">
-                          <Button size="icon" variant="ghost" title="Visualizar">
-                            <Eye className="h-4 w-4" />
-                          </Button>
-                          <Button size="icon" variant="ghost" title="Editar">
-                            <Edit className="h-4 w-4" />
-                          </Button>
-                          {athlete.status === "ativo" ? (
-                            <Button size="icon" variant="ghost" title="Bloquear">
-                              <Lock className="h-4 w-4 text-red-500" />
-                            </Button>
-                          ) : (
-                            <Button size="icon" variant="ghost" title="Desbloquear">
-                              <Unlock className="h-4 w-4 text-green-500" />
-                            </Button>
-                          )}
-                        </div>
+                  {loading ? (
+                    <TableRow>
+                      <TableCell colSpan={6} className="text-center py-8">
+                        <Loader2 className="h-6 w-6 animate-spin mx-auto" />
                       </TableCell>
                     </TableRow>
-                  ))}
+                  ) : athletes.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                        Nenhum atleta encontrado
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    athletes.map((athlete) => (
+                      <TableRow key={athlete.id}>
+                        <TableCell className="font-medium">{athlete.name}</TableCell>
+                        <TableCell>{formatCPF(athlete.cpf || '')}</TableCell>
+                        <TableCell>{athlete.email}</TableCell>
+                        <TableCell>
+                          <Badge variant={athlete.status === "active" ? "default" : "destructive"}>
+                            {getStatusLabel(athlete.status)}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>{athlete.registrations || 0}</TableCell>
+                        <TableCell>
+                          <div className="flex gap-1">
+                            <Button size="icon" variant="ghost" title="Visualizar">
+                              <Eye className="h-4 w-4" />
+                            </Button>
+                            <Button size="icon" variant="ghost" title="Editar">
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            {athlete.status === "active" ? (
+                              <Button 
+                                size="icon" 
+                                variant="ghost" 
+                                title="Bloquear"
+                                onClick={() => handleBlockUser(athlete.id)}
+                              >
+                                <Lock className="h-4 w-4 text-red-500" />
+                              </Button>
+                            ) : (
+                              <Button 
+                                size="icon" 
+                                variant="ghost" 
+                                title="Desbloquear"
+                                onClick={() => handleUnblockUser(athlete.id)}
+                              >
+                                <Unlock className="h-4 w-4 text-green-500" />
+                              </Button>
+                            )}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
                 </TableBody>
               </Table>
             </CardContent>
@@ -219,28 +382,60 @@ const UserManagement = () => {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {admins.map((admin) => (
-                    <TableRow key={admin.id}>
-                      <TableCell className="font-medium">{admin.name}</TableCell>
-                      <TableCell>{admin.email}</TableCell>
-                      <TableCell>
-                        <Badge variant="outline">{admin.role}</Badge>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="default">{admin.status}</Badge>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex gap-1">
-                          <Button size="icon" variant="ghost" title="Editar">
-                            <Edit className="h-4 w-4" />
-                          </Button>
-                          <Button size="icon" variant="ghost" title="Desativar">
-                            <Lock className="h-4 w-4" />
-                          </Button>
-                        </div>
+                  {loading ? (
+                    <TableRow>
+                      <TableCell colSpan={5} className="text-center py-8">
+                        <Loader2 className="h-6 w-6 animate-spin mx-auto" />
                       </TableCell>
                     </TableRow>
-                  ))}
+                  ) : admins.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                        Nenhum administrador encontrado
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    admins.map((admin) => (
+                      <TableRow key={admin.id}>
+                        <TableCell className="font-medium">{admin.name}</TableCell>
+                        <TableCell>{admin.email}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline">{admin.role || 'admin'}</Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={admin.status === "active" ? "default" : "destructive"}>
+                            {getStatusLabel(admin.status)}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex gap-1">
+                            <Button size="icon" variant="ghost" title="Editar">
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            {admin.status === "active" ? (
+                              <Button 
+                                size="icon" 
+                                variant="ghost" 
+                                title="Desativar"
+                                onClick={() => handleBlockUser(admin.id)}
+                              >
+                                <Lock className="h-4 w-4" />
+                              </Button>
+                            ) : (
+                              <Button 
+                                size="icon" 
+                                variant="ghost" 
+                                title="Ativar"
+                                onClick={() => handleUnblockUser(admin.id)}
+                              >
+                                <Unlock className="h-4 w-4" />
+                              </Button>
+                            )}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
                 </TableBody>
               </Table>
             </CardContent>

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,87 +24,192 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Plus, Search, MoreVertical, Eye, RefreshCw, X, MessageSquare, FileDown } from "lucide-react";
+import { Plus, Search, MoreVertical, Eye, RefreshCw, X, MessageSquare, FileDown, Loader2 } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { useAuth } from "@/contexts/AuthContext";
+import { getRegistrations, exportRegistrations, updateRegistration, type Registration } from "@/lib/api/registrations";
+import { getEvents, type Event } from "@/lib/api/events";
+import { toast } from "sonner";
+import { useDebounce } from "@/hooks/useDebounce";
 
 const OrganizerRegistrations = () => {
+  const { user } = useAuth();
+  const [loading, setLoading] = useState(true);
+  const [registrations, setRegistrations] = useState<Registration[]>([]);
+  const [events, setEvents] = useState<Event[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [paymentStatusFilter, setPaymentStatusFilter] = useState("all");
   const [eventFilter, setEventFilter] = useState("all");
+  const [isExporting, setIsExporting] = useState(false);
+  const [isCancelling, setIsCancelling] = useState<string | null>(null);
 
-  // Mock data
-  const registrations = [
-    {
-      id: "1",
-      athleteName: "João Silva",
-      cpf: "123.456.789-00",
-      event: "Corrida do Sol 2024",
-      category: "5K - Masculino",
-      kit: "Kit Básico",
-      amount: 85.00,
-      status: "paid" as const,
-      date: new Date(2024, 10, 15),
-    },
-    {
-      id: "2",
-      athleteName: "Maria Santos",
-      cpf: "987.654.321-00",
-      event: "Corrida do Sol 2024",
-      category: "10K - Feminino",
-      kit: "Kit Premium",
-      amount: 120.00,
-      status: "paid" as const,
-      date: new Date(2024, 10, 14),
-    },
-    {
-      id: "3",
-      athleteName: "Pedro Costa",
-      cpf: "456.789.123-00",
-      event: "Meia Maratona das Flores",
-      category: "21K - Masculino",
-      kit: "Kit Básico",
-      amount: 95.00,
-      status: "pending" as const,
-      date: new Date(2024, 10, 16),
-    },
-    {
-      id: "4",
-      athleteName: "Ana Oliveira",
-      cpf: "321.654.987-00",
-      event: "Corrida do Sol 2024",
-      category: "5K - Feminino",
-      kit: "Kit Premium",
-      amount: 110.00,
-      status: "refunded" as const,
-      date: new Date(2024, 10, 10),
-    },
-  ];
+  const debouncedSearch = useDebounce(searchQuery, 500);
+
+  useEffect(() => {
+    if (user) {
+      loadEvents();
+      loadRegistrations();
+    }
+  }, [user, debouncedSearch, statusFilter, paymentStatusFilter, eventFilter]);
+
+  const loadEvents = async () => {
+    if (!user) return;
+
+    try {
+      const response = await getEvents({ organizer_id: user.id });
+      if (response.success && response.data) {
+        setEvents(response.data);
+      }
+    } catch (error) {
+      console.error("Error loading events:", error);
+    }
+  };
+
+  const loadRegistrations = async () => {
+    if (!user) return;
+
+    try {
+      setLoading(true);
+      const filters: any = {
+        organizer_id: user.id,
+      };
+
+      if (statusFilter !== "all") {
+        filters.status = statusFilter;
+      }
+
+      if (paymentStatusFilter !== "all") {
+        filters.payment_status = paymentStatusFilter;
+      }
+
+      if (eventFilter !== "all") {
+        filters.event_id = eventFilter;
+      }
+
+      if (debouncedSearch) {
+        filters.search = debouncedSearch;
+      }
+
+      const response = await getRegistrations(filters);
+
+      if (response.success && response.data) {
+        setRegistrations(response.data);
+      } else {
+        toast.error(response.error || "Erro ao carregar inscrições");
+      }
+    } catch (error: any) {
+      console.error("Error loading registrations:", error);
+      toast.error("Erro ao carregar inscrições");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleExport = async () => {
+    if (!user) return;
+
+    try {
+      setIsExporting(true);
+      const filters: any = {};
+
+      if (statusFilter !== "all") {
+        filters.status = statusFilter;
+      }
+
+      if (paymentStatusFilter !== "all") {
+        filters.payment_status = paymentStatusFilter;
+      }
+
+      if (eventFilter !== "all") {
+        filters.event_id = eventFilter;
+      }
+
+      await exportRegistrations(filters);
+      toast.success("Lista exportada com sucesso!");
+    } catch (error: any) {
+      console.error("Error exporting registrations:", error);
+      toast.error(error.message || "Erro ao exportar lista");
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const handleCancelRegistration = async (registrationId: string) => {
+    if (!confirm("Tem certeza que deseja cancelar esta inscrição?")) {
+      return;
+    }
+
+    try {
+      setIsCancelling(registrationId);
+      const response = await updateRegistration(registrationId, {
+        status: "cancelled",
+      });
+
+      if (response.success) {
+        toast.success("Inscrição cancelada com sucesso!");
+        loadRegistrations();
+      } else {
+        toast.error(response.error || "Erro ao cancelar inscrição");
+      }
+    } catch (error: any) {
+      console.error("Error cancelling registration:", error);
+      toast.error(error.message || "Erro ao cancelar inscrição");
+    } finally {
+      setIsCancelling(null);
+    }
+  };
 
   const getStatusBadge = (status: string) => {
     switch (status) {
-      case "paid":
-        return <Badge variant="default">Pago</Badge>;
+      case "confirmed":
+        return <Badge variant="default">Confirmado</Badge>;
       case "pending":
         return <Badge variant="secondary">Pendente</Badge>;
-      case "refunded":
-        return <Badge variant="destructive">Reembolsado</Badge>;
       case "cancelled":
         return <Badge variant="outline">Cancelado</Badge>;
+      case "refund_requested":
+        return <Badge variant="secondary">Reembolso Solicitado</Badge>;
+      case "refunded":
+        return <Badge variant="destructive">Reembolsado</Badge>;
       default:
         return <Badge variant="secondary">{status}</Badge>;
     }
   };
 
-  const filteredRegistrations = registrations.filter(reg => {
-    const matchesSearch = reg.athleteName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      reg.cpf.includes(searchQuery);
-    const matchesStatus = statusFilter === "all" || reg.status === statusFilter;
-    const matchesEvent = eventFilter === "all" || reg.event === eventFilter;
-    return matchesSearch && matchesStatus && matchesEvent;
-  });
+  const getPaymentStatusBadge = (status: string) => {
+    switch (status) {
+      case "paid":
+        return <Badge variant="default" className="bg-green-500">Pago</Badge>;
+      case "pending":
+        return <Badge variant="secondary">Pendente</Badge>;
+      case "refunded":
+        return <Badge variant="destructive">Reembolsado</Badge>;
+      case "failed":
+        return <Badge variant="destructive">Falhou</Badge>;
+      default:
+        return <Badge variant="secondary">{status}</Badge>;
+    }
+  };
 
-  const events = [...new Set(registrations.map(r => r.event))];
+  const formatCPF = (cpf: string) => {
+    if (!cpf) return "";
+    return cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
+  };
+
+  const formatCurrency = (value: number) => {
+    return new Intl.NumberFormat("pt-BR", {
+      style: "currency",
+      currency: "BRL",
+    }).format(value);
+  };
+
+  // Calculate statistics
+  const totalRegistrations = registrations.length;
+  const paidRegistrations = registrations.filter(r => r.payment_status === "paid").length;
+  const pendingRegistrations = registrations.filter(r => r.payment_status === "pending").length;
+  const refundedRegistrations = registrations.filter(r => r.payment_status === "refunded" || r.status === "refunded").length;
 
   return (
     <div className="space-y-6">
@@ -120,7 +225,7 @@ const OrganizerRegistrations = () => {
             <CardTitle className="text-sm font-medium">Total de Inscrições</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{registrations.length}</div>
+            <div className="text-2xl font-bold">{totalRegistrations}</div>
           </CardContent>
         </Card>
 
@@ -129,8 +234,8 @@ const OrganizerRegistrations = () => {
             <CardTitle className="text-sm font-medium">Pagamentos Confirmados</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-success">
-              {registrations.filter(r => r.status === "paid").length}
+            <div className="text-2xl font-bold text-green-600">
+              {paidRegistrations}
             </div>
           </CardContent>
         </Card>
@@ -140,8 +245,8 @@ const OrganizerRegistrations = () => {
             <CardTitle className="text-sm font-medium">Pendentes</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-warning">
-              {registrations.filter(r => r.status === "pending").length}
+            <div className="text-2xl font-bold text-yellow-600">
+              {pendingRegistrations}
             </div>
           </CardContent>
         </Card>
@@ -151,8 +256,8 @@ const OrganizerRegistrations = () => {
             <CardTitle className="text-sm font-medium">Reembolsos</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-destructive">
-              {registrations.filter(r => r.status === "refunded").length}
+            <div className="text-2xl font-bold text-red-600">
+              {refundedRegistrations}
             </div>
           </CardContent>
         </Card>
@@ -180,7 +285,7 @@ const OrganizerRegistrations = () => {
                 <SelectContent>
                   <SelectItem value="all">Todos os eventos</SelectItem>
                   {events.map(event => (
-                    <SelectItem key={event} value={event}>{event}</SelectItem>
+                    <SelectItem key={event.id} value={event.id}>{event.title}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -191,10 +296,24 @@ const OrganizerRegistrations = () => {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Todos os status</SelectItem>
+                  <SelectItem value="pending">Pendente</SelectItem>
+                  <SelectItem value="confirmed">Confirmado</SelectItem>
+                  <SelectItem value="cancelled">Cancelado</SelectItem>
+                  <SelectItem value="refund_requested">Reembolso Solicitado</SelectItem>
+                  <SelectItem value="refunded">Reembolsado</SelectItem>
+                </SelectContent>
+              </Select>
+
+              <Select value={paymentStatusFilter} onValueChange={setPaymentStatusFilter}>
+                <SelectTrigger className="w-full sm:w-[180px]">
+                  <SelectValue placeholder="Status Pagamento" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos</SelectItem>
                   <SelectItem value="paid">Pago</SelectItem>
                   <SelectItem value="pending">Pendente</SelectItem>
                   <SelectItem value="refunded">Reembolsado</SelectItem>
-                  <SelectItem value="cancelled">Cancelado</SelectItem>
+                  <SelectItem value="failed">Falhou</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -204,8 +323,16 @@ const OrganizerRegistrations = () => {
                 <Plus className="mr-2 h-4 w-4" />
                 Inscrever Atleta
               </Button>
-              <Button variant="outline">
-                <FileDown className="mr-2 h-4 w-4" />
+              <Button 
+                variant="outline" 
+                onClick={handleExport}
+                disabled={isExporting}
+              >
+                {isExporting ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <FileDown className="mr-2 h-4 w-4" />
+                )}
                 Exportar Lista
               </Button>
             </div>
@@ -218,75 +345,110 @@ const OrganizerRegistrations = () => {
         <CardHeader>
           <CardTitle>Inscrições</CardTitle>
           <CardDescription>
-            {filteredRegistrations.length} {filteredRegistrations.length === 1 ? "inscrição encontrada" : "inscrições encontradas"}
+            {loading ? "Carregando..." : `${registrations.length} ${registrations.length === 1 ? "inscrição encontrada" : "inscrições encontradas"}`}
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Atleta</TableHead>
-                  <TableHead>CPF</TableHead>
-                  <TableHead>Evento</TableHead>
-                  <TableHead>Modalidade/Kit</TableHead>
-                  <TableHead className="text-right">Valor</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Data</TableHead>
-                  <TableHead className="text-right">Ações</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredRegistrations.map((registration) => (
-                  <TableRow key={registration.id}>
-                    <TableCell className="font-medium">{registration.athleteName}</TableCell>
-                    <TableCell className="font-mono text-sm">{registration.cpf}</TableCell>
-                    <TableCell>{registration.event}</TableCell>
-                    <TableCell>
-                      <div className="space-y-1">
-                        <div className="text-sm">{registration.category}</div>
-                        <div className="text-xs text-muted-foreground">{registration.kit}</div>
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-right font-semibold">
-                      R$ {registration.amount.toFixed(2)}
-                    </TableCell>
-                    <TableCell>{getStatusBadge(registration.status)}</TableCell>
-                    <TableCell>
-                      {format(registration.date, "dd/MM/yyyy", { locale: ptBR })}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon">
-                            <MoreVertical className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem>
-                            <Eye className="mr-2 h-4 w-4" />
-                            Ver Detalhes
-                          </DropdownMenuItem>
-                          <DropdownMenuItem>
-                            <RefreshCw className="mr-2 h-4 w-4" />
-                            Transferir
-                          </DropdownMenuItem>
-                          <DropdownMenuItem>
-                            <MessageSquare className="mr-2 h-4 w-4" />
-                            Enviar Mensagem
-                          </DropdownMenuItem>
-                          <DropdownMenuItem className="text-destructive">
-                            <X className="mr-2 h-4 w-4" />
-                            Cancelar Inscrição
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </TableCell>
+          {loading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Atleta</TableHead>
+                    <TableHead>CPF</TableHead>
+                    <TableHead>Evento</TableHead>
+                    <TableHead>Modalidade/Kit</TableHead>
+                    <TableHead className="text-right">Valor</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Pagamento</TableHead>
+                    <TableHead>Data</TableHead>
+                    <TableHead className="text-right">Ações</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
+                </TableHeader>
+                <TableBody>
+                  {registrations.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
+                        Nenhuma inscrição encontrada
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    registrations.map((registration) => (
+                      <TableRow key={registration.id}>
+                        <TableCell className="font-medium">{registration.runner_name || "N/A"}</TableCell>
+                        <TableCell className="font-mono text-sm">
+                          {registration.runner_cpf ? formatCPF(registration.runner_cpf) : "N/A"}
+                        </TableCell>
+                        <TableCell>{registration.event_title || "N/A"}</TableCell>
+                        <TableCell>
+                          <div className="space-y-1">
+                            <div className="text-sm">
+                              {registration.category_name || "N/A"}
+                              {registration.category_distance && ` - ${registration.category_distance}`}
+                            </div>
+                            <div className="text-xs text-muted-foreground">
+                              {registration.kit_name || "Sem kit"}
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-right font-semibold">
+                          {formatCurrency(parseFloat(String(registration.total_amount || 0)))}
+                        </TableCell>
+                        <TableCell>{getStatusBadge(registration.status || "pending")}</TableCell>
+                        <TableCell>{getPaymentStatusBadge(registration.payment_status || "pending")}</TableCell>
+                        <TableCell>
+                          {registration.created_at
+                            ? format(new Date(registration.created_at), "dd/MM/yyyy", { locale: ptBR })
+                            : "N/A"}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="icon">
+                                <MoreVertical className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem>
+                                <Eye className="mr-2 h-4 w-4" />
+                                Ver Detalhes
+                              </DropdownMenuItem>
+                              <DropdownMenuItem>
+                                <RefreshCw className="mr-2 h-4 w-4" />
+                                Transferir
+                              </DropdownMenuItem>
+                              <DropdownMenuItem>
+                                <MessageSquare className="mr-2 h-4 w-4" />
+                                Enviar Mensagem
+                              </DropdownMenuItem>
+                              {registration.status !== "cancelled" && (
+                                <DropdownMenuItem 
+                                  className="text-destructive"
+                                  onClick={() => handleCancelRegistration(registration.id)}
+                                  disabled={isCancelling === registration.id}
+                                >
+                                  {isCancelling === registration.id ? (
+                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                  ) : (
+                                    <X className="mr-2 h-4 w-4" />
+                                  )}
+                                  Cancelar Inscrição
+                                </DropdownMenuItem>
+                              )}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

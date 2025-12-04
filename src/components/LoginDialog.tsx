@@ -1,13 +1,13 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
+import { getDashboardRoute } from "@/lib/utils/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
-import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 
 interface LoginDialogProps {
@@ -17,6 +17,7 @@ interface LoginDialogProps {
 
 export function LoginDialog({ open, onOpenChange }: LoginDialogProps) {
   const navigate = useNavigate();
+  const { login, register } = useAuth();
   const [loading, setLoading] = useState(false);
   const [isSignUp, setIsSignUp] = useState(false);
   
@@ -39,17 +40,14 @@ export function LoginDialog({ open, onOpenChange }: LoginDialogProps) {
     setLoading(true);
 
     try {
-      const { error } = await supabase.auth.signInWithPassword({
-        email: loginEmail,
-        password: loginPassword,
-      });
-
-      if (error) throw error;
-      toast.success("Login realizado com sucesso!");
-      onOpenChange(false);
-      navigate("/runner/dashboard");
-    } catch (error: any) {
-      toast.error(error.message || "Erro ao fazer login");
+      const success = await login(loginEmail, loginPassword);
+      if (success) {
+        onOpenChange(false);
+        setTimeout(() => {
+          const currentUser = JSON.parse(localStorage.getItem('auth_user') || '{}');
+          navigate(getDashboardRoute(currentUser as any));
+        }, 100);
+      }
     } finally {
       setLoading(false);
     }
@@ -59,46 +57,29 @@ export function LoginDialog({ open, onOpenChange }: LoginDialogProps) {
     e.preventDefault();
     
     if (!lgpdConsent) {
-      toast.error("Você deve aceitar os termos de uso e política de privacidade");
       return;
     }
 
     setLoading(true);
 
     try {
-      const { data: authData, error: signUpError } = await supabase.auth.signUp({
+      const success = await register({
         email: signupEmail,
         password: signupPassword,
-        options: {
-          emailRedirectTo: `${window.location.origin}/`,
-        },
+        full_name: fullName,
+        cpf: cpf.replace(/\D/g, ""),
+        phone: phone.replace(/\D/g, ""),
+        birth_date: birthDate,
+        gender: gender || undefined,
+        lgpd_consent: lgpdConsent,
       });
 
-      if (signUpError) throw signUpError;
-      if (!authData.user) throw new Error("Erro ao criar usuário");
-
-      const { error: profileError } = await supabase
-        .from("profiles")
-        .insert({
-          id: authData.user.id,
-          full_name: fullName,
-          cpf: cpf.replace(/\D/g, ""),
-          phone: phone.replace(/\D/g, ""),
-          birth_date: birthDate,
-          gender: gender || null,
-          lgpd_consent: lgpdConsent,
-        });
-
-      if (profileError) throw profileError;
-
-      toast.success("Conta criada com sucesso!");
-      onOpenChange(false);
-      navigate("/runner/dashboard");
-    } catch (error: any) {
-      if (error.message?.includes("already registered")) {
-        toast.error("Este email já está cadastrado");
-      } else {
-        toast.error(error.message || "Erro ao criar conta");
+      if (success) {
+        onOpenChange(false);
+        setTimeout(() => {
+          const currentUser = JSON.parse(localStorage.getItem('auth_user') || '{}');
+          navigate(getDashboardRoute(currentUser as any));
+        }, 100);
       }
     } finally {
       setLoading(false);
@@ -240,7 +221,7 @@ export function LoginDialog({ open, onOpenChange }: LoginDialogProps) {
                   Aceito os termos de uso e política de privacidade (LGPD)
                 </Label>
               </div>
-              <Button type="submit" className="w-full" disabled={loading}>
+              <Button type="submit" className="w-full" disabled={loading || !lgpdConsent}>
                 {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 Criar Conta
               </Button>

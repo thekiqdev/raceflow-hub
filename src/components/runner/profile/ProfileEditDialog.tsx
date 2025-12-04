@@ -1,30 +1,61 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
+import { Loader2 } from "lucide-react";
+import { updateOwnProfile, type Profile } from "@/lib/api/profiles";
 
 interface ProfileEditDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  profile: {
-    full_name: string;
-    email: string;
-    phone: string;
-    cpf: string;
-    birth_date: string;
-    gender: string;
-  };
+  profile: Profile;
 }
 
 export function ProfileEditDialog({ open, onOpenChange, profile }: ProfileEditDialogProps) {
-  const [formData, setFormData] = useState(profile);
+  const [formData, setFormData] = useState({
+    full_name: profile.full_name || "",
+    phone: profile.phone || "",
+    birth_date: profile.birth_date || "",
+    gender: profile.gender || "",
+  });
+  const [saving, setSaving] = useState(false);
 
-  const handleSave = () => {
-    toast.success("Dados atualizados com sucesso!");
-    onOpenChange(false);
+  useEffect(() => {
+    if (open && profile) {
+      setFormData({
+        full_name: profile.full_name || "",
+        phone: profile.phone || "",
+        birth_date: profile.birth_date || "",
+        gender: profile.gender || "",
+      });
+    }
+  }, [open, profile]);
+
+  const handleSave = async () => {
+    try {
+      setSaving(true);
+      const response = await updateOwnProfile({
+        full_name: formData.full_name,
+        phone: formData.phone,
+        birth_date: formData.birth_date,
+        gender: formData.gender || undefined,
+      });
+
+      if (response.success) {
+        toast.success("Dados atualizados com sucesso!");
+        onOpenChange(false);
+      } else {
+        toast.error(response.error || "Erro ao atualizar dados");
+      }
+    } catch (error: any) {
+      console.error("Error updating profile:", error);
+      toast.error(error.message || "Erro ao atualizar dados");
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -43,15 +74,6 @@ export function ProfileEditDialog({ open, onOpenChange, profile }: ProfileEditDi
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="email">E-mail</Label>
-            <Input
-              id="email"
-              type="email"
-              value={formData.email}
-              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-            />
-          </div>
-          <div className="space-y-2">
             <Label htmlFor="phone">Telefone</Label>
             <Input
               id="phone"
@@ -61,7 +83,7 @@ export function ProfileEditDialog({ open, onOpenChange, profile }: ProfileEditDi
           </div>
           <div className="space-y-2">
             <Label htmlFor="cpf">CPF</Label>
-            <Input id="cpf" value={formData.cpf} disabled className="bg-muted" />
+            <Input id="cpf" value={profile.cpf} disabled className="bg-muted" />
           </div>
           <div className="space-y-2">
             <Label htmlFor="birth_date">Data de Nascimento</Label>
@@ -76,7 +98,7 @@ export function ProfileEditDialog({ open, onOpenChange, profile }: ProfileEditDi
             <Label htmlFor="gender">Gênero</Label>
             <Select value={formData.gender} onValueChange={(value) => setFormData({ ...formData, gender: value })}>
               <SelectTrigger>
-                <SelectValue />
+                <SelectValue placeholder="Selecione" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="Masculino">Masculino</SelectItem>
@@ -86,11 +108,18 @@ export function ProfileEditDialog({ open, onOpenChange, profile }: ProfileEditDi
             </Select>
           </div>
           <div className="flex gap-2 pt-4">
-            <Button variant="outline" className="flex-1" onClick={() => onOpenChange(false)}>
+            <Button variant="outline" className="flex-1" onClick={() => onOpenChange(false)} disabled={saving}>
               Cancelar
             </Button>
-            <Button className="flex-1" onClick={handleSave}>
-              Salvar
+            <Button className="flex-1" onClick={handleSave} disabled={saving}>
+              {saving ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Salvando...
+                </>
+              ) : (
+                "Salvar"
+              )}
             </Button>
           </div>
         </div>

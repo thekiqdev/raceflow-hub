@@ -14,142 +14,112 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Calendar, MapPin, QrCode, ChevronRight, RefreshCw } from "lucide-react";
-import { format } from "date-fns";
+import { Calendar, MapPin, QrCode, RefreshCw, X, Loader2, AlertCircle, Download } from "lucide-react";
+import { format, isFuture } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { supabase } from "@/integrations/supabase/client";
-import { useToast } from "@/hooks/use-toast";
-
-interface Registration {
-  id: string;
-  event_id: string;
-  event_title: string;
-  event_date: string;
-  location: string;
-  category: string;
-  bib_number: string | null;
-  status: "pending" | "confirmed" | "cancelled";
-  payment_status: "pending" | "paid";
-  total_amount: number;
-}
+import { useAuth } from "@/contexts/AuthContext";
+import { getRegistrations, transferRegistration, cancelRegistration, type Registration } from "@/lib/api/registrations";
+import { toast } from "sonner";
 
 export function MyRegistrations() {
   const navigate = useNavigate();
-  const { toast } = useToast();
+  const { user } = useAuth();
+  const [loading, setLoading] = useState(true);
   const [registrations, setRegistrations] = useState<Registration[]>([]);
   const [isTransferDialogOpen, setIsTransferDialogOpen] = useState(false);
+  const [isCancelDialogOpen, setIsCancelDialogOpen] = useState(false);
   const [transferCpf, setTransferCpf] = useState("");
   const [selectedRegistration, setSelectedRegistration] = useState<Registration | null>(null);
   const [isTransferring, setIsTransferring] = useState(false);
+  const [isCancelling, setIsCancelling] = useState(false);
 
   useEffect(() => {
-    loadRegistrations();
-  }, []);
+    if (user) {
+      loadRegistrations();
+    }
+  }, [user]);
 
   const loadRegistrations = async () => {
+    if (!user) return;
+
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      setLoading(true);
+      const response = await getRegistrations({ runner_id: user.id });
 
-      const { data, error } = await supabase
-        .from("registrations")
-        .select(`
-          id,
-          event_id,
-          total_amount,
-          status,
-          payment_status,
-          event:events(title, event_date, city, state),
-          category:event_categories(name)
-        `)
-        .eq("runner_id", user.id)
-        .order("created_at", { ascending: false });
-
-      if (error) throw error;
-
-      const formattedRegistrations: Registration[] = (data || []).map((reg: any) => ({
-        id: reg.id,
-        event_id: reg.event_id,
-        event_title: reg.event.title,
-        event_date: reg.event.event_date,
-        location: `${reg.event.city} - ${reg.event.state}`,
-        category: reg.category.name,
-        bib_number: null,
-        status: reg.status,
-        payment_status: reg.payment_status,
-        total_amount: reg.total_amount,
-      }));
-
-      setRegistrations(formattedRegistrations);
-    } catch (error) {
+      if (response.success && response.data) {
+        setRegistrations(response.data);
+      } else {
+        toast.error(response.error || "Erro ao carregar inscrições");
+      }
+    } catch (error: any) {
       console.error("Error loading registrations:", error);
+      toast.error(error.message || "Erro ao carregar inscrições");
+    } finally {
+      setLoading(false);
     }
   };
 
   const handleTransfer = async () => {
     if (!transferCpf.trim() || !selectedRegistration) {
-      toast({
-        title: "Erro",
-        description: "Por favor, informe o CPF do novo titular",
-        variant: "destructive",
-      });
+      toast.error("Por favor, informe o CPF do novo titular");
       return;
     }
 
     setIsTransferring(true);
     try {
-      // Validate CPF and get user
-      const { data: profile, error: profileError } = await supabase
-        .from("profiles")
-        .select("id")
-        .eq("cpf", transferCpf.trim())
-        .maybeSingle();
+      const response = await transferRegistration(selectedRegistration.id, transferCpf.trim());
 
-      if (profileError) throw profileError;
-
-      if (!profile) {
-        toast({
-          title: "CPF não encontrado",
-          description: "Não foi encontrado um usuário com este CPF",
-          variant: "destructive",
-        });
-        setIsTransferring(false);
-        return;
+      if (response.success) {
+        toast.success(response.message || "Inscrição transferida com sucesso!");
+        setIsTransferDialogOpen(false);
+        setTransferCpf("");
+        setSelectedRegistration(null);
+        loadRegistrations();
+      } else {
+        toast.error(response.error || response.message || "Erro ao transferir inscrição");
       }
-
-      // Update registration
-      const { error: updateError } = await supabase
-        .from("registrations")
-        .update({ runner_id: profile.id })
-        .eq("id", selectedRegistration.id);
-
-      if (updateError) throw updateError;
-
-      toast({
-        title: "Transferência realizada",
-        description: "A inscrição foi transferida com sucesso",
-      });
-
-      setIsTransferDialogOpen(false);
-      setTransferCpf("");
-      setSelectedRegistration(null);
-      loadRegistrations();
     } catch (error: any) {
-      toast({
-        title: "Erro ao transferir inscrição",
-        description: error.message,
-        variant: "destructive",
-      });
+      console.error("Error transferring registration:", error);
+      toast.error(error.message || "Erro ao transferir inscrição");
     } finally {
       setIsTransferring(false);
     }
   };
 
-  const activeRegistrations = registrations.filter((r) => r.status === "confirmed" && r.payment_status === "paid");
-  const pendingRegistrations = registrations.filter((r) => r.status === "pending" || r.payment_status === "pending");
-  const cancelledRegistrations = registrations.filter((r) => r.status === "cancelled");
+  const handleCancel = async () => {
+    if (!selectedRegistration) return;
 
-  const getStatusBadge = (status: string, paymentStatus: string) => {
+    setIsCancelling(true);
+    try {
+      const response = await cancelRegistration(selectedRegistration.id);
+
+      if (response.success) {
+        toast.success(response.message || "Inscrição cancelada com sucesso!");
+        setIsCancelDialogOpen(false);
+        setSelectedRegistration(null);
+        loadRegistrations();
+      } else {
+        toast.error(response.error || response.message || "Erro ao cancelar inscrição");
+      }
+    } catch (error: any) {
+      console.error("Error cancelling registration:", error);
+      toast.error(error.message || "Erro ao cancelar inscrição");
+    } finally {
+      setIsCancelling(false);
+    }
+  };
+
+  const activeRegistrations = registrations.filter((r) => 
+    r.status === "confirmed" && r.payment_status === "paid"
+  );
+  const pendingRegistrations = registrations.filter((r) => 
+    r.status === "pending" || r.payment_status === "pending"
+  );
+  const cancelledRegistrations = registrations.filter((r) => 
+    r.status === "cancelled"
+  );
+
+  const getStatusBadge = (status: string | undefined, paymentStatus: string | undefined) => {
     if (status === "confirmed" && paymentStatus === "paid") {
       return <Badge className="bg-accent">Confirmada</Badge>;
     }
@@ -159,60 +129,105 @@ export function MyRegistrations() {
     if (status === "cancelled") {
       return <Badge variant="destructive">Cancelada</Badge>;
     }
+    if (paymentStatus === "refunded") {
+      return <Badge variant="outline">Reembolsado</Badge>;
+    }
+    if (paymentStatus === "failed") {
+      return <Badge variant="destructive">Falhou</Badge>;
+    }
     return null;
   };
 
-  const RegistrationCard = ({ registration }: { registration: Registration }) => (
-    <Card className="overflow-hidden">
-      <CardContent className="p-4">
-        <div className="flex justify-between items-start mb-3">
-          <h3 className="font-semibold text-sm flex-1 pr-2">{registration.event_title}</h3>
-          {getStatusBadge(registration.status, registration.payment_status)}
-        </div>
+  const formatCurrency = (value: number) => {
+    return new Intl.NumberFormat("pt-BR", {
+      style: "currency",
+      currency: "BRL",
+    }).format(value);
+  };
 
-        <div className="space-y-2 text-xs text-muted-foreground mb-4">
-          <div className="flex items-center gap-2">
-            <Calendar className="h-3 w-3" />
-            <span>{format(new Date(registration.event_date), "dd 'de' MMMM 'de' yyyy", { locale: ptBR })}</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <MapPin className="h-3 w-3" />
-            <span>{registration.location}</span>
-          </div>
-        </div>
+  const formatCpf = (cpf: string | undefined) => {
+    if (!cpf) return "N/A";
+    return cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
+  };
 
-        <div className="bg-muted/50 rounded-lg p-3 mb-3 space-y-1">
-          <div className="flex justify-between text-xs">
-            <span className="text-muted-foreground">Categoria:</span>
-            <span className="font-medium">{registration.category}</span>
+  const RegistrationCard = ({ registration }: { registration: Registration }) => {
+    const isUpcoming = registration.event_date && isFuture(new Date(registration.event_date));
+    const canTransfer = registration.status === "confirmed" && 
+                       registration.payment_status === "paid" && 
+                       isUpcoming;
+    const canCancel = (registration.status === "pending" || 
+                      (registration.status === "confirmed" && registration.payment_status === "paid")) &&
+                      isUpcoming;
+
+    return (
+      <Card className="overflow-hidden hover:shadow-md transition-shadow">
+        <CardContent className="p-4">
+          <div className="flex justify-between items-start mb-3">
+            <h3 className="font-semibold text-sm flex-1 pr-2">{registration.event_title || 'Evento'}</h3>
+            {getStatusBadge(registration.status, registration.payment_status)}
           </div>
-          {registration.bib_number && (
+
+          <div className="space-y-2 text-xs text-muted-foreground mb-4">
+            {registration.event_date && (
+              <div className="flex items-center gap-2">
+                <Calendar className="h-3 w-3" />
+                <span>{format(new Date(registration.event_date), "dd 'de' MMMM 'de' yyyy", { locale: ptBR })}</span>
+              </div>
+            )}
+            {registration.category_name && (
+              <div className="flex items-center gap-2">
+                <MapPin className="h-3 w-3" />
+                <span>{registration.category_name} {registration.category_distance ? `(${registration.category_distance})` : ''}</span>
+              </div>
+            )}
+            {registration.confirmation_code && (
+              <div className="text-xs font-mono text-primary">
+                Código: {registration.confirmation_code}
+              </div>
+            )}
+          </div>
+
+          <div className="bg-muted/50 rounded-lg p-3 mb-3 space-y-1">
+            {registration.category_name && (
+              <div className="flex justify-between text-xs">
+                <span className="text-muted-foreground">Categoria:</span>
+                <span className="font-medium">{registration.category_name}</span>
+              </div>
+            )}
+            {registration.category_distance && (
+              <div className="flex justify-between text-xs">
+                <span className="text-muted-foreground">Distância:</span>
+                <span className="font-medium">{registration.category_distance}</span>
+              </div>
+            )}
+            {registration.kit_name && (
+              <div className="flex justify-between text-xs">
+                <span className="text-muted-foreground">Kit:</span>
+                <span className="font-medium">{registration.kit_name}</span>
+              </div>
+            )}
             <div className="flex justify-between text-xs">
-              <span className="text-muted-foreground">Número de peito:</span>
-              <span className="font-semibold text-primary">{registration.bib_number}</span>
+              <span className="text-muted-foreground">Valor:</span>
+              <span className="font-medium">{formatCurrency(registration.total_amount)}</span>
             </div>
-          )}
-          <div className="flex justify-between text-xs">
-            <span className="text-muted-foreground">Valor pago:</span>
-            <span className="font-medium">R$ {registration.total_amount.toFixed(2)}</span>
+            {registration.payment_method && (
+              <div className="flex justify-between text-xs">
+                <span className="text-muted-foreground">Pagamento:</span>
+                <span className="font-medium">
+                  {registration.payment_method === 'pix' ? 'PIX' : 
+                   registration.payment_method === 'credit_card' ? 'Cartão' : 
+                   registration.payment_method === 'boleto' ? 'Boleto' : 
+                   registration.payment_method}
+                </span>
+              </div>
+            )}
           </div>
-        </div>
 
-        <div className="flex gap-2">
-          {registration.status === "confirmed" && registration.payment_status === "paid" && (
-            <>
+          <div className="flex gap-2">
+            {canTransfer && (
               <Button 
                 variant="outline" 
                 size="sm" 
-                className="flex-1"
-                onClick={() => navigate(`/registration/qrcode/${registration.id}`)}
-              >
-                <QrCode className="h-3 w-3 mr-1" />
-                Mostrar Inscrição
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
                 className="flex-1"
                 onClick={() => {
                   setSelectedRegistration(registration);
@@ -222,18 +237,59 @@ export function MyRegistrations() {
                 <RefreshCw className="h-3 w-3 mr-1" />
                 Transferir
               </Button>
-            </>
-          )}
+            )}
+            {canCancel && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="flex-1"
+                onClick={() => {
+                  setSelectedRegistration(registration);
+                  setIsCancelDialogOpen(true);
+                }}
+              >
+                <X className="h-3 w-3 mr-1" />
+                Cancelar
+              </Button>
+            )}
+            {registration.status === "confirmed" && registration.payment_status === "paid" && (
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="flex-1"
+                onClick={() => navigate(`/registration/qrcode/${registration.id}`)}
+              >
+                <QrCode className="h-3 w-3 mr-1" />
+                QR Code
+              </Button>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+    );
+  };
+
+  if (loading) {
+    return (
+      <div className="pb-20">
+        <div className="bg-gradient-hero p-6">
+          <h1 className="text-2xl font-bold text-white">Minhas Inscrições</h1>
         </div>
-      </CardContent>
-    </Card>
-  );
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="pb-20">
       {/* Header */}
       <div className="bg-gradient-hero p-6">
-        <h1 className="text-2xl font-bold text-white">Minhas Inscrições</h1>
+        <h1 className="text-2xl font-bold text-white mb-2">Minhas Inscrições</h1>
+        <p className="text-white/80 text-sm">
+          {registrations.length} {registrations.length === 1 ? 'inscrição' : 'inscrições'} total
+        </p>
       </div>
 
       {/* Tabs */}
@@ -253,10 +309,15 @@ export function MyRegistrations() {
 
           <TabsContent value="active" className="space-y-4">
             {activeRegistrations.length === 0 ? (
-              <div className="text-center py-12">
-                <p className="text-muted-foreground mb-4">Nenhuma inscrição ativa</p>
-                <Button>Explorar Corridas</Button>
-              </div>
+              <Card>
+                <CardContent className="py-12 text-center">
+                  <Calendar className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+                  <p className="text-muted-foreground mb-4">Nenhuma inscrição ativa</p>
+                  <Button onClick={() => navigate("/runner/dashboard?tab=home")}>
+                    Explorar Corridas
+                  </Button>
+                </CardContent>
+              </Card>
             ) : (
               activeRegistrations.map((reg) => (
                 <RegistrationCard key={reg.id} registration={reg} />
@@ -266,9 +327,12 @@ export function MyRegistrations() {
 
           <TabsContent value="pending" className="space-y-4">
             {pendingRegistrations.length === 0 ? (
-              <div className="text-center py-12">
-                <p className="text-muted-foreground">Nenhuma inscrição pendente</p>
-              </div>
+              <Card>
+                <CardContent className="py-12 text-center">
+                  <AlertCircle className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+                  <p className="text-muted-foreground">Nenhuma inscrição pendente</p>
+                </CardContent>
+              </Card>
             ) : (
               pendingRegistrations.map((reg) => (
                 <RegistrationCard key={reg.id} registration={reg} />
@@ -278,9 +342,12 @@ export function MyRegistrations() {
 
           <TabsContent value="cancelled" className="space-y-4">
             {cancelledRegistrations.length === 0 ? (
-              <div className="text-center py-12">
-                <p className="text-muted-foreground">Nenhuma inscrição cancelada</p>
-              </div>
+              <Card>
+                <CardContent className="py-12 text-center">
+                  <X className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+                  <p className="text-muted-foreground">Nenhuma inscrição cancelada</p>
+                </CardContent>
+              </Card>
             ) : (
               cancelledRegistrations.map((reg) => (
                 <RegistrationCard key={reg.id} registration={reg} />
@@ -327,7 +394,53 @@ export function MyRegistrations() {
               Cancelar
             </Button>
             <Button onClick={handleTransfer} disabled={isTransferring}>
-              {isTransferring ? "Transferindo..." : "Confirmar Transferência"}
+              {isTransferring ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Transferindo...
+                </>
+              ) : (
+                "Confirmar Transferência"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Cancel Dialog */}
+      <Dialog open={isCancelDialogOpen} onOpenChange={setIsCancelDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Cancelar Inscrição</DialogTitle>
+            <DialogDescription>
+              Tem certeza que deseja cancelar a inscrição em {selectedRegistration?.event_title}?
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <p className="text-sm text-muted-foreground">
+              Esta ação não pode ser desfeita. O reembolso será processado de acordo com a política do evento.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                setIsCancelDialogOpen(false);
+                setSelectedRegistration(null);
+              }}
+              disabled={isCancelling}
+            >
+              Não, manter inscrição
+            </Button>
+            <Button variant="destructive" onClick={handleCancel} disabled={isCancelling}>
+              {isCancelling ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Cancelando...
+                </>
+              ) : (
+                "Sim, cancelar inscrição"
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>

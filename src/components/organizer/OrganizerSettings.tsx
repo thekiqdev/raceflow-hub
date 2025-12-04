@@ -3,25 +3,66 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Building2, Trash2 } from "lucide-react";
+import { Building2, Trash2, Loader2, Save } from "lucide-react";
 import { toast } from "sonner";
+import { useAuth } from "@/contexts/AuthContext";
+import {
+  getOrganizerSettings,
+  updateOrganizerSettings,
+  type OrganizerSettings,
+} from "@/lib/api/organizerSettings";
 
 export default function OrganizerSettings() {
-  const [logoUrl, setLogoUrl] = useState<string | null>(null);
-  const [uploading, setUploading] = useState(false);
+  const { user } = useAuth();
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [settings, setSettings] = useState<OrganizerSettings | null>(null);
+  
+  // Form state
+  const [fullName, setFullName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [organizationName, setOrganizationName] = useState("");
+  const [contactEmail, setContactEmail] = useState("");
+  const [contactPhone, setContactPhone] = useState("");
+  const [bio, setBio] = useState("");
+  const [websiteUrl, setWebsiteUrl] = useState("");
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
 
   useEffect(() => {
-    loadSettings();
-  }, []);
-
-  const loadSettings = () => {
-    const savedLogo = localStorage.getItem('organizer-logo');
-    if (savedLogo) {
-      setLogoUrl(savedLogo);
+    if (user) {
+      loadSettings();
     }
-    setLoading(false);
+  }, [user]);
+
+  const loadSettings = async () => {
+    if (!user) return;
+
+    try {
+      setLoading(true);
+      const response = await getOrganizerSettings();
+
+      if (response.success && response.data) {
+        setSettings(response.data);
+        setFullName(response.data.full_name || "");
+        setPhone(response.data.phone || "");
+        setOrganizationName(response.data.organization_name || "");
+        setContactEmail(response.data.contact_email || "");
+        setContactPhone(response.data.contact_phone || "");
+        setBio(response.data.bio || "");
+        setWebsiteUrl(response.data.website_url || "");
+        setLogoUrl(response.data.logo_url || null);
+      } else {
+        toast.error(response.error || "Erro ao carregar configurações");
+      }
+    } catch (error: any) {
+      console.error("Error loading settings:", error);
+      toast.error("Erro ao carregar configurações");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleLogoUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -42,17 +83,30 @@ export default function OrganizerSettings() {
 
     setUploading(true);
 
-    // Convert to base64 and save to localStorage
+    // Convert to base64 and save
     const reader = new FileReader();
-    reader.onloadend = () => {
+    reader.onloadend = async () => {
       const base64String = reader.result as string;
-      localStorage.setItem('organizer-logo', base64String);
-      setLogoUrl(base64String);
-      toast.success('Logo atualizada com sucesso!');
       
-      // Trigger a refresh of the sidebar
-      window.dispatchEvent(new Event('organizer-logo-updated'));
-      setUploading(false);
+      try {
+        const response = await updateOrganizerSettings({ logo_url: base64String });
+        
+        if (response.success && response.data) {
+          setLogoUrl(base64String);
+          setSettings(response.data);
+          toast.success('Logo atualizada com sucesso!');
+          
+          // Trigger a refresh of the sidebar
+          window.dispatchEvent(new Event('organizer-logo-updated'));
+        } else {
+          toast.error(response.error || 'Erro ao atualizar logo');
+        }
+      } catch (error: any) {
+        console.error("Error updating logo:", error);
+        toast.error('Erro ao fazer upload da logo');
+      } finally {
+        setUploading(false);
+      }
     };
     reader.onerror = () => {
       toast.error('Erro ao fazer upload da logo');
@@ -61,19 +115,59 @@ export default function OrganizerSettings() {
     reader.readAsDataURL(file);
   };
 
-  const handleRemoveLogo = () => {
-    localStorage.removeItem('organizer-logo');
-    setLogoUrl(null);
-    toast.success('Logo removida com sucesso!');
-    
-    // Trigger a refresh of the sidebar
-    window.dispatchEvent(new Event('organizer-logo-updated'));
+  const handleRemoveLogo = async () => {
+    try {
+      const response = await updateOrganizerSettings({ logo_url: null });
+      
+      if (response.success && response.data) {
+        setLogoUrl(null);
+        setSettings(response.data);
+        toast.success('Logo removida com sucesso!');
+        
+        // Trigger a refresh of the sidebar
+        window.dispatchEvent(new Event('organizer-logo-updated'));
+      } else {
+        toast.error(response.error || 'Erro ao remover logo');
+      }
+    } catch (error: any) {
+      console.error("Error removing logo:", error);
+      toast.error('Erro ao remover logo');
+    }
+  };
+
+  const handleSaveGeneral = async () => {
+    if (!user) return;
+
+    try {
+      setSaving(true);
+      const response = await updateOrganizerSettings({
+        full_name: fullName,
+        phone: phone,
+        organization_name: organizationName,
+        contact_email: contactEmail,
+        contact_phone: contactPhone,
+        bio: bio,
+        website_url: websiteUrl,
+      });
+
+      if (response.success && response.data) {
+        setSettings(response.data);
+        toast.success('Configurações salvas com sucesso!');
+      } else {
+        toast.error(response.error || 'Erro ao salvar configurações');
+      }
+    } catch (error: any) {
+      console.error("Error saving settings:", error);
+      toast.error(error.message || 'Erro ao salvar configurações');
+    } finally {
+      setSaving(false);
+    }
   };
 
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
       </div>
     );
   }
@@ -155,7 +249,7 @@ export default function OrganizerSettings() {
 
                 {uploading && (
                   <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
+                    <Loader2 className="h-4 w-4 animate-spin" />
                     <span>Enviando logo...</span>
                   </div>
                 )}
@@ -172,18 +266,86 @@ export default function OrganizerSettings() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">
+                <Label htmlFor="full-name">Nome Completo</Label>
+                <Input 
+                  id="full-name" 
+                  placeholder="Seu nome completo"
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
                 <Label htmlFor="org-name">Nome da Organização</Label>
-                <Input id="org-name" placeholder="Nome da sua organização" />
+                <Input 
+                  id="org-name" 
+                  placeholder="Nome da sua organização"
+                  value={organizationName}
+                  onChange={(e) => setOrganizationName(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="phone">Telefone</Label>
+                <Input 
+                  id="phone" 
+                  type="tel" 
+                  placeholder="(00) 00000-0000"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="org-email">E-mail de Contato</Label>
-                <Input id="org-email" type="email" placeholder="contato@organizacao.com" />
+                <Input 
+                  id="org-email" 
+                  type="email" 
+                  placeholder="contato@organizacao.com"
+                  value={contactEmail}
+                  onChange={(e) => setContactEmail(e.target.value)}
+                />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="org-phone">Telefone</Label>
-                <Input id="org-phone" type="tel" placeholder="(00) 00000-0000" />
+                <Label htmlFor="org-phone">Telefone de Contato</Label>
+                <Input 
+                  id="org-phone" 
+                  type="tel" 
+                  placeholder="(00) 00000-0000"
+                  value={contactPhone}
+                  onChange={(e) => setContactPhone(e.target.value)}
+                />
               </div>
-              <Button>Salvar Alterações</Button>
+              <div className="space-y-2">
+                <Label htmlFor="website">Site</Label>
+                <Input 
+                  id="website" 
+                  type="url" 
+                  placeholder="https://www.exemplo.com"
+                  value={websiteUrl}
+                  onChange={(e) => setWebsiteUrl(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="bio">Biografia</Label>
+                <Textarea 
+                  id="bio" 
+                  placeholder="Descreva sua organização..."
+                  value={bio}
+                  onChange={(e) => setBio(e.target.value)}
+                  rows={4}
+                />
+              </div>
+              <Button onClick={handleSaveGeneral} disabled={saving}>
+                {saving ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Salvando...
+                  </>
+                ) : (
+                  <>
+                    <Save className="mr-2 h-4 w-4" />
+                    Salvar Alterações
+                  </>
+                )}
+              </Button>
             </CardContent>
           </Card>
         </TabsContent>

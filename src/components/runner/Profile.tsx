@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -14,26 +14,26 @@ import {
   Shield,
   Settings,
   Edit,
+  Loader2,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import { useAuth } from "@/contexts/AuthContext";
 import { ProfileEditDialog } from "./profile/ProfileEditDialog";
 import { DocumentsManagement } from "./profile/DocumentsManagement";
 import { PrivacySettings } from "./profile/PrivacySettings";
 import { PaymentHistory } from "./profile/PaymentHistory";
 import { NotificationSettings } from "./profile/NotificationSettings";
 import { AccountSettings } from "./profile/AccountSettings";
+import { getOwnProfile, type Profile } from "@/lib/api/profiles";
+import { getRunnerStats, type RunnerStats } from "@/lib/api/runnerStats";
 
 export function Profile() {
   const navigate = useNavigate();
-  const [profile] = useState({
-    full_name: "João Silva",
-    email: "joao.silva@email.com",
-    phone: "(11) 98765-4321",
-    cpf: "123.456.789-00",
-    birth_date: "1990-05-15",
-    gender: "Masculino",
-  });
+  const { user, logout } = useAuth();
+  const [loading, setLoading] = useState(true);
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [stats, setStats] = useState<RunnerStats | null>(null);
 
   const [openDialogs, setOpenDialogs] = useState({
     editProfile: false,
@@ -44,8 +44,43 @@ export function Profile() {
     account: false,
   });
 
-  const handleSignOut = () => {
-    toast.success("Logout realizado com sucesso!");
+  useEffect(() => {
+    if (user) {
+      loadProfileData();
+    }
+  }, [user]);
+
+  const loadProfileData = async () => {
+    if (!user) return;
+
+    try {
+      setLoading(true);
+      const [profileResponse, statsResponse] = await Promise.all([
+        getOwnProfile(),
+        getRunnerStats(),
+      ]);
+
+      if (profileResponse.success && profileResponse.data) {
+        setProfile(profileResponse.data);
+      } else {
+        toast.error(profileResponse.error || "Erro ao carregar perfil");
+      }
+
+      if (statsResponse.success && statsResponse.data) {
+        setStats(statsResponse.data);
+      } else {
+        toast.error(statsResponse.error || "Erro ao carregar estatísticas");
+      }
+    } catch (error: any) {
+      console.error("Error loading profile data:", error);
+      toast.error(error.message || "Erro ao carregar dados do perfil");
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  const handleSignOut = async () => {
+    await logout();
     navigate("/");
   };
 
@@ -92,6 +127,39 @@ export function Profile() {
     </div>
   );
 
+  if (loading) {
+    return (
+      <div className="pb-20">
+        <div className="bg-gradient-hero p-6 pb-12">
+          <h1 className="text-2xl font-bold text-white mb-6">Meu Perfil</h1>
+        </div>
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        </div>
+      </div>
+    );
+  }
+
+  if (!profile) {
+    return (
+      <div className="pb-20">
+        <div className="bg-gradient-hero p-6 pb-12">
+          <h1 className="text-2xl font-bold text-white mb-6">Meu Perfil</h1>
+        </div>
+        <div className="px-4">
+          <Card>
+            <CardContent className="py-12 text-center">
+              <p className="text-muted-foreground">Erro ao carregar perfil</p>
+              <Button onClick={loadProfileData} className="mt-4">
+                Tentar Novamente
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="pb-20">
       {/* Header */}
@@ -104,26 +172,30 @@ export function Profile() {
             <div className="flex items-center gap-4 mb-4">
               <Avatar className="h-16 w-16">
                 <AvatarFallback className="bg-primary text-primary-foreground text-xl">
-                  {profile.full_name.split(" ").map(n => n[0]).join("")}
+                  {profile.full_name.split(" ").map(n => n[0]).join("").slice(0, 2)}
                 </AvatarFallback>
               </Avatar>
               <div className="flex-1">
                 <h2 className="font-semibold text-lg">{profile.full_name}</h2>
-                <p className="text-sm text-muted-foreground">{profile.email}</p>
+                <p className="text-sm text-muted-foreground">{user?.email}</p>
               </div>
-              <Button variant="ghost" size="icon">
+              <Button 
+                variant="ghost" 
+                size="icon"
+                onClick={() => openDialog("editProfile")}
+              >
                 <Edit className="h-4 w-4" />
               </Button>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
               <div className="bg-muted/50 rounded-lg p-3">
-                <div className="text-xs text-muted-foreground mb-1">Provas</div>
-                <div className="text-xl font-bold text-primary">12</div>
+                <div className="text-xs text-muted-foreground mb-1">Inscrições</div>
+                <div className="text-xl font-bold text-primary">{stats?.total_registrations || 0}</div>
               </div>
               <div className="bg-muted/50 rounded-lg p-3">
-                <div className="text-xs text-muted-foreground mb-1">Pódios</div>
-                <div className="text-xl font-bold text-secondary">3</div>
+                <div className="text-xs text-muted-foreground mb-1">Completadas</div>
+                <div className="text-xl font-bold text-secondary">{stats?.completed_races || 0}</div>
               </div>
             </div>
           </CardContent>
@@ -201,7 +273,12 @@ export function Profile() {
       {/* Dialogs */}
       <ProfileEditDialog
         open={openDialogs.editProfile}
-        onOpenChange={(open) => !open && closeDialog("editProfile")}
+        onOpenChange={(open) => {
+          if (!open) {
+            closeDialog("editProfile");
+            loadProfileData(); // Reload profile after edit
+          }
+        }}
         profile={profile}
       />
       <DocumentsManagement

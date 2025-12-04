@@ -2,66 +2,105 @@ import { useState, useEffect } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Trophy, Clock, TrendingUp, Share2, Medal } from "lucide-react";
+import { Trophy, Clock, TrendingUp, Share2, Medal, Loader2, ExternalLink, AlertCircle } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
-
-interface Result {
-  id: string;
-  event_title: string;
-  event_date: string;
-  category: string;
-  official_time: string;
-  net_time: string;
-  overall_position: number;
-  category_position: number;
-  total_participants: number;
-  bib_number: number;
-  team?: string;
-  pace: string;
-}
+import { useAuth } from "@/contexts/AuthContext";
+import { getRunnerResults, getRunnerResultsStats, type RunnerResult, type RunnerResultsStats } from "@/lib/api/runnerResults";
+import { toast } from "sonner";
 
 export function Results() {
-  const [results, setResults] = useState<Result[]>([]);
+  const { user } = useAuth();
+  const [loading, setLoading] = useState(true);
+  const [results, setResults] = useState<RunnerResult[]>([]);
+  const [stats, setStats] = useState<RunnerResultsStats>({
+    total_races: 0,
+    podiums: 0,
+    improvement_percentage: 0,
+    completed_races: 0,
+  });
 
   useEffect(() => {
-    // Mock results data
-    const mockResults: Result[] = [
-      {
-        id: "1",
-        event_title: "Corrida de Ano Novo 2024",
-        event_date: "2024-01-01T07:00:00Z",
-        category: "10K - Masculino",
-        official_time: "00:45:32",
-        net_time: "00:45:28",
-        overall_position: 45,
-        category_position: 12,
-        total_participants: 500,
-        bib_number: 1234,
-        team: "Runners Club SP",
-        pace: "4:33 /km",
-      },
-      {
-        id: "2",
-        event_title: "Maratona de Primavera",
-        event_date: "2023-09-15T06:00:00Z",
-        category: "5K - Masculino",
-        official_time: "00:22:15",
-        net_time: "00:22:10",
-        overall_position: 23,
-        category_position: 8,
-        total_participants: 350,
-        bib_number: 567,
-        team: "Equipe Velocidade",
-        pace: "4:26 /km",
-      },
-    ];
-    setResults(mockResults);
-  }, []);
+    if (user) {
+      loadResults();
+    }
+  }, [user]);
+
+  const loadResults = async () => {
+    if (!user) return;
+
+    try {
+      setLoading(true);
+      const [resultsResponse, statsResponse] = await Promise.all([
+        getRunnerResults(),
+        getRunnerResultsStats(),
+      ]);
+
+      if (resultsResponse.success && resultsResponse.data) {
+        setResults(resultsResponse.data);
+      } else {
+        toast.error(resultsResponse.error || "Erro ao carregar resultados");
+      }
+
+      if (statsResponse.success && statsResponse.data) {
+        setStats(statsResponse.data);
+      } else {
+        toast.error(statsResponse.error || "Erro ao carregar estatísticas");
+      }
+    } catch (error: any) {
+      console.error("Error loading results:", error);
+      toast.error(error.message || "Erro ao carregar resultados");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleShare = async (result: RunnerResult) => {
+    const shareText = `Completei a corrida ${result.event_title}! Veja meu resultado: ${result.result_url}`;
+    
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: `Resultado - ${result.event_title}`,
+          text: shareText,
+          url: result.result_url,
+        });
+        toast.success("Resultado compartilhado!");
+      } catch (error: any) {
+        if (error.name !== 'AbortError') {
+          // Fallback to clipboard
+          await navigator.clipboard.writeText(shareText);
+          toast.success("Link copiado para a área de transferência!");
+        }
+      }
+    } else {
+      // Fallback to clipboard
+      try {
+        await navigator.clipboard.writeText(shareText);
+        toast.success("Link copiado para a área de transferência!");
+      } catch (error) {
+        toast.error("Erro ao copiar link");
+      }
+    }
+  };
 
   const formatPosition = (position: number, total: number) => {
     return `${position}º de ${total}`;
   };
+
+  if (loading) {
+    return (
+      <div className="pb-20">
+        <div className="bg-gradient-hero p-6">
+          <h1 className="text-2xl font-bold text-white mb-2">Meus Resultados</h1>
+          <p className="text-white/90 text-sm">Acompanhe seu desempenho</p>
+        </div>
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="pb-20">
@@ -78,17 +117,19 @@ export function Results() {
             <div className="grid grid-cols-3 gap-4 text-center">
               <div>
                 <Trophy className="h-6 w-6 text-primary mx-auto mb-1" />
-                <div className="text-2xl font-bold text-foreground">{results.length}</div>
+                <div className="text-2xl font-bold text-foreground">{stats.total_races}</div>
                 <div className="text-xs text-muted-foreground">Provas</div>
               </div>
               <div>
                 <Medal className="h-6 w-6 text-secondary mx-auto mb-1" />
-                <div className="text-2xl font-bold text-foreground">3</div>
+                <div className="text-2xl font-bold text-foreground">{stats.podiums}</div>
                 <div className="text-xs text-muted-foreground">Pódios</div>
               </div>
               <div>
                 <TrendingUp className="h-6 w-6 text-accent mx-auto mb-1" />
-                <div className="text-2xl font-bold text-foreground">12%</div>
+                <div className="text-2xl font-bold text-foreground">
+                  {stats.improvement_percentage > 0 ? `+${stats.improvement_percentage}%` : `${stats.improvement_percentage}%`}
+                </div>
                 <div className="text-xs text-muted-foreground">Melhora</div>
               </div>
             </div>
@@ -101,16 +142,18 @@ export function Results() {
         <h2 className="text-lg font-semibold text-foreground mb-4">Histórico de Provas</h2>
 
         {results.length === 0 ? (
-          <div className="text-center py-12">
-            <Trophy className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-            <p className="text-muted-foreground mb-4">Nenhum resultado disponível</p>
-            <p className="text-sm text-muted-foreground">
-              Seus resultados aparecerão aqui após participar de corridas
-            </p>
-          </div>
+          <Card>
+            <CardContent className="py-12 text-center">
+              <Trophy className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+              <p className="text-muted-foreground mb-2">Nenhum resultado disponível</p>
+              <p className="text-sm text-muted-foreground">
+                Seus resultados aparecerão aqui após participar de corridas e os organizadores disponibilizarem os resultados
+              </p>
+            </CardContent>
+          </Card>
         ) : (
           results.map((result) => (
-            <Card key={result.id} className="overflow-hidden">
+            <Card key={result.id} className="overflow-hidden hover:shadow-md transition-shadow">
               <CardContent className="p-4">
                 <div className="flex justify-between items-start mb-3">
                   <div className="flex-1">
@@ -119,74 +162,70 @@ export function Results() {
                       {format(new Date(result.event_date), "dd 'de' MMMM 'de' yyyy", { locale: ptBR })}
                     </p>
                   </div>
+                  <Badge variant="default" className="ml-2">
+                    Resultado Disponível
+                  </Badge>
                 </div>
 
                 {/* Participant Info */}
                 <div className="grid grid-cols-2 gap-3 mb-3">
                   <div className="bg-muted/30 rounded-lg p-2">
-                    <div className="text-xs text-muted-foreground mb-1">Número</div>
-                    <div className="font-bold text-foreground">#{result.bib_number}</div>
+                    <div className="text-xs text-muted-foreground mb-1">Categoria</div>
+                    <div className="font-semibold text-sm text-foreground">
+                      {result.category_name}
+                    </div>
                   </div>
                   <div className="bg-muted/30 rounded-lg p-2">
-                    <div className="text-xs text-muted-foreground mb-1">Categoria</div>
-                    <div className="font-semibold text-sm text-foreground">{result.category}</div>
+                    <div className="text-xs text-muted-foreground mb-1">Distância</div>
+                    <div className="font-semibold text-sm text-foreground">
+                      {result.category_distance}
+                    </div>
                   </div>
                 </div>
 
-                {result.team && (
+                {result.confirmation_code && (
                   <div className="bg-muted/30 rounded-lg p-2 mb-3">
-                    <div className="text-xs text-muted-foreground mb-1">Equipe</div>
-                    <div className="font-semibold text-sm text-foreground">{result.team}</div>
+                    <div className="text-xs text-muted-foreground mb-1">Código de Confirmação</div>
+                    <div className="font-mono text-sm font-semibold text-primary">
+                      {result.confirmation_code}
+                    </div>
                   </div>
                 )}
 
-                {/* Times */}
+                {/* Result Link */}
                 <div className="bg-primary/5 rounded-lg p-3 mb-3">
-                  <div className="grid grid-cols-3 gap-3">
+                  <div className="flex items-center justify-between">
                     <div>
-                      <div className="text-xs text-muted-foreground mb-1">Tempo Final</div>
-                      <div className="text-base font-bold text-primary flex items-center gap-1">
-                        <Clock className="h-3.5 w-3.5" />
-                        {result.official_time}
+                      <div className="text-xs text-muted-foreground mb-1">Resultado</div>
+                      <div className="text-sm font-medium text-primary">
+                        Link dos resultados disponível
                       </div>
                     </div>
-                    <div>
-                      <div className="text-xs text-muted-foreground mb-1">Líquido</div>
-                      <div className="text-base font-bold text-primary flex items-center gap-1">
-                        <Clock className="h-3.5 w-3.5" />
-                        {result.net_time}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-xs text-muted-foreground mb-1">Ritmo</div>
-                      <div className="text-base font-bold text-primary">
-                        {result.pace}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Positions */}
-                <div className="grid grid-cols-2 gap-3 mb-3">
-                  <div className="bg-secondary/10 rounded-lg p-2 text-center border border-secondary/20">
-                    <div className="text-xs text-muted-foreground mb-1">Posição Geral</div>
-                    <div className="font-bold text-foreground">
-                      {formatPosition(result.overall_position, result.total_participants)}
-                    </div>
-                  </div>
-                  <div className="bg-accent/10 rounded-lg p-2 text-center border border-accent/20">
-                    <div className="text-xs text-muted-foreground mb-1">Posição Categoria</div>
-                    <div className="font-bold text-foreground">
-                      {result.category_position}º lugar
-                    </div>
+                    <ExternalLink className="h-4 w-4 text-primary" />
                   </div>
                 </div>
 
                 {/* Actions */}
-                <Button variant="outline" size="sm" className="w-full">
-                  <Share2 className="h-3 w-3 mr-2" />
-                  Compartilhar Resultado
-                </Button>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="flex-1"
+                    onClick={() => window.open(result.result_url, '_blank')}
+                  >
+                    <ExternalLink className="h-3 w-3 mr-2" />
+                    Ver Resultado
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="flex-1"
+                    onClick={() => handleShare(result)}
+                  >
+                    <Share2 className="h-3 w-3 mr-2" />
+                    Compartilhar
+                  </Button>
+                </div>
               </CardContent>
             </Card>
           ))

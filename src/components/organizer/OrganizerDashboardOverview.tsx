@@ -1,6 +1,7 @@
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Users, DollarSign, TrendingUp, Calendar, BarChart3, Plus, FileDown, Send } from "lucide-react";
+import { Users, DollarSign, TrendingUp, Calendar, BarChart3, Plus, FileDown, Send, Loader2 } from "lucide-react";
 import {
   LineChart,
   Line,
@@ -16,40 +17,96 @@ import {
   Legend,
   ResponsiveContainer,
 } from "recharts";
-import { format, subDays, eachDayOfInterval } from "date-fns";
+import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { toast } from "sonner";
+import {
+  getOrganizerDashboardStats,
+  getOrganizerDashboardCharts,
+  type OrganizerDashboardStats,
+  type OrganizerChartData,
+} from "@/lib/api/organizer";
 
 const OrganizerDashboardOverview = () => {
-  // Mock data
-  const last30Days = eachDayOfInterval({
-    start: subDays(new Date(), 29),
-    end: new Date(),
-  });
+  const [loading, setLoading] = useState(true);
+  const [stats, setStats] = useState<OrganizerDashboardStats | null>(null);
+  const [chartData, setChartData] = useState<OrganizerChartData | null>(null);
 
-  const registrationsByDay = last30Days.map((day, index) => ({
-    date: format(day, "dd/MM", { locale: ptBR }),
-    count: Math.floor(Math.random() * 15) + (index > 20 ? 5 : 2),
-  }));
+  useEffect(() => {
+    loadDashboardData();
+  }, []);
 
-  const revenueByDay = last30Days.map((day, index) => ({
-    date: format(day, "dd/MM", { locale: ptBR }),
-    value: Math.floor(Math.random() * 2000) + (index > 20 ? 1000 : 500),
-  }));
+  const loadDashboardData = async () => {
+    try {
+      setLoading(true);
 
-  const genderData = [
-    { gender: "Masculino", count: 89 },
-    { gender: "Feminino", count: 54 },
-    { gender: "Não informado", count: 4 },
-  ];
+      // Load stats and charts in parallel
+      const [statsResponse, chartsResponse] = await Promise.all([
+        getOrganizerDashboardStats(),
+        getOrganizerDashboardCharts(30),
+      ]);
 
-  const modalityData = [
-    { name: "5K", count: 67 },
-    { name: "10K", count: 45 },
-    { name: "21K", count: 23 },
-    { name: "Caminhada", count: 12 },
-  ];
+      if (statsResponse.success && statsResponse.data) {
+        setStats(statsResponse.data);
+      } else {
+        toast.error(statsResponse.error || "Erro ao carregar estatísticas");
+      }
+
+      if (chartsResponse.success && chartsResponse.data) {
+        setChartData(chartsResponse.data);
+      } else {
+        toast.error(chartsResponse.error || "Erro ao carregar gráficos");
+      }
+    } catch (error) {
+      console.error("Error loading dashboard data:", error);
+      toast.error("Erro ao carregar dados do dashboard");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const COLORS = ["hsl(var(--primary))", "hsl(var(--secondary))", "hsl(var(--accent))"];
+
+  // Format chart data for display
+  const formattedRegistrationsByDay = chartData?.registrationsByDay.map((item) => {
+    try {
+      const date = typeof item.date === 'string' ? new Date(item.date) : item.date;
+      return {
+        date: format(date, "dd/MM", { locale: ptBR }),
+        count: item.count || 0,
+      };
+    } catch (error) {
+      console.error('Error formatting date:', error, item);
+      return {
+        date: String(item.date),
+        count: item.count || 0,
+      };
+    }
+  }) || [];
+
+  const formattedRevenueByDay = chartData?.revenueByDay.map((item) => {
+    try {
+      const date = typeof item.date === 'string' ? new Date(item.date) : item.date;
+      return {
+        date: format(date, "dd/MM", { locale: ptBR }),
+        value: item.value || 0,
+      };
+    } catch (error) {
+      console.error('Error formatting date:', error, item);
+      return {
+        date: String(item.date),
+        value: item.value || 0,
+      };
+    }
+  }) || [];
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8">
@@ -66,7 +123,7 @@ const OrganizerDashboardOverview = () => {
             <Calendar className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-primary">3</div>
+            <div className="text-2xl font-bold text-primary">{stats?.active_events || 0}</div>
             <p className="text-xs text-muted-foreground mt-1">Publicados e ativos</p>
           </CardContent>
         </Card>
@@ -77,9 +134,9 @@ const OrganizerDashboardOverview = () => {
             <Users className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-primary">147</div>
+            <div className="text-2xl font-bold text-primary">{stats?.total_registrations || 0}</div>
             <p className="text-xs text-muted-foreground mt-1">
-              <span className="text-success">+23</span> no mês
+              <span className="text-success">+{stats?.registrations_today || 0}</span> hoje
             </p>
           </CardContent>
         </Card>
@@ -90,7 +147,9 @@ const OrganizerDashboardOverview = () => {
             <DollarSign className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-secondary">R$ 12.450</div>
+            <div className="text-2xl font-bold text-secondary">
+              R$ {stats?.total_revenue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0,00'}
+            </div>
             <p className="text-xs text-muted-foreground mt-1">Bruto acumulado</p>
           </CardContent>
         </Card>
@@ -101,7 +160,7 @@ const OrganizerDashboardOverview = () => {
             <TrendingUp className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-accent">8</div>
+            <div className="text-2xl font-bold text-accent">{stats?.registrations_today || 0}</div>
             <p className="text-xs text-muted-foreground mt-1">Últimas 24 horas</p>
           </CardContent>
         </Card>
@@ -137,22 +196,28 @@ const OrganizerDashboardOverview = () => {
             <CardDescription>Últimos 30 dias</CardDescription>
           </CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={registrationsByDay}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="date" fontSize={12} />
-                <YAxis fontSize={12} />
-                <Tooltip />
-                <Line
-                  type="monotone"
-                  dataKey="count"
-                  name="Inscrições"
-                  stroke="hsl(var(--primary))"
-                  strokeWidth={2}
-                  dot={{ fill: "hsl(var(--primary))" }}
-                />
-              </LineChart>
-            </ResponsiveContainer>
+            {formattedRegistrationsByDay.length > 0 ? (
+              <ResponsiveContainer width="100%" height={300}>
+                <LineChart data={formattedRegistrationsByDay}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="date" fontSize={12} />
+                  <YAxis fontSize={12} />
+                  <Tooltip />
+                  <Line
+                    type="monotone"
+                    dataKey="count"
+                    name="Inscrições"
+                    stroke="hsl(var(--primary))"
+                    strokeWidth={2}
+                    dot={{ fill: "hsl(var(--primary))" }}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="flex items-center justify-center h-[300px] text-muted-foreground">
+                Nenhum dado disponível
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -162,15 +227,21 @@ const OrganizerDashboardOverview = () => {
             <CardDescription>Últimos 30 dias</CardDescription>
           </CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={revenueByDay}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="date" fontSize={12} />
-                <YAxis fontSize={12} />
-                <Tooltip />
-                <Bar dataKey="value" name="Faturamento (R$)" fill="hsl(var(--secondary))" radius={[8, 8, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
+            {formattedRevenueByDay.length > 0 ? (
+              <ResponsiveContainer width="100%" height={300}>
+                <BarChart data={formattedRevenueByDay}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="date" fontSize={12} />
+                  <YAxis fontSize={12} />
+                  <Tooltip />
+                  <Bar dataKey="value" name="Faturamento (R$)" fill="hsl(var(--secondary))" radius={[8, 8, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="flex items-center justify-center h-[300px] text-muted-foreground">
+                Nenhum dado disponível
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -180,25 +251,31 @@ const OrganizerDashboardOverview = () => {
             <CardDescription>Distribuição dos atletas</CardDescription>
           </CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={300}>
-              <PieChart>
-                <Pie
-                  data={genderData}
-                  cx="50%"
-                  cy="50%"
-                  labelLine={false}
-                  label={({ gender, percent }) => `${gender}: ${(percent * 100).toFixed(0)}%`}
-                  outerRadius={100}
-                  fill="#8884d8"
-                  dataKey="count"
-                >
-                  {genderData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip />
-              </PieChart>
-            </ResponsiveContainer>
+            {chartData?.genderData && chartData.genderData.length > 0 ? (
+              <ResponsiveContainer width="100%" height={300}>
+                <PieChart>
+                  <Pie
+                    data={chartData.genderData}
+                    cx="50%"
+                    cy="50%"
+                    labelLine={false}
+                    label={({ gender, percent }) => `${gender}: ${(percent * 100).toFixed(0)}%`}
+                    outerRadius={100}
+                    fill="#8884d8"
+                    dataKey="count"
+                  >
+                    {chartData.genderData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip />
+                </PieChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="flex items-center justify-center h-[300px] text-muted-foreground">
+                Nenhum dado disponível
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -208,15 +285,21 @@ const OrganizerDashboardOverview = () => {
             <CardDescription>Distribuição por distância</CardDescription>
           </CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={modalityData} layout="vertical">
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis type="number" fontSize={12} />
-                <YAxis dataKey="name" type="category" fontSize={12} width={80} />
-                <Tooltip />
-                <Bar dataKey="count" name="Inscrições" fill="hsl(var(--accent))" radius={[0, 8, 8, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
+            {chartData?.modalityData && chartData.modalityData.length > 0 ? (
+              <ResponsiveContainer width="100%" height={300}>
+                <BarChart data={chartData.modalityData} layout="vertical">
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis type="number" fontSize={12} />
+                  <YAxis dataKey="name" type="category" fontSize={12} width={80} />
+                  <Tooltip />
+                  <Bar dataKey="count" name="Inscrições" fill="hsl(var(--accent))" radius={[0, 8, 8, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="flex items-center justify-center h-[300px] text-muted-foreground">
+                Nenhum dado disponível
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -227,28 +310,32 @@ const OrganizerDashboardOverview = () => {
           <CardTitle>Top 3 Corridas com Mais Inscrições</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="space-y-4">
-            {[
-              { name: "Corrida do Sol 2024", registrations: 89, revenue: "R$ 7.565,00" },
-              { name: "Meia Maratona das Flores", registrations: 34, revenue: "R$ 3.230,00" },
-              { name: "Trail Run Montanha", registrations: 24, revenue: "R$ 1.655,00" },
-            ].map((event, index) => (
-              <div key={index} className="flex items-center justify-between p-4 border rounded-lg">
-                <div className="flex items-center gap-4">
-                  <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary/10 text-primary font-bold">
-                    {index + 1}
+          {chartData?.topEvents && chartData.topEvents.length > 0 ? (
+            <div className="space-y-4">
+              {chartData.topEvents.map((event, index) => (
+                <div key={event.event_id} className="flex items-center justify-between p-4 border rounded-lg">
+                  <div className="flex items-center gap-4">
+                    <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary/10 text-primary font-bold">
+                      {index + 1}
+                    </div>
+                    <div>
+                      <p className="font-medium">{event.title}</p>
+                      <p className="text-sm text-muted-foreground">{event.registrations} inscrições</p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="font-medium">{event.name}</p>
-                    <p className="text-sm text-muted-foreground">{event.registrations} inscrições</p>
+                  <div className="text-right">
+                    <p className="font-semibold text-secondary">
+                      R$ {event.revenue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </p>
                   </div>
                 </div>
-                <div className="text-right">
-                  <p className="font-semibold text-secondary">{event.revenue}</p>
-                </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-8 text-muted-foreground">
+              Nenhum evento com inscrições ainda
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

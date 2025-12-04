@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { supabase } from "@/integrations/supabase/client";
+import { getEventById } from "@/lib/api/events";
+import { getRegistrations } from "@/lib/api/registrations";
 import { ArrowLeft, Users, DollarSign, Package, CreditCard, Smartphone } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -25,20 +26,23 @@ interface RegistrationDetail {
   id: string;
   runner_id: string;
   category_id: string;
-  kit_id: string | null;
-  payment_method: string | null;
-  payment_status: string | null;
+  kit_id?: string | null;
+  payment_method?: string | null;
+  payment_status?: string | null;
   total_amount: number;
-  created_at: string;
-  profiles: {
+  created_at?: string;
+  runner_name?: string;
+  category_name?: string;
+  // Para compatibilidade com código existente
+  profiles?: {
     full_name: string;
     cpf: string;
   };
-  event_categories: {
+  event_categories?: {
     name: string;
     distance: string;
   };
-  event_kits: {
+  event_kits?: {
     name: string;
   } | null;
 }
@@ -75,29 +79,46 @@ const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
       setLoading(true);
 
       // Get event info
-      const { data: event, error: eventError } = await supabase
-        .from("events")
-        .select("title")
-        .eq("id", eventId)
-        .single();
+      const eventResponse = await getEventById(eventId);
+      
+      if (!eventResponse.success || !eventResponse.data) {
+        throw new Error("Erro ao carregar evento");
+      }
+      
+      setEventTitle(eventResponse.data.title);
 
-      if (eventError) throw eventError;
-      setEventTitle(event.title);
+      // Get registrations
+      const regsResponse = await getRegistrations({ event_id: eventId });
+      
+      if (!regsResponse.success || !regsResponse.data) {
+        throw new Error("Erro ao carregar inscrições");
+      }
 
-      // Get registrations with related data
-      const { data: regs, error: regsError } = await supabase
-        .from("registrations")
-        .select(`
-          *,
-          profiles!registrations_runner_id_fkey(full_name, cpf),
-          event_categories(name, distance),
-          event_kits(name)
-        `)
-        .eq("event_id", eventId);
+      // Transform API response to match expected format
+      const regs: RegistrationDetail[] = regsResponse.data.map((reg: any) => ({
+        id: reg.id,
+        runner_id: reg.runner_id,
+        category_id: reg.category_id,
+        kit_id: reg.kit_id || null,
+        payment_method: reg.payment_method || null,
+        payment_status: reg.payment_status || null,
+        total_amount: reg.total_amount,
+        created_at: reg.created_at,
+        runner_name: reg.runner_name,
+        category_name: reg.category_name,
+        // Para compatibilidade com código existente
+        profiles: reg.runner_name ? {
+          full_name: reg.runner_name,
+          cpf: "", // CPF não vem na API por segurança
+        } : undefined,
+        event_categories: reg.category_name ? {
+          name: reg.category_name,
+          distance: "", // Distance não vem na resposta atual
+        } : undefined,
+        event_kits: null, // Kits não vêm na resposta atual
+      }));
 
-      if (regsError) throw regsError;
-
-      setRegistrations(regs || []);
+      setRegistrations(regs);
 
       // Calculate metrics
       let total = 0;
@@ -121,7 +142,7 @@ const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
           }
 
           // Category revenue
-          const categoryKey = reg.event_categories.name;
+          const categoryKey = reg.event_categories?.name || reg.category_name || "Sem categoria";
           const existing = categoryMap.get(categoryKey);
           if (existing) {
             existing.count++;
@@ -134,8 +155,8 @@ const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
           }
 
           // Kit revenue
-          if (reg.event_kits) {
-            const kitKey = reg.event_kits.name;
+          if (reg.event_kits || reg.kit_id) {
+            const kitKey = reg.event_kits?.name || "Kit";
             const existingKit = kitMap.get(kitKey);
             if (existingKit) {
               existingKit.count++;
@@ -246,7 +267,7 @@ const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
                 {formatCurrency(totalRevenue)}
               </p>
               <p className="text-xs text-muted-foreground mt-1">
-                Ticket médio: {formatCurrency(totalRevenue / paidCount || 0)}
+                Ticket médio: {formatCurrency(paidCount > 0 ? totalRevenue / paidCount : 0)}
               </p>
             </div>
             <DollarSign className="h-8 w-8 text-green-600" />
@@ -386,17 +407,19 @@ const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
               {registrations.map((reg) => (
                 <TableRow key={reg.id}>
                   <TableCell className="font-medium">
-                    {reg.profiles.full_name}
+                    {reg.profiles?.full_name || reg.runner_name || "N/A"}
                   </TableCell>
-                  <TableCell className="text-sm">{reg.profiles.cpf}</TableCell>
+                  <TableCell className="text-sm">{reg.profiles?.cpf || "-"}</TableCell>
                   <TableCell>
-                    {reg.event_categories.name}
-                    <span className="text-xs text-muted-foreground ml-1">
-                      ({reg.event_categories.distance})
-                    </span>
+                    {reg.event_categories?.name || reg.category_name || "N/A"}
+                    {reg.event_categories?.distance && (
+                      <span className="text-xs text-muted-foreground ml-1">
+                        ({reg.event_categories.distance})
+                      </span>
+                    )}
                   </TableCell>
                   <TableCell>
-                    {reg.event_kits ? reg.event_kits.name : "-"}
+                    {reg.event_kits?.name || (reg.kit_id ? "Kit" : "-")}
                   </TableCell>
                   <TableCell>
                     {reg.payment_method === "pix" && (

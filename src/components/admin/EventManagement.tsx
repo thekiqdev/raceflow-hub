@@ -13,13 +13,15 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { Search, Download, Edit, Eye, CheckCircle, XCircle, Ban, ExternalLink, BarChart, Loader2, Award } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Search, Download, Edit, Eye, CheckCircle, XCircle, Ban, ExternalLink, BarChart, Loader2, Award, Filter } from "lucide-react";
+import { getEvents, updateEvent } from "@/lib/api/events";
 import { useToast } from "@/hooks/use-toast";
 import { EventViewEditDialog } from "./EventViewEditDialog";
 
 const EventManagement = () => {
   const [searchTerm, setSearchTerm] = useState("");
+  const [statusFilter, setStatusFilter] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [events, setEvents] = useState<any[]>([]);
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
@@ -37,42 +39,42 @@ const EventManagement = () => {
   const loadEvents = async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from("events")
-        .select(`
-          *,
-          profiles(full_name),
-          event_categories(id),
-          registrations(id, total_amount)
-        `)
-        .order("created_at", { ascending: false });
+      const filters: any = {};
+      if (searchTerm) {
+        filters.search = searchTerm;
+      }
+      if (statusFilter) {
+        filters.status = statusFilter;
+      }
 
-      if (error) throw error;
+      const response = await getEvents(filters);
 
-      const eventsWithStats = data?.map((event) => {
-        const registrations = event.registrations || [];
-        const registrationCount = registrations.length;
-        const revenue = registrations.reduce((sum, reg) => sum + Number(reg.total_amount || 0), 0);
-        const avgTicket = registrationCount > 0 ? revenue / registrationCount : 0;
+      if (response.success && response.data) {
+        const eventsWithStats = response.data.map((event: any) => {
+          const registrationCount = event.registration_count || 0;
+          const revenue = event.revenue || 0;
+          const avgTicket = event.avg_ticket || 0;
 
-        return {
-          id: event.id,
-          title: event.title,
-          organizer: event.profiles?.full_name || "Desconhecido",
-          date: event.event_date,
-          city: event.city,
-          status: event.status,
-          registrations: registrationCount,
-          revenue,
-          avgTicket,
-        };
-      }) || [];
+          return {
+            id: event.id,
+            title: event.title,
+            organizer: event.organizer_name || "Desconhecido",
+            date: event.event_date,
+            city: event.city,
+            state: event.state,
+            status: event.status,
+            registrations: registrationCount,
+            revenue,
+            avgTicket,
+          };
+        });
 
-      setEvents(eventsWithStats);
+        setEvents(eventsWithStats);
+      }
     } catch (error: any) {
       toast({
         title: "Erro ao carregar eventos",
-        description: error.message,
+        description: error.message || "Erro desconhecido",
         variant: "destructive",
       });
     } finally {
@@ -80,24 +82,32 @@ const EventManagement = () => {
     }
   };
 
+  // Reload events when search term or status filter changes (with debounce)
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      loadEvents();
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [searchTerm, statusFilter]);
+
   const handleApprove = async (eventId: string) => {
     try {
-      const { error } = await supabase
-        .from("events")
-        .update({ status: "published" })
-        .eq("id", eventId);
+      const response = await updateEvent(eventId, { status: "published" });
 
-      if (error) throw error;
-
-      toast({
-        title: "Evento aprovado",
-        description: "O evento foi publicado com sucesso.",
-      });
-      loadEvents();
+      if (response.success) {
+        toast({
+          title: "Evento aprovado",
+          description: "O evento foi publicado com sucesso.",
+        });
+        loadEvents();
+      } else {
+        throw new Error(response.error || "Erro ao aprovar evento");
+      }
     } catch (error: any) {
       toast({
         title: "Erro ao aprovar evento",
-        description: error.message,
+        description: error.message || "Erro desconhecido",
         variant: "destructive",
       });
     }
@@ -105,22 +115,21 @@ const EventManagement = () => {
 
   const handleReject = async (eventId: string) => {
     try {
-      const { error } = await supabase
-        .from("events")
-        .update({ status: "cancelled" })
-        .eq("id", eventId);
+      const response = await updateEvent(eventId, { status: "cancelled" });
 
-      if (error) throw error;
-
-      toast({
-        title: "Evento reprovado",
-        description: "O evento foi cancelado.",
-      });
-      loadEvents();
+      if (response.success) {
+        toast({
+          title: "Evento reprovado",
+          description: "O evento foi cancelado.",
+        });
+        loadEvents();
+      } else {
+        throw new Error(response.error || "Erro ao reprovar evento");
+      }
     } catch (error: any) {
       toast({
         title: "Erro ao reprovar evento",
-        description: error.message,
+        description: error.message || "Erro desconhecido",
         variant: "destructive",
       });
     }
@@ -139,7 +148,7 @@ const EventManagement = () => {
   };
 
   const handleSendResult = async () => {
-    if (!resultUrl.trim()) {
+    if (!resultUrl.trim() || !eventForResult) {
       toast({
         title: "Erro",
         description: "Por favor, insira o link dos resultados",
@@ -149,21 +158,20 @@ const EventManagement = () => {
     }
 
     try {
-      const { error } = await supabase
-        .from("events")
-        .update({ result_url: resultUrl })
-        .eq("id", eventForResult.id);
+      const response = await updateEvent(eventForResult.id, { result_url: resultUrl });
 
-      if (error) throw error;
-
-      toast({
-        title: "Sucesso",
-        description: "Link de resultados enviado com sucesso!",
-      });
-      setIsResultDialogOpen(false);
-      setResultUrl("");
-      setEventForResult(null);
-      loadEvents();
+      if (response.success) {
+        toast({
+          title: "Sucesso",
+          description: "Link de resultados enviado com sucesso!",
+        });
+        setIsResultDialogOpen(false);
+        setResultUrl("");
+        setEventForResult(null);
+        loadEvents();
+      } else {
+        throw new Error(response.error || "Erro ao atualizar evento");
+      }
     } catch (error: any) {
       toast({
         title: "Erro ao enviar link de resultados",
@@ -173,11 +181,12 @@ const EventManagement = () => {
     }
   };
 
-  const filteredEvents = events.filter((event) =>
-    event.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    event.organizer.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    event.city.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const formatCurrency = (value: number) => {
+    return new Intl.NumberFormat('pt-BR', {
+      style: 'currency',
+      currency: 'BRL',
+    }).format(value);
+  };
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -226,6 +235,19 @@ const EventManagement = () => {
                 className="pl-10"
               />
             </div>
+            <Select value={statusFilter || "all"} onValueChange={(value) => setStatusFilter(value === "all" ? "" : value)}>
+              <SelectTrigger className="w-[180px]">
+                <SelectValue placeholder="Todos os status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos os status</SelectItem>
+                <SelectItem value="draft">Rascunho</SelectItem>
+                <SelectItem value="published">Publicado</SelectItem>
+                <SelectItem value="ongoing">Em andamento</SelectItem>
+                <SelectItem value="finished">Finalizado</SelectItem>
+                <SelectItem value="cancelled">Cancelado</SelectItem>
+              </SelectContent>
+            </Select>
             <Button variant="outline">
               <Download className="mr-2 h-4 w-4" />
               Exportar
@@ -253,14 +275,20 @@ const EventManagement = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredEvents.length === 0 ? (
+                {loading ? (
                   <TableRow>
-                    <TableCell colSpan={9} className="text-center text-muted-foreground">
+                    <TableCell colSpan={9} className="text-center py-8">
+                      <Loader2 className="h-6 w-6 animate-spin mx-auto" />
+                    </TableCell>
+                  </TableRow>
+                ) : events.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
                       Nenhum evento encontrado
                     </TableCell>
                   </TableRow>
                 ) : (
-                  filteredEvents.map((event) => (
+                  events.map((event) => (
                     <TableRow key={event.id}>
                       <TableCell className="font-medium">{event.title}</TableCell>
                       <TableCell>{event.organizer}</TableCell>
@@ -272,8 +300,8 @@ const EventManagement = () => {
                         </Badge>
                       </TableCell>
                       <TableCell>{event.registrations}</TableCell>
-                      <TableCell>R$ {event.revenue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</TableCell>
-                      <TableCell>R$ {event.avgTicket.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</TableCell>
+                      <TableCell>{formatCurrency(event.revenue)}</TableCell>
+                      <TableCell>{formatCurrency(event.avgTicket)}</TableCell>
                       <TableCell>
                         <div className="flex gap-1">
                           {event.status === "draft" ? (

@@ -8,7 +8,8 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { supabase } from "@/integrations/supabase/client";
+import { getEventById, updateEvent } from "@/lib/api/events";
+import { getRegistrations } from "@/lib/api/registrations";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, MapPin, Calendar, Users, DollarSign } from "lucide-react";
 
@@ -64,14 +65,14 @@ export function EventViewEditDialog({
 
     setLoading(true);
     try {
-      const { data: eventData, error: eventError } = await supabase
-        .from("events")
-        .select("*, profiles(full_name)")
-        .eq("id", eventId)
-        .single();
+      // Get event data
+      const eventResponse = await getEventById(eventId);
+      
+      if (!eventResponse.success || !eventResponse.data) {
+        throw new Error("Erro ao carregar evento");
+      }
 
-      if (eventError) throw eventError;
-
+      const eventData = eventResponse.data;
       setEvent(eventData);
       setFormData({
         title: eventData.title || "",
@@ -85,24 +86,31 @@ export function EventViewEditDialog({
         regulation_url: eventData.regulation_url || "",
       });
 
-      const { data: categoriesData } = await supabase
-        .from("event_categories")
-        .select("*")
-        .eq("event_id", eventId);
+      // Get registrations
+      const registrationsResponse = await getRegistrations({ event_id: eventId });
+      
+      if (registrationsResponse.success && registrationsResponse.data) {
+        // Transform API response to match expected format
+        const regs = registrationsResponse.data.map((reg: any) => ({
+          id: reg.id,
+          event_id: reg.event_id,
+          runner_id: reg.runner_id,
+          total_amount: reg.total_amount,
+          payment_status: reg.payment_status,
+          created_at: reg.created_at,
+          profiles: reg.runner_name ? {
+            full_name: reg.runner_name,
+          } : undefined,
+        }));
+        setRegistrations(regs);
+      } else {
+        setRegistrations([]);
+      }
 
-      const { data: kitsData } = await supabase
-        .from("event_kits")
-        .select("*")
-        .eq("event_id", eventId);
-
-      const { data: registrationsData } = await supabase
-        .from("registrations")
-        .select("*, profiles(full_name)")
-        .eq("event_id", eventId);
-
-      setCategories(categoriesData || []);
-      setKits(kitsData || []);
-      setRegistrations(registrationsData || []);
+      // TODO: Implement API endpoints for event categories and kits
+      // For now, set empty arrays
+      setCategories([]);
+      setKits([]);
     } catch (error: any) {
       toast({
         title: "Erro ao carregar evento",
@@ -119,12 +127,11 @@ export function EventViewEditDialog({
 
     setSaving(true);
     try {
-      const { error } = await supabase
-        .from("events")
-        .update(formData)
-        .eq("id", eventId);
+      const response = await updateEvent(eventId, formData);
 
-      if (error) throw error;
+      if (!response.success) {
+        throw new Error(response.error || "Erro ao atualizar evento");
+      }
 
       toast({
         title: "Evento atualizado",
@@ -317,10 +324,10 @@ export function EventViewEditDialog({
                 </div>
               </div>
 
-              {event?.profiles && (
+              {event?.organizer_name && (
                 <div className="grid gap-2">
                   <Label>Organizador</Label>
-                  <p className="text-sm">{event.profiles.full_name}</p>
+                  <p className="text-sm">{event.organizer_name}</p>
                 </div>
               )}
             </div>

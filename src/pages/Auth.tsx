@@ -1,17 +1,18 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
+import { getDashboardRoute } from "@/lib/utils/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
-import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 
 const Auth = () => {
   const navigate = useNavigate();
+  const { login, register, isAuthenticated } = useAuth();
   const [loading, setLoading] = useState(false);
   const [isSignUp, setIsSignUp] = useState(false);
   
@@ -29,36 +30,27 @@ const Auth = () => {
   const [gender, setGender] = useState("");
   const [lgpdConsent, setLgpdConsent] = useState(false);
 
+  const { user } = useAuth();
+  
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (session?.user) {
-        navigate("/dashboard");
-      }
-    });
-
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user) {
-        navigate("/dashboard");
-      }
-    });
-
-    return () => subscription.unsubscribe();
-  }, [navigate]);
+    if (isAuthenticated && user) {
+      navigate(getDashboardRoute(user));
+    }
+  }, [isAuthenticated, user, navigate]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
 
     try {
-      const { error } = await supabase.auth.signInWithPassword({
-        email: loginEmail,
-        password: loginPassword,
-      });
-
-      if (error) throw error;
-      toast.success("Login realizado com sucesso!");
-    } catch (error: any) {
-      toast.error(error.message || "Erro ao fazer login");
+      const success = await login(loginEmail, loginPassword);
+      if (success) {
+        // Wait a bit for user state to update, then redirect
+        setTimeout(() => {
+          const currentUser = JSON.parse(localStorage.getItem('auth_user') || '{}');
+          navigate(getDashboardRoute(currentUser as any));
+        }, 100);
+      }
     } finally {
       setLoading(false);
     }
@@ -68,45 +60,28 @@ const Auth = () => {
     e.preventDefault();
     
     if (!lgpdConsent) {
-      toast.error("Você deve aceitar os termos de uso e política de privacidade");
       return;
     }
 
     setLoading(true);
 
     try {
-      const { data: authData, error: signUpError } = await supabase.auth.signUp({
+      const success = await register({
         email: signupEmail,
         password: signupPassword,
-        options: {
-          emailRedirectTo: `${window.location.origin}/`,
-        },
+        full_name: fullName,
+        cpf: cpf.replace(/\D/g, ""),
+        phone: phone.replace(/\D/g, ""),
+        birth_date: birthDate,
+        gender: gender || undefined,
+        lgpd_consent: lgpdConsent,
       });
 
-      if (signUpError) throw signUpError;
-      if (!authData.user) throw new Error("Erro ao criar usuário");
-
-      const { error: profileError } = await supabase
-        .from("profiles")
-        .insert({
-          id: authData.user.id,
-          full_name: fullName,
-          cpf: cpf.replace(/\D/g, ""),
-          phone: phone.replace(/\D/g, ""),
-          birth_date: birthDate,
-          gender: gender || null,
-          lgpd_consent: lgpdConsent,
-        });
-
-      if (profileError) throw profileError;
-
-      toast.success("Conta criada com sucesso!");
-      navigate("/dashboard");
-    } catch (error: any) {
-      if (error.message?.includes("already registered")) {
-        toast.error("Este email já está cadastrado");
-      } else {
-        toast.error(error.message || "Erro ao criar conta");
+      if (success) {
+        setTimeout(() => {
+          const currentUser = JSON.parse(localStorage.getItem('auth_user') || '{}');
+          navigate(getDashboardRoute(currentUser as any));
+        }, 100);
       }
     } finally {
       setLoading(false);
@@ -114,12 +89,10 @@ const Auth = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background via-muted/20 to-background p-4">
-      <Card className="w-full max-w-md shadow-lg">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 p-4">
+      <Card className="w-full max-w-md">
         <CardHeader className="space-y-1">
-          <CardTitle className="text-2xl font-bold text-center bg-gradient-hero bg-clip-text text-transparent">
-            RunEvents
-          </CardTitle>
+          <CardTitle className="text-2xl font-bold text-center">CRONOTEAM</CardTitle>
           <CardDescription className="text-center">
             Plataforma de gestão de corridas de rua
           </CardDescription>
@@ -131,7 +104,7 @@ const Auth = () => {
               <TabsTrigger value="signup">Criar Conta</TabsTrigger>
             </TabsList>
             
-            <TabsContent value="login">
+            <TabsContent value="login" className="space-y-4">
               <form onSubmit={handleLogin} className="space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="login-email">Email</Label>
@@ -162,7 +135,7 @@ const Auth = () => {
               </form>
             </TabsContent>
             
-            <TabsContent value="signup">
+            <TabsContent value="signup" className="space-y-4">
               <form onSubmit={handleSignUp} className="space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="signup-name">Nome Completo</Label>
@@ -250,7 +223,7 @@ const Auth = () => {
                     Aceito os termos de uso e política de privacidade (LGPD)
                   </Label>
                 </div>
-                <Button type="submit" className="w-full" disabled={loading}>
+                <Button type="submit" className="w-full" disabled={loading || !lgpdConsent}>
                   {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                   Criar Conta
                 </Button>

@@ -1,28 +1,71 @@
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Users, Calendar, DollarSign, TrendingUp, CheckCircle, Clock, XCircle, FileText, MessageSquare } from "lucide-react";
+import { Users, Calendar, DollarSign, TrendingUp, CheckCircle, Clock, FileText, MessageSquare, Loader2 } from "lucide-react";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
+import { getDashboardStats, getDashboardCharts, type DashboardStats } from "@/lib/api/admin";
+import { toast } from "sonner";
 
 const DashboardOverview = () => {
-  // Mock data
-  const registrationsByMonth = [
-    { month: "Jan", inscrições: 120 },
-    { month: "Fev", inscrições: 180 },
-    { month: "Mar", inscrições: 250 },
-    { month: "Abr", inscrições: 300 },
-    { month: "Mai", inscrições: 420 },
-    { month: "Jun", inscrições: 380 },
-  ];
+  const [loading, setLoading] = useState(true);
+  const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [registrationsByMonth, setRegistrationsByMonth] = useState<Array<{ month: string; inscrições: number }>>([]);
+  const [revenueByMonth, setRevenueByMonth] = useState<Array<{ month: string; faturamento: number }>>([]);
 
-  const revenueByMonth = [
-    { month: "Jan", faturamento: 45000 },
-    { month: "Fev", faturamento: 62000 },
-    { month: "Mar", faturamento: 85000 },
-    { month: "Abr", faturamento: 102000 },
-    { month: "Mai", faturamento: 135000 },
-    { month: "Jun", faturamento: 118000 },
-  ];
+  useEffect(() => {
+    loadDashboardData();
+  }, []);
+
+  const loadDashboardData = async () => {
+    setLoading(true);
+    try {
+      const [statsResponse, chartsResponse] = await Promise.all([
+        getDashboardStats(),
+        getDashboardCharts(6),
+      ]);
+
+      if (statsResponse.success && statsResponse.data) {
+        setStats(statsResponse.data);
+      } else {
+        toast.error("Erro ao carregar estatísticas do dashboard");
+      }
+
+      if (chartsResponse.success && chartsResponse.data) {
+        // Transformar dados para o formato esperado pelos gráficos
+        setRegistrationsByMonth(
+          chartsResponse.data.registrations.map((item) => ({
+            month: item.month,
+            inscrições: Number(item.value),
+          }))
+        );
+        setRevenueByMonth(
+          chartsResponse.data.revenue.map((item) => ({
+            month: item.month,
+            faturamento: Number(item.value),
+          }))
+        );
+      } else {
+        toast.error("Erro ao carregar dados dos gráficos");
+      }
+    } catch (error) {
+      console.error("Erro ao carregar dados do dashboard:", error);
+      toast.error("Erro ao carregar dados do dashboard");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const formatCurrency = (value: number) => {
+    return new Intl.NumberFormat('pt-BR', {
+      style: 'currency',
+      currency: 'BRL',
+    }).format(value);
+  };
+
+  const formatNumber = (value: number) => {
+    return new Intl.NumberFormat('pt-BR').format(value);
+  };
 
   const chartConfig = {
     inscrições: {
@@ -34,6 +77,30 @@ const DashboardOverview = () => {
       color: "hsl(var(--primary))",
     },
   };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <span className="ml-2 text-muted-foreground">Carregando dashboard...</span>
+      </div>
+    );
+  }
+
+  if (!stats) {
+    return (
+      <div className="text-center py-12">
+        <p className="text-muted-foreground">Erro ao carregar dados do dashboard</p>
+        <Button onClick={loadDashboardData} className="mt-4">
+          Tentar novamente
+        </Button>
+      </div>
+    );
+  }
+
+  const revenueChange = stats.revenue_change_percentage || 0;
+  const revenueChangeColor = revenueChange >= 0 ? "text-green-500" : "text-red-500";
+  const revenueChangeSign = revenueChange >= 0 ? "+" : "";
 
   return (
     <div className="space-y-6">
@@ -50,9 +117,13 @@ const DashboardOverview = () => {
             <Calendar className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">24</div>
+            <div className="text-2xl font-bold">{formatNumber(stats.active_events)}</div>
             <p className="text-xs text-muted-foreground">
-              <span className="text-green-500">+3</span> pendentes
+              {stats.pending_events > 0 && (
+                <span className="text-yellow-500">+{formatNumber(stats.pending_events)}</span>
+              )}
+              {stats.pending_events === 0 && <span className="text-muted-foreground">Nenhum pendente</span>}
+              {stats.pending_events > 0 && " pendentes"}
             </p>
           </CardContent>
         </Card>
@@ -63,9 +134,13 @@ const DashboardOverview = () => {
             <Users className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">3.542</div>
+            <div className="text-2xl font-bold">{formatNumber(stats.total_runners)}</div>
             <p className="text-xs text-muted-foreground">
-              <span className="text-green-500">+245</span> este mês
+              {stats.new_runners_this_month > 0 && (
+                <span className="text-green-500">+{formatNumber(stats.new_runners_this_month)}</span>
+              )}
+              {stats.new_runners_this_month === 0 && <span className="text-muted-foreground">Nenhum novo</span>}
+              {stats.new_runners_this_month > 0 && " este mês"}
             </p>
           </CardContent>
         </Card>
@@ -76,9 +151,13 @@ const DashboardOverview = () => {
             <CheckCircle className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">48</div>
+            <div className="text-2xl font-bold">{formatNumber(stats.active_organizers)}</div>
             <p className="text-xs text-muted-foreground">
-              <span className="text-yellow-500">5</span> aguardando aprovação
+              {stats.pending_organizers > 0 && (
+                <span className="text-yellow-500">{formatNumber(stats.pending_organizers)}</span>
+              )}
+              {stats.pending_organizers === 0 && <span className="text-muted-foreground">Nenhum pendente</span>}
+              {stats.pending_organizers > 0 && " aguardando aprovação"}
             </p>
           </CardContent>
         </Card>
@@ -89,9 +168,15 @@ const DashboardOverview = () => {
             <DollarSign className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">R$ 547.000</div>
+            <div className="text-2xl font-bold">{formatCurrency(stats.total_revenue)}</div>
             <p className="text-xs text-muted-foreground">
-              <span className="text-green-500">+12%</span> vs mês anterior
+              {revenueChange !== 0 && (
+                <span className={revenueChangeColor}>
+                  {revenueChangeSign}{revenueChange.toFixed(1)}%
+                </span>
+              )}
+              {revenueChange === 0 && <span className="text-muted-foreground">Sem variação</span>}
+              {revenueChange !== 0 && " vs mês anterior"}
             </p>
           </CardContent>
         </Card>
@@ -105,7 +190,7 @@ const DashboardOverview = () => {
             <TrendingUp className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">1.650</div>
+            <div className="text-2xl font-bold">{formatNumber(stats.total_registrations)}</div>
           </CardContent>
         </Card>
 
@@ -115,7 +200,7 @@ const DashboardOverview = () => {
             <DollarSign className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">R$ 27.350</div>
+            <div className="text-2xl font-bold">{formatCurrency(stats.total_commissions)}</div>
           </CardContent>
         </Card>
 
@@ -125,7 +210,7 @@ const DashboardOverview = () => {
             <CheckCircle className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">156</div>
+            <div className="text-2xl font-bold">{formatNumber(stats.finished_events)}</div>
           </CardContent>
         </Card>
       </div>
@@ -139,7 +224,7 @@ const DashboardOverview = () => {
         <CardContent className="flex flex-wrap gap-2">
           <Button variant="outline">
             <Clock className="mr-2 h-4 w-4" />
-            Aprovar Organizadores (5)
+            Aprovar Organizadores ({stats.pending_organizers > 0 ? stats.pending_organizers : 0})
           </Button>
           <Button variant="outline">
             <FileText className="mr-2 h-4 w-4" />
@@ -160,17 +245,23 @@ const DashboardOverview = () => {
             <CardDescription>Evolução de inscrições nos últimos 6 meses</CardDescription>
           </CardHeader>
           <CardContent>
-            <ChartContainer config={chartConfig} className="h-[300px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={registrationsByMonth}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="month" />
-                  <YAxis />
-                  <ChartTooltip content={<ChartTooltipContent />} />
-                  <Line type="monotone" dataKey="inscrições" stroke="hsl(var(--primary))" strokeWidth={2} />
-                </LineChart>
-              </ResponsiveContainer>
-            </ChartContainer>
+            {registrationsByMonth.length > 0 ? (
+              <ChartContainer config={chartConfig} className="h-[300px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={registrationsByMonth}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="month" />
+                    <YAxis />
+                    <ChartTooltip content={<ChartTooltipContent />} />
+                    <Line type="monotone" dataKey="inscrições" stroke="hsl(var(--primary))" strokeWidth={2} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </ChartContainer>
+            ) : (
+              <div className="flex items-center justify-center h-[300px] text-muted-foreground">
+                Nenhum dado disponível
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -180,17 +271,23 @@ const DashboardOverview = () => {
             <CardDescription>Receita gerada nos últimos 6 meses</CardDescription>
           </CardHeader>
           <CardContent>
-            <ChartContainer config={chartConfig} className="h-[300px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={revenueByMonth}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="month" />
-                  <YAxis />
-                  <ChartTooltip content={<ChartTooltipContent />} />
-                  <Bar dataKey="faturamento" fill="hsl(var(--primary))" />
-                </BarChart>
-              </ResponsiveContainer>
-            </ChartContainer>
+            {revenueByMonth.length > 0 ? (
+              <ChartContainer config={chartConfig} className="h-[300px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={revenueByMonth}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="month" />
+                    <YAxis />
+                    <ChartTooltip content={<ChartTooltipContent />} />
+                    <Bar dataKey="faturamento" fill="hsl(var(--primary))" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </ChartContainer>
+            ) : (
+              <div className="flex items-center justify-center h-[300px] text-muted-foreground">
+                Nenhum dado disponível
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>

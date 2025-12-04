@@ -10,19 +10,23 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { MessageSquare, HelpCircle, ArrowLeft } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
+import { getOwnProfile } from "@/lib/api/profiles";
 import { useToast } from "@/hooks/use-toast";
 
 interface ContactDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   eventTitle?: string;
+  organizerEmail?: string;
+  organizerName?: string;
 }
 
 type ContactStep = "select" | "form";
 type ContactType = "event" | "platform" | null;
 
-export const ContactDialog = ({ open, onOpenChange, eventTitle }: ContactDialogProps) => {
+export const ContactDialog = ({ open, onOpenChange, eventTitle, organizerEmail, organizerName }: ContactDialogProps) => {
+  const { user, isAuthenticated } = useAuth();
   const [step, setStep] = useState<ContactStep>("select");
   const [contactType, setContactType] = useState<ContactType>(null);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -47,20 +51,24 @@ export const ContactDialog = ({ open, onOpenChange, eventTitle }: ContactDialogP
   }, [open]);
 
   const checkAuth = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (user) {
+    if (isAuthenticated && user) {
       setIsLoggedIn(true);
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("*")
-        .eq("id", user.id)
-        .single();
-      
-      if (profile) {
-        setUserProfile(profile);
-        setName(profile.full_name || "");
-        setPhone(profile.phone || "");
-        setEmail(user.email || "");
+      try {
+        const response = await getOwnProfile();
+        
+        if (response.success && response.data) {
+          const profile = response.data;
+          setUserProfile(profile);
+          setName(profile.full_name || "");
+          setPhone(profile.phone || "");
+          setEmail(user.email || "");
+        }
+      } catch (error) {
+        console.error("Erro ao carregar perfil:", error);
+        // Se falhar, pelo menos usar dados básicos do usuário
+        if (user.email) {
+          setEmail(user.email);
+        }
       }
     } else {
       setIsLoggedIn(false);
@@ -152,8 +160,13 @@ export const ContactDialog = ({ open, onOpenChange, eventTitle }: ContactDialogP
               <div className="text-center">
                 <div className="font-semibold">Dúvidas sobre o Evento</div>
                 <div className="text-xs text-muted-foreground group-hover:text-white transition-colors">
-                  Fale diretamente com o organizador do evento
+                  {organizerName ? `Fale diretamente com ${organizerName}` : "Fale diretamente com o organizador do evento"}
                 </div>
+                {organizerEmail && (
+                  <div className="text-xs text-muted-foreground mt-1">
+                    {organizerEmail}
+                  </div>
+                )}
               </div>
             </Button>
 
