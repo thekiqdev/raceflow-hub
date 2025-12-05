@@ -1239,7 +1239,6 @@ export function RegistrationFlow({
                 </div>
               </>
             )}
-            )}
           </div>
         )}
 
