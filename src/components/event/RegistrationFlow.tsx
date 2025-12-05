@@ -1046,8 +1046,8 @@ export function RegistrationFlow({
             {/* Only show category selection if user is runner or not logged in */}
             {(!user || user.roles?.includes('runner')) && (
               <>
-            <h3 className="text-lg font-semibold">Escolha a Modalidade</h3>
-            {loadingCategories ? (
+                <h3 className="text-lg font-semibold">Escolha a Modalidade</h3>
+                {loadingCategories ? (
               <Card>
                 <CardContent className="py-8 text-center">
                   <p className="text-muted-foreground">Carregando categorias...</p>
