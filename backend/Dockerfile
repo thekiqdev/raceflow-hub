@@ -49,6 +49,10 @@ RUN npm ci --omit=dev
 # Copy built files from builder
 COPY --from=builder /app/dist ./dist
 
+# Copy scripts and migrations for running migrations and creating test users
+COPY --from=builder /app/scripts ./scripts
+COPY --from=builder /app/migrations ./migrations
+
 # Expose port
 EXPOSE 3001
 
