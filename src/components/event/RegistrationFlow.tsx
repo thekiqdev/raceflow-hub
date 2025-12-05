@@ -1021,7 +1021,7 @@ export function RegistrationFlow({
 
         {/* Step 2: Category Selection */}
         {step === 2 && (
-          <>
+          <div className="space-y-4">
             {/* Check if user is logged in but doesn't have runner role */}
             {user && !user.roles?.includes('runner') && (
               <div className="mb-6 p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
@@ -1045,7 +1045,7 @@ export function RegistrationFlow({
             
             {/* Only show category selection if user is runner or not logged in */}
             {(!user || user.roles?.includes('runner')) && (
-          <div className="space-y-4">
+              <>
             <h3 className="text-lg font-semibold">Escolha a Modalidade</h3>
             {loadingCategories ? (
               <Card>
