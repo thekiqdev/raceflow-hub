@@ -246,7 +246,7 @@ export const approveRefund = async (requestId: string, processedBy: string, note
     );
 
     if (refundResult.rows.length > 0) {
-      const { registration_id, amount } = refundResult.rows[0];
+      const { registration_id } = refundResult.rows[0];
 
       // Update registration payment status to refunded
       await client.query(

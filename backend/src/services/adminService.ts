@@ -24,7 +24,7 @@ export interface ChartDataPoint {
  * Get dashboard statistics
  */
 export const getDashboardStats = async (): Promise<DashboardStats> => {
-  const result = await query<DashboardStats>(
+  const result = await query(
     'SELECT * FROM admin_dashboard_stats'
   );
 
@@ -51,8 +51,8 @@ export const getDashboardStats = async (): Promise<DashboardStats> => {
 /**
  * Get registrations by month for chart
  */
-export const getRegistrationsByMonth = async (months: number = 6): Promise<ChartDataPoint[]> => {
-  const result = await query<ChartDataPoint>(
+export const getRegistrationsByMonth = async (_months: number = 6): Promise<ChartDataPoint[]> => {
+  const result = await query(
     `SELECT 
       month,
       month_key,
@@ -67,8 +67,8 @@ export const getRegistrationsByMonth = async (months: number = 6): Promise<Chart
 /**
  * Get revenue by month for chart
  */
-export const getRevenueByMonth = async (months: number = 6): Promise<ChartDataPoint[]> => {
-  const result = await query<ChartDataPoint>(
+export const getRevenueByMonth = async (_months: number = 6): Promise<ChartDataPoint[]> => {
+  const result = await query(
     `SELECT 
       month,
       month_key,

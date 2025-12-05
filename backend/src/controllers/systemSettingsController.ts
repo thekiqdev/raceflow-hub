@@ -43,7 +43,7 @@ const updateSystemSettingsSchema = z.object({
  * Get system settings
  */
 export const getSystemSettingsController = async (
-  req: AuthRequest,
+  _req: AuthRequest,
   res: Response
 ): Promise<void> => {
   try {
@@ -84,7 +84,12 @@ export const updateSystemSettingsController = async (
       return;
     }
 
-    const settings = await updateSystemSettings(validation.data);
+    // Convert null values to undefined for optional fields
+    const cleanedData: any = {};
+    Object.entries(validation.data).forEach(([key, value]) => {
+      cleanedData[key] = value === null ? undefined : value;
+    });
+    const settings = await updateSystemSettings(cleanedData);
 
     res.json({
       success: true,

@@ -7,7 +7,7 @@ import { getDashboardStats, getChartData } from '../services/adminService.js';
  * Get dashboard statistics
  */
 export const getDashboardStatsController = async (
-  req: AuthRequest,
+  _req: AuthRequest,
   res: Response
 ): Promise<void> => {
   try {

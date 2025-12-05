@@ -43,7 +43,7 @@ const updateSettingsSchema = z.object({
  * Get financial overview statistics
  */
 export const getFinancialOverviewController = async (
-  req: AuthRequest,
+  _req: AuthRequest,
   res: Response
 ): Promise<void> => {
   try {
@@ -304,7 +304,7 @@ export const rejectRefundController = async (
  * Get financial settings
  */
 export const getFinancialSettingsController = async (
-  req: AuthRequest,
+  _req: AuthRequest,
   res: Response
 ): Promise<void> => {
   try {

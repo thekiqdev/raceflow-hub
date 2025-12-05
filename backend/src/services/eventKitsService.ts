@@ -41,7 +41,7 @@ export const getEventKits = async (eventId: string): Promise<EventKit[]> => {
     [eventId]
   );
 
-  const kits = kitsResult.rows.map((row) => ({
+  const kits: EventKit[] = kitsResult.rows.map((row) => ({
     id: row.id,
     event_id: row.event_id,
     name: row.name,
@@ -213,10 +213,13 @@ export const syncEventKits = async (
       description?: string | null;
       type: 'variable' | 'unique';
       image_url?: string | null;
+      variant_attributes?: string[] | null;
       variants?: Array<{
         id?: string;
         name: string;
         variant_group_name?: string | null;
+        available_quantity?: number | null;
+        sku?: string | null;
       }>;
     }>;
   }>

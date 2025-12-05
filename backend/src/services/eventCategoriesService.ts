@@ -17,7 +17,7 @@ export interface EventCategory {
   max_participants: number | null;
   created_at: Date | null;
   current_registrations?: number;
-  available_spots?: number;
+  available_spots?: number | null;
   batches?: CategoryBatch[];
 }
 
@@ -71,7 +71,7 @@ export const getEventCategories = async (eventId: string): Promise<EventCategory
   console.log('📋 SQL query returned', result.rows.length, 'rows');
   console.log('📋 Raw rows:', JSON.stringify(result.rows, null, 2));
 
-  const mappedCategories = result.rows.map((row) => ({
+  const mappedCategories: EventCategory[] = result.rows.map((row) => ({
     id: row.id,
     event_id: row.event_id,
     name: row.name,
@@ -80,7 +80,7 @@ export const getEventCategories = async (eventId: string): Promise<EventCategory
     max_participants: row.max_participants ? parseInt(row.max_participants) : null,
     created_at: row.created_at,
     current_registrations: parseInt(row.current_registrations) || 0,
-    available_spots: row.available_spots !== null ? parseInt(row.available_spots) : null,
+    available_spots: row.available_spots !== null ? parseInt(row.available_spots) : undefined,
   }));
 
   // Get batches for each category

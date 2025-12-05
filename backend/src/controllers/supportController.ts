@@ -162,7 +162,7 @@ export const updateTicketStatusController = async (
       return;
     }
 
-    const ticket = await updateTicketStatus(id, validation.data.status, validation.data.assigned_to);
+    const ticket = await updateTicketStatus(id, validation.data.status, validation.data.assigned_to ?? undefined);
 
     if (!ticket) {
       res.status(404).json({
@@ -305,6 +305,7 @@ export const createAnnouncementController = async (
 
     const announcement = await createAnnouncement({
       ...validation.data,
+      scheduled_at: validation.data.scheduled_at ?? undefined,
       created_by: req.user.id,
     });
 
@@ -344,7 +345,10 @@ export const updateAnnouncementController = async (
       return;
     }
 
-    const announcement = await updateAnnouncement(id, validation.data);
+    const announcement = await updateAnnouncement(id, {
+      ...validation.data,
+      scheduled_at: validation.data.scheduled_at ?? undefined,
+    });
 
     if (!announcement) {
       res.status(404).json({

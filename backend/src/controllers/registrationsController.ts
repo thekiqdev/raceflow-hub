@@ -9,7 +9,6 @@ import {
   transferRegistration,
   cancelRegistration,
 } from '../services/registrationsService.js';
-import { getReceiptData } from '../services/receiptService.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { hasRole } from '../services/userRolesService.js';
 import { getEventById } from '../services/eventsService.js';

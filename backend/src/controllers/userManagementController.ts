@@ -87,7 +87,7 @@ export const getAthletesController = async (
  * Get all admins
  */
 export const getAdminsController = async (
-  req: AuthRequest,
+  _req: AuthRequest,
   res: Response
 ): Promise<void> => {
   try {

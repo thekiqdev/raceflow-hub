@@ -3,7 +3,6 @@ import { AuthRequest } from '../middleware/auth.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { getEventCategories, syncEventCategories } from '../services/eventCategoriesService.js';
 import { getEventById } from '../services/eventsService.js';
-import { requireEventOwnership } from '../middleware/ownershipValidator.js';
 
 /**
  * GET /api/events/:eventId/categories

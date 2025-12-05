@@ -88,38 +88,3 @@ export const getPublicProfileByCpfController = asyncHandler(async (req: AuthRequ
   return;
 });
 
-// Get public profile by CPF (for registration by others)
-export const getPublicProfileByCpf = asyncHandler(async (req: AuthRequest, res: Response) => {
-  if (!req.user) {
-    return res.status(401).json({
-      success: false,
-      error: 'Not authenticated',
-    });
-  }
-
-  const { cpf } = req.query;
-
-  if (!cpf || typeof cpf !== 'string') {
-    return res.status(400).json({
-      success: false,
-      error: 'CPF is required',
-    });
-  }
-
-  const { getPublicProfileByCpf: getPublicProfileByCpfService } = await import('../services/profilesService.js');
-  const profile = await getPublicProfileByCpfService(cpf);
-
-  if (!profile) {
-    return res.status(404).json({
-      success: false,
-      error: 'Perfil não encontrado ou não está público',
-    });
-  }
-
-  res.json({
-    success: true,
-    data: profile,
-  });
-  return;
-});
-

@@ -53,7 +53,7 @@ const updateArticleSchema = z.object({
  * Get all categories
  */
 export const getCategoriesController = async (
-  req: AuthRequest,
+  _req: AuthRequest,
   res: Response
 ): Promise<void> => {
   try {
@@ -391,7 +391,10 @@ export const updateArticleController = async (
       return;
     }
 
-    const article = await updateArticle(id, validation.data);
+    const article = await updateArticle(id, {
+      ...validation.data,
+      category_id: validation.data.category_id ?? undefined,
+    });
 
     if (!article) {
       res.status(404).json({
