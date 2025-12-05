@@ -18,6 +18,8 @@ As migrações precisam ser executadas na ordem correta. Você tem 3 opções:
 
 ### Opção A: Script Automatizado (⭐ RECOMENDADO - Mais Fácil)
 
+**⚠️ IMPORTANTE**: Após o próximo rebuild do backend, os scripts estarão disponíveis automaticamente.
+
 1. No Easypanel, acesse o serviço **Backend**
 2. Clique em **Terminal** ou **Executar Comando**
 3. Execute:
@@ -42,7 +44,41 @@ npm run migrate
 - Pula migrações que já foram executadas
 - Mostra um resumo ao final
 
-### Opção B: Via Terminal do Easypanel (Manual)
+**Se os scripts não estiverem disponíveis ainda:**
+- Faça um rebuild do serviço backend no Easypanel
+- Ou use a Opção B abaixo (via psql direto)
+
+### Opção B: Via PostgreSQL Direto (🚀 Mais Rápido - Sem Rebuild)
+
+Se você não quiser esperar o rebuild, pode executar as migrações diretamente no PostgreSQL:
+
+1. No Easypanel, acesse o serviço **PostgreSQL**
+2. Clique em **Terminal** ou **Executar Comando**
+3. Execute os comandos abaixo (substitua os valores conforme seu ambiente):
+
+```bash
+# Conectar ao banco
+psql -U postgres -d cronoteam
+
+# Dentro do psql, execute cada migração:
+\i /path/to/migrations/001_initial_schema.sql
+\i /path/to/migrations/002_add_indexes.sql
+# ... continue com todas as migrações
+```
+
+**Ou via linha de comando direto:**
+
+```bash
+# Primeiro, você precisa copiar os arquivos SQL para o container PostgreSQL
+# Ou executar via volume compartilhado
+
+# Exemplo (ajuste os caminhos conforme necessário):
+psql -U postgres -d cronoteam -f /caminho/para/001_initial_schema.sql
+psql -U postgres -d cronoteam -f /caminho/para/002_add_indexes.sql
+# ... continue com todas
+```
+
+### Opção C: Via Terminal do Backend (Manual - Requer Rebuild)
 
 1. No Easypanel, acesse o serviço **PostgreSQL**
 2. Clique em **Terminal** ou **Executar Comando**
