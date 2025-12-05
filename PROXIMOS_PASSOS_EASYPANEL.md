@@ -173,9 +173,25 @@ psql -f /app/migrations/018_allow_null_valid_from.sql
 
 ## 👥 Passo 2: Criar Usuários de Teste
 
-Após as migrações, crie os usuários de teste:
+Após as migrações, crie os usuários de teste. Você tem 2 opções:
 
-### Via Terminal do Backend
+### Opção A: Script SQL (⭐ RECOMENDADO - Mais Fácil)
+
+1. No Easypanel, acesse o serviço **PostgreSQL**
+2. Clique em **Terminal** ou **Executar Comando**
+3. Execute:
+
+```bash
+# Conectar ao banco
+psql -U postgres -d cronoteam
+
+# Executar script SQL
+\i /caminho/para/019_create_test_users.sql
+```
+
+**OU** copie e cole o conteúdo do arquivo `backend/migrations/019_create_test_users.sql` diretamente no psql.
+
+### Opção B: Script Node.js
 
 1. No Easypanel, acesse o serviço **Backend**
 2. Clique em **Terminal** ou **Executar Comando**
@@ -200,6 +216,7 @@ npm run create-test-users
 **⚠️ IMPORTANTE**: 
 - Altere essas senhas em produção!
 - Esses usuários são apenas para testes iniciais.
+- O script SQL verifica se os usuários já existem e atualiza apenas as roles se necessário.
 
 ---
 
