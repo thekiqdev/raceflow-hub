@@ -60,8 +60,9 @@ app.use(securityLogger);
 // app.use('/api/auth', authRateLimiter); // DISABLED - Login must always be available
 
 // For events and registrations, use different limits for read vs write operations
+// Increased limits to allow normal user operations without blocking
 const isDevelopment = process.env.NODE_ENV !== 'production';
-const readRateLimiter = rateLimiter(15 * 60 * 1000, isDevelopment ? 1000 : 200); // 1000 in dev, 200 in prod
+const readRateLimiter = rateLimiter(15 * 60 * 1000, isDevelopment ? 1000 : 1000); // 1000 in dev, 1000 in prod
 
 // Middleware that applies different rate limits for GET vs write operations
 const smartRateLimiter = (req: Request, res: Response, next: NextFunction) => {
@@ -75,7 +76,8 @@ const smartRateLimiter = (req: Request, res: Response, next: NextFunction) => {
 
 app.use('/api/events', smartRateLimiter);
 app.use('/api/registrations', smartRateLimiter);
-app.use(rateLimiter()); // General rate limiting for all other routes
+// General rate limiting for all other routes - increased limit for normal operations
+app.use(rateLimiter(15 * 60 * 1000, isDevelopment ? 1000 : 1000)); // 1000 in dev, 1000 in prod
 
 // Body parsing
 app.use(express.json({ limit: '10mb' })); // Limit body size

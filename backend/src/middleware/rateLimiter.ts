@@ -74,6 +74,7 @@ export const rateLimiter = (
 const isDevelopment = process.env.NODE_ENV !== 'production';
 export const authRateLimiter = rateLimiter(15 * 60 * 1000, isDevelopment ? 100 : 100); // 100 in dev, 100 in prod
 
-// Stricter rate limiter for write operations
-export const writeRateLimiter = rateLimiter(15 * 60 * 1000, isDevelopment ? 1000 : 50); // 1000 in dev, 50 in prod
+// Rate limiter for write operations (POST, PUT, DELETE, PATCH)
+// Increased limits to allow normal user operations (create events, registrations, etc.)
+export const writeRateLimiter = rateLimiter(15 * 60 * 1000, isDevelopment ? 1000 : 500); // 1000 in dev, 500 in prod
 
