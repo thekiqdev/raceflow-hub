@@ -64,9 +64,9 @@ export const rateLimiter = (
 
 // Stricter rate limiter for authentication endpoints
 // Increased limit for development (was 5, now 100)
-// In production, increased to 20 to allow for testing (was 5)
+// In production, increased to 50 to allow for testing and multiple users (was 5)
 const isDevelopment = process.env.NODE_ENV !== 'production';
-export const authRateLimiter = rateLimiter(15 * 60 * 1000, isDevelopment ? 100 : 20); // 100 in dev, 20 in prod
+export const authRateLimiter = rateLimiter(15 * 60 * 1000, isDevelopment ? 100 : 50); // 100 in dev, 50 in prod
 
 // Stricter rate limiter for write operations
 export const writeRateLimiter = rateLimiter(15 * 60 * 1000, isDevelopment ? 1000 : 50); // 1000 in dev, 50 in prod
