@@ -20,6 +20,7 @@ RUN npm ci
 # Copy source code (only backend files)
 COPY src ./src
 COPY scripts ./scripts
+COPY migrations ./migrations
 
 # Build TypeScript
 RUN npm run build

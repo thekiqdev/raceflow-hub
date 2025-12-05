@@ -11,7 +11,8 @@
     "type-check": "tsc --noEmit",
     "lint": "eslint src --ext .ts",
     "create-test-users": "tsx scripts/create-test-users.ts",
-    "reset-rate-limit": "tsx scripts/reset-rate-limit.ts"
+    "reset-rate-limit": "tsx scripts/reset-rate-limit.ts",
+    "migrate": "tsx scripts/run-migrations.ts"
   },
   "keywords": ["raceflow", "api", "backend"],
   "author": "",
