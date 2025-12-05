@@ -14,14 +14,59 @@
 -- - Os perfis são criados automaticamente
 -- - As roles são atribuídas corretamente
 --
+-- PRÉ-REQUISITO: Execute todas as migrações anteriores (001 a 018) antes deste script!
+--
 -- Uso:
 --   psql -U postgres -d cronoteam -f 019_create_test_users.sql
 -- ============================================
 
 -- ============================================
--- NOTA: Os hashes de senha foram gerados com bcrypt (10 rounds)
--- Gerados via: node scripts/generate-password-hashes.js
+-- VERIFICAÇÃO DE PRÉ-REQUISITOS
 -- ============================================
+DO $$
+BEGIN
+    -- Verificar se a tabela users existe
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.tables 
+        WHERE table_schema = 'public' AND table_name = 'users'
+    ) THEN
+        RAISE EXCEPTION '❌ ERRO: Tabela "users" não existe! Execute a migração 001_initial_schema.sql primeiro.';
+    END IF;
+    
+    -- Verificar se a tabela profiles existe
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.tables 
+        WHERE table_schema = 'public' AND table_name = 'profiles'
+    ) THEN
+        RAISE EXCEPTION '❌ ERRO: Tabela "profiles" não existe! Execute a migração 001_initial_schema.sql primeiro.';
+    END IF;
+    
+    -- Verificar se a tabela user_roles existe
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.tables 
+        WHERE table_schema = 'public' AND table_name = 'user_roles'
+    ) THEN
+        RAISE EXCEPTION '❌ ERRO: Tabela "user_roles" não existe! Execute a migração 001_initial_schema.sql primeiro.';
+    END IF;
+    
+    -- Verificar se o enum app_role existe
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_type 
+        WHERE typname = 'app_role'
+    ) THEN
+        RAISE EXCEPTION '❌ ERRO: Tipo "app_role" não existe! Execute a migração 001_initial_schema.sql primeiro.';
+    END IF;
+    
+    RAISE NOTICE '✅ Todas as tabelas e tipos necessários existem. Prosseguindo com criação de usuários...';
+END $$;
+
+-- Desabilitar temporariamente o trigger que cria role padrão
+-- (vamos criar as roles manualmente)
+ALTER TABLE profiles DISABLE TRIGGER on_profile_created;
+
+-- Função auxiliar para hash de senha (simulando bcrypt)
+-- NOTA: Em produção, use bcrypt do Node.js. Este é apenas para SQL direto.
+-- Os hashes abaixo foram gerados com bcrypt (10 rounds) no Node.js
 
 -- ============================================
 -- 1. ADMIN - admin@test.com / admin123
