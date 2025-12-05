@@ -7,7 +7,7 @@ WORKDIR /app
 COPY package*.json ./
 
 # Install dependencies
-RUN npm ci
+RUN npm ci --legacy-peer-deps
 
 # Copy source code
 COPY . .
@@ -17,6 +17,9 @@ RUN npm run build
 
 # Production stage with nginx
 FROM nginx:alpine
+
+# Install wget for healthcheck
+RUN apk add --no-cache wget
 
 # Copy built files from builder
 COPY --from=builder /app/dist /usr/share/nginx/html
