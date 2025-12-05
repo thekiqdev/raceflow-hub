@@ -26,12 +26,11 @@ export const rateLimiter = (
   maxRequests: number = 100
 ) => {
   return (req: Request, res: Response, next: NextFunction) => {
-    // In development, allow disabling rate limit completely
-    const isDevelopment = process.env.NODE_ENV !== 'production';
+    // Allow disabling rate limit completely (useful for testing)
     const disableRateLimit = process.env.DISABLE_RATE_LIMIT === 'true';
     
-    if (isDevelopment && disableRateLimit) {
-      return next(); // Skip rate limiting in development if disabled
+    if (disableRateLimit) {
+      return next(); // Skip rate limiting if disabled
     }
     
     const key = req.ip || req.socket.remoteAddress || 'unknown';
@@ -65,9 +64,9 @@ export const rateLimiter = (
 
 // Stricter rate limiter for authentication endpoints
 // Increased limit for development (was 5, now 100)
-// In production, this should be much lower (5-10 requests per 15 minutes)
+// In production, increased to 20 to allow for testing (was 5)
 const isDevelopment = process.env.NODE_ENV !== 'production';
-export const authRateLimiter = rateLimiter(15 * 60 * 1000, isDevelopment ? 100 : 5); // 100 in dev, 5 in prod
+export const authRateLimiter = rateLimiter(15 * 60 * 1000, isDevelopment ? 100 : 20); // 100 in dev, 20 in prod
 
 // Stricter rate limiter for write operations
 export const writeRateLimiter = rateLimiter(15 * 60 * 1000, isDevelopment ? 1000 : 50); // 1000 in dev, 50 in prod
