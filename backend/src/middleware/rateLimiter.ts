@@ -26,18 +26,15 @@ export const rateLimiter = (
   maxRequests: number = 100
 ) => {
   return (req: Request, res: Response, next: NextFunction) => {
-    // Skip rate limiting for auth endpoints - login must always be available
-    if (req.path.startsWith('/api/auth')) {
-      return next();
+    // Rate limiting is DISABLED - system supports many users without limits
+    // To re-enable, set ENABLE_RATE_LIMIT=true in environment variables
+    const enableRateLimit = process.env.ENABLE_RATE_LIMIT === 'true';
+    
+    if (!enableRateLimit) {
+      return next(); // Skip rate limiting - no limits
     }
     
-    // Allow disabling rate limit completely (useful for testing)
-    const disableRateLimit = process.env.DISABLE_RATE_LIMIT === 'true';
-    
-    if (disableRateLimit) {
-      return next(); // Skip rate limiting if disabled
-    }
-    
+    // Rate limiting logic (only active if ENABLE_RATE_LIMIT=true)
     const key = req.ip || req.socket.remoteAddress || 'unknown';
     const now = Date.now();
 
