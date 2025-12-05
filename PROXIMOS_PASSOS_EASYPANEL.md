@@ -48,35 +48,52 @@ npm run migrate
 - Faça um rebuild do serviço backend no Easypanel
 - Ou use a Opção B abaixo (via psql direto)
 
-### Opção B: Via PostgreSQL Direto (🚀 Mais Rápido - Sem Rebuild)
+### Opção B: Via PostgreSQL Direto (🚀 Solução Imediata)
 
-Se você não quiser esperar o rebuild, pode executar as migrações diretamente no PostgreSQL:
+**⚠️ IMPORTANTE**: Esta opção requer que você tenha acesso aos arquivos SQL. Você pode:
+- Baixar os arquivos do repositório GitHub
+- Ou copiar o conteúdo de cada arquivo SQL
 
 1. No Easypanel, acesse o serviço **PostgreSQL**
 2. Clique em **Terminal** ou **Executar Comando**
-3. Execute os comandos abaixo (substitua os valores conforme seu ambiente):
+3. Conecte ao banco:
 
 ```bash
-# Conectar ao banco
 psql -U postgres -d cronoteam
-
-# Dentro do psql, execute cada migração:
-\i /path/to/migrations/001_initial_schema.sql
-\i /path/to/migrations/002_add_indexes.sql
-# ... continue com todas as migrações
 ```
 
-**Ou via linha de comando direto:**
+4. Dentro do psql, você pode:
+   - **Opção 1**: Copiar e colar o conteúdo de cada arquivo SQL diretamente
+   - **Opção 2**: Se os arquivos estiverem no container, usar `\i`:
 
-```bash
-# Primeiro, você precisa copiar os arquivos SQL para o container PostgreSQL
-# Ou executar via volume compartilhado
-
-# Exemplo (ajuste os caminhos conforme necessário):
-psql -U postgres -d cronoteam -f /caminho/para/001_initial_schema.sql
-psql -U postgres -d cronoteam -f /caminho/para/002_add_indexes.sql
-# ... continue com todas
+```sql
+-- Se os arquivos estiverem acessíveis:
+\i /caminho/para/001_initial_schema.sql
+\i /caminho/para/002_add_indexes.sql
+-- ... continue com todas as 18 migrações
 ```
+
+**Arquivos de migração necessários (na ordem):**
+1. `001_initial_schema.sql`
+2. `002_add_indexes.sql`
+3. `003_optimize_queries.sql`
+4. `004_admin_dashboard_views.sql`
+5. `005_add_user_status.sql`
+6. `006_financial_tables.sql`
+7. `007_knowledge_base_tables.sql`
+8. `008_system_settings.sql`
+9. `009_reports_views.sql`
+10. `010_support_tables.sql`
+11. `011_organizer_dashboard_views.sql`
+12. `012_organizer_settings.sql`
+13. `013_add_variant_group_name.sql`
+14. `014_add_variant_quantity.sql`
+15. `015_add_variant_sku_price.sql`
+16. `016_add_variant_attributes.sql`
+17. `017_add_profile_is_public.sql`
+18. `018_allow_null_valid_from.sql`
+
+**💡 Dica**: Você pode baixar todos os arquivos do repositório GitHub em `backend/migrations/` e copiar o conteúdo de cada um no psql.
 
 ### Opção C: Via Terminal do Backend (Manual - Requer Rebuild)
 
