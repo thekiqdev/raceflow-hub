@@ -16,7 +16,33 @@ Após o deploy bem-sucedido do backend e frontend, siga estes passos para finali
 
 As migrações precisam ser executadas na ordem correta. Você tem 3 opções:
 
-### Opção A: Via Terminal do Easypanel (Recomendado)
+### Opção A: Script Automatizado (⭐ RECOMENDADO - Mais Fácil)
+
+1. No Easypanel, acesse o serviço **Backend**
+2. Clique em **Terminal** ou **Executar Comando**
+3. Execute:
+
+```bash
+# Instalar dependências de desenvolvimento (necessário para tsx)
+npm install --include=dev
+
+# Executar script de migração automatizado
+npm run migrate
+```
+
+**Vantagens:**
+- ✅ Executa todas as migrações automaticamente na ordem correta
+- ✅ Rastreia quais migrações já foram executadas (não executa duas vezes)
+- ✅ Mostra progresso e resumo detalhado
+- ✅ Mais seguro (usa transações)
+
+**O que o script faz:**
+- Cria uma tabela `schema_migrations` para rastrear migrações
+- Executa cada migração em ordem (001, 002, 003, ...)
+- Pula migrações que já foram executadas
+- Mostra um resumo ao final
+
+### Opção B: Via Terminal do Easypanel (Manual)
 
 1. No Easypanel, acesse o serviço **PostgreSQL**
 2. Clique em **Terminal** ou **Executar Comando**
@@ -89,10 +115,6 @@ psql -f /app/migrations/018_allow_null_valid_from.sql
 
 1. Copiar os arquivos para o container via volume
 2. Ou executar via `psql` conectando diretamente ao PostgreSQL
-
-### Opção C: Script Automatizado (Criar um script de migração)
-
-Se preferir, podemos criar um script Node.js que executa todas as migrações automaticamente.
 
 ---
 
