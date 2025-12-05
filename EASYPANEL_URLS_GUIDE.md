@@ -51,11 +51,11 @@ VITE_API_URL=https://raceflow-backend-xxxxx.easypanel.host/api
 ## 📝 Passo a Passo Prático
 
 ### 1. Criar Backend
-1. Crie o serviço `raceflow-backend`
-2. **Copie a URL** que o Easypanel gerou (ex: `https://raceflow-backend-abc123.easypanel.host`)
+1. Crie o serviço `raceflow-backend` (ou `crono-back`)
+2. **Copie a URL** que o Easypanel gerou (ex: `https://cronoteam-crono-back.e758qe.easypanel.host`)
 3. Configure as variáveis:
    ```env
-   API_URL=https://raceflow-backend-abc123.easypanel.host
+   API_URL=https://cronoteam-crono-back.e758qe.easypanel.host
    CORS_ORIGIN=https://raceflow-frontend-xyz789.easypanel.host
    ```
    ⚠️ **Nota**: Você ainda não tem a URL do frontend, então pode deixar o CORS vazio temporariamente ou usar `*` para desenvolvimento.
