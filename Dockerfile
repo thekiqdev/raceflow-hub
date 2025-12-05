@@ -3,6 +3,10 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
+# Accept build arguments for Vite environment variables
+ARG VITE_API_URL
+ENV VITE_API_URL=${VITE_API_URL}
+
 # Copy package files
 COPY package*.json ./
 
@@ -12,7 +16,7 @@ RUN npm ci --legacy-peer-deps
 # Copy source code
 COPY . .
 
-# Build the application
+# Build the application (Vite will use VITE_API_URL from ENV)
 RUN npm run build
 
 # Production stage with nginx
