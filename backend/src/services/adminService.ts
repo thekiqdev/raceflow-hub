@@ -194,18 +194,35 @@ export const getRegistrationsByMonth = async (_months: number = 6): Promise<Char
 
 /**
  * Get revenue by month for chart
+ * Falls back to direct query if view doesn't exist
  */
 export const getRevenueByMonth = async (_months: number = 6): Promise<ChartDataPoint[]> => {
-  const result = await query(
-    `SELECT 
-      month,
-      month_key,
-      faturamento as value
-    FROM admin_revenue_by_month
-    ORDER BY month_key`
-  );
-
-  return result.rows;
+  try {
+    const result = await query(
+      `SELECT 
+        month,
+        month_key,
+        faturamento as value
+      FROM admin_revenue_by_month
+      ORDER BY month_key`
+    );
+    return result.rows;
+  } catch (error: any) {
+    // View doesn't exist, calculate directly
+    console.warn('admin_revenue_by_month view not found, calculating directly:', error.message);
+    const result = await query(
+      `SELECT 
+        TO_CHAR(DATE_TRUNC('month', created_at), 'YYYY-MM') as month_key,
+        TO_CHAR(DATE_TRUNC('month', created_at), 'Mon YYYY') as month,
+        COALESCE(SUM(total_amount), 0)::numeric as value
+      FROM registrations
+      WHERE payment_status = 'paid'
+        AND created_at >= NOW() - INTERVAL '6 months'
+      GROUP BY DATE_TRUNC('month', created_at)
+      ORDER BY month_key`
+    );
+    return result.rows;
+  }
 };
 
 /**
