@@ -24,60 +24,100 @@ export interface ChartDataPoint {
  * Get dashboard statistics
  */
 export const getDashboardStats = async (): Promise<DashboardStats> => {
-  const result = await query(
-    'SELECT * FROM admin_dashboard_stats'
-  );
+  try {
+    const result = await query(
+      'SELECT * FROM admin_dashboard_stats'
+    );
 
-  if (result.rows.length === 0) {
-    // Return default values if no data
-    return {
-      active_events: 0,
-      pending_events: 0,
-      total_runners: 0,
-      new_runners_this_month: 0,
-      active_organizers: 0,
-      pending_organizers: 0,
-      total_revenue: 0,
-      previous_month_revenue: 0,
-      total_registrations: 0,
-      total_commissions: 0,
-      finished_events: 0,
-    };
+    if (result.rows.length === 0) {
+      // Return default values if no data
+      return {
+        active_events: 0,
+        pending_events: 0,
+        total_runners: 0,
+        new_runners_this_month: 0,
+        active_organizers: 0,
+        pending_organizers: 0,
+        total_revenue: 0,
+        previous_month_revenue: 0,
+        total_registrations: 0,
+        total_commissions: 0,
+        finished_events: 0,
+      };
+    }
+
+    return result.rows[0];
+  } catch (error: any) {
+    // If view doesn't exist, return default values
+    if (error.code === '42P01' || error.message?.includes('does not exist')) {
+      console.warn('⚠️  View admin_dashboard_stats não existe. Retornando valores padrão.');
+      console.warn('💡 Execute a migração 004_admin_dashboard_views.sql ou 020_fix_admin_dashboard_views.sql');
+      return {
+        active_events: 0,
+        pending_events: 0,
+        total_runners: 0,
+        new_runners_this_month: 0,
+        active_organizers: 0,
+        pending_organizers: 0,
+        total_revenue: 0,
+        previous_month_revenue: 0,
+        total_registrations: 0,
+        total_commissions: 0,
+        finished_events: 0,
+      };
+    }
+    throw error;
   }
-
-  return result.rows[0];
 };
 
 /**
  * Get registrations by month for chart
  */
 export const getRegistrationsByMonth = async (_months: number = 6): Promise<ChartDataPoint[]> => {
-  const result = await query(
-    `SELECT 
-      month,
-      month_key,
-      inscricoes as value
-    FROM admin_registrations_by_month
-    ORDER BY month_key`
-  );
+  try {
+    const result = await query(
+      `SELECT 
+        month,
+        month_key,
+        inscricoes as value
+      FROM admin_registrations_by_month
+      ORDER BY month_key`
+    );
 
-  return result.rows;
+    return result.rows;
+  } catch (error: any) {
+    // If view doesn't exist, return empty array
+    if (error.code === '42P01' || error.message?.includes('does not exist')) {
+      console.warn('⚠️  View admin_registrations_by_month não existe. Retornando array vazio.');
+      return [];
+    }
+    throw error;
+  }
 };
 
 /**
  * Get revenue by month for chart
  */
 export const getRevenueByMonth = async (_months: number = 6): Promise<ChartDataPoint[]> => {
-  const result = await query(
-    `SELECT 
-      month,
-      month_key,
-      faturamento as value
-    FROM admin_revenue_by_month
-    ORDER BY month_key`
-  );
+  try {
+    const result = await query(
+      `SELECT 
+        month,
+        month_key,
+        faturamento as value
+      FROM admin_revenue_by_month
+      ORDER BY month_key`
+    );
 
-  return result.rows;
+    return result.rows;
+  } catch (error: any) {
+    // If view doesn't exist, return empty array
+    if (error.code === '42P01' || error.message?.includes('does not exist')) {
+      console.warn('⚠️  View admin_revenue_by_month não existe. Retornando array vazio.');
+      return [];
+    }
+    throw error;
+  }
 };
 
 /**
