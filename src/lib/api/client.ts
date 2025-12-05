@@ -1,4 +1,25 @@
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
+// Get API URL from environment variable or use fallback
+// In production, this should be set via VITE_API_URL build argument
+const getApiUrl = () => {
+  const envUrl = import.meta.env.VITE_API_URL;
+  
+  // If VITE_API_URL is set and not localhost, use it
+  if (envUrl && !envUrl.includes('localhost')) {
+    return envUrl;
+  }
+  
+  // Fallback: Try to detect if we're in production and use the backend URL
+  // This is a temporary workaround if build args don't work
+  if (import.meta.env.PROD) {
+    // In production, default to the Easypanel backend URL
+    return 'https://cronoteam-crono-back.e758qe.easypanel.host/api';
+  }
+  
+  // Development fallback
+  return 'http://localhost:3001/api';
+};
+
+const API_URL = getApiUrl();
 
 export interface ApiResponse<T = any> {
   success: boolean;
