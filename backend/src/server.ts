@@ -3,7 +3,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import { errorHandler } from './middleware/errorHandler.js';
 import { securityLogger } from './middleware/securityLogger.js';
-import { rateLimiter, writeRateLimiter, authRateLimiter } from './middleware/rateLimiter.js';
+import { rateLimiter, writeRateLimiter } from './middleware/rateLimiter.js';
 import healthRouter from './routes/health.js';
 import authRouter from './routes/auth.js';
 import eventsRouter from './routes/events.js';
@@ -56,7 +56,8 @@ app.use(cors({
 app.use(securityLogger);
 
 // Rate limiting
-app.use('/api/auth', authRateLimiter); // Stricter for auth endpoints
+// NOTE: Auth endpoints have NO rate limiting to ensure login is always available
+// app.use('/api/auth', authRateLimiter); // DISABLED - Login must always be available
 
 // For events and registrations, use different limits for read vs write operations
 const isDevelopment = process.env.NODE_ENV !== 'production';
