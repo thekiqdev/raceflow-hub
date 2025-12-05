@@ -120,6 +120,17 @@ export const createRegistrationController = asyncHandler(async (req: AuthRequest
     return;
   }
 
+  // ETAPA: Validate that user has runner role
+  const isRunner = await hasRole(req.user.id, 'runner');
+  if (!isRunner) {
+    res.status(403).json({
+      success: false,
+      error: 'Forbidden',
+      message: 'Apenas corredores podem se inscrever em eventos. Por favor, acesse com uma conta de corredor.',
+    });
+    return;
+  }
+
   const { event_id, category_id } = req.body;
 
   if (!event_id || !category_id) {
