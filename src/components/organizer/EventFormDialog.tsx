@@ -36,6 +36,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { createEvent, updateEvent, getEventById } from "@/lib/api/events";
 import { getEventCategories } from "@/lib/api/eventCategories";
 import { getEventKits } from "@/lib/api/eventKits";
+import { FileUpload } from "@/components/ui/file-upload";
 
 const eventFormSchema = z.object({
   title: z.string().min(3, "Nome deve ter no mínimo 3 caracteres"),
@@ -1174,21 +1175,15 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess }: EventF
                   name="banner_url"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>URL do Banner</FormLabel>
+                      <FormLabel>Banner do Evento</FormLabel>
                       <FormControl>
-                        <div className="flex gap-2">
-                          <Input
-                            placeholder="https://exemplo.com/banner.jpg"
-                            {...field}
-                          />
-                          <Button type="button" variant="outline" size="icon">
-                            <Upload className="h-4 w-4" />
-                          </Button>
-                        </div>
+                        <FileUpload
+                          type="banner"
+                          value={field.value || undefined}
+                          onChange={(url) => field.onChange(url || "")}
+                          description="Imagem de destaque do evento (recomendado: 1200x600px). Você pode fazer upload de uma imagem ou inserir uma URL."
+                        />
                       </FormControl>
-                      <FormDescription>
-                        Imagem de destaque do evento (recomendado: 1200x600px)
-                      </FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -1199,11 +1194,13 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess }: EventF
                   name="regulation_url"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>URL do Regulamento (PDF)</FormLabel>
+                      <FormLabel>Regulamento (PDF)</FormLabel>
                       <FormControl>
-                        <Input
-                          placeholder="https://exemplo.com/regulamento.pdf"
-                          {...field}
+                        <FileUpload
+                          type="regulation"
+                          value={field.value || undefined}
+                          onChange={(url) => field.onChange(url || "")}
+                          description="Regulamento do evento em PDF. Você pode fazer upload de um arquivo PDF ou inserir uma URL."
                         />
                       </FormControl>
                       <FormMessage />

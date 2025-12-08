@@ -236,6 +236,34 @@ export const updateEventController = asyncHandler(async (req: AuthRequest, res: 
     return;
   }
 
+  // If new banner_url is provided and different from old one, delete old file
+  if (req.body.banner_url && req.body.banner_url !== event.banner_url && event.banner_url) {
+    const { deleteFile: deleteUploadedFile, extractFilename } = await import('../middleware/upload.js');
+    const oldFilename = extractFilename(event.banner_url);
+    if (oldFilename && oldFilename.startsWith('banner-')) {
+      const pathModule = await import('path');
+      const fsModule = await import('fs');
+      const filePath = pathModule.join(process.cwd(), 'uploads', 'banners', oldFilename);
+      if (fsModule.existsSync(filePath)) {
+        deleteUploadedFile(filePath);
+      }
+    }
+  }
+
+  // If new regulation_url is provided and different from old one, delete old file
+  if (req.body.regulation_url && req.body.regulation_url !== event.regulation_url && event.regulation_url) {
+    const { deleteFile: deleteUploadedFile, extractFilename } = await import('../middleware/upload.js');
+    const oldFilename = extractFilename(event.regulation_url);
+    if (oldFilename && oldFilename.startsWith('regulation-')) {
+      const pathModule = await import('path');
+      const fsModule = await import('fs');
+      const filePath = pathModule.join(process.cwd(), 'uploads', 'regulations', oldFilename);
+      if (fsModule.existsSync(filePath)) {
+        deleteUploadedFile(filePath);
+      }
+    }
+  }
+
   const updatedEvent = await updateEvent(id, req.body);
 
   res.json({

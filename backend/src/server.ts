@@ -13,6 +13,7 @@ import homePageSettingsRouter from './routes/homePageSettings.js';
 import adminRouter from './routes/adminRoutes.js';
 import organizerRouter from './routes/organizerRoutes.js';
 import runnerRouter from './routes/runnerRoutes.js';
+import uploadRouter from './routes/upload.js';
 
 // Load environment variables
 dotenv.config();
@@ -102,6 +103,7 @@ app.use('/api/home-page-settings', homePageSettingsRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api/organizer', organizerRouter);
 app.use('/api/runner', runnerRouter);
+app.use('/api/upload', uploadRouter);
 
 // Root endpoint
 app.get('/', (_req: Request, res: Response) => {
