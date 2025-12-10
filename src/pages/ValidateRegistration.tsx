@@ -9,6 +9,8 @@ import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { getRegistrationById, getRegistrationForValidation, type Registration } from "@/lib/api/registrations";
 import { toast } from "sonner";
+import { useAuth } from "@/contexts/AuthContext";
+import { List } from "lucide-react";
 
 // Helper function to format price
 const formatPrice = (price: number | string | undefined): string => {
@@ -21,6 +23,7 @@ const formatPrice = (price: number | string | undefined): string => {
 export default function ValidateRegistration() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [registration, setRegistration] = useState<Registration | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -115,6 +118,9 @@ export default function ValidateRegistration() {
   const validationUrl = registration?.id 
     ? `${window.location.origin}/registration/validate/${registration.id}`
     : '';
+  
+  // Check if current user is the owner of the registration
+  const isOwner = user && registration && (registration.runner_id === user.id || registration.registered_by === user.id);
 
   return (
     <div className="min-h-screen bg-background">
@@ -309,6 +315,19 @@ export default function ValidateRegistration() {
             )}
           </CardContent>
         </Card>
+
+        {/* Botão Minhas Inscrições - apenas para o dono da inscrição */}
+        {isOwner && (
+          <div className="pt-4">
+            <Button 
+              className="w-full" 
+              onClick={() => navigate("/runner/dashboard?tab=registrations")}
+            >
+              <List className="w-4 h-4 mr-2" />
+              Minhas Inscrições
+            </Button>
+          </div>
+        )}
       </div>
     </div>
   );
