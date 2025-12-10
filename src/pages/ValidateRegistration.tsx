@@ -1,9 +1,10 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
+import { QRCodeSVG } from "qrcode.react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, Calendar, MapPin, User, CheckCircle, XCircle, AlertCircle, Loader2 } from "lucide-react";
+import { ArrowLeft, Calendar, MapPin, User, CheckCircle, XCircle, AlertCircle, Loader2, QrCode } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { getRegistrationById, type Registration } from "@/lib/api/registrations";
@@ -97,6 +98,7 @@ export default function ValidateRegistration() {
 
   const isConfirmed = registration.status === "confirmed" && registration.payment_status === "paid";
   const locationText = registration.location || `${registration.city || ''}, ${registration.state || ''}`.trim() || 'Local não informado';
+  const validationUrl = `${window.location.origin}/registration/validate/${registration.id}`;
 
   return (
     <div className="min-h-screen bg-background">
@@ -170,6 +172,34 @@ export default function ValidateRegistration() {
             </div>
           </CardContent>
         </Card>
+
+        {/* QR Code Card - Only show if confirmed */}
+        {isConfirmed && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center justify-center gap-2">
+                <QrCode className="h-5 w-5" />
+                QR Code de Validação
+              </CardTitle>
+              <p className="text-sm text-muted-foreground text-center">
+                Apresente este código para validar sua inscrição
+              </p>
+            </CardHeader>
+            <CardContent className="flex flex-col items-center gap-4">
+              <div className="bg-white p-4 rounded-lg border-2 border-dashed">
+                <QRCodeSVG 
+                  value={validationUrl} 
+                  size={256} 
+                  level="H" 
+                  includeMargin={true}
+                />
+              </div>
+              <p className="text-xs text-muted-foreground text-center">
+                Escaneie este código para verificar a validade da inscrição
+              </p>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Registration Details */}
         <Card>
