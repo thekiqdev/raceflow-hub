@@ -16,7 +16,7 @@ export type AsaasPaymentStatus =
   | 'DUNNING_RECEIVED'
   | 'AWAITING_RISK_ANALYSIS';
 
-export type AsaasWebhookEvent =
+export type AsaasWebhookEventType =
   | 'PAYMENT_CREATED'
   | 'PAYMENT_UPDATED'
   | 'PAYMENT_CONFIRMED'
@@ -119,7 +119,7 @@ export interface AsaasPaymentResponse {
 
 // Asaas Webhook Types
 export interface AsaasWebhookPayload {
-  event: AsaasWebhookEvent;
+  event: AsaasWebhookEventType;
   payment: AsaasPaymentResponse;
 }
 
@@ -154,7 +154,7 @@ export interface AsaasPayment {
   updated_at: Date;
 }
 
-export interface AsaasWebhookEvent {
+export interface AsaasWebhookEventRecord {
   id: string;
   event_type: string;
   asaas_payment_id?: string | null;

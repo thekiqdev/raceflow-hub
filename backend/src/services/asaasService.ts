@@ -1,5 +1,5 @@
 import axios, { AxiosInstance, AxiosError } from 'axios';
-import { query, getClient } from '../config/database.js';
+import { query } from '../config/database.js';
 import {
   AsaasCustomerRequest,
   AsaasCustomerResponse,
@@ -9,7 +9,6 @@ import {
   CreateCustomerResult,
   CreatePaymentResult,
   PaymentStatusResult,
-  AsaasPaymentStatus,
 } from '../types/asaas.js';
 
 // Get Asaas configuration from environment
@@ -319,7 +318,9 @@ export const createPayment = async (
                 // O pixQrCodeId pode estar na resposta ou no payment
                 pixQrCodeId = qrCodeResponse.data.id || payment.pixQrCodeId || (payment as any).pixTransaction?.id || null;
                 console.log(`✅ QR Code PIX obtido via endpoint específico /pixQrCode`);
-                console.log(`📝 QR Code payload (primeiros 100 chars): ${pixQrCode.substring(0, 100)}...`);
+                if (pixQrCode) {
+                  console.log(`📝 QR Code payload (primeiros 100 chars): ${pixQrCode.substring(0, 100)}...`);
+                }
                 break;
               }
             } catch (qrError: any) {

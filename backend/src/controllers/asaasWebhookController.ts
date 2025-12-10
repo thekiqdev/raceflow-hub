@@ -3,10 +3,9 @@ import { asyncHandler } from '../middleware/errorHandler.js';
 import { query } from '../config/database.js';
 import {
   AsaasWebhookPayload,
-  AsaasWebhookEvent,
+  AsaasWebhookEventType,
   AsaasPaymentStatus,
 } from '../types/asaas.js';
-import { getPaymentByRegistrationId } from '../services/asaasService.js';
 
 /**
  * Handle Asaas webhook events
@@ -59,7 +58,7 @@ export const handleWebhook = asyncHandler(async (req: Request, res: Response) =>
   }
 
   // Save webhook event to database
-  let webhookEventId: string;
+  let webhookEventId: string | null = null;
   try {
     const webhookResult = await query(
       `INSERT INTO asaas_webhook_events (
@@ -102,9 +101,9 @@ export const handleWebhook = asyncHandler(async (req: Request, res: Response) =>
   }
 
   // Process event based on type
-  if (registrationId && registration) {
+  if (registrationId) {
     try {
-      await processWebhookEvent(event, payment.status, registrationId, registration);
+      await processWebhookEvent(event, payment.status, registrationId);
     } catch (error: any) {
       console.error(`❌ Erro ao processar evento ${event}:`, error);
       
@@ -143,10 +142,9 @@ export const handleWebhook = asyncHandler(async (req: Request, res: Response) =>
  * Process webhook event and update registration status
  */
 async function processWebhookEvent(
-  event: AsaasWebhookEvent,
+  event: AsaasWebhookEventType,
   paymentStatus: AsaasPaymentStatus,
-  registrationId: string,
-  registration: any
+  registrationId: string
 ): Promise<void> {
   console.log(`🔄 Processando evento: ${event} para inscrição: ${registrationId}`);
 
