@@ -1,4 +1,4 @@
-import { Response } from 'express';
+import { Response, Request } from 'express';
 import { AuthRequest } from '../middleware/auth.js';
 import {
   getRegistrations,
@@ -63,6 +63,45 @@ export const getAllRegistrations = asyncHandler(async (req: AuthRequest, res: Re
   res.json({
     success: true,
     data: registrations,
+  });
+});
+
+// Get registration by ID for validation (public endpoint - no authentication required)
+export const getRegistrationForValidation = asyncHandler(async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const registration = await getRegistrationById(id);
+
+  if (!registration) {
+    res.status(404).json({
+      success: false,
+      error: 'Registration not found',
+      message: 'Inscrição não encontrada',
+    });
+    return;
+  }
+
+  // Return only public data needed for validation
+  res.json({
+    success: true,
+    data: {
+      id: registration.id,
+      registration_code: registration.registration_code,
+      confirmation_code: registration.confirmation_code,
+      status: registration.status,
+      payment_status: registration.payment_status,
+      event_title: registration.event_title,
+      event_date: registration.event_date,
+      location: registration.location,
+      city: registration.city,
+      state: registration.state,
+      category_name: registration.category_name,
+      category_distance: registration.category_distance,
+      kit_name: registration.kit_name,
+      total_amount: registration.total_amount,
+      runner_name: registration.runner_name,
+      runner_cpf: registration.runner_cpf,
+      created_at: registration.created_at,
+    },
   });
 });
 

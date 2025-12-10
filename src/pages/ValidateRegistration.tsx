@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, Calendar, MapPin, User, CheckCircle, XCircle, AlertCircle, Loader2, QrCode } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { getRegistrationById, type Registration } from "@/lib/api/registrations";
+import { getRegistrationById, getRegistrationForValidation, type Registration } from "@/lib/api/registrations";
 import { toast } from "sonner";
 
 // Helper function to format price
@@ -37,7 +37,19 @@ export default function ValidateRegistration() {
     try {
       setLoading(true);
       setError(null);
-      const response = await getRegistrationById(id);
+      
+      // Try public validation endpoint first (no auth required)
+      let response;
+      try {
+        response = await getRegistrationForValidation(id);
+      } catch (publicError: any) {
+        // If public endpoint fails, try authenticated endpoint (for logged-in users)
+        try {
+          response = await getRegistrationById(id);
+        } catch (authError: any) {
+          throw publicError; // Use public error message
+        }
+      }
 
       if (response.success && response.data) {
         setRegistration(response.data);

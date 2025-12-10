@@ -62,9 +62,42 @@ export const getRegistrations = async (filters?: {
   return apiClient.get<Registration[]>(endpoint);
 };
 
-// Get registration by ID
+// Get registration by ID (requires authentication)
 export const getRegistrationById = async (id: string) => {
   return apiClient.get<Registration>(`/registrations/${id}`);
+};
+
+// Get registration by ID for validation (public - no authentication required)
+export const getRegistrationForValidation = async (id: string) => {
+  // Use same URL logic as apiClient
+  const getApiUrl = () => {
+    const envUrl = import.meta.env.VITE_API_URL;
+    
+    if (envUrl && !envUrl.includes('localhost')) {
+      return envUrl;
+    }
+    
+    if (import.meta.env.PROD) {
+      return 'https://cronoteam-crono-back.e758qe.easypanel.host/api';
+    }
+    
+    return 'http://localhost:3001/api';
+  };
+
+  const apiUrl = getApiUrl();
+  const response = await fetch(`${apiUrl}/registrations/${id}/validate`, {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Failed to fetch registration' }));
+    throw new Error(error.error || error.message || 'Failed to fetch registration');
+  }
+
+  return response.json();
 };
 
 // Get payment status by registration ID

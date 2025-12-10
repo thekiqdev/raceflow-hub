@@ -3,6 +3,7 @@ import { authenticate } from '../middleware/auth.js';
 import {
   getAllRegistrations,
   getRegistration,
+  getRegistrationForValidation,
   createRegistrationController,
   updateRegistrationController,
   exportRegistrationsController,
@@ -14,7 +15,10 @@ import {
 
 const router = Router();
 
-// All routes require authentication
+// Public route for validation (no authentication required)
+router.get('/:id/validate', getRegistrationForValidation);
+
+// All other routes require authentication
 router.use(authenticate);
 
 router.get('/export', exportRegistrationsController);
