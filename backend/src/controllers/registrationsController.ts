@@ -5,7 +5,6 @@ import {
   getRegistrationById,
   createRegistration,
   updateRegistration,
-  findUserByCpf,
   findUserByCpfOrEmail,
   transferRegistration,
   cancelRegistration,
