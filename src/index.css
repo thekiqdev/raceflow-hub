@@ -110,18 +110,3 @@ All colors MUST be HSL.
     @apply bg-background text-foreground;
   }
 }
-
-@layer utilities {
-  .animate-fade-in {
-    animation: fadeIn 0.3s ease-in;
-  }
-
-  @keyframes fadeIn {
-    from {
-      opacity: 0;
-    }
-    to {
-      opacity: 1;
-    }
-  }
-}

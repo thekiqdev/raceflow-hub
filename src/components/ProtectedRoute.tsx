@@ -38,16 +38,23 @@ export function ProtectedRoute({
 
   // Check role if required
   if (requiredRole) {
-    const hasRole = user.roles?.includes(requiredRole);
+    // If user has no roles but has a profile, assume they are a runner
+    // (the backend should have created the role, but handle edge case)
+    const effectiveRoles = user.roles && user.roles.length > 0 
+      ? user.roles 
+      : (user.profile ? ['runner'] : []);
+    
+    const hasRole = effectiveRoles.includes(requiredRole);
     
     if (!hasRole) {
       // Redirect to appropriate dashboard based on user's actual role
-      if (user.roles?.includes('admin')) {
+      if (effectiveRoles.includes('admin')) {
         return <Navigate to="/admin/dashboard" replace />;
       }
-      if (user.roles?.includes('organizer')) {
+      if (effectiveRoles.includes('organizer')) {
         return <Navigate to="/organizer/dashboard" replace />;
       }
+      // Default to runner dashboard if no specific role
       return <Navigate to="/runner/dashboard" replace />;
     }
   }

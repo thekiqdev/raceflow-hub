@@ -122,21 +122,21 @@ export const register = async (data: RegisterData): Promise<AuthResponse> => {
 
     const profile = profileResult.rows[0];
 
-    // Ensure 'runner' role is created (trigger should do this, but we'll ensure it)
+    // Ensure 'runner' role exists (trigger should create it, but ensure it exists as fallback)
     const rolesCheck = await client.query(
-      'SELECT role FROM user_roles WHERE user_id = $1',
-      [user.id]
+      'SELECT role FROM user_roles WHERE user_id = $1 AND role = $2',
+      [user.id, 'runner']
     );
 
     if (rolesCheck.rows.length === 0) {
-      // Trigger didn't work, create role explicitly
+      // Create runner role if it doesn't exist (trigger may have failed)
       await client.query(
         'INSERT INTO user_roles (user_id, role) VALUES ($1, $2) ON CONFLICT (user_id, role) DO NOTHING',
         [user.id, 'runner']
       );
     }
 
-    // Get user roles
+    // Get all user roles
     const rolesResult = await client.query(
       'SELECT role FROM user_roles WHERE user_id = $1',
       [user.id]
@@ -256,7 +256,28 @@ export const getUserById = async (userId: string) => {
     [userId]
   );
 
-  const roles = rolesResult.rows.map((row) => row.role as AppRole);
+  let roles = rolesResult.rows.map((row) => row.role as AppRole);
+
+  // If user has no roles and has a profile, ensure they have 'runner' role
+  // This handles cases where the trigger may have failed
+  if (roles.length === 0 && profile) {
+    try {
+      await query(
+        'INSERT INTO user_roles (user_id, role) VALUES ($1, $2) ON CONFLICT (user_id, role) DO NOTHING',
+        [userId, 'runner']
+      );
+      // Fetch roles again
+      const rolesResultRetry = await query(
+        'SELECT role FROM user_roles WHERE user_id = $1',
+        [userId]
+      );
+      roles = rolesResultRetry.rows.map((row) => row.role as AppRole);
+    } catch (error) {
+      console.error('Error ensuring runner role:', error);
+      // If insert fails, at least return 'runner' in the array
+      roles = ['runner'];
+    }
+  }
 
   return {
     id: user.id,
