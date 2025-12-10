@@ -10,9 +10,11 @@ import { getRegistrationById, type Registration } from "@/lib/api/registrations"
 import { toast } from "sonner";
 
 // Helper function to format price
-const formatPrice = (price: number): string => {
-  if (price === 0) return "Grátis";
-  return `R$ ${price.toFixed(2).replace('.', ',')}`;
+const formatPrice = (price: number | string | undefined): string => {
+  if (!price) return "Grátis";
+  const numPrice = typeof price === 'string' ? parseFloat(price) : price;
+  if (isNaN(numPrice) || numPrice === 0) return "Grátis";
+  return `R$ ${numPrice.toFixed(2).replace('.', ',')}`;
 };
 
 export default function ValidateRegistration() {
