@@ -98,7 +98,11 @@ export default function ValidateRegistration() {
 
   const isConfirmed = registration.status === "confirmed" && registration.payment_status === "paid";
   const locationText = registration.location || `${registration.city || ''}, ${registration.state || ''}`.trim() || 'Local não informado';
-  const validationUrl = `${window.location.origin}/registration/validate/${registration.id}`;
+  
+  // Generate validation URL only if registration and id are available
+  const validationUrl = registration?.id 
+    ? `${window.location.origin}/registration/validate/${registration.id}`
+    : '';
 
   return (
     <div className="min-h-screen bg-background">
@@ -186,17 +190,28 @@ export default function ValidateRegistration() {
               </p>
             </CardHeader>
             <CardContent className="flex flex-col items-center gap-4">
-              <div className="bg-white p-4 rounded-lg border-2 border-dashed">
-                <QRCodeSVG 
-                  value={validationUrl} 
-                  size={256} 
-                  level="H" 
-                  includeMargin={true}
-                />
-              </div>
-              <p className="text-xs text-muted-foreground text-center">
-                Escaneie este código para verificar a validade da inscrição
-              </p>
+              {validationUrl ? (
+                <>
+                  <div className="bg-white p-4 rounded-lg border-2 border-dashed">
+                    <QRCodeSVG 
+                      value={validationUrl} 
+                      size={256} 
+                      level="H" 
+                      includeMargin={true}
+                    />
+                  </div>
+                  <p className="text-xs text-muted-foreground text-center">
+                    Escaneie este código para verificar a validade da inscrição
+                  </p>
+                </>
+              ) : (
+                <div className="text-center py-4">
+                  <AlertCircle className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
+                  <p className="text-sm text-muted-foreground">
+                    Carregando QR Code...
+                  </p>
+                </div>
+              )}
             </CardContent>
           </Card>
         )}
