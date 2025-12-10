@@ -6,7 +6,7 @@ import {
   createRegistration,
   updateRegistration,
   findUserByCpf,
-  findUserByEmail,
+  findUserByEmailAndCpf,
   transferRegistration,
   cancelRegistration,
 } from '../services/registrationsService.js';
@@ -563,7 +563,7 @@ export const exportRegistrationsController = asyncHandler(async (req: AuthReques
   res.send('\ufeff' + csvContent); // BOM for Excel UTF-8 support
 });
 
-// Transfer registration to another runner by CPF or Email
+// Transfer registration to another runner by email and CPF
 export const transferRegistrationController = asyncHandler(async (req: AuthRequest, res: Response) => {
   if (!req.user) {
     res.status(401).json({
@@ -574,13 +574,13 @@ export const transferRegistrationController = asyncHandler(async (req: AuthReque
   }
 
   const { id } = req.params;
-  const { cpf, email } = req.body;
+  const { email, cpf } = req.body;
 
-  if (!cpf && !email) {
+  if (!email || !cpf) {
     res.status(400).json({
       success: false,
-      error: 'CPF or email is required',
-      message: 'CPF ou email é obrigatório',
+      error: 'Email and CPF are required',
+      message: 'Email e CPF são obrigatórios',
     });
     return;
   }
@@ -609,35 +609,14 @@ export const transferRegistrationController = asyncHandler(async (req: AuthReque
     return;
   }
 
-  // Find user by CPF or Email
-  let newRunner = null;
-  if (cpf) {
-    newRunner = await findUserByCpf(cpf);
-    if (!newRunner) {
-      res.status(404).json({
-        success: false,
-        error: 'User not found',
-        message: 'Não foi encontrado um usuário com este CPF',
-      });
-      return;
-    }
-  } else if (email) {
-    newRunner = await findUserByEmail(email);
-    if (!newRunner) {
-      res.status(404).json({
-        success: false,
-        error: 'User not found',
-        message: 'Não foi encontrado um usuário com este email',
-      });
-      return;
-    }
-  }
+  // Find user by email and CPF (both must match)
+  const newRunner = await findUserByEmailAndCpf(email, cpf);
 
   if (!newRunner) {
-    res.status(400).json({
+    res.status(404).json({
       success: false,
-      error: 'Invalid request',
-      message: 'CPF ou email é obrigatório',
+      error: 'User not found',
+      message: 'Não foi encontrado um usuário com este email e CPF. Verifique se os dados estão corretos e se a pessoa está cadastrada na plataforma.',
     });
     return;
   }

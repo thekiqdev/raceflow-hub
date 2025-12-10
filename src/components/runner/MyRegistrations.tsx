@@ -34,6 +34,7 @@ export function MyRegistrations() {
   const [registrations, setRegistrations] = useState<Registration[]>([]);
   const [isTransferDialogOpen, setIsTransferDialogOpen] = useState(false);
   const [isCancelDialogOpen, setIsCancelDialogOpen] = useState(false);
+  const [transferEmail, setTransferEmail] = useState("");
   const [transferCpf, setTransferCpf] = useState("");
   const [selectedRegistration, setSelectedRegistration] = useState<Registration | null>(null);
   const [isTransferring, setIsTransferring] = useState(false);
@@ -81,18 +82,19 @@ export function MyRegistrations() {
   };
 
   const handleTransfer = async () => {
-    if (!transferCpf.trim() || !selectedRegistration) {
-      toast.error("Por favor, informe o CPF do novo titular");
+    if (!transferEmail.trim() || !transferCpf.trim() || !selectedRegistration) {
+      toast.error("Por favor, informe o email e CPF do novo titular");
       return;
     }
 
     setIsTransferring(true);
     try {
-      const response = await transferRegistration(selectedRegistration.id, transferCpf.trim());
+      const response = await transferRegistration(selectedRegistration.id, transferEmail.trim(), transferCpf.trim());
 
       if (response.success) {
         toast.success(response.message || "Inscrição transferida com sucesso!");
         setIsTransferDialogOpen(false);
+        setTransferEmail("");
         setTransferCpf("");
         setSelectedRegistration(null);
         loadRegistrations();
@@ -443,21 +445,31 @@ export function MyRegistrations() {
           <DialogHeader>
             <DialogTitle>Transferir Inscrição</DialogTitle>
             <DialogDescription>
-              Informe o CPF da pessoa que irá receber a inscrição de {selectedRegistration?.event_title}
+              Informe o email e CPF da pessoa que irá receber a inscrição de {selectedRegistration?.event_title}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="cpf">CPF do novo titular</Label>
+              <Label htmlFor="transfer-email">Email do novo titular</Label>
               <Input
-                id="cpf"
+                id="transfer-email"
+                type="email"
+                placeholder="email@exemplo.com"
+                value={transferEmail}
+                onChange={(e) => setTransferEmail(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="transfer-cpf">CPF do novo titular</Label>
+              <Input
+                id="transfer-cpf"
                 placeholder="000.000.000-00"
                 value={transferCpf}
                 onChange={(e) => setTransferCpf(e.target.value)}
                 maxLength={14}
               />
               <p className="text-xs text-muted-foreground">
-                A pessoa deve estar cadastrada na plataforma
+                A pessoa deve estar cadastrada na plataforma com este email e CPF
               </p>
             </div>
           </div>
@@ -466,6 +478,7 @@ export function MyRegistrations() {
               variant="outline" 
               onClick={() => {
                 setIsTransferDialogOpen(false);
+                setTransferEmail("");
                 setTransferCpf("");
                 setSelectedRegistration(null);
               }}

@@ -212,14 +212,17 @@ export const findUserByCpf = async (cpf: string) => {
   return result.rows[0];
 };
 
-// Find user by email
-export const findUserByEmail = async (email: string) => {
+// Find user by email and CPF (both must match)
+export const findUserByEmailAndCpf = async (email: string, cpf: string) => {
+  // Remove formatting from CPF
+  const cleanCpf = cpf.replace(/[^0-9]/g, '');
+  
   const result = await query(
     `SELECT p.id, p.full_name, p.cpf, u.email 
      FROM profiles p
-     JOIN users u ON u.id = p.id
-     WHERE LOWER(u.email) = LOWER($1)`,
-    [email]
+     JOIN users u ON p.id = u.id
+     WHERE u.email = $1 AND p.cpf = $2`,
+    [email.toLowerCase().trim(), cleanCpf]
   );
 
   if (result.rows.length === 0) {
