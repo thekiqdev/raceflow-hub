@@ -15,6 +15,7 @@ import {
   updateUserStatus,
   updateUserRole,
   deleteUser,
+  hardDeleteUser,
 } from '../services/userManagementService.js';
 import { updateProfile } from '../services/profilesService.js';
 import { z } from 'zod';
@@ -576,6 +577,43 @@ export const deleteUserController = async (
       success: false,
       error: 'Internal server error',
       message: error.message || 'Failed to delete user',
+    });
+  }
+};
+
+/**
+ * DELETE /api/admin/users/:id/hard-delete
+ * Hard delete user - completely removes user and all related data
+ * WARNING: This is a destructive operation that cannot be undone
+ */
+export const hardDeleteUserController = async (
+  req: AuthRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    const { id } = req.params;
+
+    if (!id) {
+      res.status(400).json({
+        success: false,
+        error: 'Bad Request',
+        message: 'User ID is required',
+      });
+      return;
+    }
+
+    await hardDeleteUser(id);
+
+    res.json({
+      success: true,
+      message: 'Perfil do usuário deletado permanentemente',
+    });
+  } catch (error: any) {
+    console.error('Error hard deleting user:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Internal server error',
+      message: error.message || 'Failed to delete user profile',
     });
   }
 };

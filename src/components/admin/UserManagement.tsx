@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Search, Download, Edit, Eye, Lock, Unlock, CheckCircle, XCircle, RotateCcw, Loader2, UserPlus } from "lucide-react";
+import { Search, Download, Edit, Eye, Lock, Unlock, CheckCircle, XCircle, RotateCcw, Loader2, UserPlus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import {
   getOrganizers,
@@ -16,9 +16,11 @@ import {
   unblockUser,
   resetUserPassword,
   convertAthleteToOrganizer,
+  hardDeleteUserProfile,
   type UserWithStats,
 } from "@/lib/api/userManagement";
 import { UserProfileDialog } from "./UserProfileDialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 const UserManagement = () => {
   const [searchTerm, setSearchTerm] = useState("");
@@ -29,6 +31,8 @@ const UserManagement = () => {
   const [admins, setAdmins] = useState<UserWithStats[]>([]);
   const [profileDialogOpen, setProfileDialogOpen] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
+  const [blockDialogOpen, setBlockDialogOpen] = useState(false);
+  const [userToBlock, setUserToBlock] = useState<{ id: string; name: string } | null>(null);
 
   useEffect(() => {
     loadData();
@@ -81,17 +85,48 @@ const UserManagement = () => {
     }
   };
 
-  const handleBlockUser = async (userId: string) => {
+  const handleBlockUser = async (userId: string, userName: string) => {
+    setUserToBlock({ id: userId, name: userName });
+    setBlockDialogOpen(true);
+  };
+
+  const confirmBlockUser = async () => {
+    if (!userToBlock) return;
+    
     try {
-      const response = await blockUser(userId);
+      const response = await blockUser(userToBlock.id);
       if (response.success) {
         toast.success("Usuário bloqueado com sucesso!");
         loadData();
+        setBlockDialogOpen(false);
+        setUserToBlock(null);
       } else {
         toast.error(response.error || "Erro ao bloquear usuário");
       }
     } catch (error) {
       toast.error("Erro ao bloquear usuário");
+    }
+  };
+
+  const confirmDeleteUser = async () => {
+    if (!userToBlock) return;
+    
+    if (!confirm(`Tem certeza que deseja DELETAR PERMANENTEMENTE o perfil de "${userToBlock.name}"?\n\nEsta ação não pode ser desfeita e removerá todos os dados relacionados ao usuário.`)) {
+      return;
+    }
+
+    try {
+      const response = await hardDeleteUserProfile(userToBlock.id);
+      if (response.success) {
+        toast.success("Perfil deletado permanentemente!");
+        loadData();
+        setBlockDialogOpen(false);
+        setUserToBlock(null);
+      } else {
+        toast.error(response.error || "Erro ao deletar perfil");
+      }
+    } catch (error) {
+      toast.error("Erro ao deletar perfil");
     }
   };
 
@@ -241,7 +276,7 @@ const UserManagement = () => {
                                   size="icon" 
                                   variant="ghost" 
                                   title="Reprovar"
-                                  onClick={() => handleBlockUser(org.id)}
+                                  onClick={() => handleBlockUser(org.id, org.name)}
                                 >
                                   <XCircle className="h-4 w-4 text-red-500" />
                                 </Button>
@@ -264,7 +299,7 @@ const UserManagement = () => {
                                     size="icon" 
                                     variant="ghost" 
                                     title="Bloquear"
-                                    onClick={() => handleBlockUser(org.id)}
+                                    onClick={() => handleBlockUser(org.id, org.name)}
                                   >
                                     <Lock className="h-4 w-4 text-red-500" />
                                   </Button>
@@ -378,7 +413,7 @@ const UserManagement = () => {
                                 size="icon" 
                                 variant="ghost" 
                                 title="Bloquear"
-                                onClick={() => handleBlockUser(athlete.id)}
+                                onClick={() => handleBlockUser(athlete.id, athlete.name)}
                               >
                                 <Lock className="h-4 w-4 text-red-500" />
                               </Button>
@@ -466,7 +501,7 @@ const UserManagement = () => {
                                 size="icon" 
                                 variant="ghost" 
                                 title="Desativar"
-                                onClick={() => handleBlockUser(admin.id)}
+                                onClick={() => handleBlockUser(admin.id, admin.name)}
                               >
                                 <Lock className="h-4 w-4" />
                               </Button>
@@ -500,6 +535,55 @@ const UserManagement = () => {
           loadData();
         }}
       />
+
+      {/* Dialog de confirmação para bloquear ou deletar */}
+      <Dialog open={blockDialogOpen} onOpenChange={setBlockDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Ação para {userToBlock?.name}</DialogTitle>
+            <DialogDescription>
+              Escolha uma ação para este usuário:
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <p className="text-sm text-muted-foreground">
+                <strong>Bloquear:</strong> O usuário será bloqueado, mas o perfil será mantido.
+              </p>
+              <p className="text-sm text-muted-foreground">
+                <strong>Deletar Perfil:</strong> Remove permanentemente o perfil e todos os dados relacionados. Esta ação não pode ser desfeita.
+              </p>
+            </div>
+          </div>
+          <DialogFooter className="flex-col sm:flex-row gap-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setBlockDialogOpen(false);
+                setUserToBlock(null);
+              }}
+            >
+              Cancelar
+            </Button>
+            <Button
+              variant="default"
+              onClick={confirmBlockUser}
+              className="flex items-center gap-2"
+            >
+              <Lock className="h-4 w-4" />
+              Bloquear Usuário
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={confirmDeleteUser}
+              className="flex items-center gap-2"
+            >
+              <Trash2 className="h-4 w-4" />
+              Deletar Perfil
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

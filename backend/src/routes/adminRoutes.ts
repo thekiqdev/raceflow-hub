@@ -14,6 +14,7 @@ import {
   updateUserProfileController,
   convertAthleteToOrganizerController,
   deleteUserController,
+  hardDeleteUserController,
   updateUserStatusController,
   approveOrganizerController,
   blockUserController,
@@ -90,6 +91,7 @@ router.put('/users/:id/status', updateUserStatusController);
 router.put('/users/:id/profile', updateUserProfileController);
 router.post('/users/:id/convert-to-organizer', convertAthleteToOrganizerController);
 router.delete('/users/:id', deleteUserController);
+router.delete('/users/:id/hard-delete', hardDeleteUserController);
 router.post('/users/:id/approve', approveOrganizerController);
 router.post('/users/:id/block', blockUserController);
 router.post('/users/:id/unblock', unblockUserController);

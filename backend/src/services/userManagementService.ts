@@ -342,6 +342,85 @@ export const deleteUser = async (userId: string): Promise<void> => {
 };
 
 /**
+ * Hard delete user - completely removes user profile and all related data
+ * WARNING: This is a destructive operation that cannot be undone
+ */
+export const hardDeleteUser = async (userId: string): Promise<void> => {
+  const client = await getClient();
+  
+  try {
+    await client.query('BEGIN');
+
+    // Delete in order to respect foreign key constraints
+    
+    // 1. Delete user roles
+    await client.query('DELETE FROM user_roles WHERE user_id = $1', [userId]);
+    
+    // 2. Delete asaas customers
+    await client.query('DELETE FROM asaas_customers WHERE user_id = $1', [userId]);
+    
+    // 3. Delete asaas webhook events (via registrations)
+    await client.query(
+      `DELETE FROM asaas_webhook_events 
+       WHERE registration_id IN (SELECT id FROM registrations WHERE runner_id = $1 OR registered_by = $1)`,
+      [userId]
+    );
+    
+    // 4. Delete asaas payments (via registrations)
+    await client.query(
+      `DELETE FROM asaas_payments 
+       WHERE registration_id IN (SELECT id FROM registrations WHERE runner_id = $1 OR registered_by = $1)`,
+      [userId]
+    );
+    
+    // 5. Delete refund requests
+    await client.query('DELETE FROM refund_requests WHERE athlete_id = $1 OR processed_by = $1', [userId]);
+    await client.query(
+      `DELETE FROM refund_requests 
+       WHERE registration_id IN (SELECT id FROM registrations WHERE runner_id = $1 OR registered_by = $1)`,
+      [userId]
+    );
+    
+    // 6. Delete support ticket messages
+    await client.query('DELETE FROM support_ticket_messages WHERE user_id = $1', [userId]);
+    
+    // 7. Delete support tickets
+    await client.query('DELETE FROM support_tickets WHERE user_id = $1 OR assigned_to = $1', [userId]);
+    
+    // 8. Delete announcement reads
+    await client.query('DELETE FROM announcement_reads WHERE user_id = $1', [userId]);
+    
+    // 9. Delete announcements created by user
+    await client.query('DELETE FROM announcements WHERE created_by = $1', [userId]);
+    
+    // 10. Delete knowledge articles created by user
+    await client.query('DELETE FROM knowledge_articles WHERE created_by = $1', [userId]);
+    
+    // 11. Delete withdraw requests
+    await client.query('DELETE FROM withdraw_requests WHERE organizer_id = $1 OR processed_by = $1', [userId]);
+    
+    // 12. Delete registrations (this will cascade to related data)
+    await client.query('DELETE FROM registrations WHERE runner_id = $1 OR registered_by = $1', [userId]);
+    
+    // 13. Delete events created by organizer (if user is organizer)
+    await client.query('DELETE FROM events WHERE organizer_id = $1', [userId]);
+    
+    // 14. Delete profile
+    await client.query('DELETE FROM profiles WHERE id = $1', [userId]);
+    
+    // 15. Delete user
+    await client.query('DELETE FROM users WHERE id = $1', [userId]);
+
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+};
+
+/**
  * Approve organizer (change status from pending to active)
  */
 export const approveOrganizer = async (userId: string): Promise<void> => {

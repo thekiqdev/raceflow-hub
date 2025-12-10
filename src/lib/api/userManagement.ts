@@ -179,7 +179,7 @@ export const updateUserProfile = async (userId: string, data: {
 };
 
 /**
- * Delete user (admin)
+ * Delete user (admin) - soft delete
  */
 export const deleteUser = async (userId: string): Promise<{
   success: boolean;
@@ -187,6 +187,18 @@ export const deleteUser = async (userId: string): Promise<{
   error?: string;
 }> => {
   return apiClient.delete(`/admin/users/${userId}`);
+};
+
+/**
+ * Hard delete user profile (admin) - permanently deletes user and all related data
+ * WARNING: This is a destructive operation that cannot be undone
+ */
+export const hardDeleteUserProfile = async (userId: string): Promise<{
+  success: boolean;
+  message?: string;
+  error?: string;
+}> => {
+  return apiClient.delete(`/admin/users/${userId}/hard-delete`);
 };
 
 /**
