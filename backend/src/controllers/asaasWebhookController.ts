@@ -35,7 +35,6 @@ export const handleWebhook = asyncHandler(async (req: Request, res: Response) =>
 
   // Find registration by external_reference or asaas_payment_id
   let registrationId: string | null = null;
-  let registration: any = null;
 
   // Try to find by asaas_payment_id in asaas_payments table
   const paymentResult = await query(
@@ -45,16 +44,6 @@ export const handleWebhook = asyncHandler(async (req: Request, res: Response) =>
 
   if (paymentResult.rows.length > 0) {
     registrationId = paymentResult.rows[0].registration_id;
-    
-    // Get registration
-    const regResult = await query(
-      'SELECT * FROM registrations WHERE id = $1',
-      [registrationId]
-    );
-    
-    if (regResult.rows.length > 0) {
-      registration = regResult.rows[0];
-    }
   }
 
   // Save webhook event to database
