@@ -37,6 +37,7 @@ import { createEvent, updateEvent, getEventById } from "@/lib/api/events";
 import { getEventCategories } from "@/lib/api/eventCategories";
 import { getEventKits } from "@/lib/api/eventKits";
 import { FileUpload } from "@/components/ui/file-upload";
+import { deleteUploadedFile } from "@/lib/api/upload";
 
 const eventFormSchema = z.object({
   title: z.string().min(3, "Nome deve ter no mínimo 3 caracteres"),
@@ -1179,8 +1180,9 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess }: EventF
                       <FormControl>
                         <FileUpload
                           type="banner"
-                          value={field.value || undefined}
-                          onChange={(url) => field.onChange(url || "")}
+                          value={field.value || null}
+                          onChange={(url) => field.onChange(url || '')}
+                          maxSize={5}
                           description="Imagem de destaque do evento (recomendado: 1200x600px). Você pode fazer upload de uma imagem ou inserir uma URL."
                         />
                       </FormControl>
@@ -1198,9 +1200,10 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess }: EventF
                       <FormControl>
                         <FileUpload
                           type="regulation"
-                          value={field.value || undefined}
-                          onChange={(url) => field.onChange(url || "")}
-                          description="Regulamento do evento em PDF. Você pode fazer upload de um arquivo PDF ou inserir uma URL."
+                          value={field.value || null}
+                          onChange={(url) => field.onChange(url || '')}
+                          maxSize={10}
+                          description="Arquivo PDF com o regulamento do evento. Você pode fazer upload de um PDF ou inserir uma URL."
                         />
                       </FormControl>
                       <FormMessage />
@@ -2131,16 +2134,30 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess }: EventF
                   </Button>
                 )}
                 {activeTab !== "publish" ? (
-                  <Button
-                    type="button"
-                    onClick={() => {
-                      const tabs = ["info", "modalities", "kits", "payment", "publish"];
-                      const currentIndex = tabs.indexOf(activeTab);
-                      setActiveTab(tabs[currentIndex + 1]);
-                    }}
-                  >
-                    Próximo
-                  </Button>
+                  <>
+                    {event?.id && (
+                      <Button
+                        type="button"
+                        variant="default"
+                        disabled={isSubmitting}
+                        onClick={() => {
+                          form.handleSubmit(onSubmit)();
+                        }}
+                      >
+                        {isSubmitting ? "Salvando..." : "Atualizar"}
+                      </Button>
+                    )}
+                    <Button
+                      type="button"
+                      onClick={() => {
+                        const tabs = ["info", "modalities", "kits", "payment", "publish"];
+                        const currentIndex = tabs.indexOf(activeTab);
+                        setActiveTab(tabs[currentIndex + 1]);
+                      }}
+                    >
+                      Próximo
+                    </Button>
+                  </>
                 ) : (
                   <Button 
                     type="button" 

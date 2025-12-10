@@ -1,11 +1,13 @@
 import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
-import { uploadBanner, uploadRegulation, deleteFile, getFileUrl, extractFilename } from '../middleware/upload.js';
+import { getFileUrl, deleteFile, getFilePath } from '../middleware/upload.js';
 import path from 'path';
-import fs from 'fs';
 
-// Upload banner
+/**
+ * POST /api/upload/banner
+ * Upload banner image
+ */
 export const uploadBannerController = asyncHandler(async (req: AuthRequest, res: Response) => {
   if (!req.user) {
     res.status(401).json({
@@ -15,40 +17,40 @@ export const uploadBannerController = asyncHandler(async (req: AuthRequest, res:
     return;
   }
 
-  uploadBanner.single('banner')(req, res, (err) => {
-    if (err) {
-      return res.status(400).json({
-        success: false,
-        error: err.message || 'Erro ao fazer upload do banner',
-      });
-    }
-
-    if (!req.file) {
-      return res.status(400).json({
-        success: false,
-        error: 'Nenhum arquivo foi enviado',
-      });
-    }
-
-    // Generate URL for the uploaded file
-    const fileUrl = getFileUrl(req.file.path);
-
-    res.json({
-      success: true,
-      data: {
-        filename: req.file.filename,
-        originalName: req.file.originalname,
-        path: req.file.path,
-        url: fileUrl,
-        size: req.file.size,
-        mimetype: req.file.mimetype,
-      },
-      message: 'Banner enviado com sucesso',
+  if (!req.file) {
+    res.status(400).json({
+      success: false,
+      error: 'No file uploaded',
+      message: 'Nenhum arquivo foi enviado',
     });
+    return;
+  }
+
+  const fileUrl = getFileUrl(req.file.path);
+  
+  console.log('📤 Banner upload:', {
+    path: req.file.path,
+    filename: req.file.filename,
+    url: fileUrl,
+  });
+
+  res.json({
+    success: true,
+    data: {
+      url: fileUrl,
+      filename: req.file.filename,
+      originalName: req.file.originalname,
+      size: req.file.size,
+      mimetype: req.file.mimetype,
+    },
+    message: 'Banner enviado com sucesso',
   });
 });
 
-// Upload regulation
+/**
+ * POST /api/upload/regulation
+ * Upload regulation PDF
+ */
 export const uploadRegulationController = asyncHandler(async (req: AuthRequest, res: Response) => {
   if (!req.user) {
     res.status(401).json({
@@ -58,40 +60,35 @@ export const uploadRegulationController = asyncHandler(async (req: AuthRequest, 
     return;
   }
 
-  uploadRegulation.single('regulation')(req, res, (err) => {
-    if (err) {
-      return res.status(400).json({
-        success: false,
-        error: err.message || 'Erro ao fazer upload do regulamento',
-      });
-    }
-
-    if (!req.file) {
-      return res.status(400).json({
-        success: false,
-        error: 'Nenhum arquivo foi enviado',
-      });
-    }
-
-    // Generate URL for the uploaded file
-    const fileUrl = getFileUrl(req.file.path);
-
-    res.json({
-      success: true,
-      data: {
-        filename: req.file.filename,
-        originalName: req.file.originalname,
-        path: req.file.path,
-        url: fileUrl,
-        size: req.file.size,
-        mimetype: req.file.mimetype,
-      },
-      message: 'Regulamento enviado com sucesso',
+  if (!req.file) {
+    res.status(400).json({
+      success: false,
+      error: 'No file uploaded',
+      message: 'Nenhum arquivo foi enviado',
     });
+    return;
+  }
+
+  const fileUrl = getFileUrl(req.file.path);
+
+  res.json({
+    success: true,
+    data: {
+      url: fileUrl,
+      filename: req.file.filename,
+      originalName: req.file.originalname,
+      size: req.file.size,
+      mimetype: req.file.mimetype,
+    },
+    message: 'Regulamento enviado com sucesso',
   });
 });
 
-// Delete file
+/**
+ * DELETE /api/upload/:type/:filename
+ * Delete uploaded file
+ * type: 'banner' | 'regulation'
+ */
 export const deleteFileController = asyncHandler(async (req: AuthRequest, res: Response) => {
   if (!req.user) {
     res.status(401).json({
@@ -101,53 +98,47 @@ export const deleteFileController = asyncHandler(async (req: AuthRequest, res: R
     return;
   }
 
-  const { fileUrl } = req.body;
+  const { type, filename } = req.params;
 
-  if (!fileUrl) {
-    return res.status(400).json({
+  if (type !== 'banner' && type !== 'regulation') {
+    res.status(400).json({
       success: false,
-      error: 'URL do arquivo é obrigatória',
+      error: 'Invalid type',
+      message: 'Tipo inválido. Use "banner" ou "regulation"',
     });
+    return;
   }
 
-  // Extract filename and determine file path
-  const filename = extractFilename(fileUrl);
-  if (!filename) {
-    return res.status(400).json({
+  // Get file path from URL in body or filename from params
+  let filePath: string | null = null;
+  
+  // Try to get URL from body first
+  if (req.body && req.body.url) {
+    filePath = getFilePath(req.body.url);
+  }
+  
+  // If not found, try to construct from filename
+  if (!filePath && filename) {
+    // Determine subdirectory based on filename prefix
+    const subDir = filename.startsWith('banner-') ? 'banners' : 'regulations';
+    const uploadsDir = path.join(process.cwd(), 'uploads');
+    filePath = path.join(uploadsDir, subDir, filename);
+  }
+
+  if (!filePath) {
+    res.status(400).json({
       success: false,
-      error: 'URL do arquivo inválida',
+      error: 'Invalid file path',
+      message: 'Caminho do arquivo inválido',
     });
+    return;
   }
 
-  // Determine which directory the file is in
-  let filePath: string;
-  if (filename.startsWith('banner-')) {
-    filePath = path.join(process.cwd(), 'uploads', 'banners', filename);
-  } else if (filename.startsWith('regulation-')) {
-    filePath = path.join(process.cwd(), 'uploads', 'regulations', filename);
-  } else {
-    // Try to find the file in both directories
-    const bannerPath = path.join(process.cwd(), 'uploads', 'banners', filename);
-    const regulationPath = path.join(process.cwd(), 'uploads', 'regulations', filename);
-    
-    if (fs.existsSync(bannerPath)) {
-      filePath = bannerPath;
-    } else if (fs.existsSync(regulationPath)) {
-      filePath = regulationPath;
-    } else {
-      return res.status(404).json({
-        success: false,
-        error: 'Arquivo não encontrado',
-      });
-    }
-  }
-
-  // Delete the file
   deleteFile(filePath);
 
   res.json({
     success: true,
-    message: 'Arquivo removido com sucesso',
+    message: 'Arquivo deletado com sucesso',
   });
 });
 

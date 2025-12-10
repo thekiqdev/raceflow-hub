@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Search, Download, Edit, Eye, Lock, Unlock, CheckCircle, XCircle, RotateCcw, Loader2 } from "lucide-react";
+import { Search, Download, Edit, Eye, Lock, Unlock, CheckCircle, XCircle, RotateCcw, Loader2, UserPlus } from "lucide-react";
 import { toast } from "sonner";
 import {
   getOrganizers,
@@ -15,8 +15,10 @@ import {
   blockUser,
   unblockUser,
   resetUserPassword,
+  convertAthleteToOrganizer,
   type UserWithStats,
 } from "@/lib/api/userManagement";
+import { UserProfileDialog } from "./UserProfileDialog";
 
 const UserManagement = () => {
   const [searchTerm, setSearchTerm] = useState("");
@@ -25,6 +27,8 @@ const UserManagement = () => {
   const [organizers, setOrganizers] = useState<UserWithStats[]>([]);
   const [athletes, setAthletes] = useState<UserWithStats[]>([]);
   const [admins, setAdmins] = useState<UserWithStats[]>([]);
+  const [profileDialogOpen, setProfileDialogOpen] = useState(false);
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
 
   useEffect(() => {
     loadData();
@@ -102,6 +106,24 @@ const UserManagement = () => {
       }
     } catch (error) {
       toast.error("Erro ao desbloquear usuário");
+    }
+  };
+
+  const handleConvertToOrganizer = async (userId: string, userName: string) => {
+    if (!confirm(`Tem certeza que deseja converter o atleta "${userName}" em organizador? Esta ação não pode ser desfeita.`)) {
+      return;
+    }
+
+    try {
+      const response = await convertAthleteToOrganizer(userId);
+      if (response.success) {
+        toast.success("Atleta convertido para organizador com sucesso!");
+        loadData();
+      } else {
+        toast.error(response.error || "Erro ao converter atleta em organizador");
+      }
+    } catch (error) {
+      toast.error("Erro ao converter atleta em organizador");
     }
   };
 
@@ -226,11 +248,16 @@ const UserManagement = () => {
                               </>
                             ) : (
                               <>
-                                <Button size="icon" variant="ghost" title="Visualizar">
+                                <Button 
+                                  size="icon" 
+                                  variant="ghost" 
+                                  title="Visualizar/Editar Perfil"
+                                  onClick={() => {
+                                    setSelectedUserId(org.id);
+                                    setProfileDialogOpen(true);
+                                  }}
+                                >
                                   <Eye className="h-4 w-4" />
-                                </Button>
-                                <Button size="icon" variant="ghost" title="Editar">
-                                  <Edit className="h-4 w-4" />
                                 </Button>
                                 {org.status === "active" && (
                                   <Button 
@@ -326,11 +353,25 @@ const UserManagement = () => {
                         <TableCell>{athlete.registrations || 0}</TableCell>
                         <TableCell>
                           <div className="flex gap-1">
-                            <Button size="icon" variant="ghost" title="Visualizar">
+                            <Button 
+                              size="icon" 
+                              variant="ghost" 
+                              title="Visualizar/Editar Perfil"
+                              onClick={() => {
+                                setSelectedUserId(athlete.id);
+                                setProfileDialogOpen(true);
+                              }}
+                            >
                               <Eye className="h-4 w-4" />
                             </Button>
-                            <Button size="icon" variant="ghost" title="Editar">
-                              <Edit className="h-4 w-4" />
+                            <Button 
+                              size="icon" 
+                              variant="ghost" 
+                              title="Converter em Organizador"
+                              onClick={() => handleConvertToOrganizer(athlete.id, athlete.name)}
+                              className="text-blue-500 hover:text-blue-600"
+                            >
+                              <UserPlus className="h-4 w-4" />
                             </Button>
                             {athlete.status === "active" ? (
                               <Button 
@@ -409,8 +450,16 @@ const UserManagement = () => {
                         </TableCell>
                         <TableCell>
                           <div className="flex gap-1">
-                            <Button size="icon" variant="ghost" title="Editar">
-                              <Edit className="h-4 w-4" />
+                            <Button 
+                              size="icon" 
+                              variant="ghost" 
+                              title="Visualizar/Editar Perfil"
+                              onClick={() => {
+                                setSelectedUserId(admin.id);
+                                setProfileDialogOpen(true);
+                              }}
+                            >
+                              <Eye className="h-4 w-4" />
                             </Button>
                             {admin.status === "active" ? (
                               <Button 
@@ -442,6 +491,15 @@ const UserManagement = () => {
           </Card>
         </TabsContent>
       </Tabs>
+
+      <UserProfileDialog
+        open={profileDialogOpen}
+        onOpenChange={setProfileDialogOpen}
+        userId={selectedUserId}
+        onSuccess={() => {
+          loadData();
+        }}
+      />
     </div>
   );
 };

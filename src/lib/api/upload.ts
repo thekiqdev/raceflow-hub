@@ -3,10 +3,9 @@ import { apiClient } from './client';
 export interface UploadResponse {
   success: boolean;
   data?: {
+    url: string;
     filename: string;
     originalName: string;
-    path: string;
-    url: string;
     size: number;
     mimetype: string;
   };
@@ -14,29 +13,22 @@ export interface UploadResponse {
   message?: string;
 }
 
-// Get API URL
-const getApiUrl = () => {
-  const envUrl = import.meta.env.VITE_API_URL;
-  if (envUrl && !envUrl.includes('localhost')) {
-    return envUrl;
-  }
-  if (import.meta.env.PROD) {
-    return 'https://cronoteam-crono-back.e758qe.easypanel.host/api';
-  }
-  return 'http://localhost:3001/api';
-};
-
-const API_URL = getApiUrl();
-
 /**
  * Upload banner image
  */
 export const uploadBanner = async (file: File): Promise<UploadResponse> => {
   const formData = new FormData();
-  formData.append('banner', file);
+  formData.append('file', file);
 
   const token = localStorage.getItem('auth_token');
-  const response = await fetch(`${API_URL}/upload/banner`, {
+  if (!token) {
+    return {
+      success: false,
+      error: 'Not authenticated',
+    };
+  }
+
+  const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3001/api'}/upload/banner`, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${token}`,
@@ -44,7 +36,16 @@ export const uploadBanner = async (file: File): Promise<UploadResponse> => {
     body: formData,
   });
 
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    return {
+      success: false,
+      error: errorData.error || `Erro HTTP: ${response.status}`,
+    };
+  }
+
   const data = await response.json();
+  console.log('📥 Banner upload response:', data);
   return data;
 };
 
@@ -53,10 +54,17 @@ export const uploadBanner = async (file: File): Promise<UploadResponse> => {
  */
 export const uploadRegulation = async (file: File): Promise<UploadResponse> => {
   const formData = new FormData();
-  formData.append('regulation', file);
+  formData.append('file', file);
 
   const token = localStorage.getItem('auth_token');
-  const response = await fetch(`${API_URL}/upload/regulation`, {
+  if (!token) {
+    return {
+      success: false,
+      error: 'Not authenticated',
+    };
+  }
+
+  const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3001/api'}/upload/regulation`, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${token}`,
@@ -69,11 +77,45 @@ export const uploadRegulation = async (file: File): Promise<UploadResponse> => {
 };
 
 /**
- * Delete file
+ * Delete uploaded file
  */
-export const deleteFile = async (fileUrl: string): Promise<UploadResponse> => {
-  return apiClient.delete<UploadResponse>('/upload/file', {
-    fileUrl,
-  });
+export const deleteUploadedFile = async (type: 'banner' | 'regulation', url: string): Promise<{ success: boolean; error?: string; message?: string }> => {
+  const filename = url.split('/').pop() || '';
+  const token = localStorage.getItem('auth_token');
+  if (!token) {
+    return {
+      success: false,
+      error: 'Not authenticated',
+    };
+  }
+
+  try {
+    const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3001/api'}/upload/${type}/${filename}`, {
+      method: 'DELETE',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ url }),
+    });
+
+    if (!response.ok) {
+      // Se a resposta não for OK, não lançar erro, apenas retornar
+      const errorData = await response.json().catch(() => ({}));
+      return {
+        success: false,
+        error: errorData.error || 'Erro ao deletar arquivo',
+      };
+    }
+
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    // Não lançar erro, apenas retornar falha
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Erro ao deletar arquivo',
+    };
+  }
 };
 

@@ -1,7 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useNavigate } from "react-router-dom";
-import { MapPin, Calendar, Award, Users, Clock, TrendingUp, BarChart3, MessageSquare, FileText, Wifi, Award as Trophy, Facebook, Instagram, Linkedin } from "lucide-react";
+import { MapPin, Calendar, Award, Users, Clock, TrendingUp, BarChart3, MessageSquare, FileText, Wifi, Trophy, Facebook, Instagram, Linkedin } from "lucide-react";
 import heroImage from "@/assets/hero-running.jpg";
 import { useState, useEffect } from "react";
 import { format } from "date-fns";
@@ -23,6 +23,8 @@ interface Event {
   city: string;
   state: string;
   banner_url: string | null;
+  result_url: string | null;
+  status: string;
 }
 const Index = () => {
   const navigate = useNavigate();
@@ -59,10 +61,26 @@ const Index = () => {
 
   const loadUpcomingEvents = async () => {
     try {
-      const response = await getEvents({ status: 'published' });
-      if (response.success && response.data) {
-        setUpcomingEvents(response.data);
+      // Buscar eventos publicados
+      const publishedResponse = await getEvents({ status: 'published' });
+      
+      // Buscar eventos finalizados com resultados disponíveis
+      const finishedResponse = await getEvents({ status: 'finished' });
+      
+      const allEvents: Event[] = [];
+      
+      // Adicionar eventos publicados
+      if (publishedResponse.success && publishedResponse.data) {
+        allEvents.push(...publishedResponse.data);
       }
+      
+      // Adicionar eventos finalizados que têm result_url
+      if (finishedResponse.success && finishedResponse.data) {
+        const eventsWithResults = finishedResponse.data.filter(event => event.result_url);
+        allEvents.push(...eventsWithResults);
+      }
+      
+      setUpcomingEvents(allEvents);
     } catch (error) {
       console.error("Erro ao carregar eventos:", error);
       toast.error("Erro ao carregar eventos");
@@ -243,12 +261,40 @@ const Index = () => {
                         </div>
                       </div>
                       <div className="flex gap-2">
-                        <Button size="sm" className="flex-1 text-xs" onClick={e => {
-                  e.stopPropagation();
-                  navigate("/events");
-                }}>
-                          RESULTADOS INSCRITOS
-                        </Button>
+                        {event.result_url ? (
+                          <Button 
+                            size="sm" 
+                            className="flex-1 text-xs" 
+                            onClick={e => {
+                              e.stopPropagation();
+                              // Corrigir URL se contiver template strings
+                              let urlToOpen = event.result_url!;
+                              if (urlToOpen.includes('${')) {
+                                const port = window.location.port || '3001';
+                                urlToOpen = urlToOpen.replace(/\$\{API_PORT\}/g, port);
+                                // Se ainda tiver template strings, usar localhost:3001 como padrão
+                                if (urlToOpen.includes('${')) {
+                                  urlToOpen = urlToOpen.replace(/http:\/\/localhost:\$\{API_PORT\}/g, 'http://localhost:3001');
+                                }
+                              }
+                              window.open(urlToOpen, '_blank');
+                            }}
+                          >
+                            <Trophy className="h-3 w-3 mr-1" />
+                            RESULTADOS
+                          </Button>
+                        ) : (
+                          <Button 
+                            size="sm" 
+                            className="flex-1 text-xs" 
+                            onClick={e => {
+                              e.stopPropagation();
+                              navigate(`/events/${event.id}`);
+                            }}
+                          >
+                            Inscrever-se
+                          </Button>
+                        )}
                       </div>
                     </CardContent>
                   </Card>)}

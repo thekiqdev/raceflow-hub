@@ -13,6 +13,9 @@ import { asyncHandler } from '../middleware/errorHandler.js';
 import { hasRole } from '../services/userRolesService.js';
 import { getEventById } from '../services/eventsService.js';
 import { getEventCategories } from '../services/eventCategoriesService.js';
+import { createCustomer, createPayment, getCustomerByUserId, getPaymentByRegistrationId } from '../services/asaasService.js';
+import { getProfileByUserId } from '../services/profilesService.js';
+import { query } from '../config/database.js';
 
 // Get registrations
 export const getAllRegistrations = asyncHandler(async (req: AuthRequest, res: Response) => {
@@ -216,12 +219,204 @@ export const createRegistrationController = asyncHandler(async (req: AuthRequest
     runner_id: req.body.runner_id || req.user.id,
   };
 
+  console.log('📝 Dados recebidos para criação de inscrição:', {
+    event_id: registrationData.event_id,
+    category_id: registrationData.category_id,
+    kit_id: registrationData.kit_id,
+    total_amount: registrationData.total_amount,
+    payment_method: registrationData.payment_method,
+  });
+
+  // Create registration
   const registration = await createRegistration(registrationData);
+
+  console.log('✅ Inscrição criada:', {
+    id: registration.id,
+    total_amount: registration.total_amount,
+    status: registration.status,
+    payment_status: registration.payment_status,
+  });
+
+  // Create payment in Asaas only if total_amount > 0
+  let paymentData: any = null;
+  
+  console.log(`🔍 Verificando necessidade de pagamento: total_amount = ${registration.total_amount}`);
+  
+  if (registration.total_amount > 0) {
+    console.log('💳 Iniciando criação de pagamento no Asaas...');
+    try {
+      const runnerId = registrationData.runner_id || req.user.id;
+      
+      // Get user profile and email for Asaas customer
+      const profile = await getProfileByUserId(runnerId);
+      if (!profile) {
+        throw new Error('Perfil do usuário não encontrado');
+      }
+
+      // Get user email from users table
+      const userResult = await query(
+        'SELECT email FROM users WHERE id = $1',
+        [runnerId]
+      );
+      
+      if (userResult.rows.length === 0) {
+        throw new Error('Usuário não encontrado');
+      }
+      
+      const userEmail = userResult.rows[0].email;
+
+      // Get or create Asaas customer
+      let asaasCustomerId = await getCustomerByUserId(runnerId);
+      
+      if (!asaasCustomerId) {
+        // Prepare customer data for Asaas
+        const customerData = {
+          name: profile.full_name || 'Usuário',
+          email: userEmail,
+          cpfCnpj: profile.cpf?.replace(/\D/g, '') || '', // Remove formatting
+          phone: profile.phone?.replace(/\D/g, '') || '',
+          mobilePhone: profile.phone?.replace(/\D/g, '') || '',
+        };
+
+        const customerResult = await createCustomer(runnerId, customerData);
+        asaasCustomerId = customerResult.asaas_customer_id;
+      }
+
+      // Calculate due date (3 days from now)
+      const dueDate = new Date();
+      dueDate.setDate(dueDate.getDate() + 3);
+      const dueDateString = dueDate.toISOString().split('T')[0]; // YYYY-MM-DD
+
+      // Create payment in Asaas
+      const paymentResult = await createPayment(
+        registration.id,
+        asaasCustomerId,
+        {
+          value: registration.total_amount,
+          dueDate: dueDateString,
+          description: `Inscrição - ${event.title}`,
+          billingType: 'PIX', // Default to PIX
+          externalReference: registration.confirmation_code || `REG-${registration.id}`,
+        }
+      );
+
+      paymentData = {
+        asaas_payment_id: paymentResult.asaas_payment_id,
+        pix_qr_code: paymentResult.pix_qr_code,
+        pix_qr_code_id: paymentResult.pix_qr_code_id,
+        payment_link: paymentResult.payment_link,
+        status: paymentResult.status,
+        due_date: paymentResult.due_date,
+        // Se não temos QR Code mas temos payment_link, podemos usar o link
+        // O frontend pode redirecionar ou mostrar o link como alternativa
+      };
+
+      console.log('✅ Pagamento criado no Asaas:', {
+        asaas_payment_id: paymentData.asaas_payment_id,
+        status: paymentData.status,
+        has_qr_code: !!paymentData.pix_qr_code,
+        qr_code_id: paymentData.pix_qr_code_id
+      });
+    } catch (error: any) {
+      console.error('❌ Erro ao criar pagamento no Asaas:', {
+        message: error.message,
+        stack: error.stack,
+        response: error.response?.data,
+        status: error.response?.status
+      });
+      // Registration was created successfully, but payment failed
+      // We'll return the registration anyway, but with a warning
+      paymentData = {
+        error: error.message || 'Erro ao criar pagamento',
+        warning: 'Inscrição criada, mas pagamento não foi processado. Entre em contato com o suporte.',
+      };
+    }
+  } else {
+    // Free registration - no payment needed, confirm immediately
+    console.log('✅ Inscrição gratuita - sem necessidade de pagamento (total_amount = 0)');
+    // Update registration status to confirmed for free registrations
+    await query(
+      'UPDATE registrations SET status = $1, payment_status = $2 WHERE id = $3',
+      ['confirmed', 'paid', registration.id]
+    );
+    registration.status = 'confirmed';
+    registration.payment_status = 'paid';
+  }
 
   res.status(201).json({
     success: true,
-    data: registration,
+    data: {
+      ...registration,
+      payment: paymentData,
+    },
     message: 'Registration created successfully',
+  });
+});
+
+// Get payment status by registration ID
+export const getPaymentStatusController = asyncHandler(async (req: AuthRequest, res: Response) => {
+  if (!req.user) {
+    res.status(401).json({
+      success: false,
+      error: 'Not authenticated',
+    });
+    return;
+  }
+
+  const { id } = req.params;
+
+  // Get registration to check ownership
+  const registration = await getRegistrationById(id);
+  if (!registration) {
+    res.status(404).json({
+      success: false,
+      error: 'Registration not found',
+    });
+    return;
+  }
+
+  // Check if user owns this registration or is admin/organizer
+  const isAdmin = await hasRole(req.user.id, 'admin');
+  const isOrganizer = await hasRole(req.user.id, 'organizer');
+  
+  if (!isAdmin && !isOrganizer && registration.runner_id !== req.user.id) {
+    res.status(403).json({
+      success: false,
+      error: 'Forbidden: You can only check payment status of your own registrations',
+    });
+    return;
+  }
+
+  // Get payment data
+  const payment = await getPaymentByRegistrationId(id);
+  
+  if (!payment) {
+    res.json({
+      success: true,
+      data: {
+        status: registration.payment_status || 'pending',
+        payment_date: null,
+      },
+    });
+    return;
+  }
+
+  // Return registration status (which is updated by webhook)
+  const regResult = await query(
+    'SELECT status, payment_status FROM registrations WHERE id = $1',
+    [id]
+  );
+
+  const currentStatus = regResult.rows[0]?.status || registration.status;
+  const paymentStatus = regResult.rows[0]?.payment_status || registration.payment_status;
+
+  res.json({
+    success: true,
+    data: {
+      status: paymentStatus === 'paid' ? 'paid' : currentStatus === 'confirmed' ? 'confirmed' : 'pending',
+      payment_date: payment.payment_date || null,
+      pix_qr_code: payment.pix_qr_code || null,
+    },
   });
 });
 

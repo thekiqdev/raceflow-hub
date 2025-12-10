@@ -1,27 +1,24 @@
-import express from 'express';
+import { Router } from 'express';
 import { authenticate } from '../middleware/auth.js';
 import { uploadBannerController, uploadRegulationController, deleteFileController } from '../controllers/uploadController.js';
-import path from 'path';
+import { uploadBanner, uploadRegulation } from '../middleware/upload.js';
 
-const router = express.Router();
+const router = Router();
 
-// Upload routes
-router.post('/banner', authenticate, uploadBannerController);
-router.post('/regulation', authenticate, uploadRegulationController);
-router.delete('/file', authenticate, deleteFileController);
+// All upload routes require authentication
+router.use(authenticate);
 
-// Serve uploaded files
-router.get('/banners/:filename', (req, res) => {
-  const filename = req.params.filename;
-  const filePath = path.join(process.cwd(), 'uploads', 'banners', filename);
-  res.sendFile(filePath);
-});
+// Upload banner image
+router.post('/banner', uploadBanner.single('file'), uploadBannerController);
 
-router.get('/regulations/:filename', (req, res) => {
-  const filename = req.params.filename;
-  const filePath = path.join(process.cwd(), 'uploads', 'regulations', filename);
-  res.sendFile(filePath);
-});
+// Upload regulation PDF
+router.post('/regulation', uploadRegulation.single('file'), uploadRegulationController);
+
+// Delete uploaded file
+router.delete('/:type/:filename', deleteFileController);
 
 export default router;
+
+
+
 

@@ -1,171 +1,180 @@
 import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Upload, X, File, Image as ImageIcon } from "lucide-react";
-import { toast } from "sonner";
-import { uploadBanner, uploadRegulation, deleteFile, UploadResponse } from "@/lib/api/upload";
+import { Upload, X, File } from "lucide-react";
 
 interface FileUploadProps {
-  value?: string;
+  value?: string | null; // URL do arquivo atual
   onChange: (url: string | null) => void;
+  onDelete?: () => void;
   accept?: string;
-  type: "banner" | "regulation";
+  maxSize?: number; // em MB
+  type: 'banner' | 'regulation';
   label?: string;
   description?: string;
-  onDelete?: () => void;
+  disabled?: boolean;
 }
 
 export function FileUpload({
   value,
   onChange,
+  onDelete,
   accept,
+  maxSize = 10,
   type,
   label,
   description,
-  onDelete,
+  disabled = false,
 }: FileUploadProps) {
-  const [isUploading, setIsUploading] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [preview, setPreview] = useState<string | null>(value || null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [oldUrl, setOldUrl] = useState<string | null>(value || null);
 
-  // Update preview when value changes externally
+  // Update preview when value changes
   useEffect(() => {
-    setPreview(value || null);
+    if (value !== oldUrl) {
+      setPreview(value || null);
+      setOldUrl(value || null);
+    }
   }, [value]);
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    // Validate file size
+    if (file.size > maxSize * 1024 * 1024) {
+      alert(`Arquivo muito grande. Tamanho máximo: ${maxSize}MB`);
+      return;
+    }
+
     // Validate file type
-    if (type === "banner") {
-      const validTypes = ["image/jpeg", "image/jpg", "image/png", "image/webp", "image/gif"];
+    if (type === 'banner') {
+      const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif'];
       if (!validTypes.includes(file.type)) {
-        toast.error("Apenas imagens são permitidas (JPEG, PNG, WEBP, GIF)");
+        alert('Apenas imagens são permitidas (JPEG, PNG, WEBP, GIF)');
         return;
       }
-      if (file.size > 5 * 1024 * 1024) {
-        toast.error("A imagem deve ter no máximo 5MB");
-        return;
-      }
-    } else if (type === "regulation") {
-      if (file.type !== "application/pdf") {
-        toast.error("Apenas arquivos PDF são permitidos");
-        return;
-      }
-      if (file.size > 10 * 1024 * 1024) {
-        toast.error("O PDF deve ter no máximo 10MB");
+    } else if (type === 'regulation') {
+      if (file.type !== 'application/pdf') {
+        alert('Apenas arquivos PDF são permitidos');
         return;
       }
     }
 
-    setIsUploading(true);
+    setUploading(true);
 
     try {
-      // Delete old file if exists
-      if (value && value.startsWith("http")) {
-        // Only delete if it's an uploaded file (not external URL)
-        const filename = value.split("/").pop();
-        if (filename && (filename.startsWith("banner-") || filename.startsWith("regulation-"))) {
-          try {
-            await deleteFile(value);
-          } catch (error) {
-            console.warn("Erro ao remover arquivo antigo:", error);
-            // Continue even if deletion fails
-          }
-        }
+      // Import upload function dynamically
+      const { uploadBanner, uploadRegulation, deleteUploadedFile } = await import('@/lib/api/upload');
+
+      // Delete old file if exists (non-blocking)
+      if (oldUrl && oldUrl.includes('/uploads/')) {
+        // Only delete if it's a local file (not external URL)
+        // Não aguardar a deleção, fazer em paralelo sem bloquear
+        deleteUploadedFile(type, oldUrl).catch((error) => {
+          // Não bloquear o upload se a deleção falhar
+          console.warn('Aviso: Não foi possível deletar o arquivo antigo:', error);
+        });
       }
 
       // Upload new file
-      let response: UploadResponse;
-      if (type === "banner") {
-        response = await uploadBanner(file);
-      } else {
-        response = await uploadRegulation(file);
-      }
+      const uploadFunction = type === 'banner' ? uploadBanner : uploadRegulation;
+      const response = await uploadFunction(file);
 
-      if (response.success && response.data) {
-        onChange(response.data.url);
-        setPreview(response.data.url);
-        toast.success(type === "banner" ? "Banner enviado com sucesso!" : "Regulamento enviado com sucesso!");
+      console.log('📤 Upload response:', response);
+
+      if (response.success && response.data && response.data.url) {
+        let newUrl = response.data.url;
+        
+        // Corrigir URL se contiver template strings (fallback)
+        if (newUrl.includes('${')) {
+          const port = window.location.port || '3001';
+          newUrl = newUrl.replace(/\$\{API_PORT\}/g, port);
+          // Se ainda tiver template strings, usar localhost:3001 como padrão
+          if (newUrl.includes('${')) {
+            newUrl = newUrl.replace(/http:\/\/localhost:\$\{API_PORT\}/g, 'http://localhost:3001');
+          }
+        }
+        
+        console.log('✅ URL recebida (corrigida):', newUrl);
+        setPreview(newUrl);
+        setOldUrl(newUrl);
+        onChange(newUrl);
       } else {
-        throw new Error(response.error || "Erro ao fazer upload");
+        console.error('❌ Erro na resposta do upload:', response);
+        alert(response.error || 'Erro ao fazer upload do arquivo');
       }
-    } catch (error: any) {
-      console.error("Upload error:", error);
-      toast.error(error.message || "Erro ao fazer upload do arquivo");
+    } catch (error) {
+      console.error('Erro ao fazer upload:', error);
+      alert('Erro ao fazer upload do arquivo. Tente novamente.');
     } finally {
-      setIsUploading(false);
+      setUploading(false);
       // Reset file input
       if (fileInputRef.current) {
-        fileInputRef.current.value = "";
+        fileInputRef.current.value = '';
       }
     }
   };
 
-  const handleRemove = async () => {
+  const handleDelete = async () => {
     if (!value) return;
 
-    try {
-      // Only delete if it's an uploaded file (not external URL)
-      const filename = value.split("/").pop();
-      if (filename && (filename.startsWith("banner-") || filename.startsWith("regulation-"))) {
-        await deleteFile(value);
+    // Only delete if it's a local file
+    const isLocalFile = value.includes('/uploads/');
+    if (isLocalFile) {
+      try {
+        const { deleteUploadedFile } = await import('@/lib/api/upload');
+        await deleteUploadedFile(type, value);
+      } catch (error) {
+        console.warn('Erro ao deletar arquivo:', error);
       }
-      onChange(null);
-      setPreview(null);
-      if (onDelete) onDelete();
-      toast.success("Arquivo removido com sucesso!");
-    } catch (error: any) {
-      console.error("Delete error:", error);
-      toast.error("Erro ao remover arquivo");
     }
-  };
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const url = e.target.value;
-    onChange(url || null);
-    setPreview(url || null);
+    setPreview(null);
+    setOldUrl(null);
+    onChange(null);
+    if (onDelete) {
+      onDelete();
+    }
   };
 
   return (
     <div className="space-y-2">
-      <div className="flex gap-2">
+      <div className="flex items-center gap-2">
         <Input
-          type="text"
-          placeholder={type === "banner" ? "https://exemplo.com/banner.jpg" : "https://exemplo.com/regulamento.pdf"}
-          value={value || ""}
-          onChange={handleInputChange}
-          className="flex-1"
-        />
-        <input
           ref={fileInputRef}
           type="file"
-          accept={accept || (type === "banner" ? "image/*" : "application/pdf")}
+          accept={accept || (type === 'banner' ? 'image/*' : 'application/pdf')}
           onChange={handleFileSelect}
+          disabled={disabled || uploading}
           className="hidden"
           id={`file-upload-${type}`}
         />
-        <Button
-          type="button"
-          variant="outline"
-          size="icon"
-          onClick={() => fileInputRef.current?.click()}
-          disabled={isUploading}
-        >
-          {isUploading ? (
-            <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-          ) : (
-            <Upload className="h-4 w-4" />
-          )}
-        </Button>
-        {value && (
+        <label htmlFor={`file-upload-${type}`}>
           <Button
             type="button"
             variant="outline"
+            disabled={disabled || uploading}
+            className="cursor-pointer"
+            asChild
+          >
+            <span>
+              <Upload className="h-4 w-4 mr-2" />
+              {uploading ? 'Enviando...' : 'Fazer Upload'}
+            </span>
+          </Button>
+        </label>
+        {preview && (
+          <Button
+            type="button"
+            variant="ghost"
             size="icon"
-            onClick={handleRemove}
-            disabled={isUploading}
+            onClick={handleDelete}
+            disabled={disabled || uploading}
+            className="text-destructive hover:text-destructive"
+            title="Remover arquivo"
           >
             <X className="h-4 w-4" />
           </Button>
@@ -175,32 +184,62 @@ export function FileUpload({
       {/* Preview */}
       {preview && (
         <div className="mt-2">
-          {type === "banner" ? (
-            <div className="relative w-full h-32 border rounded-md overflow-hidden">
+          {type === 'banner' ? (
+            <div className="relative w-full h-48 border rounded-md overflow-hidden bg-muted">
               <img
                 src={preview}
                 alt="Banner preview"
                 className="w-full h-full object-cover"
-                onError={() => setPreview(null)}
+                onLoad={() => {
+                  console.log('✅ Imagem carregada com sucesso:', preview);
+                }}
+                onError={(e) => {
+                  console.error('❌ Erro ao carregar imagem:', preview, e);
+                  // If image fails to load, clear preview
+                  setPreview(null);
+                  setOldUrl(null);
+                  onChange(null);
+                }}
               />
             </div>
           ) : (
             <div className="flex items-center gap-2 p-2 border rounded-md bg-muted">
               <File className="h-5 w-5 text-muted-foreground" />
               <span className="text-sm text-muted-foreground truncate flex-1">
-                {preview.split("/").pop() || "Regulamento"}
+                {preview.split('/').pop() || 'Regulamento'}
               </span>
-              <a
-                href={preview}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-sm text-primary hover:underline"
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  if (preview) {
+                    // Corrigir URL se contiver template strings
+                    let urlToOpen = preview;
+                    if (urlToOpen.includes('${')) {
+                      const port = window.location.port || '3001';
+                      urlToOpen = urlToOpen.replace(/\$\{API_PORT\}/g, port);
+                      // Se ainda tiver template strings, usar localhost:3001 como padrão
+                      if (urlToOpen.includes('${')) {
+                        urlToOpen = urlToOpen.replace(/http:\/\/localhost:\$\{API_PORT\}/g, 'http://localhost:3001');
+                      }
+                    }
+                    console.log('🔗 Abrindo PDF:', urlToOpen);
+                    // Abrir PDF em nova aba
+                    window.open(urlToOpen, '_blank');
+                  }
+                }}
+                className="ml-auto text-sm text-primary hover:underline cursor-pointer"
               >
                 Visualizar
-              </a>
+              </button>
             </div>
           )}
         </div>
+      )}
+      
+      {/* Debug info (remove in production) */}
+      {preview && (
+        <p className="text-xs text-muted-foreground">Preview URL: {preview}</p>
       )}
 
       {description && (

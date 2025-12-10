@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
@@ -19,6 +19,19 @@ const AdminDashboard = () => {
   const navigate = useNavigate();
   const { logout } = useAuth();
   const [activeSection, setActiveSection] = useState("overview");
+
+  useEffect(() => {
+    // Escutar evento para navegar para uma seção
+    const handleNavigateToSection = (event: CustomEvent) => {
+      setActiveSection(event.detail);
+    };
+
+    window.addEventListener('admin:navigate-to-section', handleNavigateToSection as EventListener);
+    
+    return () => {
+      window.removeEventListener('admin:navigate-to-section', handleNavigateToSection as EventListener);
+    };
+  }, []);
 
   const handleSignOut = async () => {
     await logout();
