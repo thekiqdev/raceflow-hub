@@ -212,17 +212,14 @@ export const findUserByCpf = async (cpf: string) => {
   return result.rows[0];
 };
 
-// Find user by email and CPF (both must match)
-export const findUserByEmailAndCpf = async (email: string, cpf: string) => {
-  // Remove formatting from CPF
-  const cleanCpf = cpf.replace(/[^0-9]/g, '');
-  
+// Find user by email
+export const findUserByEmail = async (email: string) => {
   const result = await query(
-    `SELECT p.id, p.full_name, p.cpf, u.email 
+    `SELECT p.id, p.full_name, p.cpf 
      FROM profiles p
      JOIN users u ON p.id = u.id
-     WHERE u.email = $1 AND p.cpf = $2`,
-    [email.toLowerCase().trim(), cleanCpf]
+     WHERE u.email = $1`,
+    [email.toLowerCase().trim()]
   );
 
   if (result.rows.length === 0) {
@@ -230,6 +227,25 @@ export const findUserByEmailAndCpf = async (email: string, cpf: string) => {
   }
 
   return result.rows[0];
+};
+
+// Find user by CPF or email (tries CPF first, then email)
+export const findUserByCpfOrEmail = async (cpf?: string, email?: string) => {
+  if (cpf && cpf.trim()) {
+    const userByCpf = await findUserByCpf(cpf);
+    if (userByCpf) {
+      return userByCpf;
+    }
+  }
+  
+  if (email && email.trim()) {
+    const userByEmail = await findUserByEmail(email);
+    if (userByEmail) {
+      return userByEmail;
+    }
+  }
+  
+  return null;
 };
 
 // Transfer registration to another runner

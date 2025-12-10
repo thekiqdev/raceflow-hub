@@ -82,9 +82,9 @@ export const updateRegistration = async (id: string, data: UpdateRegistrationDat
   return apiClient.put<Registration>(`/registrations/${id}`, data);
 };
 
-// Transfer registration to another runner by email and CPF
-export const transferRegistration = async (id: string, email: string, cpf: string) => {
-  return apiClient.put<Registration>(`/registrations/${id}/transfer`, { email, cpf });
+// Transfer registration to another runner by CPF or email
+export const transferRegistration = async (id: string, cpf?: string, email?: string) => {
+  return apiClient.put<Registration>(`/registrations/${id}/transfer`, { cpf, email });
 };
 
 // Cancel registration

@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Separator } from "@/components/ui/separator";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { CheckCircle2, Calendar, MapPin, Ticket, Download, ChevronDown, ChevronUp, List, RefreshCw, Loader2 } from "lucide-react";
+import { CheckCircle2, Calendar, MapPin, Ticket, Download, ChevronDown, ChevronUp, List } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { useAuth } from "@/contexts/AuthContext";
@@ -76,12 +76,7 @@ export function RegistrationFlow({
   const [variantSelections, setVariantSelections] = useState<Map<string, Record<string, string>>>(new Map());
   const [shirtSize, setShirtSize] = useState("");
   const [confirmationCode, setConfirmationCode] = useState("");
-  const [registrationId, setRegistrationId] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isTransferDialogOpen, setIsTransferDialogOpen] = useState(false);
-  const [transferEmail, setTransferEmail] = useState("");
-  const [transferCpf, setTransferCpf] = useState("");
-  const [isTransferring, setIsTransferring] = useState(false);
   const [paymentData, setPaymentData] = useState<{
     pix_qr_code?: string | null;
     pix_qr_code_id?: string | null;
@@ -565,11 +560,6 @@ export function RegistrationFlow({
       const code = response.data?.confirmation_code || 
         `CONF-${Math.random().toString(36).substring(2, 10).toUpperCase()}`;
       setConfirmationCode(code);
-      
-      // Save registration ID for transfer functionality
-      if (response.data?.id) {
-        setRegistrationId(response.data.id);
-      }
 
       // Check if payment is required (total_amount > 0)
       const requiresPayment = totalPrice > 0;
@@ -2224,25 +2214,12 @@ export function RegistrationFlow({
             {/* Botões de ação - mostrar apenas quando pagamento confirmado ou evento gratuito */}
             {(paymentStatus === 'paid' || totalPrice === 0) && (
               <div className="flex gap-3">
-                <Button 
-                  variant="outline" 
-                  className="flex-1" 
-                  onClick={() => {
-                    onOpenChange(false);
-                    if (registrationId) {
-                      navigate(`/registration/validate/${registrationId}`);
-                    }
-                  }}
-                >
-                  <Ticket className="w-4 h-4 mr-2" />
-                  Visualizar Inscrição
+                <Button variant="outline" className="flex-1" onClick={handleReset}>
+                  Fechar
                 </Button>
-                <Button 
-                  className="flex-1"
-                  onClick={() => setIsTransferDialogOpen(true)}
-                >
-                  <RefreshCw className="w-4 h-4 mr-2" />
-                  Transferir
+                <Button className="flex-1">
+                  <Download className="w-4 h-4 mr-2" />
+                  Baixar Comprovante
                 </Button>
               </div>
             )}
@@ -2266,93 +2243,6 @@ export function RegistrationFlow({
           </div>
         )}
       </DialogContent>
-
-      {/* Transfer Dialog */}
-      <Dialog open={isTransferDialogOpen} onOpenChange={setIsTransferDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Transferir Inscrição</DialogTitle>
-            <DialogDescription>
-              Informe o email e CPF da pessoa que irá receber a inscrição de {event.title}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="transfer-email">Email do novo titular</Label>
-              <Input
-                id="transfer-email"
-                type="email"
-                placeholder="email@exemplo.com"
-                value={transferEmail}
-                onChange={(e) => setTransferEmail(e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="transfer-cpf">CPF do novo titular</Label>
-              <Input
-                id="transfer-cpf"
-                placeholder="000.000.000-00"
-                value={transferCpf}
-                onChange={(e) => setTransferCpf(e.target.value)}
-                maxLength={14}
-              />
-              <p className="text-xs text-muted-foreground">
-                A pessoa deve estar cadastrada na plataforma com este email e CPF
-              </p>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button 
-              variant="outline" 
-              onClick={() => {
-                setIsTransferDialogOpen(false);
-                setTransferEmail("");
-                setTransferCpf("");
-              }}
-              disabled={isTransferring}
-            >
-              Cancelar
-            </Button>
-            <Button 
-              onClick={async () => {
-                if (!transferEmail.trim() || !transferCpf.trim() || !registrationId) {
-                  toast.error("Preencha o email e CPF");
-                  return;
-                }
-
-                setIsTransferring(true);
-                try {
-                  const response = await transferRegistration(registrationId, transferEmail.trim(), transferCpf.trim());
-                  if (response.success) {
-                    toast.success(response.message || "Inscrição transferida com sucesso!");
-                    setIsTransferDialogOpen(false);
-                    setTransferEmail("");
-                    setTransferCpf("");
-                    handleReset();
-                  } else {
-                    toast.error(response.error || response.message || "Erro ao transferir inscrição");
-                  }
-                } catch (error: any) {
-                  console.error("Error transferring registration:", error);
-                  toast.error(error.message || "Erro ao transferir inscrição");
-                } finally {
-                  setIsTransferring(false);
-                }
-              }}
-              disabled={isTransferring}
-            >
-              {isTransferring ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Transferindo...
-                </>
-              ) : (
-                "Confirmar Transferência"
-              )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </Dialog>
   );
 }

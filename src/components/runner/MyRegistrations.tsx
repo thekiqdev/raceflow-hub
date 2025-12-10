@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Calendar, MapPin, QrCode, RefreshCw, X, Loader2, AlertCircle, Download, CreditCard } from "lucide-react";
+import { Calendar, MapPin, QrCode, RefreshCw, X, Loader2, AlertCircle, Download, CreditCard, Eye } from "lucide-react";
 import { format, isFuture } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { useAuth } from "@/contexts/AuthContext";
@@ -34,8 +34,8 @@ export function MyRegistrations() {
   const [registrations, setRegistrations] = useState<Registration[]>([]);
   const [isTransferDialogOpen, setIsTransferDialogOpen] = useState(false);
   const [isCancelDialogOpen, setIsCancelDialogOpen] = useState(false);
-  const [transferEmail, setTransferEmail] = useState("");
   const [transferCpf, setTransferCpf] = useState("");
+  const [transferEmail, setTransferEmail] = useState("");
   const [selectedRegistration, setSelectedRegistration] = useState<Registration | null>(null);
   const [isTransferring, setIsTransferring] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
@@ -82,20 +82,24 @@ export function MyRegistrations() {
   };
 
   const handleTransfer = async () => {
-    if (!transferEmail.trim() || !transferCpf.trim() || !selectedRegistration) {
-      toast.error("Por favor, informe o email e CPF do novo titular");
+    if ((!transferCpf.trim() && !transferEmail.trim()) || !selectedRegistration) {
+      toast.error("Por favor, informe o CPF ou email do novo titular");
       return;
     }
 
     setIsTransferring(true);
     try {
-      const response = await transferRegistration(selectedRegistration.id, transferEmail.trim(), transferCpf.trim());
+      const response = await transferRegistration(
+        selectedRegistration.id, 
+        transferCpf.trim() || undefined,
+        transferEmail.trim() || undefined
+      );
 
       if (response.success) {
         toast.success(response.message || "Inscrição transferida com sucesso!");
         setIsTransferDialogOpen(false);
-        setTransferEmail("");
         setTransferCpf("");
+        setTransferEmail("");
         setSelectedRegistration(null);
         loadRegistrations();
       } else {
@@ -306,44 +310,68 @@ export function MyRegistrations() {
                 Visualizar PIX
               </Button>
             )}
-            {canTransfer && (
-              <Button 
-                variant="outline" 
-                size="sm" 
-                className="flex-1"
-                onClick={() => {
-                  setSelectedRegistration(registration);
-                  setIsTransferDialogOpen(true);
-                }}
-              >
-                <RefreshCw className="h-3 w-3 mr-1" />
-                Transferir
-              </Button>
-            )}
-            {canCancel && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="flex-1"
-                onClick={() => {
-                  setSelectedRegistration(registration);
-                  setIsCancelDialogOpen(true);
-                }}
-              >
-                <X className="h-3 w-3 mr-1" />
-                Cancelar
-              </Button>
-            )}
+            
+            {/* Botões para inscrições confirmadas */}
             {registration.status === "confirmed" && registration.payment_status === "paid" && (
-              <Button 
-                variant="outline" 
-                size="sm" 
-                className="flex-1"
-                onClick={() => navigate(`/registration/qrcode/${registration.id}`)}
-              >
-                <QrCode className="h-3 w-3 mr-1" />
-                QR Code
-              </Button>
+              <>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  className="flex-1"
+                  onClick={() => navigate(`/registration/validate/${registration.id}`)}
+                >
+                  <Eye className="h-3 w-3 mr-1" />
+                  Visualizar Inscrição
+                </Button>
+                {canTransfer && (
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    className="flex-1"
+                    onClick={() => {
+                      setSelectedRegistration(registration);
+                      setIsTransferDialogOpen(true);
+                    }}
+                  >
+                    <RefreshCw className="h-3 w-3 mr-1" />
+                    Transferir
+                  </Button>
+                )}
+              </>
+            )}
+            
+            {/* Botões para outras situações (não confirmadas) */}
+            {!(registration.status === "confirmed" && registration.payment_status === "paid") && (
+              <>
+                {canTransfer && (
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    className="flex-1"
+                    onClick={() => {
+                      setSelectedRegistration(registration);
+                      setIsTransferDialogOpen(true);
+                    }}
+                  >
+                    <RefreshCw className="h-3 w-3 mr-1" />
+                    Transferir
+                  </Button>
+                )}
+                {canCancel && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="flex-1"
+                    onClick={() => {
+                      setSelectedRegistration(registration);
+                      setIsCancelDialogOpen(true);
+                    }}
+                  >
+                    <X className="h-3 w-3 mr-1" />
+                    Cancelar
+                  </Button>
+                )}
+              </>
             )}
           </div>
         </CardContent>
@@ -450,9 +478,9 @@ export function MyRegistrations() {
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="transfer-email">Email do novo titular</Label>
+              <Label htmlFor="email">Email do novo titular</Label>
               <Input
-                id="transfer-email"
+                id="email"
                 type="email"
                 placeholder="email@exemplo.com"
                 value={transferEmail}
@@ -460,16 +488,16 @@ export function MyRegistrations() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="transfer-cpf">CPF do novo titular</Label>
+              <Label htmlFor="cpf">CPF do novo titular</Label>
               <Input
-                id="transfer-cpf"
+                id="cpf"
                 placeholder="000.000.000-00"
                 value={transferCpf}
                 onChange={(e) => setTransferCpf(e.target.value)}
                 maxLength={14}
               />
               <p className="text-xs text-muted-foreground">
-                A pessoa deve estar cadastrada na plataforma com este email e CPF
+                Informe pelo menos o email ou CPF. A pessoa deve estar cadastrada na plataforma.
               </p>
             </div>
           </div>
@@ -478,8 +506,8 @@ export function MyRegistrations() {
               variant="outline" 
               onClick={() => {
                 setIsTransferDialogOpen(false);
-                setTransferEmail("");
                 setTransferCpf("");
+                setTransferEmail("");
                 setSelectedRegistration(null);
               }}
               disabled={isTransferring}

@@ -5,7 +5,8 @@ import {
   getRegistrationById,
   createRegistration,
   updateRegistration,
-  findUserByEmailAndCpf,
+  findUserByCpf,
+  findUserByCpfOrEmail,
   transferRegistration,
   cancelRegistration,
 } from '../services/registrationsService.js';
@@ -562,7 +563,7 @@ export const exportRegistrationsController = asyncHandler(async (req: AuthReques
   res.send('\ufeff' + csvContent); // BOM for Excel UTF-8 support
 });
 
-// Transfer registration to another runner by email and CPF
+// Transfer registration to another runner by CPF
 export const transferRegistrationController = asyncHandler(async (req: AuthRequest, res: Response) => {
   if (!req.user) {
     res.status(401).json({
@@ -573,13 +574,13 @@ export const transferRegistrationController = asyncHandler(async (req: AuthReque
   }
 
   const { id } = req.params;
-  const { email, cpf } = req.body;
+  const { cpf, email } = req.body;
 
-  if (!email || !cpf) {
+  if (!cpf && !email) {
     res.status(400).json({
       success: false,
-      error: 'Email and CPF are required',
-      message: 'Email e CPF são obrigatórios',
+      error: 'CPF or email is required',
+      message: 'Informe o CPF ou email do novo titular',
     });
     return;
   }
@@ -608,14 +609,14 @@ export const transferRegistrationController = asyncHandler(async (req: AuthReque
     return;
   }
 
-  // Find user by email and CPF (both must match)
-  const newRunner = await findUserByEmailAndCpf(email, cpf);
+  // Find user by CPF or email
+  const newRunner = await findUserByCpfOrEmail(cpf, email);
 
   if (!newRunner) {
     res.status(404).json({
       success: false,
       error: 'User not found',
-      message: 'Não foi encontrado um usuário com este email e CPF. Verifique se os dados estão corretos e se a pessoa está cadastrada na plataforma.',
+      message: 'Não foi encontrado um usuário com o CPF ou email informado',
     });
     return;
   }
