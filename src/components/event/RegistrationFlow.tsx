@@ -2161,23 +2161,6 @@ export function RegistrationFlow({
               </Card>
             )}
 
-            {/* Show success message if payment is confirmed */}
-            {paymentStatus === 'paid' && (
-              <Card className="border-green-500">
-                <CardContent className="pt-6">
-                  <div className="flex items-center justify-center mb-4">
-                    <CheckCircle2 className="h-16 w-16 text-green-500" />
-                  </div>
-                  <h3 className="text-xl font-bold text-center mb-2">
-                    Pagamento Confirmado!
-                  </h3>
-                  <p className="text-center text-muted-foreground">
-                    Sua inscrição foi confirmada com sucesso
-                  </p>
-                </CardContent>
-              </Card>
-            )}
-
             <div className="flex justify-center">
               {paymentStatus === 'paid' ? (
                 <CheckCircle2 className="w-20 h-20 text-green-500" />
@@ -2190,7 +2173,7 @@ export function RegistrationFlow({
             <div>
               <h3 className="text-2xl font-bold mb-2">
                 {paymentStatus === 'paid' 
-                  ? 'Inscrição Confirmada!' 
+                  ? 'Pagamento confirmado!' 
                   : totalPrice > 0 && paymentData && paymentData.pix_qr_code
                   ? 'Inscrição Criada - Aguardando Pagamento'
                   : totalPrice > 0 && paymentData
@@ -2201,7 +2184,7 @@ export function RegistrationFlow({
               </h3>
               <p className="text-muted-foreground">
                 {paymentStatus === 'paid'
-                  ? 'Sua inscrição foi confirmada com sucesso'
+                  ? `Sua inscrição ao evento ${event.title} foi concluída com sucesso.`
                   : totalPrice > 0
                   ? 'Complete o pagamento para confirmar sua inscrição'
                   : 'Sua inscrição foi realizada com sucesso'}
