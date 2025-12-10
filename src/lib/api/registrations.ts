@@ -67,6 +67,11 @@ export const getRegistrationById = async (id: string) => {
   return apiClient.get<Registration>(`/registrations/${id}`);
 };
 
+// Get payment status by registration ID
+export const getPaymentStatus = async (registrationId: string) => {
+  return apiClient.get<{ status: string; payment_date?: string }>(`/registrations/${registrationId}/payment-status`);
+};
+
 // Create registration
 export const createRegistration = async (data: CreateRegistrationData) => {
   return apiClient.post<Registration>('/registrations', data);

@@ -1,10 +1,11 @@
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Users, Calendar, DollarSign, TrendingUp, CheckCircle, Clock, FileText, MessageSquare, Loader2 } from "lucide-react";
+import { Users, Calendar, DollarSign, TrendingUp, CheckCircle, MessageSquare, Loader2 } from "lucide-react";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import { getDashboardStats, getDashboardCharts, type DashboardStats } from "@/lib/api/admin";
+import { getSupportTickets } from "@/lib/api/support";
 import { toast } from "sonner";
 
 const DashboardOverview = () => {
@@ -12,6 +13,7 @@ const DashboardOverview = () => {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [registrationsByMonth, setRegistrationsByMonth] = useState<Array<{ month: string; inscrições: number }>>([]);
   const [revenueByMonth, setRevenueByMonth] = useState<Array<{ month: string; faturamento: number }>>([]);
+  const [newTicketsCount, setNewTicketsCount] = useState<number>(0);
 
   useEffect(() => {
     loadDashboardData();
@@ -20,9 +22,10 @@ const DashboardOverview = () => {
   const loadDashboardData = async () => {
     setLoading(true);
     try {
-      const [statsResponse, chartsResponse] = await Promise.all([
+      const [statsResponse, chartsResponse, ticketsResponse] = await Promise.all([
         getDashboardStats(),
         getDashboardCharts(6),
+        getSupportTickets({ status: 'aberto' }).catch(() => ({ success: false, data: [] })),
       ]);
 
       if (statsResponse.success && statsResponse.data) {
@@ -47,6 +50,11 @@ const DashboardOverview = () => {
         );
       } else {
         toast.error("Erro ao carregar dados dos gráficos");
+      }
+
+      // Contar tickets abertos
+      if (ticketsResponse.success && ticketsResponse.data) {
+        setNewTicketsCount(ticketsResponse.data.length);
       }
     } catch (error) {
       console.error("Erro ao carregar dados do dashboard:", error);
@@ -222,17 +230,27 @@ const DashboardOverview = () => {
           <CardDescription>Acesse rapidamente as principais funcionalidades</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-wrap gap-2">
-          <Button variant="outline">
-            <Clock className="mr-2 h-4 w-4" />
-            Aprovar Organizadores ({stats.pending_organizers > 0 ? stats.pending_organizers : 0})
+          <Button 
+            variant="outline"
+            onClick={() => {
+              window.dispatchEvent(new CustomEvent('admin:navigate-to-section', { detail: 'events' }));
+            }}
+          >
+            <Calendar className="mr-2 h-4 w-4" />
+            Eventos {stats.pending_events > 0 && `(${stats.pending_events})`}
           </Button>
-          <Button variant="outline">
-            <FileText className="mr-2 h-4 w-4" />
-            Ver Relatórios
+          <Button 
+            variant="outline"
+            onClick={() => {
+              window.dispatchEvent(new CustomEvent('admin:navigate-to-section', { detail: 'support' }));
+            }}
+          >
+            <MessageSquare className="mr-2 h-4 w-4" />
+            Suporte {newTicketsCount > 0 && `(${newTicketsCount})`}
           </Button>
           <Button variant="outline">
             <MessageSquare className="mr-2 h-4 w-4" />
-            Enviar Comunicado Global
+            Enviar Comunicado
           </Button>
         </CardContent>
       </Card>

@@ -13,7 +13,8 @@ import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { useAuth } from "@/contexts/AuthContext";
 import { getOwnProfile, getPublicProfileByCpf } from "@/lib/api/profiles";
-import { createRegistration } from "@/lib/api/registrations";
+import { createRegistration, getPaymentStatus } from "@/lib/api/registrations";
+import { PixQrCode } from "@/components/payment/PixQrCode";
 import { getEventCategories, EventCategory, CategoryBatch } from "@/lib/api/eventCategories";
 import { EventKit, KitProduct, ProductVariant } from "@/lib/api/eventKits";
 
@@ -74,6 +75,17 @@ export function RegistrationFlow({
   const [shirtSize, setShirtSize] = useState("");
   const [confirmationCode, setConfirmationCode] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [paymentData, setPaymentData] = useState<{
+    pix_qr_code?: string | null;
+    pix_qr_code_id?: string | null;
+    asaas_payment_id?: string;
+    status?: string;
+    due_date?: string;
+    error?: string;
+    warning?: string;
+  } | null>(null);
+  const [paymentStatus, setPaymentStatus] = useState<'pending' | 'paid' | 'confirmed'>('pending');
+  const [isPollingPayment, setIsPollingPayment] = useState(false);
   const [categories, setCategories] = useState<Category[]>(initialCategories || []);
   const [loadingCategories, setLoadingCategories] = useState(false);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
@@ -521,6 +533,16 @@ export function RegistrationFlow({
         total_amount: totalPrice,
       };
 
+      console.log('📤 Enviando dados de inscrição:', {
+        event_id: registrationData.event_id,
+        category_id: registrationData.category_id,
+        kit_id: registrationData.kit_id,
+        total_amount: registrationData.total_amount,
+        categoryPrice,
+        kitPrice: selectedKit?.price || 0,
+        totalPrice,
+      });
+
       const response = await createRegistration(registrationData);
 
       if (!response.success) {
@@ -531,8 +553,45 @@ export function RegistrationFlow({
       const code = response.data?.confirmation_code || 
         `CONF-${Math.random().toString(36).substring(2, 10).toUpperCase()}`;
       setConfirmationCode(code);
+
+      // Check if payment is required (total_amount > 0)
+      const requiresPayment = totalPrice > 0;
       
-      toast.success("Inscrição realizada com sucesso!");
+      // Check if payment data is in response
+      const payment = (response.data as any)?.payment;
+      
+      if (requiresPayment) {
+        // Payment is required - check if payment was created
+        if (payment) {
+          setPaymentData(payment);
+          
+          if (payment.error || payment.warning) {
+            toast.warning(payment.warning || payment.error || "Inscrição criada, mas houve um problema com o pagamento");
+          } else if (payment.pix_qr_code) {
+            toast.success("Inscrição criada! Escaneie o QR Code para pagar.");
+            // Start polling for payment status
+            startPaymentStatusPolling(response.data.id);
+          } else {
+            toast.success("Inscrição criada! Aguardando geração do QR Code...");
+            // Start polling for QR Code
+            if (payment.asaas_payment_id) {
+              startPollingForQrCode(payment.asaas_payment_id, response.data.id);
+            }
+          }
+        } else {
+          // Payment required but not created - show warning
+          toast.warning("Inscrição criada, mas o pagamento não foi processado. Entre em contato com o suporte.");
+          setPaymentData({
+            error: "Pagamento não foi criado",
+            warning: "Entre em contato com o suporte para finalizar o pagamento",
+          });
+        }
+      } else {
+        // No payment required (free event)
+        toast.success("Inscrição realizada com sucesso!");
+        setPaymentStatus('paid'); // Mark as paid since no payment is needed
+      }
+      
       handleNextStep();
     } catch (error: any) {
       console.error("Error creating registration:", error);
@@ -540,6 +599,76 @@ export function RegistrationFlow({
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  // Polling function to get QR Code if not available immediately
+  const startPollingForQrCode = async (asaasPaymentId: string, registrationId: string) => {
+    if (!asaasPaymentId) return;
+
+    let attempts = 0;
+    const maxAttempts = 5; // Try 5 times (10 seconds total)
+
+    const pollInterval = setInterval(async () => {
+      attempts++;
+      
+      try {
+        // Get registration again to check for payment data
+        const response = await getPaymentStatus(registrationId);
+        
+        if (response.success && response.data) {
+          // Check if we can get payment data from registration
+          // This would require a new endpoint, so for now we'll just check status
+          const status = response.data.status;
+          
+          if (status === 'paid' || status === 'confirmed') {
+            setPaymentStatus('paid');
+            clearInterval(pollInterval);
+            toast.success('Pagamento confirmado!');
+            return;
+          }
+        }
+      } catch (error) {
+        console.error('Erro ao verificar status do pagamento:', error);
+      }
+
+      if (attempts >= maxAttempts) {
+        clearInterval(pollInterval);
+        console.log('Polling encerrado após máximo de tentativas');
+      }
+    }, 2000); // Poll every 2 seconds
+  };
+
+  // Polling function to check payment status
+  const startPaymentStatusPolling = (registrationId: string) => {
+    if (isPollingPayment) return;
+    
+    setIsPollingPayment(true);
+    
+    const pollInterval = setInterval(async () => {
+      try {
+        const response = await getPaymentStatus(registrationId);
+        
+        if (response.success && response.data) {
+          const status = response.data.status;
+          
+          if (status === 'paid' || status === 'confirmed') {
+            setPaymentStatus('paid');
+            clearInterval(pollInterval);
+            setIsPollingPayment(false);
+            toast.success('Pagamento confirmado! Sua inscrição foi confirmada.');
+            return;
+          }
+        }
+      } catch (error) {
+        console.error('Erro ao verificar status do pagamento:', error);
+      }
+    }, 5000); // Poll every 5 seconds
+
+    // Stop polling after 10 minutes
+    setTimeout(() => {
+      clearInterval(pollInterval);
+      setIsPollingPayment(false);
+    }, 600000); // 10 minutes
   };
 
   const handleReset = () => {
@@ -551,6 +680,9 @@ export function RegistrationFlow({
     setSelectedProducts(new Map());
     setShirtSize("");
     setConfirmationCode("");
+    setPaymentData(null);
+    setPaymentStatus('pending');
+    setIsPollingPayment(false);
     setFormData({ fullName: "", email: "", phone: "", cpf: "" });
     onOpenChange(false);
   };
@@ -574,14 +706,22 @@ export function RegistrationFlow({
       <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="text-2xl">
-            {step === 5 ? "Confirmação de Inscrição" : `Inscrição - ${event.title}`}
+            {step === 5 
+              ? (totalPrice > 0 && paymentStatus === 'pending' 
+                  ? "Pagamento Pendente" 
+                  : "Confirmação de Inscrição")
+              : `Inscrição - ${event.title}`}
           </DialogTitle>
           <DialogDescription>
             {step === 1 && "Faça login ou crie uma conta para continuar"}
             {step === 2 && "Selecione a modalidade desejada"}
             {step === 3 && "Escolha o kit e configure os produtos"}
             {step === 4 && "Revise seus dados e finalize a inscrição"}
-            {step === 5 && "Sua inscrição foi confirmada com sucesso"}
+            {step === 5 && (
+              totalPrice > 0 && paymentStatus === 'pending'
+                ? "Complete o pagamento para confirmar sua inscrição"
+                : "Sua inscrição foi confirmada com sucesso"
+            )}
           </DialogDescription>
         </DialogHeader>
 
@@ -1022,8 +1162,32 @@ export function RegistrationFlow({
         {/* Step 2: Category Selection */}
         {step === 2 && (
           <div className="space-y-4">
-            <h3 className="text-lg font-semibold">Escolha a Modalidade</h3>
-            {loadingCategories ? (
+            {/* Check if user is logged in but doesn't have runner role */}
+            {user && !user.roles?.includes('runner') && (
+              <div className="mb-6 p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
+                <div className="flex items-start gap-3">
+                  <div className="flex-shrink-0">
+                    <svg className="w-5 h-5 text-yellow-600 dark:text-yellow-400" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                    </svg>
+                  </div>
+                  <div className="flex-1">
+                    <h4 className="text-sm font-semibold text-yellow-800 dark:text-yellow-200 mb-1">
+                      Acesso como Corredor Necessário
+                    </h4>
+                    <p className="text-sm text-yellow-700 dark:text-yellow-300">
+                      Apenas perfis de corredor podem se inscrever em eventos. Por favor, acesse com uma conta de corredor para continuar.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+            
+            {/* Only show category selection if user is runner or not logged in */}
+            {(!user || user.roles?.includes('runner')) && (
+              <>
+                <h3 className="text-lg font-semibold">Escolha a Modalidade</h3>
+                {loadingCategories ? (
               <Card>
                 <CardContent className="py-8 text-center">
                   <p className="text-muted-foreground">Carregando categorias...</p>
@@ -1213,6 +1377,8 @@ export function RegistrationFlow({
                     Próximo
                   </Button>
                 </div>
+              </>
+            )}
               </>
             )}
           </div>
@@ -1803,16 +1969,80 @@ export function RegistrationFlow({
           </div>
         )}
 
-        {/* Step 5: Confirmation Ticket */}
+        {/* Step 5: Confirmation Ticket / Payment */}
         {step === 5 && (
           <div className="space-y-6 text-center">
+            {/* Show QR Code PIX if payment is pending */}
+            {paymentData && paymentData.pix_qr_code && paymentStatus === 'pending' && (
+              <div>
+                <PixQrCode
+                  pixQrCode={paymentData.pix_qr_code}
+                  value={totalPrice}
+                  dueDate={paymentData.due_date || new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]}
+                  registrationId={confirmationCode}
+                />
+              </div>
+            )}
+
+            {/* Show payment error/warning if exists */}
+            {paymentData && (paymentData.error || paymentData.warning) && (
+              <Card className="border-yellow-500">
+                <CardContent className="pt-6">
+                  <div className="flex items-center gap-2 text-yellow-600 mb-2">
+                    <span className="text-lg">⚠️</span>
+                    <p className="font-medium">Aviso sobre o pagamento</p>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    {paymentData.warning || paymentData.error}
+                  </p>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Show success message if payment is confirmed */}
+            {paymentStatus === 'paid' && (
+              <Card className="border-green-500">
+                <CardContent className="pt-6">
+                  <div className="flex items-center justify-center mb-4">
+                    <CheckCircle2 className="h-16 w-16 text-green-500" />
+                  </div>
+                  <h3 className="text-xl font-bold text-center mb-2">
+                    Pagamento Confirmado!
+                  </h3>
+                  <p className="text-center text-muted-foreground">
+                    Sua inscrição foi confirmada com sucesso
+                  </p>
+                </CardContent>
+              </Card>
+            )}
+
             <div className="flex justify-center">
-              <CheckCircle2 className="w-20 h-20 text-accent" />
+              {paymentStatus === 'paid' ? (
+                <CheckCircle2 className="w-20 h-20 text-green-500" />
+              ) : paymentData && paymentData.pix_qr_code ? (
+                <CheckCircle2 className="w-20 h-20 text-yellow-500" />
+              ) : (
+                <CheckCircle2 className="w-20 h-20 text-accent" />
+              )}
             </div>
             <div>
-              <h3 className="text-2xl font-bold mb-2">Inscrição Confirmada!</h3>
+              <h3 className="text-2xl font-bold mb-2">
+                {paymentStatus === 'paid' 
+                  ? 'Inscrição Confirmada!' 
+                  : totalPrice > 0 && paymentData && paymentData.pix_qr_code
+                  ? 'Inscrição Criada - Aguardando Pagamento'
+                  : totalPrice > 0 && paymentData
+                  ? 'Inscrição Criada - Aguardando Pagamento'
+                  : totalPrice > 0
+                  ? 'Inscrição Criada - Aguardando Pagamento'
+                  : 'Inscrição Confirmada!'}
+              </h3>
               <p className="text-muted-foreground">
-                Sua inscrição foi realizada com sucesso.
+                {paymentStatus === 'paid'
+                  ? 'Sua inscrição foi confirmada com sucesso'
+                  : totalPrice > 0
+                  ? 'Complete o pagamento para confirmar sua inscrição'
+                  : 'Sua inscrição foi realizada com sucesso'}
               </p>
             </div>
 
@@ -1915,14 +2145,53 @@ export function RegistrationFlow({
               </CardContent>
             </Card>
 
-            <div className="bg-muted p-4 rounded-lg text-sm text-left">
-              <p className="font-semibold mb-2">Próximos Passos:</p>
-              <ul className="space-y-1 text-muted-foreground">
-                <li>• Enviamos um email de confirmação para {formData.email}</li>
-                <li>• Você pode retirar seu kit 2 dias antes do evento</li>
-                <li>• Leve um documento com foto no dia da prova</li>
-              </ul>
-            </div>
+            {paymentStatus === 'paid' && (
+              <div className="bg-muted p-4 rounded-lg text-sm text-left">
+                <p className="font-semibold mb-2">Próximos Passos:</p>
+                <ul className="space-y-1 text-muted-foreground">
+                  <li>• Enviamos um email de confirmação para {formData.email}</li>
+                  <li>• Você pode retirar seu kit 2 dias antes do evento</li>
+                  <li>• Leve um documento com foto no dia da prova</li>
+                </ul>
+              </div>
+            )}
+            
+            {totalPrice > 0 && paymentStatus === 'pending' && (
+              <div className="bg-muted p-4 rounded-lg text-sm text-left">
+                <p className="font-semibold mb-2">Aguardando Pagamento:</p>
+                <ul className="space-y-1 text-muted-foreground">
+                  {paymentData && paymentData.pix_qr_code ? (
+                    <>
+                      <li>• Escaneie o QR Code acima ou copie o código PIX</li>
+                      <li>• O pagamento será confirmado automaticamente</li>
+                      <li>• Você receberá um email quando o pagamento for confirmado</li>
+                    </>
+                  ) : paymentData && paymentData.asaas_payment_id ? (
+                    <>
+                      <li>• Aguardando geração do QR Code PIX...</li>
+                      <li>• O QR Code aparecerá em instantes</li>
+                      <li>• Você receberá um email quando o pagamento for confirmado</li>
+                    </>
+                  ) : (
+                    <>
+                      <li>• Aguardando processamento do pagamento...</li>
+                      <li>• Entre em contato com o suporte se o problema persistir</li>
+                    </>
+                  )}
+                </ul>
+              </div>
+            )}
+            
+            {totalPrice === 0 && (
+              <div className="bg-muted p-4 rounded-lg text-sm text-left">
+                <p className="font-semibold mb-2">Próximos Passos:</p>
+                <ul className="space-y-1 text-muted-foreground">
+                  <li>• Enviamos um email de confirmação para {formData.email}</li>
+                  <li>• Você pode retirar seu kit 2 dias antes do evento</li>
+                  <li>• Leve um documento com foto no dia da prova</li>
+                </ul>
+              </div>
+            )}
 
             <div className="flex gap-3">
               <Button variant="outline" className="flex-1" onClick={handleReset}>

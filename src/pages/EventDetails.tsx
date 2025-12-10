@@ -17,7 +17,6 @@ import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { useEffect, useState } from "react";
 import heroImage from "@/assets/hero-running.jpg";
-import { EventResults } from "@/components/event/EventResults";
 import { RegistrationFlow } from "@/components/event/RegistrationFlow";
 import { FlipCountdown } from "@/components/event/FlipCountdown";
 import { ContactDialog } from "@/components/event/ContactDialog";
@@ -278,13 +277,6 @@ const EventDetails = () => {
 
       {/* Event Content */}
       <section className="py-12 pb-28">
-        {/* Results - Full Width for finished events */}
-        {event.status === "finished" && (
-          <div className="mb-8">
-            <EventResults />
-          </div>
-        )}
-        
         <div className="container mx-auto px-4">
           {/* Event Status Badge */}
           <div className="mb-6 flex items-center gap-2">
@@ -554,35 +546,32 @@ const EventDetails = () => {
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <Button variant="outline" className="w-full" asChild>
-                      <a href={event.regulation_url} target="_blank" rel="noopener noreferrer">
-                        <FileText className="mr-2 h-4 w-4" />
-                        Baixar Regulamento
-                      </a>
+                    <Button 
+                      variant="outline" 
+                      className="w-full"
+                      onClick={() => {
+                        if (event.regulation_url) {
+                          // Corrigir URL se contiver template strings
+                          let urlToOpen = event.regulation_url;
+                          if (urlToOpen.includes('${')) {
+                            const port = window.location.port || '3001';
+                            urlToOpen = urlToOpen.replace(/\$\{API_PORT\}/g, port);
+                            // Se ainda tiver template strings, usar localhost:3001 como padrão
+                            if (urlToOpen.includes('${')) {
+                              urlToOpen = urlToOpen.replace(/http:\/\/localhost:\$\{API_PORT\}/g, 'http://localhost:3001');
+                            }
+                          }
+                          window.open(urlToOpen, '_blank');
+                        }
+                      }}
+                    >
+                      <FileText className="mr-2 h-4 w-4" />
+                      Baixar Regulamento
                     </Button>
                   </CardContent>
                 </Card>
               )}
 
-              {/* Results - Show when event is finished */}
-              {event.status === "finished" && event.result_url && (
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <Trophy className="h-5 w-5" />
-                      Resultados
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <Button variant="outline" className="w-full" asChild>
-                      <a href={event.result_url} target="_blank" rel="noopener noreferrer">
-                        <Trophy className="mr-2 h-4 w-4" />
-                        Ver Resultados
-                      </a>
-                    </Button>
-                  </CardContent>
-                </Card>
-              )}
             </div>
 
             {/* Sidebar */}
@@ -596,20 +585,54 @@ const EventDetails = () => {
                 const isDisabled = event.status === "draft" || event.status === "finished" || event.status === "cancelled" || isPastEvent || !canRegister;
 
                 // ETAPA 7.4: Improved conditional display based on status
-                if (event.status === "finished" || event.status === "cancelled") {
+                if (event.status === "cancelled") {
                   return (
-                    <Card className={event.status === "cancelled" ? "border-destructive" : ""}>
+                    <Card className="border-destructive">
                       <CardHeader>
-                        <CardTitle>
-                          {event.status === "cancelled" ? "Evento Cancelado" : "Inscrições Encerradas"}
-                        </CardTitle>
+                        <CardTitle>Evento Cancelado</CardTitle>
                       </CardHeader>
                       <CardContent className="space-y-4">
                         <p className="text-sm text-muted-foreground text-center">
-                          {event.status === "cancelled" 
-                            ? "Este evento foi cancelado. Entre em contato com o organizador para mais informações."
-                            : "Este evento já foi realizado. As inscrições estão encerradas."}
+                          Este evento foi cancelado. Entre em contato com o organizador para mais informações.
                         </p>
+                      </CardContent>
+                    </Card>
+                  );
+                }
+
+                // Se evento está finished e tem result_url, mostrar card de resultados
+                if (event.status === "finished" && event.result_url) {
+                  return (
+                    <Card className="border-2 border-primary">
+                      <CardHeader>
+                        <CardTitle className="text-base flex items-center gap-2">
+                          <Trophy className="h-5 w-5 text-primary" />
+                          Resultados Disponíveis
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <Button 
+                          className="w-full" 
+                          size="lg"
+                          onClick={() => {
+                            if (event.result_url) {
+                              // Corrigir URL se contiver template strings
+                              let urlToOpen = event.result_url;
+                              if (urlToOpen.includes('${')) {
+                                const port = window.location.port || '3001';
+                                urlToOpen = urlToOpen.replace(/\$\{API_PORT\}/g, port);
+                                // Se ainda tiver template strings, usar localhost:3001 como padrão
+                                if (urlToOpen.includes('${')) {
+                                  urlToOpen = urlToOpen.replace(/http:\/\/localhost:\$\{API_PORT\}/g, 'http://localhost:3001');
+                                }
+                              }
+                              window.open(urlToOpen, '_blank');
+                            }
+                          }}
+                        >
+                          <Trophy className="mr-2 h-4 w-4" />
+                          Ver Resultados
+                        </Button>
                       </CardContent>
                     </Card>
                   );
@@ -649,11 +672,6 @@ const EventDetails = () => {
                       {event.status === "draft" && (
                         <p className="text-xs text-center text-muted-foreground">
                           Este evento ainda está em rascunho. As inscrições serão abertas quando o evento for publicado.
-                        </p>
-                      )}
-                      {event.status === "finished" && (
-                        <p className="text-xs text-center text-muted-foreground">
-                          Este evento já foi finalizado. As inscrições estão encerradas.
                         </p>
                       )}
                       {isPastEvent && event.status !== "finished" && (
@@ -799,29 +817,6 @@ const EventDetails = () => {
                 </CardContent>
               </Card>
 
-              {/* Results Card - Show when result_url exists */}
-              {event.result_url && (
-                <Card className="border-2 border-primary">
-                  <CardHeader>
-                    <CardTitle className="text-base flex items-center gap-2">
-                      <Trophy className="h-5 w-5 text-primary" />
-                      Resultados Disponíveis
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <Button 
-                      className="w-full" 
-                      size="lg"
-                      asChild
-                    >
-                      <a href={event.result_url} target="_blank" rel="noopener noreferrer">
-                        <Trophy className="mr-2 h-4 w-4" />
-                        Ver Resultados
-                      </a>
-                    </Button>
-                  </CardContent>
-                </Card>
-              )}
 
               {/* Contact Card */}
               <Card>

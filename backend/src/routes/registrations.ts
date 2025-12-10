@@ -9,6 +9,7 @@ import {
   transferRegistrationController,
   cancelRegistrationController,
   getRegistrationReceiptController,
+  getPaymentStatusController,
 } from '../controllers/registrationsController.js';
 
 const router = Router();
@@ -18,6 +19,7 @@ router.use(authenticate);
 
 router.get('/export', exportRegistrationsController);
 router.get('/', getAllRegistrations);
+router.get('/:id/payment-status', getPaymentStatusController);
 router.get('/:id/receipt', getRegistrationReceiptController);
 router.get('/:id', getRegistration);
 router.post('/', createRegistrationController);

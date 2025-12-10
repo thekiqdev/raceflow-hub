@@ -18,8 +18,10 @@ import { Search, Download, Edit, Eye, CheckCircle, XCircle, Ban, ExternalLink, B
 import { getEvents, updateEvent } from "@/lib/api/events";
 import { useToast } from "@/hooks/use-toast";
 import { EventViewEditDialog } from "./EventViewEditDialog";
+import { useNavigate } from "react-router-dom";
 
 const EventManagement = () => {
+  const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("");
   const [loading, setLoading] = useState(true);
@@ -158,12 +160,16 @@ const EventManagement = () => {
     }
 
     try {
-      const response = await updateEvent(eventForResult.id, { result_url: resultUrl });
+      // Atualizar evento com result_url e status finished
+      const response = await updateEvent(eventForResult.id, { 
+        result_url: resultUrl,
+        status: "finished"
+      });
 
       if (response.success) {
         toast({
           title: "Sucesso",
-          description: "Link de resultados enviado com sucesso!",
+          description: "Link de resultados enviado com sucesso! O evento foi marcado como finalizado.",
         });
         setIsResultDialogOpen(false);
         setResultUrl("");
@@ -328,7 +334,15 @@ const EventManagement = () => {
                               <Button 
                                 size="icon" 
                                 variant="ghost" 
-                                title="Visualizar"
+                                title="Visualizar Evento (Página Pública)"
+                                onClick={() => navigate(`/events/${event.id}`)}
+                              >
+                                <ExternalLink className="h-4 w-4" />
+                              </Button>
+                              <Button 
+                                size="icon" 
+                                variant="ghost" 
+                                title="Visualizar Detalhes"
                                 onClick={() => handleViewEvent(event.id)}
                               >
                                 <Eye className="h-4 w-4" />

@@ -26,28 +26,53 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { Plus, Search, MoreVertical, Edit, Eye, Trash2, BarChart3, Calendar, Award, Loader2 } from "lucide-react";
+import { Plus, Search, MoreVertical, Edit, Eye, Trash2, BarChart3, Calendar, Loader2, ExternalLink } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { EventFormDialog } from "./EventFormDialog";
-import { getEvents, updateEvent, deleteEvent, type Event } from "@/lib/api/events";
+import { getEvents, deleteEvent, type Event } from "@/lib/api/events";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
+import { useNavigate } from "react-router-dom";
 
 const OrganizerEvents = () => {
+  const navigate = useNavigate();
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [events, setEvents] = useState<Event[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
-  const [isResultDialogOpen, setIsResultDialogOpen] = useState(false);
-  const [resultUrl, setResultUrl] = useState("");
-  const [eventForResult, setEventForResult] = useState<Event | null>(null);
   const [isDeleting, setIsDeleting] = useState<string | null>(null);
 
   useEffect(() => {
     loadEvents();
+  }, []);
+
+  useEffect(() => {
+    // Escutar evento para abrir o dialog de criação
+    const handleOpenCreateEvent = () => {
+      console.log('🎯 Evento recebido: abrir dialog de criação');
+      setSelectedEvent(null);
+      setIsDialogOpen(true);
+    };
+
+    window.addEventListener('organizer:open-create-event', handleOpenCreateEvent);
+    
+    return () => {
+      window.removeEventListener('organizer:open-create-event', handleOpenCreateEvent);
+    };
+  }, []);
+
+  // Também escutar quando o componente é montado para verificar se há um evento pendente
+  useEffect(() => {
+    // Verificar se há um evento pendente no localStorage
+    const shouldOpenDialog = sessionStorage.getItem('organizer:should-open-create-dialog');
+    if (shouldOpenDialog === 'true') {
+      sessionStorage.removeItem('organizer:should-open-create-dialog');
+      setSelectedEvent(null);
+      setIsDialogOpen(true);
+    }
   }, []);
 
   const loadEvents = async () => {
@@ -106,31 +131,6 @@ const OrganizerEvents = () => {
     event.city.toLowerCase().includes(searchQuery.toLowerCase()) ||
     event.state.toLowerCase().includes(searchQuery.toLowerCase())
   );
-
-  const handleSendResult = async () => {
-    if (!resultUrl.trim() || !eventForResult) {
-      toast.error("Por favor, insira o link dos resultados");
-      return;
-    }
-
-    try {
-      const response = await updateEvent(eventForResult.id, { result_url: resultUrl });
-
-      if (!response.success) {
-        throw new Error(response.error || "Erro ao atualizar evento");
-      }
-
-      toast.success("Link de resultados enviado com sucesso!");
-      setIsResultDialogOpen(false);
-      setResultUrl("");
-      setEventForResult(null);
-      // Refresh events list
-      loadEvents();
-    } catch (error: any) {
-      console.error("Error updating result URL:", error);
-      toast.error(error.message || "Erro ao enviar link de resultados");
-    }
-  };
 
   const handleDeleteEvent = async (eventId: string) => {
     if (!confirm("Tem certeza que deseja excluir este evento? Esta ação não pode ser desfeita.")) {
@@ -251,9 +251,9 @@ const OrganizerEvents = () => {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
-                            <DropdownMenuItem>
-                              <Eye className="mr-2 h-4 w-4" />
-                              Ver Detalhes
+                            <DropdownMenuItem onClick={() => navigate(`/events/${event.id}`)}>
+                              <ExternalLink className="mr-2 h-4 w-4" />
+                              Visualizar Evento
                             </DropdownMenuItem>
                             <DropdownMenuItem onClick={() => {
                               setSelectedEvent(event);
@@ -265,14 +265,6 @@ const OrganizerEvents = () => {
                             <DropdownMenuItem>
                               <BarChart3 className="mr-2 h-4 w-4" />
                               Estatísticas
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => {
-                              setEventForResult(event);
-                              setResultUrl(event.result_url || "");
-                              setIsResultDialogOpen(true);
-                            }}>
-                              <Award className="mr-2 h-4 w-4" />
-                              Enviar Resultado
                             </DropdownMenuItem>
                             <DropdownMenuItem 
                               className="text-destructive"
@@ -350,37 +342,6 @@ const OrganizerEvents = () => {
           await loadEvents();
         }}
       />
-
-      {/* Result URL Dialog */}
-      <Dialog open={isResultDialogOpen} onOpenChange={setIsResultDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Enviar Resultado do Evento</DialogTitle>
-            <DialogDescription>
-              Insira o link para os resultados de {eventForResult?.title}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="result-url">Link dos Resultados</Label>
-              <Input
-                id="result-url"
-                placeholder="https://exemplo.com/resultados"
-                value={resultUrl}
-                onChange={(e) => setResultUrl(e.target.value)}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsResultDialogOpen(false)}>
-              Cancelar
-            </Button>
-            <Button onClick={handleSendResult}>
-              Enviar Resultado
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 };

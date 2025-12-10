@@ -10,6 +10,10 @@ import {
   getAthletesController,
   getAdminsController,
   getUserByIdController,
+  getUserProfileByIdController,
+  updateUserProfileController,
+  convertAthleteToOrganizerController,
+  deleteUserController,
   updateUserStatusController,
   approveOrganizerController,
   blockUserController,
@@ -81,7 +85,11 @@ router.get('/users/organizers', getOrganizersController);
 router.get('/users/athletes', getAthletesController);
 router.get('/users/admins', getAdminsController);
 router.get('/users/:id', getUserByIdController);
+router.get('/users/:id/profile', getUserProfileByIdController);
 router.put('/users/:id/status', updateUserStatusController);
+router.put('/users/:id/profile', updateUserProfileController);
+router.post('/users/:id/convert-to-organizer', convertAthleteToOrganizerController);
+router.delete('/users/:id', deleteUserController);
 router.post('/users/:id/approve', approveOrganizerController);
 router.post('/users/:id/block', blockUserController);
 router.post('/users/:id/unblock', unblockUserController);

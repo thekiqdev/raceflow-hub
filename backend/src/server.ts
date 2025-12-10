@@ -13,9 +13,20 @@ import homePageSettingsRouter from './routes/homePageSettings.js';
 import adminRouter from './routes/adminRoutes.js';
 import organizerRouter from './routes/organizerRoutes.js';
 import runnerRouter from './routes/runnerRoutes.js';
+import uploadRouter from './routes/upload.js';
+import webhooksRouter from './routes/webhooks.js';
 
 // Load environment variables
-dotenv.config();
+// Try to load from backend/.env explicitly
+dotenv.config({ path: '.env' });
+dotenv.config({ path: '../.env' }); // Fallback to root .env
+
+// Debug: Log if Asaas key is loaded
+if (process.env.ASAAS_API_KEY) {
+  console.log('✅ ASAAS_API_KEY carregada (tamanho:', process.env.ASAAS_API_KEY.length, ')');
+} else {
+  console.warn('⚠️ ASAAS_API_KEY não encontrada nas variáveis de ambiente');
+}
 
 const app: Express = express();
 const PORT = process.env.API_PORT || 3001;
@@ -83,6 +94,23 @@ app.use(rateLimiter(15 * 60 * 1000, isDevelopment ? 1000 : 1000)); // 1000 in de
 app.use(express.json({ limit: '10mb' })); // Limit body size
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
+// Serve static files (uploads)
+import path from 'path';
+import { fileURLToPath } from 'url';
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Serve static files with proper headers for PDFs
+app.use('/uploads', express.static(path.join(__dirname, '../uploads'), {
+  setHeaders: (res, filePath) => {
+    // Set proper Content-Type for PDFs
+    if (filePath.endsWith('.pdf')) {
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', 'inline; filename="' + path.basename(filePath) + '"');
+    }
+  }
+}));
+
 // Request logging middleware
 app.use((req: Request, _res: Response, next) => {
   console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`, {
@@ -93,6 +121,8 @@ app.use((req: Request, _res: Response, next) => {
 });
 
 // Routes
+// Webhooks must be registered before authenticated routes (they use their own auth)
+app.use('/api/webhooks', webhooksRouter);
 app.use('/api/health', healthRouter);
 app.use('/api/auth', authRouter);
 app.use('/api/events', eventsRouter);
@@ -102,6 +132,7 @@ app.use('/api/home-page-settings', homePageSettingsRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api/organizer', organizerRouter);
 app.use('/api/runner', runnerRouter);
+app.use('/api/upload', uploadRouter);
 
 // Root endpoint
 app.get('/', (_req: Request, res: Response) => {

@@ -203,6 +203,59 @@ export const getUserById = async (userId: string): Promise<UserWithStats | null>
 };
 
 /**
+ * Get user profile by ID (for admin)
+ */
+export const getUserProfileById = async (userId: string) => {
+  // First, get the profile data
+  const profileQuery = `
+    SELECT 
+      p.id,
+      p.full_name,
+      u.email,
+      p.cpf,
+      p.phone,
+      p.gender,
+      p.birth_date,
+      COALESCE(p.status, 'active') as status
+    FROM profiles p
+    JOIN users u ON p.id = u.id
+    WHERE p.id = $1
+  `;
+
+  const profileResult = await query(profileQuery, [userId]);
+
+  if (profileResult.rows.length === 0) {
+    return null;
+  }
+
+  const profileRow = profileResult.rows[0];
+
+  // Then, get the roles separately
+  const rolesQuery = `
+    SELECT role
+    FROM user_roles
+    WHERE user_id = $1
+    ORDER BY role
+    LIMIT 1
+  `;
+
+  const rolesResult = await query(rolesQuery, [userId]);
+  const role = rolesResult.rows.length > 0 ? rolesResult.rows[0].role : null;
+  
+  return {
+    id: profileRow.id,
+    full_name: profileRow.full_name,
+    email: profileRow.email,
+    cpf: profileRow.cpf,
+    phone: profileRow.phone,
+    gender: profileRow.gender,
+    birth_date: profileRow.birth_date,
+    status: profileRow.status || 'active',
+    role: role,
+  };
+};
+
+/**
  * Update user status
  */
 export const updateUserStatus = async (userId: string, status: 'active' | 'pending' | 'blocked'): Promise<void> => {
@@ -210,6 +263,66 @@ export const updateUserStatus = async (userId: string, status: 'active' | 'pendi
     'UPDATE profiles SET status = $1, updated_at = NOW() WHERE id = $2',
     [status, userId]
   );
+};
+
+/**
+ * Update user role
+ */
+export const updateUserRole = async (userId: string, role: 'admin' | 'organizer' | 'runner'): Promise<void> => {
+  const client = await getClient();
+  
+  try {
+    await client.query('BEGIN');
+
+    // Remove all existing roles
+    await client.query(
+      'DELETE FROM user_roles WHERE user_id = $1',
+      [userId]
+    );
+
+    // Add new role
+    await client.query(
+      'INSERT INTO user_roles (user_id, role) VALUES ($1, $2)',
+      [userId, role]
+    );
+
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+};
+
+/**
+ * Delete user (soft delete by setting status to blocked and removing roles)
+ */
+export const deleteUser = async (userId: string): Promise<void> => {
+  const client = await getClient();
+  
+  try {
+    await client.query('BEGIN');
+
+    // Set status to blocked
+    await client.query(
+      'UPDATE profiles SET status = $1, updated_at = NOW() WHERE id = $2',
+      ['blocked', userId]
+    );
+
+    // Remove all roles
+    await client.query(
+      'DELETE FROM user_roles WHERE user_id = $1',
+      [userId]
+    );
+
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
 };
 
 /**
@@ -287,6 +400,63 @@ export const createAdmin = async (data: {
 
     await client.query('COMMIT');
     return userId;
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+};
+
+/**
+ * Convert athlete to organizer
+ * Removes 'runner' role and adds 'organizer' role
+ */
+export const convertAthleteToOrganizer = async (userId: string): Promise<void> => {
+  const client = await getClient();
+  
+  try {
+    await client.query('BEGIN');
+
+    // Check if user has runner role
+    const runnerCheck = await client.query(
+      'SELECT 1 FROM user_roles WHERE user_id = $1 AND role = $2',
+      [userId, 'runner']
+    );
+
+    if (runnerCheck.rows.length === 0) {
+      throw new Error('User is not an athlete (does not have runner role)');
+    }
+
+    // Check if user already has organizer role
+    const organizerCheck = await client.query(
+      'SELECT 1 FROM user_roles WHERE user_id = $1 AND role = $2',
+      [userId, 'organizer']
+    );
+
+    if (organizerCheck.rows.length > 0) {
+      throw new Error('User already has organizer role');
+    }
+
+    // Remove runner role
+    await client.query(
+      'DELETE FROM user_roles WHERE user_id = $1 AND role = $2',
+      [userId, 'runner']
+    );
+
+    // Add organizer role
+    await client.query(
+      'INSERT INTO user_roles (user_id, role) VALUES ($1, $2)',
+      [userId, 'organizer']
+    );
+
+    // Update profile status to active if it was blocked
+    await client.query(
+      'UPDATE profiles SET status = $1, updated_at = NOW() WHERE id = $2 AND status = $3',
+      ['active', userId, 'blocked']
+    );
+
+    await client.query('COMMIT');
   } catch (error) {
     await client.query('ROLLBACK');
     throw error;

@@ -9,6 +9,7 @@ import {
 } from '../services/eventsService.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { hasRole } from '../services/userRolesService.js';
+import { deleteFile, getFilePath } from '../middleware/upload.js';
 
 // Get all events
 export const getAllEvents = asyncHandler(async (req: AuthRequest, res: Response) => {
@@ -234,6 +235,23 @@ export const updateEventController = asyncHandler(async (req: AuthRequest, res: 
       message: 'You can only update your own events',
     });
     return;
+  }
+
+  // Delete old files if new ones are being uploaded
+  if (req.body.banner_url && event.banner_url && req.body.banner_url !== event.banner_url) {
+    // New banner URL is different, delete old file if it's a local file
+    const oldFilePath = getFilePath(event.banner_url);
+    if (oldFilePath) {
+      deleteFile(oldFilePath);
+    }
+  }
+
+  if (req.body.regulation_url && event.regulation_url && req.body.regulation_url !== event.regulation_url) {
+    // New regulation URL is different, delete old file if it's a local file
+    const oldFilePath = getFilePath(event.regulation_url);
+    if (oldFilePath) {
+      deleteFile(oldFilePath);
+    }
   }
 
   const updatedEvent = await updateEvent(id, req.body);
