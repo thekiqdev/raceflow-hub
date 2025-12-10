@@ -3,11 +3,15 @@ import { useParams, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, Calendar, MapPin, User, CheckCircle, XCircle, AlertCircle, Loader2 } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { ArrowLeft, Calendar, MapPin, User, CheckCircle, XCircle, AlertCircle, Loader2, ArrowRightLeft } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { getRegistrationById, type Registration } from "@/lib/api/registrations";
+import { getRegistrationById, transferRegistration, type Registration } from "@/lib/api/registrations";
 import { toast } from "sonner";
+import { useAuth } from "@/contexts/AuthContext";
 
 // Helper function to format price
 const formatPrice = (price: number): string => {
@@ -18,9 +22,14 @@ const formatPrice = (price: number): string => {
 export default function ValidateRegistration() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [registration, setRegistration] = useState<Registration | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [transferDialogOpen, setTransferDialogOpen] = useState(false);
+  const [transferEmail, setTransferEmail] = useState("");
+  const [transferCpf, setTransferCpf] = useState("");
+  const [isTransferring, setIsTransferring] = useState(false);
 
   useEffect(() => {
     if (id) {
@@ -250,7 +259,138 @@ export default function ValidateRegistration() {
             )}
           </CardContent>
         </Card>
+
+        {/* Botões de ação - apenas para inscrições confirmadas e se o usuário for o dono */}
+        {isConfirmed && registration && user && (registration.runner_id === user.id || registration.registered_by === user.id) && (
+          <div className="flex gap-3">
+            <Button
+              variant="outline"
+              className="flex-1"
+              onClick={() => setTransferDialogOpen(true)}
+            >
+              <ArrowRightLeft className="h-4 w-4 mr-2" />
+              Transferir
+            </Button>
+          </div>
+        )}
       </div>
+
+      {/* Modal de Transferência */}
+      <Dialog open={transferDialogOpen} onOpenChange={setTransferDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Transferir Inscrição</DialogTitle>
+            <DialogDescription>
+              Digite o email ou CPF da pessoa que receberá esta inscrição.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="transfer-email">Email</Label>
+              <Input
+                id="transfer-email"
+                type="email"
+                placeholder="email@exemplo.com"
+                value={transferEmail}
+                onChange={(e) => {
+                  setTransferEmail(e.target.value);
+                  setTransferCpf(""); // Limpar CPF quando email for preenchido
+                }}
+                disabled={isTransferring}
+              />
+            </div>
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center">
+                <span className="w-full border-t" />
+              </div>
+              <div className="relative flex justify-center text-xs uppercase">
+                <span className="bg-background px-2 text-muted-foreground">ou</span>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="transfer-cpf">CPF</Label>
+              <Input
+                id="transfer-cpf"
+                type="text"
+                placeholder="000.000.000-00"
+                value={transferCpf}
+                onChange={(e) => {
+                  // Formatar CPF enquanto digita
+                  const value = e.target.value.replace(/\D/g, "");
+                  const formatted = value
+                    .replace(/(\d{3})(\d)/, "$1.$2")
+                    .replace(/(\d{3})(\d)/, "$1.$2")
+                    .replace(/(\d{3})(\d{2})$/, "$1-$2");
+                  setTransferCpf(formatted);
+                  setTransferEmail(""); // Limpar email quando CPF for preenchido
+                }}
+                maxLength={14}
+                disabled={isTransferring}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setTransferDialogOpen(false);
+                setTransferEmail("");
+                setTransferCpf("");
+              }}
+              disabled={isTransferring}
+            >
+              Cancelar
+            </Button>
+            <Button
+              onClick={async () => {
+                if (!transferEmail && !transferCpf) {
+                  toast.error("Por favor, informe o email ou CPF");
+                  return;
+                }
+
+                if (!id) {
+                  toast.error("ID da inscrição não encontrado");
+                  return;
+                }
+
+                setIsTransferring(true);
+                try {
+                  const response = await transferRegistration(id, {
+                    email: transferEmail || undefined,
+                    cpf: transferCpf ? transferCpf.replace(/\D/g, "") : undefined,
+                  });
+
+                  if (response.success) {
+                    toast.success(response.message || "Inscrição transferida com sucesso!");
+                    setTransferDialogOpen(false);
+                    setTransferEmail("");
+                    setTransferCpf("");
+                    // Recarregar a inscrição para atualizar os dados
+                    loadRegistration();
+                  } else {
+                    toast.error(response.error || "Erro ao transferir inscrição");
+                  }
+                } catch (error: any) {
+                  console.error("Error transferring registration:", error);
+                  toast.error(error.message || "Erro ao transferir inscrição");
+                } finally {
+                  setIsTransferring(false);
+                }
+              }}
+              disabled={isTransferring || (!transferEmail && !transferCpf)}
+            >
+              {isTransferring ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Transferindo...
+                </>
+              ) : (
+                "Transferir"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

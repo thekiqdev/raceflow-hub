@@ -212,6 +212,23 @@ export const findUserByCpf = async (cpf: string) => {
   return result.rows[0];
 };
 
+// Find user by email
+export const findUserByEmail = async (email: string) => {
+  const result = await query(
+    `SELECT p.id, p.full_name, p.cpf, u.email 
+     FROM profiles p
+     JOIN users u ON u.id = p.id
+     WHERE LOWER(u.email) = LOWER($1)`,
+    [email]
+  );
+
+  if (result.rows.length === 0) {
+    return null;
+  }
+
+  return result.rows[0];
+};
+
 // Transfer registration to another runner
 export const transferRegistration = async (
   registrationId: string,

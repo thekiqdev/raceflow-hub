@@ -76,6 +76,7 @@ export function RegistrationFlow({
   const [variantSelections, setVariantSelections] = useState<Map<string, Record<string, string>>>(new Map());
   const [shirtSize, setShirtSize] = useState("");
   const [confirmationCode, setConfirmationCode] = useState("");
+  const [registrationId, setRegistrationId] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [paymentData, setPaymentData] = useState<{
     pix_qr_code?: string | null;
@@ -556,6 +557,11 @@ export function RegistrationFlow({
         throw new Error(response.error || "Erro ao criar inscrição");
       }
 
+      // Store registration ID
+      if (response.data?.id) {
+        setRegistrationId(response.data.id);
+      }
+
       // Generate confirmation code (use the one from API if available, otherwise generate)
       const code = response.data?.confirmation_code || 
         `CONF-${Math.random().toString(36).substring(2, 10).toUpperCase()}`;
@@ -687,6 +693,7 @@ export function RegistrationFlow({
     setSelectedProducts(new Map());
     setShirtSize("");
     setConfirmationCode("");
+    setRegistrationId(null);
     setPaymentData(null);
     setPaymentStatus('pending');
     setIsPollingPayment(false);
@@ -705,6 +712,7 @@ export function RegistrationFlow({
       setSelectedProducts(new Map());
       setShirtSize("");
       setConfirmationCode("");
+    setRegistrationId(null);
     }
   }, [open]);
 
@@ -2214,12 +2222,16 @@ export function RegistrationFlow({
             {/* Botões de ação - mostrar apenas quando pagamento confirmado ou evento gratuito */}
             {(paymentStatus === 'paid' || totalPrice === 0) && (
               <div className="flex gap-3">
-                <Button variant="outline" className="flex-1" onClick={handleReset}>
-                  Fechar
-                </Button>
-                <Button className="flex-1">
-                  <Download className="w-4 h-4 mr-2" />
-                  Baixar Comprovante
+                <Button 
+                  className="flex-1" 
+                  onClick={() => {
+                    if (registrationId) {
+                      onOpenChange(false);
+                      navigate(`/registration/validate/${registrationId}`);
+                    }
+                  }}
+                >
+                  Visualizar Inscrição
                 </Button>
               </div>
             )}

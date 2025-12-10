@@ -6,6 +6,7 @@ import {
   createRegistration,
   updateRegistration,
   findUserByCpf,
+  findUserByEmail,
   transferRegistration,
   cancelRegistration,
 } from '../services/registrationsService.js';
@@ -562,7 +563,7 @@ export const exportRegistrationsController = asyncHandler(async (req: AuthReques
   res.send('\ufeff' + csvContent); // BOM for Excel UTF-8 support
 });
 
-// Transfer registration to another runner by CPF
+// Transfer registration to another runner by CPF or Email
 export const transferRegistrationController = asyncHandler(async (req: AuthRequest, res: Response) => {
   if (!req.user) {
     res.status(401).json({
@@ -573,12 +574,13 @@ export const transferRegistrationController = asyncHandler(async (req: AuthReque
   }
 
   const { id } = req.params;
-  const { cpf } = req.body;
+  const { cpf, email } = req.body;
 
-  if (!cpf) {
+  if (!cpf && !email) {
     res.status(400).json({
       success: false,
-      error: 'CPF is required',
+      error: 'CPF or email is required',
+      message: 'CPF ou email é obrigatório',
     });
     return;
   }
@@ -607,14 +609,35 @@ export const transferRegistrationController = asyncHandler(async (req: AuthReque
     return;
   }
 
-  // Find user by CPF
-  const newRunner = await findUserByCpf(cpf);
+  // Find user by CPF or Email
+  let newRunner = null;
+  if (cpf) {
+    newRunner = await findUserByCpf(cpf);
+    if (!newRunner) {
+      res.status(404).json({
+        success: false,
+        error: 'User not found',
+        message: 'Não foi encontrado um usuário com este CPF',
+      });
+      return;
+    }
+  } else if (email) {
+    newRunner = await findUserByEmail(email);
+    if (!newRunner) {
+      res.status(404).json({
+        success: false,
+        error: 'User not found',
+        message: 'Não foi encontrado um usuário com este email',
+      });
+      return;
+    }
+  }
 
   if (!newRunner) {
-    res.status(404).json({
+    res.status(400).json({
       success: false,
-      error: 'User not found',
-      message: 'Não foi encontrado um usuário com este CPF',
+      error: 'Invalid request',
+      message: 'CPF ou email é obrigatório',
     });
     return;
   }
