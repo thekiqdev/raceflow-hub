@@ -9,7 +9,8 @@ import { Input } from "@/components/ui/input";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Separator } from "@/components/ui/separator";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { CheckCircle2, Calendar, MapPin, Ticket, Download, ChevronDown, ChevronUp, List } from "lucide-react";
+import { CheckCircle2, Calendar, MapPin, Ticket, Download, ChevronDown, ChevronUp, List, Eye } from "lucide-react";
+import jsPDF from "jspdf";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { useAuth } from "@/contexts/AuthContext";
@@ -76,6 +77,7 @@ export function RegistrationFlow({
   const [variantSelections, setVariantSelections] = useState<Map<string, Record<string, string>>>(new Map());
   const [shirtSize, setShirtSize] = useState("");
   const [confirmationCode, setConfirmationCode] = useState("");
+  const [registrationId, setRegistrationId] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [paymentData, setPaymentData] = useState<{
     pix_qr_code?: string | null;
@@ -560,6 +562,11 @@ export function RegistrationFlow({
       const code = response.data?.confirmation_code || 
         `CONF-${Math.random().toString(36).substring(2, 10).toUpperCase()}`;
       setConfirmationCode(code);
+      
+      // Store registration ID for later use
+      if (response.data?.id) {
+        setRegistrationId(response.data.id);
+      }
 
       // Check if payment is required (total_amount > 0)
       const requiresPayment = totalPrice > 0;
@@ -678,6 +685,140 @@ export function RegistrationFlow({
     }, 600000); // 10 minutes
   };
 
+  const handleDownloadReceipt = async () => {
+    if (!registrationId) {
+      toast.error("ID da inscrição não encontrado");
+      return;
+    }
+
+    try {
+      const validationUrl = `${window.location.origin}/registration/validate/${registrationId}`;
+      
+      // Create PDF
+      const doc = new jsPDF();
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const margin = 20;
+      let yPos = margin;
+
+      // Title
+      doc.setFontSize(18);
+      doc.setFont("helvetica", "bold");
+      doc.text("COMPROVANTE DE INSCRIÇÃO", pageWidth / 2, yPos, { align: "center" });
+      yPos += 15;
+
+      // Event Title
+      doc.setFontSize(16);
+      doc.setFont("helvetica", "bold");
+      doc.text(event.title || "Evento", pageWidth / 2, yPos, { align: "center" });
+      yPos += 15;
+
+      // Confirmation Code
+      doc.setFontSize(12);
+      doc.setFont("helvetica", "normal");
+      doc.text(`Código: ${confirmationCode}`, margin, yPos);
+      yPos += 10;
+
+      // Registration Date
+      const regDate = format(new Date(), "dd 'de' MMMM 'de' yyyy 'às' HH:mm", { locale: ptBR });
+      doc.text(`Data da Inscrição: ${regDate}`, margin, yPos);
+      yPos += 15;
+
+      // Event Details
+      doc.setFont("helvetica", "bold");
+      doc.text("DADOS DO EVENTO:", margin, yPos);
+      yPos += 8;
+      doc.setFont("helvetica", "normal");
+      doc.text(`Evento: ${event.title}`, margin, yPos);
+      yPos += 7;
+      if (event.event_date) {
+        const eventDate = format(new Date(event.event_date), "dd 'de' MMMM 'de' yyyy 'às' HH:mm", { locale: ptBR });
+        doc.text(`Data: ${eventDate}`, margin, yPos);
+        yPos += 7;
+      }
+      if (event.location || event.city) {
+        const location = event.location || `${event.city || ''}, ${event.state || ''}`.trim();
+        doc.text(`Local: ${location}`, margin, yPos);
+        yPos += 7;
+      }
+      yPos += 5;
+
+      // Runner Details
+      doc.setFont("helvetica", "bold");
+      doc.text("DADOS DO CORREDOR:", margin, yPos);
+      yPos += 8;
+      doc.setFont("helvetica", "normal");
+      doc.text(`Nome: ${formData.fullName}`, margin, yPos);
+      yPos += 7;
+      if (formData.cpf) {
+        doc.text(`CPF: ${formData.cpf}`, margin, yPos);
+        yPos += 7;
+      }
+      yPos += 5;
+
+      // Registration Details
+      doc.setFont("helvetica", "bold");
+      doc.text("DADOS DA INSCRIÇÃO:", margin, yPos);
+      yPos += 8;
+      doc.setFont("helvetica", "normal");
+      if (selectedCategory) {
+        doc.text(`Categoria: ${selectedCategory.name}${selectedCategory.distance ? ` (${selectedCategory.distance})` : ''}`, margin, yPos);
+        yPos += 7;
+      }
+      if (selectedKit) {
+        doc.text(`Kit: ${selectedKit.name}`, margin, yPos);
+        yPos += 7;
+      }
+      doc.text(`Valor: R$ ${totalPrice.toFixed(2).replace('.', ',')}`, margin, yPos);
+      yPos += 7;
+      doc.text(`Status: Confirmada`, margin, yPos);
+      yPos += 7;
+      doc.text(`Status do Pagamento: Pago`, margin, yPos);
+      yPos += 15;
+
+      // QR Code
+      doc.setFont("helvetica", "bold");
+      doc.text("QR CODE DE VALIDAÇÃO:", pageWidth / 2, yPos, { align: "center" });
+      yPos += 10;
+
+      // Generate QR Code as image
+      try {
+        const QRCodeLib = await import('qrcode');
+        const qrCodeSize = 100;
+        const qrCodeX = (pageWidth - qrCodeSize) / 2;
+        
+        // Generate QR code as data URL
+        const qrCodeDataUrl = await QRCodeLib.default.toDataURL(validationUrl, {
+          width: qrCodeSize,
+          margin: 2,
+        });
+        
+        // Add QR code image to PDF
+        doc.addImage(qrCodeDataUrl, 'PNG', qrCodeX, yPos, qrCodeSize, qrCodeSize);
+        yPos += qrCodeSize + 10;
+      } catch (qrError) {
+        console.error('Error generating QR code:', qrError);
+        doc.text("QR Code não disponível", pageWidth / 2, yPos, { align: "center" });
+        yPos += 10;
+      }
+
+      // Footer
+      doc.setFontSize(10);
+      doc.setFont("helvetica", "italic");
+      doc.text("Escaneie o QR Code acima para validar sua inscrição", pageWidth / 2, yPos, { align: "center" });
+      yPos += 7;
+      doc.text(`URL: ${validationUrl}`, pageWidth / 2, yPos, { align: "center" });
+
+      // Save PDF
+      const fileName = `comprovante_${confirmationCode}_${Date.now()}.pdf`;
+      doc.save(fileName);
+      
+      toast.success("Comprovante baixado com sucesso!");
+    } catch (error: any) {
+      console.error("Error generating PDF:", error);
+      toast.error("Erro ao gerar comprovante");
+    }
+  };
+
   const handleReset = () => {
     setStep(1);
     setSelectedCategory(null);
@@ -685,8 +826,10 @@ export function RegistrationFlow({
     setSelectedKit(null);
     setExpandedKits(new Set());
     setSelectedProducts(new Map());
+    setVariantSelections(new Map());
     setShirtSize("");
     setConfirmationCode("");
+    setRegistrationId(null);
     setPaymentData(null);
     setPaymentStatus('pending');
     setIsPollingPayment(false);
@@ -705,6 +848,7 @@ export function RegistrationFlow({
       setSelectedProducts(new Map());
       setShirtSize("");
       setConfirmationCode("");
+      setRegistrationId(null);
     }
   }, [open]);
 
@@ -2214,13 +2358,32 @@ export function RegistrationFlow({
             {/* Botões de ação - mostrar apenas quando pagamento confirmado ou evento gratuito */}
             {(paymentStatus === 'paid' || totalPrice === 0) && (
               <div className="flex gap-3">
-                <Button variant="outline" className="flex-1" onClick={handleReset}>
-                  Fechar
-                </Button>
-                <Button className="flex-1">
-                  <Download className="w-4 h-4 mr-2" />
-                  Baixar Comprovante
-                </Button>
+                {registrationId ? (
+                  <>
+                    <Button 
+                      variant="outline" 
+                      className="flex-1" 
+                      onClick={() => {
+                        onOpenChange(false);
+                        navigate(`/registration/validate/${registrationId}`);
+                      }}
+                    >
+                      <Eye className="w-4 h-4 mr-2" />
+                      Visualizar Inscrição
+                    </Button>
+                    <Button 
+                      className="flex-1"
+                      onClick={handleDownloadReceipt}
+                    >
+                      <Download className="w-4 h-4 mr-2" />
+                      Baixar Inscrição
+                    </Button>
+                  </>
+                ) : (
+                  <Button variant="outline" className="flex-1" onClick={handleReset}>
+                    Fechar
+                  </Button>
+                )}
               </div>
             )}
             
