@@ -32,7 +32,8 @@ export default function ValidateRegistration() {
     if (id) {
       loadRegistration();
     }
-  }, [id]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, user?.id]);
 
   const loadRegistration = async () => {
     if (!id) return;
@@ -41,17 +42,23 @@ export default function ValidateRegistration() {
       setLoading(true);
       setError(null);
       
-      // Try public validation endpoint first (no auth required)
+      // If user is logged in, try authenticated endpoint first (to get runner_id)
+      // Otherwise, use public endpoint
       let response;
-      try {
-        response = await getRegistrationForValidation(id);
-      } catch (publicError: any) {
-        // If public endpoint fails, try authenticated endpoint (for logged-in users)
+      if (user) {
         try {
           response = await getRegistrationById(id);
         } catch (authError: any) {
-          throw publicError; // Use public error message
+          // If authenticated endpoint fails, fallback to public endpoint
+          try {
+            response = await getRegistrationForValidation(id);
+          } catch (publicError: any) {
+            throw authError; // Use auth error message
+          }
         }
+      } else {
+        // User not logged in, use public endpoint
+        response = await getRegistrationForValidation(id);
       }
 
       if (response.success && response.data) {
@@ -121,6 +128,16 @@ export default function ValidateRegistration() {
   
   // Check if current user is the owner of the registration
   const isOwner = user && registration && (registration.runner_id === user.id || registration.registered_by === user.id);
+  
+  // Debug log
+  if (user && registration) {
+    console.log('🔍 Debug - Verificação de propriedade:', {
+      userId: user.id,
+      runnerId: registration.runner_id,
+      registeredBy: registration.registered_by,
+      isOwner
+    });
+  }
 
   return (
     <div className="min-h-screen bg-background">
