@@ -122,27 +122,35 @@ export const register = async (data: RegisterData): Promise<AuthResponse> => {
 
     const profile = profileResult.rows[0];
 
-    // Ensure 'runner' role exists (trigger should create it, but ensure it exists as fallback)
-    const rolesCheck = await client.query(
-      'SELECT role FROM user_roles WHERE user_id = $1 AND role = $2',
-      [user.id, 'runner']
+    // Ensure 'runner' role is created (in case trigger didn't fire)
+    await client.query(
+      `INSERT INTO user_roles (user_id, role)
+       VALUES ($1, 'runner')
+       ON CONFLICT (user_id, role) DO NOTHING`,
+      [user.id]
     );
 
-    if (rolesCheck.rows.length === 0) {
-      // Create runner role if it doesn't exist (trigger may have failed)
-      await client.query(
-        'INSERT INTO user_roles (user_id, role) VALUES ($1, $2) ON CONFLICT (user_id, role) DO NOTHING',
-        [user.id, 'runner']
-      );
-    }
-
-    // Get all user roles
+    // Get user roles
     const rolesResult = await client.query(
       'SELECT role FROM user_roles WHERE user_id = $1',
       [user.id]
     );
 
     const roles = rolesResult.rows.map((row) => row.role as AppRole);
+    
+    // Ensure at least 'runner' role exists
+    if (roles.length === 0) {
+      console.warn(`⚠️ No roles found for user ${user.id}, forcing 'runner' role`);
+      await client.query(
+        `INSERT INTO user_roles (user_id, role)
+         VALUES ($1, 'runner')
+         ON CONFLICT (user_id, role) DO NOTHING`,
+        [user.id]
+      );
+      roles.push('runner');
+    }
+    
+    console.log(`✅ User registered: ${user.email}, roles: ${roles.join(', ')}`);
 
     // Generate token
     const token = generateToken(user.id, user.email);
@@ -256,28 +264,7 @@ export const getUserById = async (userId: string) => {
     [userId]
   );
 
-  let roles = rolesResult.rows.map((row) => row.role as AppRole);
-
-  // If user has no roles and has a profile, ensure they have 'runner' role
-  // This handles cases where the trigger may have failed
-  if (roles.length === 0 && profile) {
-    try {
-      await query(
-        'INSERT INTO user_roles (user_id, role) VALUES ($1, $2) ON CONFLICT (user_id, role) DO NOTHING',
-        [userId, 'runner']
-      );
-      // Fetch roles again
-      const rolesResultRetry = await query(
-        'SELECT role FROM user_roles WHERE user_id = $1',
-        [userId]
-      );
-      roles = rolesResultRetry.rows.map((row) => row.role as AppRole);
-    } catch (error) {
-      console.error('Error ensuring runner role:', error);
-      // If insert fails, at least return 'runner' in the array
-      roles = ['runner'];
-    }
-  }
+  const roles = rolesResult.rows.map((row) => row.role as AppRole);
 
   return {
     id: user.id,

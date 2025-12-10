@@ -79,6 +79,8 @@ export const getOrganizers = async (searchTerm?: string): Promise<UserWithStats[
 
 /**
  * Get all athletes with statistics
+ * Includes users with 'runner' role OR users without any role (default runners)
+ * Excludes users who have 'admin' or 'organizer' roles
  */
 export const getAthletes = async (searchTerm?: string): Promise<UserWithStats[]> => {
   let queryText = `
@@ -93,9 +95,23 @@ export const getAthletes = async (searchTerm?: string): Promise<UserWithStats[]>
       COUNT(DISTINCT r.id) as registrations
     FROM profiles p
     JOIN users u ON p.id = u.id
-    JOIN user_roles ur ON p.id = ur.user_id
+    LEFT JOIN user_roles ur ON p.id = ur.user_id
     LEFT JOIN registrations r ON p.id = r.runner_id
-    WHERE ur.role = 'runner'
+    WHERE p.id NOT IN (
+      SELECT DISTINCT user_id 
+      FROM user_roles 
+      WHERE role IN ('admin', 'organizer')
+    )
+    AND (
+      EXISTS (
+        SELECT 1 FROM user_roles ur2 
+        WHERE ur2.user_id = p.id AND ur2.role = 'runner'
+      )
+      OR NOT EXISTS (
+        SELECT 1 FROM user_roles ur3 
+        WHERE ur3.user_id = p.id
+      )
+    )
   `;
 
   const params: any[] = [];

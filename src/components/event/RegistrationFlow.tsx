@@ -418,6 +418,11 @@ export function RegistrationFlow({
         });
         setLgpdConsent(false);
         setIsRegistering(false); // Switch back to login view
+        
+        // Wait a bit for user data to be loaded, then redirect
+        setTimeout(() => {
+          navigate("/runner/dashboard");
+        }, 500);
       }
     } catch (error) {
       console.error("Registration error:", error);
@@ -1165,44 +1170,28 @@ export function RegistrationFlow({
         {step === 2 && (
           <div className="space-y-4">
             {/* Check if user is logged in but doesn't have runner role */}
-            {(() => {
-              // If user has no roles but has a profile, assume they are a runner
-              const effectiveRoles = user?.roles && user.roles.length > 0 
-                ? user.roles 
-                : (user?.profile ? ['runner'] : []);
-              const isRunner = effectiveRoles.includes('runner');
-              
-              return user && !isRunner && (
-                <div className="mb-6 p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
-                  <div className="flex items-start gap-3">
-                    <div className="flex-shrink-0">
-                      <svg className="w-5 h-5 text-yellow-600 dark:text-yellow-400" fill="currentColor" viewBox="0 0 20 20">
-                        <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                      </svg>
-                    </div>
-                    <div className="flex-1">
-                      <h4 className="text-sm font-semibold text-yellow-800 dark:text-yellow-200 mb-1">
-                        Acesso como Corredor Necessário
-                      </h4>
-                      <p className="text-sm text-yellow-700 dark:text-yellow-300">
-                        Apenas perfis de corredor podem se inscrever em eventos. Por favor, acesse com uma conta de corredor para continuar.
-                      </p>
-                    </div>
+            {user && !user.roles?.includes('runner') && (
+              <div className="mb-6 p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
+                <div className="flex items-start gap-3">
+                  <div className="flex-shrink-0">
+                    <svg className="w-5 h-5 text-yellow-600 dark:text-yellow-400" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                    </svg>
+                  </div>
+                  <div className="flex-1">
+                    <h4 className="text-sm font-semibold text-yellow-800 dark:text-yellow-200 mb-1">
+                      Acesso como Corredor Necessário
+                    </h4>
+                    <p className="text-sm text-yellow-700 dark:text-yellow-300">
+                      Apenas perfis de corredor podem se inscrever em eventos. Por favor, acesse com uma conta de corredor para continuar.
+                    </p>
                   </div>
                 </div>
-              );
-            })()}
+              </div>
+            )}
             
             {/* Only show category selection if user is runner or not logged in */}
-            {(() => {
-              // If user has no roles but has a profile, assume they are a runner
-              const effectiveRoles = user?.roles && user.roles.length > 0 
-                ? user.roles 
-                : (user?.profile ? ['runner'] : []);
-              const isRunner = effectiveRoles.includes('runner');
-              
-              if (!user || isRunner) {
-                return (
+            {(!user || user.roles?.includes('runner')) && (
               <>
                 <h3 className="text-lg font-semibold">Escolha a Modalidade</h3>
                 {loadingCategories ? (
@@ -1396,10 +1385,9 @@ export function RegistrationFlow({
                   </Button>
                 </div>
               </>
-                );
-              }
-              return null;
-            })()}
+            )}
+              </>
+            )}
           </div>
         )}
 

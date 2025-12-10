@@ -87,15 +87,25 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
         // Fetch full user data
         const userResponse = await getCurrentUser();
         if (userResponse.success && userResponse.data) {
-          setUser(userResponse.data);
+          const fullUser = userResponse.data;
+          // Ensure roles array exists and has at least 'runner'
+          if (!fullUser.roles || fullUser.roles.length === 0) {
+            console.warn('⚠️ User registered but no roles found, defaulting to runner');
+            fullUser.roles = ['runner'];
+          }
+          setUser(fullUser);
+          localStorage.setItem('auth_user', JSON.stringify(fullUser));
         } else {
-          setUser({
+          // Fallback: use data from registration response
+          const fallbackUser = {
             id: newUser.id,
             email: newUser.email,
             email_verified: false,
             profile: newUser.profile,
-            roles: newUser.roles,
-          });
+            roles: newUser.roles && newUser.roles.length > 0 ? newUser.roles : ['runner'],
+          };
+          setUser(fallbackUser);
+          localStorage.setItem('auth_user', JSON.stringify(fallbackUser));
         }
 
         toast.success('Registro realizado com sucesso!');
