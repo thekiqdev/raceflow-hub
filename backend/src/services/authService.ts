@@ -122,7 +122,21 @@ export const register = async (data: RegisterData): Promise<AuthResponse> => {
 
     const profile = profileResult.rows[0];
 
-    // Get user roles (should have 'runner' by default from trigger)
+    // Ensure 'runner' role is created (trigger should do this, but we'll ensure it)
+    const rolesCheck = await client.query(
+      'SELECT role FROM user_roles WHERE user_id = $1',
+      [user.id]
+    );
+
+    if (rolesCheck.rows.length === 0) {
+      // Trigger didn't work, create role explicitly
+      await client.query(
+        'INSERT INTO user_roles (user_id, role) VALUES ($1, $2) ON CONFLICT (user_id, role) DO NOTHING',
+        [user.id, 'runner']
+      );
+    }
+
+    // Get user roles
     const rolesResult = await client.query(
       'SELECT role FROM user_roles WHERE user_id = $1',
       [user.id]
