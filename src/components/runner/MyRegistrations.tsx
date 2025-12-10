@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -14,17 +14,23 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Calendar, MapPin, QrCode, RefreshCw, X, Loader2, AlertCircle, Download } from "lucide-react";
+import { Calendar, MapPin, QrCode, RefreshCw, X, Loader2, AlertCircle, Download, CreditCard } from "lucide-react";
 import { format, isFuture } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { useAuth } from "@/contexts/AuthContext";
-import { getRegistrations, transferRegistration, cancelRegistration, type Registration } from "@/lib/api/registrations";
+import { getRegistrations, transferRegistration, cancelRegistration, getPaymentStatus, type Registration } from "@/lib/api/registrations";
 import { toast } from "sonner";
+import { PixQrCode } from "@/components/payment/PixQrCode";
 
 export function MyRegistrations() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
+  
+  // Get initial tab from URL parameter, default to "active"
+  const initialTab = searchParams.get("subtab") || "active";
+  const [activeSubTab, setActiveSubTab] = useState(initialTab);
   const [registrations, setRegistrations] = useState<Registration[]>([]);
   const [isTransferDialogOpen, setIsTransferDialogOpen] = useState(false);
   const [isCancelDialogOpen, setIsCancelDialogOpen] = useState(false);
@@ -32,12 +38,27 @@ export function MyRegistrations() {
   const [selectedRegistration, setSelectedRegistration] = useState<Registration | null>(null);
   const [isTransferring, setIsTransferring] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
+  const [isPixDialogOpen, setIsPixDialogOpen] = useState(false);
+  const [pixData, setPixData] = useState<{
+    qrCode: string;
+    value: number;
+    dueDate: string;
+  } | null>(null);
+  const [loadingPix, setLoadingPix] = useState(false);
 
   useEffect(() => {
     if (user) {
       loadRegistrations();
     }
   }, [user]);
+
+  // Update active tab when URL parameter changes
+  useEffect(() => {
+    const subtabFromUrl = searchParams.get("subtab");
+    if (subtabFromUrl && ["active", "pending", "cancelled"].includes(subtabFromUrl)) {
+      setActiveSubTab(subtabFromUrl);
+    }
+  }, [searchParams]);
 
   const loadRegistrations = async () => {
     if (!user) return;
@@ -109,25 +130,72 @@ export function MyRegistrations() {
     }
   };
 
+  const handleViewPix = async (registration: Registration) => {
+    setSelectedRegistration(registration);
+    setLoadingPix(true);
+    setIsPixDialogOpen(true);
+    
+    try {
+      const response = await getPaymentStatus(registration.id);
+      
+      if (response.success && response.data) {
+        const paymentData = response.data;
+        
+        if (paymentData.pix_qr_code) {
+          // Use payment due date if available, otherwise calculate (3 days from now)
+          let dueDateString: string;
+          if (paymentData.due_date) {
+            dueDateString = paymentData.due_date.split('T')[0]; // Get only date part if it includes time
+          } else {
+            const dueDate = new Date();
+            dueDate.setDate(dueDate.getDate() + 3);
+            dueDateString = dueDate.toISOString().split('T')[0];
+          }
+          
+          setPixData({
+            qrCode: paymentData.pix_qr_code,
+            value: typeof registration.total_amount === 'number' 
+              ? registration.total_amount 
+              : parseFloat(registration.total_amount?.toString() || '0') || 0,
+            dueDate: dueDateString,
+          });
+        } else {
+          toast.error("QR Code PIX ainda não está disponível. Tente novamente em alguns instantes.");
+          setIsPixDialogOpen(false);
+        }
+      } else {
+        toast.error(response.error || "Erro ao buscar QR Code PIX");
+        setIsPixDialogOpen(false);
+      }
+    } catch (error: any) {
+      console.error("Error fetching payment status:", error);
+      toast.error(error.message || "Erro ao buscar QR Code PIX");
+      setIsPixDialogOpen(false);
+    } finally {
+      setLoadingPix(false);
+    }
+  };
+
   const activeRegistrations = registrations.filter((r) => 
     r.status === "confirmed" && r.payment_status === "paid"
   );
   const pendingRegistrations = registrations.filter((r) => 
-    r.status === "pending" || r.payment_status === "pending"
+    r.status !== "cancelled" && (r.status === "pending" || r.payment_status === "pending")
   );
   const cancelledRegistrations = registrations.filter((r) => 
     r.status === "cancelled"
   );
 
   const getStatusBadge = (status: string | undefined, paymentStatus: string | undefined) => {
+    // Verificar cancelado primeiro (prioridade máxima)
+    if (status === "cancelled") {
+      return <Badge variant="destructive">Cancelado</Badge>;
+    }
     if (status === "confirmed" && paymentStatus === "paid") {
       return <Badge className="bg-accent">Confirmada</Badge>;
     }
     if (status === "pending" || paymentStatus === "pending") {
       return <Badge variant="secondary">Pendente</Badge>;
-    }
-    if (status === "cancelled") {
-      return <Badge variant="destructive">Cancelada</Badge>;
     }
     if (paymentStatus === "refunded") {
       return <Badge variant="outline">Reembolsado</Badge>;
@@ -224,6 +292,18 @@ export function MyRegistrations() {
           </div>
 
           <div className="flex gap-2">
+            {/* Botão Visualizar PIX - apenas para inscrições pendentes */}
+            {(registration.status === "pending" || registration.payment_status === "pending") && (
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="flex-1"
+                onClick={() => handleViewPix(registration)}
+              >
+                <CreditCard className="h-3 w-3 mr-1" />
+                Visualizar PIX
+              </Button>
+            )}
             {canTransfer && (
               <Button 
                 variant="outline" 
@@ -294,7 +374,7 @@ export function MyRegistrations() {
 
       {/* Tabs */}
       <div className="px-4 mt-6">
-        <Tabs defaultValue="active" className="w-full">
+        <Tabs value={activeSubTab} onValueChange={setActiveSubTab} className="w-full">
           <TabsList className="grid w-full grid-cols-3 mb-6">
             <TabsTrigger value="active">
               Ativas ({activeRegistrations.length})
@@ -441,6 +521,57 @@ export function MyRegistrations() {
               ) : (
                 "Sim, cancelar inscrição"
               )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* PIX QR Code Dialog */}
+      <Dialog open={isPixDialogOpen} onOpenChange={setIsPixDialogOpen}>
+        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Pagamento via PIX</DialogTitle>
+            <DialogDescription>
+              {selectedRegistration?.event_title}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            {loadingPix ? (
+              <div className="flex flex-col items-center justify-center py-8">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                <p className="mt-4 text-sm text-muted-foreground">
+                  Carregando QR Code PIX...
+                </p>
+              </div>
+            ) : pixData ? (
+              <div className="w-full">
+                <PixQrCode
+                  pixQrCode={pixData.qrCode}
+                  value={pixData.value}
+                  dueDate={pixData.dueDate}
+                  registrationId={selectedRegistration?.confirmation_code}
+                  hideHeader={true}
+                />
+              </div>
+            ) : (
+              <div className="text-center py-8">
+                <AlertCircle className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+                <p className="text-sm text-muted-foreground">
+                  QR Code PIX não disponível no momento
+                </p>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                setIsPixDialogOpen(false);
+                setPixData(null);
+                setSelectedRegistration(null);
+              }}
+            >
+              Fechar
             </Button>
           </DialogFooter>
         </DialogContent>

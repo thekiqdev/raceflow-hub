@@ -12,9 +12,10 @@ interface PixQrCodeProps {
   value: number;
   dueDate: string; // YYYY-MM-DD
   registrationId?: string;
+  hideHeader?: boolean; // Para ocultar o header quando usado dentro de um dialog
 }
 
-export function PixQrCode({ pixQrCode, value, dueDate, registrationId }: PixQrCodeProps) {
+export function PixQrCode({ pixQrCode, value, dueDate, registrationId, hideHeader = false }: PixQrCodeProps) {
   const [copied, setCopied] = useState(false);
   const [isGenerating, setIsGenerating] = useState(true);
 
@@ -51,8 +52,9 @@ export function PixQrCode({ pixQrCode, value, dueDate, registrationId }: PixQrCo
     }
   };
 
-  const formatPrice = (price: number): string => {
-    return `R$ ${price.toFixed(2).replace('.', ',')}`;
+  const formatPrice = (price: number | string | undefined): string => {
+    const numPrice = typeof price === 'number' ? price : parseFloat(String(price || '0')) || 0;
+    return `R$ ${numPrice.toFixed(2).replace('.', ',')}`;
   };
 
   if (isGenerating) {
@@ -72,21 +74,23 @@ export function PixQrCode({ pixQrCode, value, dueDate, registrationId }: PixQrCo
   }
 
   return (
-    <Card className="w-full max-w-md mx-auto">
-      <CardHeader>
-        <CardTitle className="text-center">Pagamento via PIX</CardTitle>
-        <CardDescription className="text-center">
-          Escaneie o QR Code ou copie o código para pagar
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
+    <Card className="w-full max-w-md mx-auto border-0 shadow-none">
+      {!hideHeader && (
+        <CardHeader>
+          <CardTitle className="text-center">Pagamento via PIX</CardTitle>
+          <CardDescription className="text-center">
+            Escaneie o QR Code ou copie o código para pagar
+          </CardDescription>
+        </CardHeader>
+      )}
+      <CardContent className={`space-y-4 ${hideHeader ? 'pt-0' : ''}`}>
         {/* QR Code */}
         <div className="flex justify-center p-4 bg-white rounded-lg border-2 border-dashed">
           <QRCode
             value={pixQrCode}
-            size={256}
+            size={hideHeader ? 200 : 256}
             level="M"
-            className="w-full max-w-[256px] h-auto"
+            className={`w-full h-auto ${hideHeader ? 'max-w-[200px]' : 'max-w-[256px]'}`}
           />
         </div>
 

@@ -242,12 +242,12 @@ const Index = () => {
                       <Award className="h-16 w-16 text-white opacity-50" />
                     </div>
                     <CardContent className="pt-4">
-                      <h3 className="font-bold text-sm mb-2">
+                      <h3 className="font-bold text-lg mb-2">{event.title}</h3>
+                      <p className="text-sm text-muted-foreground mb-3">
                         {format(new Date(event.event_date), "dd 'DE' MMMM 'DE' yyyy", {
                   locale: ptBR
                 }).toUpperCase()}
-                      </h3>
-                      <p className="text-xs text-muted-foreground mb-3">{event.title}</p>
+                      </p>
                       <div className="space-y-1 text-xs mb-4">
                         <div className="flex items-center gap-2">
                           <MapPin className="h-3 w-3" />

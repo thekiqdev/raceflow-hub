@@ -69,7 +69,7 @@ export const getRegistrationById = async (id: string) => {
 
 // Get payment status by registration ID
 export const getPaymentStatus = async (registrationId: string) => {
-  return apiClient.get<{ status: string; payment_date?: string }>(`/registrations/${registrationId}/payment-status`);
+  return apiClient.get<{ status: string; payment_date?: string; pix_qr_code?: string | null; due_date?: string | null }>(`/registrations/${registrationId}/payment-status`);
 };
 
 // Create registration

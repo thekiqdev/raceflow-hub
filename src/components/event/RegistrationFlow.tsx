@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -8,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Separator } from "@/components/ui/separator";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { CheckCircle2, Calendar, MapPin, Ticket, Download, ChevronDown, ChevronUp } from "lucide-react";
+import { CheckCircle2, Calendar, MapPin, Ticket, Download, ChevronDown, ChevronUp, List } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { useAuth } from "@/contexts/AuthContext";
@@ -63,6 +64,7 @@ export function RegistrationFlow({
   categories: initialCategories,
   kits,
 }: RegistrationFlowProps) {
+  const navigate = useNavigate();
   const { user, login, register } = useAuth();
   const [step, setStep] = useState(1);
   const [selectedCategory, setSelectedCategory] = useState<Category | null>(null);
@@ -726,9 +728,9 @@ export function RegistrationFlow({
         </DialogHeader>
 
         {/* Progress Indicator */}
-        {step < 5 && (
+        {step <= 5 && (
           <div className="flex items-center justify-between mb-6">
-            {[1, 2, 3, 4].map((s) => (
+            {[1, 2, 3, 4, 5].map((s) => (
               <div key={s} className="flex items-center flex-1">
                 <div
                   className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${
@@ -739,7 +741,7 @@ export function RegistrationFlow({
                 >
                   {s}
                 </div>
-                {s < 4 && (
+                {s < 5 && (
                   <div
                     className={`flex-1 h-1 mx-2 ${
                       step > s ? "bg-primary" : "bg-muted"
@@ -1974,13 +1976,24 @@ export function RegistrationFlow({
           <div className="space-y-6 text-center">
             {/* Show QR Code PIX if payment is pending */}
             {paymentData && paymentData.pix_qr_code && paymentStatus === 'pending' && (
-              <div>
+              <div className="space-y-4">
                 <PixQrCode
                   pixQrCode={paymentData.pix_qr_code}
                   value={totalPrice}
                   dueDate={paymentData.due_date || new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]}
                   registrationId={confirmationCode}
                 />
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => {
+                    onOpenChange(false);
+                    navigate("/runner/dashboard?tab=registrations&subtab=pending");
+                  }}
+                >
+                  <List className="w-4 h-4 mr-2" />
+                  Visualizar Inscrições
+                </Button>
               </div>
             )}
 
@@ -2193,15 +2206,35 @@ export function RegistrationFlow({
               </div>
             )}
 
-            <div className="flex gap-3">
-              <Button variant="outline" className="flex-1" onClick={handleReset}>
-                Fechar
-              </Button>
-              <Button className="flex-1">
-                <Download className="w-4 h-4 mr-2" />
-                Baixar Comprovante
-              </Button>
-            </div>
+            {/* Botões de ação - mostrar apenas quando pagamento confirmado ou evento gratuito */}
+            {(paymentStatus === 'paid' || totalPrice === 0) && (
+              <div className="flex gap-3">
+                <Button variant="outline" className="flex-1" onClick={handleReset}>
+                  Fechar
+                </Button>
+                <Button className="flex-1">
+                  <Download className="w-4 h-4 mr-2" />
+                  Baixar Comprovante
+                </Button>
+              </div>
+            )}
+            
+            {/* Quando pagamento está pendente sem QR code, mostrar botão Minhas Inscrições */}
+            {paymentStatus === 'pending' && totalPrice > 0 && !paymentData?.pix_qr_code && (
+              <div className="flex gap-3">
+                <Button 
+                  variant="outline" 
+                  className="flex-1" 
+                  onClick={() => {
+                    onOpenChange(false);
+                    navigate("/runner/dashboard?tab=registrations&subtab=pending");
+                  }}
+                >
+                  <List className="w-4 h-4 mr-2" />
+                  Minhas Inscrições
+                </Button>
+              </div>
+            )}
           </div>
         )}
       </DialogContent>

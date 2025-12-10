@@ -324,11 +324,24 @@ export const createRegistrationController = asyncHandler(async (req: AuthRequest
         response: error.response?.data,
         status: error.response?.status
       });
+      
+      // Check if error is related to invalid CPF
+      const errorMessage = error.message || '';
+      const errorResponse = error.response?.data;
+      const asaasErrors = errorResponse?.errors || [];
+      const asaasErrorMessages = asaasErrors.map((e: any) => e.description || '').join(' ').toLowerCase();
+      
+      const isInvalidCpf = errorMessage.includes('CPF/CNPJ informado é inválido') || 
+                          (errorMessage.toLowerCase().includes('cpf') && errorMessage.toLowerCase().includes('inválido')) ||
+                          asaasErrorMessages.includes('cpf') && asaasErrorMessages.includes('inválido');
+      
       // Registration was created successfully, but payment failed
       // We'll return the registration anyway, but with a warning
       paymentData = {
         error: error.message || 'Erro ao criar pagamento',
-        warning: 'Inscrição criada, mas pagamento não foi processado. Entre em contato com o suporte.',
+        warning: isInvalidCpf 
+          ? 'CPF Inválido, entre em contato com o suporte'
+          : 'Inscrição criada, mas pagamento não foi processado. Entre em contato com o suporte.',
       };
     }
   } else {
@@ -416,6 +429,7 @@ export const getPaymentStatusController = asyncHandler(async (req: AuthRequest, 
       status: paymentStatus === 'paid' ? 'paid' : currentStatus === 'confirmed' ? 'confirmed' : 'pending',
       payment_date: payment.payment_date || null,
       pix_qr_code: payment.pix_qr_code || null,
+      due_date: payment.due_date || null,
     },
   });
 });

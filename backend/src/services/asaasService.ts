@@ -156,6 +156,15 @@ export const createCustomer = async (
       const errorData = error.response.data;
       if (errorData.errors) {
         const errorMessages = errorData.errors.map((e: any) => e.description).join(', ');
+        
+        // Check if error is related to invalid CPF
+        const isInvalidCpf = errorMessages.includes('CPF/CNPJ informado é inválido') || 
+                            errorMessages.toLowerCase().includes('cpf') && errorMessages.toLowerCase().includes('inválido');
+        
+        if (isInvalidCpf) {
+          throw new Error('CPF/CNPJ informado é inválido');
+        }
+        
         throw new Error(`Erro ao criar cliente no Asaas: ${errorMessages}`);
       }
     }
