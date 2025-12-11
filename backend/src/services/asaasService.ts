@@ -536,31 +536,48 @@ export const createTransferPayment = async (
     }
 
     // Save payment to database (without updating registrations table)
-    await query(
-      `INSERT INTO asaas_payments (
-        registration_id, asaas_payment_id, asaas_customer_id, value, net_value,
-        billing_type, status, due_date, payment_link, invoice_url, bank_slip_url,
-        external_reference, pix_qr_code_id, pix_qr_code
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
-      [
-        null, // No registration_id for transfer payments
-        asaasPayment.id,
-        customerId,
-        asaasPayment.value,
-        asaasPayment.netValue || null,
-        asaasPayment.billingType,
-        asaasPayment.status,
-        asaasPayment.dueDate,
-        asaasPayment.paymentLink || null,
-        asaasPayment.invoiceUrl || null,
-        asaasPayment.bankSlipUrl || null,
-        asaasPayment.externalReference || null,
-        pixQrCodeId,
-        pixQrCode,
-      ]
-    );
-
-    console.log(`✅ Pagamento de transferência salvo no banco de dados`);
+    try {
+      console.log(`💾 Salvando pagamento de transferência no banco de dados...`);
+      await query(
+        `INSERT INTO asaas_payments (
+          registration_id, asaas_payment_id, asaas_customer_id, value, net_value,
+          billing_type, status, due_date, payment_link, invoice_url, bank_slip_url,
+          external_reference, pix_qr_code_id, pix_qr_code
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+        [
+          null, // No registration_id for transfer payments
+          asaasPayment.id,
+          customerId,
+          asaasPayment.value,
+          asaasPayment.netValue || null,
+          asaasPayment.billingType,
+          asaasPayment.status,
+          asaasPayment.dueDate,
+          asaasPayment.paymentLink || null,
+          asaasPayment.invoiceUrl || null,
+          asaasPayment.bankSlipUrl || null,
+          asaasPayment.externalReference || null,
+          pixQrCodeId,
+          pixQrCode,
+        ]
+      );
+      console.log(`✅ Pagamento de transferência salvo no banco de dados`);
+    } catch (dbError: any) {
+      console.error(`❌ Erro ao salvar pagamento de transferência no banco:`, {
+        message: dbError.message,
+        code: dbError.code,
+        detail: dbError.detail,
+        constraint: dbError.constraint,
+      });
+      // Se o erro for por constraint, pode ser que a migration não foi executada
+      if (dbError.code === '23502' || dbError.constraint) {
+        throw new Error(
+          `Erro ao salvar pagamento: A coluna registration_id ainda não permite NULL. ` +
+          `Execute a migration 027_allow_null_registration_id_in_asaas_payments.sql`
+        );
+      }
+      throw dbError;
+    }
 
     return {
       asaas_payment_id: asaasPayment.id,

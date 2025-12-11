@@ -447,11 +447,17 @@ export const generateTransferPaymentController = asyncHandler(async (req: AuthRe
       message: 'Pagamento gerado com sucesso',
     });
   } catch (error: any) {
-    console.error('Error generating transfer payment:', error);
+    console.error('❌ Error generating transfer payment:', {
+      message: error.message,
+      stack: error.stack,
+      response: error.response?.data,
+      status: error.response?.status,
+    });
     res.status(500).json({
       success: false,
       error: 'Payment generation failed',
       message: error.message || 'Erro ao gerar pagamento',
+      details: process.env.NODE_ENV === 'development' ? error.stack : undefined,
     });
   }
 });
