@@ -19,7 +19,7 @@ import { format, isFuture } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { useAuth } from "@/contexts/AuthContext";
 import { getRegistrations, transferRegistration, cancelRegistration, getPaymentStatus, type Registration } from "@/lib/api/registrations";
-import { getSystemSettings } from "@/lib/api/systemSettings";
+import { getEnabledModules } from "@/lib/api/systemSettings";
 import { createTransferRequest, generateTransferPayment, type TransferRequest } from "@/lib/api/transferRequests";
 import { toast } from "sonner";
 import { PixQrCode } from "@/components/payment/PixQrCode";
@@ -86,7 +86,7 @@ export function MyRegistrations() {
       setLoading(true);
       const [registrationsResponse, settingsResponse] = await Promise.all([
         getRegistrations({ runner_id: user.id }),
-        getSystemSettings(),
+        getEnabledModules(),
       ]);
 
       if (registrationsResponse.success && registrationsResponse.data) {

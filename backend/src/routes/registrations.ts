@@ -13,6 +13,7 @@ import {
   getPaymentStatusController,
 } from '../controllers/registrationsController.js';
 import { createTransferRequestController, generateTransferPaymentController } from '../controllers/transferRequestController.js';
+import { getEnabledModulesController } from '../controllers/systemSettingsController.js';
 
 const router = Router();
 
@@ -21,6 +22,9 @@ router.get('/:id/validate', getRegistrationForValidation);
 
 // All other routes require authentication
 router.use(authenticate);
+
+// Public endpoint for enabled modules (accessible to authenticated users)
+router.get('/settings/modules', getEnabledModulesController);
 
 router.get('/export', exportRegistrationsController);
 router.get('/', getAllRegistrations);

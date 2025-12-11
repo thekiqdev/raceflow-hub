@@ -49,6 +49,7 @@ import {
 import {
   getSystemSettingsController,
   updateSystemSettingsController,
+  getEnabledModulesController,
 } from '../controllers/systemSettingsController.js';
 import {
   getTransferRequestsController,

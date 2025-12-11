@@ -65,6 +65,34 @@ export const getSystemSettingsController = async (
 };
 
 /**
+ * GET /api/settings/modules
+ * Get enabled modules and transfer fee (public endpoint for runners)
+ */
+export const getEnabledModulesController = async (
+  _req: AuthRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    const settings = await getSystemSettings();
+
+    res.json({
+      success: true,
+      data: {
+        enabled_modules: settings.enabled_modules || {},
+        transfer_fee: settings.transfer_fee || 0,
+      },
+    });
+  } catch (error: any) {
+    console.error('Error fetching enabled modules:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Internal server error',
+      message: error.message || 'Failed to fetch enabled modules',
+    });
+  }
+};
+
+/**
  * PUT /api/admin/settings
  * Update system settings
  */

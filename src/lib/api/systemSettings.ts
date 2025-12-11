@@ -74,7 +74,7 @@ export interface UpdateSystemSettingsData {
 }
 
 /**
- * Get system settings
+ * Get system settings (admin only)
  */
 export const getSystemSettings = async (): Promise<{
   success: boolean;
@@ -83,6 +83,24 @@ export const getSystemSettings = async (): Promise<{
   message?: string;
 }> => {
   return apiClient.get<SystemSettings>('/admin/settings');
+};
+
+/**
+ * Get enabled modules and transfer fee (for runners)
+ */
+export const getEnabledModules = async (): Promise<{
+  success: boolean;
+  data?: {
+    enabled_modules: Record<string, boolean>;
+    transfer_fee: number;
+  };
+  error?: string;
+  message?: string;
+}> => {
+  return apiClient.get<{
+    enabled_modules: Record<string, boolean>;
+    transfer_fee: number;
+  }>('/registrations/settings/modules');
 };
 
 /**
