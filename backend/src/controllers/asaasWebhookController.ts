@@ -57,6 +57,7 @@ export const handleWebhook = asyncHandler(async (req: Request, res: Response) =>
   if (isTransferPayment && payment.externalReference) {
     const transferRequestId = payment.externalReference.replace('TRANSFER-', '');
     console.log(`🔄 Processando pagamento de transferência: ${transferRequestId}`);
+    console.log(`📋 Detalhes do evento: event=${event}, paymentStatus=${payment.status}`);
     
     // Save webhook event to database first
     let webhookEventId: string | null = null;
@@ -74,12 +75,23 @@ export const handleWebhook = asyncHandler(async (req: Request, res: Response) =>
         ]
       );
       webhookEventId = webhookResult.rows[0].id;
+      console.log(`💾 Webhook event salvo: ${webhookEventId}`);
     } catch (error: any) {
       console.error('❌ Erro ao salvar evento do webhook:', error);
     }
     
-    // Update transfer request payment status
-    if (payment.status === 'CONFIRMED' || payment.status === 'RECEIVED') {
+    // Process transfer payment for CONFIRMED or RECEIVED status
+    // Handle both direct status check and event-based confirmation
+    const paymentStatus = payment.status as string;
+    const isPaymentConfirmed = 
+      paymentStatus === 'CONFIRMED' || 
+      paymentStatus === 'RECEIVED' ||
+      event === 'PAYMENT_CONFIRMED' ||
+      event === 'PAYMENT_RECEIVED' ||
+      (event === 'PAYMENT_UPDATED' && (paymentStatus === 'CONFIRMED' || paymentStatus === 'RECEIVED'));
+    
+    if (isPaymentConfirmed) {
+      console.log(`✅ Pagamento confirmado - processando transferência: ${transferRequestId}`);
       await query(
         `UPDATE transfer_requests 
          SET payment_status = 'paid', updated_at = NOW()
@@ -264,6 +276,27 @@ export const handleWebhook = asyncHandler(async (req: Request, res: Response) =>
           );
         }
         // Continue - payment is confirmed, transfer can be done manually later
+      }
+    } else {
+      console.log(`⏳ Pagamento ainda não confirmado (status: ${paymentStatus}, event: ${event}) - aguardando confirmação`);
+      // Update payment status even if not confirmed yet
+      if (paymentStatus) {
+        const statusMap: Record<string, string> = {
+          'PENDING': 'pending',
+          'CONFIRMED': 'paid',
+          'RECEIVED': 'paid',
+          'OVERDUE': 'pending',
+          'REFUNDED': 'refunded',
+        };
+        const mappedStatus = statusMap[paymentStatus] || 'pending';
+        
+        await query(
+          `UPDATE transfer_requests 
+           SET payment_status = $1, updated_at = NOW()
+           WHERE id = $2`,
+          [mappedStatus, transferRequestId]
+        );
+        console.log(`📝 Status do pagamento atualizado para: ${mappedStatus}`);
       }
     }
     
