@@ -42,14 +42,18 @@ export const handleWebhook = asyncHandler(async (req: Request, res: Response) =>
   const asaasPaymentId = payment.id;
 
   // Enhanced logging
-  console.log('📥 Webhook recebido do Asaas:', {
-    event: event,
-    paymentId: asaasPaymentId,
-    paymentStatus: payment.status,
-    externalReference: payment.externalReference,
-    value: payment.value,
-    billingType: payment.billingType,
-  });
+  console.log('📥 ============================================');
+  console.log('📥 WEBHOOK RECEBIDO DO ASAAS');
+  console.log('📥 ============================================');
+  console.log('📥 Event:', event);
+  console.log('📥 Payment ID:', asaasPaymentId);
+  console.log('📥 Payment Status:', payment.status);
+  console.log('📥 External Reference:', payment.externalReference);
+  console.log('📥 Value:', payment.value);
+  console.log('📥 Billing Type:', payment.billingType);
+  console.log('📥 Payment Date:', payment.paymentDate);
+  console.log('📥 Invoice Number:', (payment as any).invoiceNumber);
+  console.log('📥 ============================================');
 
   // Check if this is a transfer request payment
   const isTransferPayment = payment.externalReference?.startsWith('TRANSFER-');
@@ -317,7 +321,14 @@ export const handleWebhook = asyncHandler(async (req: Request, res: Response) =>
   // Find registration by external_reference or asaas_payment_id
   let registrationId: string | null = null;
 
-  // Try to find by asaas_payment_id in asaas_payments table
+  console.log(`🔍 Buscando inscrição para webhook:`, {
+    asaasPaymentId,
+    externalReference: payment.externalReference,
+    event,
+    paymentStatus: payment.status,
+  });
+
+  // Try to find by asaas_payment_id in asaas_payments table (PRIMARY METHOD)
   const paymentResult = await query(
     'SELECT registration_id FROM asaas_payments WHERE asaas_payment_id = $1',
     [asaasPaymentId]
@@ -325,24 +336,40 @@ export const handleWebhook = asyncHandler(async (req: Request, res: Response) =>
 
   if (paymentResult.rows.length > 0) {
     registrationId = paymentResult.rows[0].registration_id;
-    console.log(`✅ Inscrição encontrada por asaas_payment_id: ${registrationId}`);
+    console.log(`✅ Inscrição encontrada por asaas_payment_id: ${asaasPaymentId} -> ${registrationId}`);
   } else {
-    // Fallback: buscar por external_reference
+    console.warn(`⚠️ Pagamento não encontrado na tabela asaas_payments com asaas_payment_id: ${asaasPaymentId}`);
+    
+    // Fallback 1: buscar por external_reference na tabela asaas_payments
     if (payment.externalReference) {
       const externalRef = payment.externalReference;
-    
-      // Tentar buscar diretamente pelo ID se external_reference for UUID
-      // ou pelo confirmation_code
-    const regResult = await query(
-        'SELECT id FROM registrations WHERE id = $1 OR confirmation_code = $2',
-        [externalRef, externalRef]
-    );
-    
-    if (regResult.rows.length > 0) {
-        registrationId = regResult.rows[0].id;
-        console.log(`✅ Inscrição encontrada por external_reference: ${externalRef} -> ${registrationId}`);
+      console.log(`🔍 Tentando buscar por external_reference na tabela asaas_payments: ${externalRef}`);
+      
+      const externalRefResult = await query(
+        'SELECT registration_id FROM asaas_payments WHERE external_reference = $1',
+        [externalRef]
+      );
+      
+      if (externalRefResult.rows.length > 0) {
+        registrationId = externalRefResult.rows[0].registration_id;
+        console.log(`✅ Inscrição encontrada por external_reference na tabela asaas_payments: ${externalRef} -> ${registrationId}`);
       } else {
-        console.warn(`⚠️ Inscrição não encontrada por external_reference: ${externalRef}`);
+        console.warn(`⚠️ Pagamento não encontrado por external_reference na tabela asaas_payments: ${externalRef}`);
+        
+        // Fallback 2: buscar diretamente na tabela registrations
+        // Tentar buscar pelo confirmation_code ou ID se external_reference for UUID
+        console.log(`🔍 Tentando buscar diretamente na tabela registrations: ${externalRef}`);
+        const regResult = await query(
+          'SELECT id FROM registrations WHERE id = $1 OR confirmation_code = $2',
+          [externalRef, externalRef]
+        );
+        
+        if (regResult.rows.length > 0) {
+          registrationId = regResult.rows[0].id;
+          console.log(`✅ Inscrição encontrada diretamente na tabela registrations: ${externalRef} -> ${registrationId}`);
+        } else {
+          console.warn(`⚠️ Inscrição não encontrada por nenhum método. External reference: ${externalRef}`);
+        }
       }
     }
   }
