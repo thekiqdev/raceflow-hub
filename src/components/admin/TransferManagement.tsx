@@ -148,8 +148,15 @@ const TransferManagement = () => {
     }
   };
 
-  const formatPrice = (price: number) => {
-    return `R$ ${price.toFixed(2).replace('.', ',')}`;
+  const formatPrice = (price: number | string | undefined) => {
+    if (price === undefined || price === null) {
+      return "R$ 0,00";
+    }
+    const numPrice = typeof price === 'string' ? parseFloat(price) : price;
+    if (isNaN(numPrice)) {
+      return "R$ 0,00";
+    }
+    return `R$ ${numPrice.toFixed(2).replace('.', ',')}`;
   };
 
   const pendingRequests = transferRequests.filter((r) => r.status === "pending");
