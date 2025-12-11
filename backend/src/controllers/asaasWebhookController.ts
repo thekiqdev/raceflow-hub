@@ -90,65 +90,168 @@ export const handleWebhook = asyncHandler(async (req: Request, res: Response) =>
       
       // Automatically transfer the registration
       try {
+        // Get fresh transfer request data after payment update
         const transferRequest = await getTransferRequestById(transferRequestId);
         
-        if (transferRequest && transferRequest.payment_status === 'paid') {
-          // Find or get the new runner ID
-          let newRunnerId = transferRequest.new_runner_id;
-          
-          if (!newRunnerId) {
-            // Try to find by CPF or email
-            if (transferRequest.new_runner_cpf || transferRequest.new_runner_email) {
-              const newRunner = await findUserByCpfOrEmail(
-                transferRequest.new_runner_cpf || undefined,
-                transferRequest.new_runner_email || undefined
-              );
-              
-              if (newRunner) {
-                newRunnerId = newRunner.id;
-                // Update transfer request with the found runner ID
-                await updateTransferRequest(transferRequestId, {
-                  new_runner_id: newRunnerId,
-                });
-              } else {
-                console.error(`❌ Novo titular não encontrado para transfer request: ${transferRequestId}`);
-                // Mark webhook event as processed but don't transfer
-                if (webhookEventId) {
-                  await query(
-                    'UPDATE asaas_webhook_events SET processed = true, error_message = $1 WHERE id = $2',
-                    ['New runner not found', webhookEventId]
-                  );
-                }
-                return res.status(200).json({
-                  success: true,
-                  message: 'Payment confirmed but transfer pending - new runner not found',
-                });
-              }
+        if (!transferRequest) {
+          console.error(`❌ Transfer request não encontrado: ${transferRequestId}`);
+          if (webhookEventId) {
+            await query(
+              'UPDATE asaas_webhook_events SET processed = true, error_message = $1 WHERE id = $2',
+              ['Transfer request not found', webhookEventId]
+            );
+          }
+          return res.status(200).json({
+            success: true,
+            message: 'Payment confirmed but transfer request not found',
+          });
+        }
+
+        // Check if already completed to avoid duplicate processing
+        if (transferRequest.status === 'completed') {
+          console.log(`ℹ️ Transfer request já foi processado: ${transferRequestId}`);
+          if (webhookEventId) {
+            await query(
+              'UPDATE asaas_webhook_events SET processed = true WHERE id = $1',
+              [webhookEventId]
+            );
+          }
+          return res.status(200).json({
+            success: true,
+            message: 'Transfer already completed',
+          });
+        }
+
+        // Find or get the new runner ID
+        let newRunnerId = transferRequest.new_runner_id;
+        
+        if (!newRunnerId) {
+          // Try to find by CPF or email
+          if (transferRequest.new_runner_cpf || transferRequest.new_runner_email) {
+            const newRunner = await findUserByCpfOrEmail(
+              transferRequest.new_runner_cpf || undefined,
+              transferRequest.new_runner_email || undefined
+            );
+            
+            if (newRunner) {
+              newRunnerId = newRunner.id;
+              // Update transfer request with the found runner ID
+              await updateTransferRequest(transferRequestId, {
+                new_runner_id: newRunnerId,
+              });
             } else {
-              console.error(`❌ Nenhum identificador do novo titular para transfer request: ${transferRequestId}`);
+              console.error(`❌ Novo titular não encontrado para transfer request: ${transferRequestId}`);
+              // Mark webhook event as processed but don't transfer
               if (webhookEventId) {
                 await query(
                   'UPDATE asaas_webhook_events SET processed = true, error_message = $1 WHERE id = $2',
-                  ['No new runner identifier', webhookEventId]
+                  ['New runner not found', webhookEventId]
                 );
               }
               return res.status(200).json({
                 success: true,
-                message: 'Payment confirmed but transfer pending - no new runner identifier',
+                message: 'Payment confirmed but transfer pending - new runner not found',
               });
             }
-          }
-          
-          // Perform the transfer
-          if (newRunnerId) {
-            await transferRegistration(transferRequest.registration_id, newRunnerId);
-            
-            // Mark transfer request as completed (this will also set processed_at)
-            await updateTransferRequest(transferRequestId, {
-              status: 'completed',
+          } else {
+            console.error(`❌ Nenhum identificador do novo titular para transfer request: ${transferRequestId}`);
+            if (webhookEventId) {
+              await query(
+                'UPDATE asaas_webhook_events SET processed = true, error_message = $1 WHERE id = $2',
+                ['No new runner identifier', webhookEventId]
+              );
+            }
+            return res.status(200).json({
+              success: true,
+              message: 'Payment confirmed but transfer pending - no new runner identifier',
             });
+          }
+        }
+        
+        // Perform the transfer
+        if (newRunnerId) {
+          // Get registration and event details for notifications
+          const registrationResult = await query(
+            `SELECT r.*, e.title as event_title, p_old.full_name as old_runner_name, p_new.full_name as new_runner_name
+             FROM registrations r
+             LEFT JOIN events e ON r.event_id = e.id
+             LEFT JOIN profiles p_old ON r.runner_id = p_old.id
+             LEFT JOIN profiles p_new ON $1::uuid = p_new.id
+             WHERE r.id = $2`,
+            [newRunnerId, transferRequest.registration_id]
+          );
+          
+          const registrationData = registrationResult.rows[0];
+          
+          // Transfer the registration (this updates status to 'transferred')
+          await transferRegistration(transferRequest.registration_id, newRunnerId);
+          
+          // Mark transfer request as completed (this will also set processed_at)
+          await updateTransferRequest(transferRequestId, {
+            status: 'completed',
+          });
+          
+          console.log(`✅ Transferência automática concluída: ${transferRequestId} -> Registration ${transferRequest.registration_id} transferida para runner ${newRunnerId}`);
+          
+          // Create notifications for both runners using announcements
+          try {
+            // Get event title for notifications
+            const eventTitle = registrationData?.event_title || 'Evento';
+            const newRunnerName = registrationData?.new_runner_name || 'o novo titular';
+            const oldRunnerName = registrationData?.old_runner_name || 'o titular anterior';
             
-            console.log(`✅ Transferência automática concluída: ${transferRequestId} -> Registration ${transferRequest.registration_id} transferida para runner ${newRunnerId}`);
+            // Notification for the requester (old runner) - create announcement
+            if (transferRequest.requested_by) {
+              const announcementResult = await query(
+                `INSERT INTO announcements (title, content, target_audience, status, published_at, created_by)
+                 VALUES ($1, $2, 'runners', 'published', NOW(), $3)
+                 RETURNING id`,
+                [
+                  '✅ Transferência Realizada com Sucesso',
+                  `Sua inscrição no evento "${eventTitle}" foi transferida com sucesso para ${newRunnerName}. O pagamento da taxa foi confirmado e a transferência está completa.`,
+                  transferRequest.requested_by
+                ]
+              );
+              
+              // Mark as read for the requester (so they see it as new notification)
+              if (announcementResult.rows[0]?.id) {
+                await query(
+                  `INSERT INTO announcement_reads (announcement_id, user_id, read_at)
+                   VALUES ($1, $2, NULL)
+                   ON CONFLICT (announcement_id, user_id) DO UPDATE SET read_at = NULL`,
+                  [announcementResult.rows[0].id, transferRequest.requested_by]
+                );
+              }
+            }
+            
+            // Notification for the new runner - create announcement
+            if (newRunnerId) {
+              const announcementResult = await query(
+                `INSERT INTO announcements (title, content, target_audience, status, published_at, created_by)
+                 VALUES ($1, $2, 'runners', 'published', NOW(), $3)
+                 RETURNING id`,
+                [
+                  '🎉 Inscrição Recebida por Transferência',
+                  `Você recebeu uma inscrição transferida para o evento "${eventTitle}" de ${oldRunnerName}. A inscrição foi confirmada e está ativa em sua conta.`,
+                  newRunnerId
+                ]
+              );
+              
+              // Mark as unread for the new runner (so they see it as new notification)
+              if (announcementResult.rows[0]?.id) {
+                await query(
+                  `INSERT INTO announcement_reads (announcement_id, user_id, read_at)
+                   VALUES ($1, $2, NULL)
+                   ON CONFLICT (announcement_id, user_id) DO UPDATE SET read_at = NULL`,
+                  [announcementResult.rows[0].id, newRunnerId]
+                );
+              }
+            }
+            
+            console.log(`✅ Notificações criadas para transferência: ${transferRequestId}`);
+          } catch (notificationError: any) {
+            // Don't fail the transfer if notification fails
+            console.error(`⚠️ Erro ao criar notificações (transferência foi realizada):`, notificationError);
           }
         }
       } catch (transferError: any) {
