@@ -54,6 +54,7 @@ const migrations = [
   '025_fix_users_without_roles.sql',
   '026_transfer_requests.sql',
   '027_allow_null_registration_id_in_asaas_payments.sql',
+  '028_add_transferred_status.sql',
 ];
 
 // Create migrations tracking table
