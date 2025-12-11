@@ -48,14 +48,14 @@ export const getTransferRequests = async (filters?: {
 };
 
 /**
- * Get transfer request by ID
+ * Get transfer request by ID (for runners to check their own requests)
  */
 export const getTransferRequestById = async (id: string): Promise<{
   success: boolean;
   data?: TransferRequest;
   error?: string;
 }> => {
-  return apiClient.get<TransferRequest>(`/admin/transfer-requests/${id}`);
+  return apiClient.get<TransferRequest>(`/registrations/transfer-requests/${id}`);
 };
 
 /**

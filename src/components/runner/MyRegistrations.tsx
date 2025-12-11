@@ -14,13 +14,13 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Calendar, MapPin, QrCode, RefreshCw, X, Loader2, AlertCircle, Download, CreditCard, Eye } from "lucide-react";
+import { Calendar, MapPin, QrCode, RefreshCw, X, Loader2, AlertCircle, Download, CreditCard, Eye, CheckCircle2 } from "lucide-react";
 import { format, isFuture } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { useAuth } from "@/contexts/AuthContext";
 import { getRegistrations, transferRegistration, cancelRegistration, getPaymentStatus, type Registration } from "@/lib/api/registrations";
 import { getEnabledModules } from "@/lib/api/systemSettings";
-import { createTransferRequest, generateTransferPayment, type TransferRequest } from "@/lib/api/transferRequests";
+import { createTransferRequest, generateTransferPayment, getTransferRequestById, type TransferRequest } from "@/lib/api/transferRequests";
 import { toast } from "sonner";
 import { PixQrCode } from "@/components/payment/PixQrCode";
 
@@ -52,6 +52,7 @@ export function MyRegistrations() {
   const [transferStep, setTransferStep] = useState<1 | 2>(1);
   const [currentTransferRequest, setCurrentTransferRequest] = useState<TransferRequest | null>(null);
   const [transferFee, setTransferFee] = useState<number>(0);
+  const [paymentConfirmed, setPaymentConfirmed] = useState(false);
 
   useEffect(() => {
     if (user) {
@@ -150,6 +151,7 @@ export function MyRegistrations() {
 
   const handleGeneratePayment = async (transferRequestId: string) => {
     setLoadingPix(true);
+    setPaymentConfirmed(false);
     try {
       const response = await generateTransferPayment(transferRequestId);
 
@@ -163,6 +165,9 @@ export function MyRegistrations() {
           value: response.data.value,
           dueDate: response.data.due_date,
         });
+        
+        // Start polling for payment status
+        startPaymentStatusPolling(transferRequestId);
       } else {
         toast.error(response.error || "Erro ao gerar pagamento");
       }
@@ -174,6 +179,32 @@ export function MyRegistrations() {
     }
   };
 
+  const startPaymentStatusPolling = (transferRequestId: string) => {
+    const interval = setInterval(async () => {
+      try {
+        const response = await getTransferRequestById(transferRequestId);
+        if (response.success && response.data) {
+          if (response.data.payment_status === 'paid') {
+            setPaymentConfirmed(true);
+            clearInterval(interval);
+            toast.success("Pagamento confirmado! Sua solicitação será analisada pelo administrador.");
+            // Reload registrations after a short delay
+            setTimeout(() => {
+              loadRegistrations();
+            }, 2000);
+          }
+        }
+      } catch (error) {
+        console.error("Error checking payment status:", error);
+      }
+    }, 5000); // Check every 5 seconds
+
+    // Stop polling after 10 minutes
+    setTimeout(() => {
+      clearInterval(interval);
+    }, 600000);
+  };
+
   const resetTransferDialog = () => {
     setTransferStep(1);
     setCurrentTransferRequest(null);
@@ -181,6 +212,7 @@ export function MyRegistrations() {
     setTransferEmail("");
     setSelectedRegistration(null);
     setPixData(null);
+    setPaymentConfirmed(false);
   };
 
   const handleCancel = async () => {
@@ -545,7 +577,7 @@ export function MyRegistrations() {
           resetTransferDialog();
         }
       }}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
               {transferStep === 1 ? "Transferir Inscrição" : "Pagamento da Taxa"}
@@ -624,15 +656,36 @@ export function MyRegistrations() {
                   </div>
                 ) : pixData && pixData.qrCode ? (
                   <div className="space-y-4">
-                    <PixQrCode
-                      pixQrCode={pixData.qrCode}
-                      value={pixData.value}
-                      dueDate={pixData.dueDate}
-                      hideHeader={true}
-                    />
-                    <p className="text-sm text-muted-foreground text-center">
-                      Após o pagamento, sua solicitação será enviada para aprovação do administrador.
-                    </p>
+                    {paymentConfirmed ? (
+                      <div className="space-y-4 text-center py-4">
+                        <CheckCircle2 className="h-16 w-16 mx-auto text-green-500" />
+                        <div>
+                          <h3 className="text-lg font-semibold text-green-600 mb-2">
+                            Pagamento Confirmado!
+                          </h3>
+                          <p className="text-sm text-muted-foreground">
+                            Sua solicitação de transferência foi recebida e será analisada pelo administrador.
+                          </p>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <PixQrCode
+                          pixQrCode={pixData.qrCode}
+                          value={pixData.value}
+                          dueDate={pixData.dueDate}
+                          hideHeader={true}
+                        />
+                        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                          <p className="text-sm text-blue-800 text-center">
+                            Aguardando confirmação do pagamento. Você será notificado automaticamente quando o pagamento for confirmado.
+                          </p>
+                        </div>
+                        <p className="text-sm text-muted-foreground text-center">
+                          Após o pagamento, sua solicitação será enviada para aprovação do administrador.
+                        </p>
+                      </>
+                    )}
                   </div>
                 ) : (
                   <div className="text-center py-4">
@@ -644,25 +697,30 @@ export function MyRegistrations() {
                 )}
               </div>
               <DialogFooter>
-                <Button 
-                  variant="outline" 
-                  onClick={() => {
-                    setTransferStep(1);
-                    setPixData(null);
-                  }}
-                  disabled={loadingPix}
-                >
-                  Voltar
-                </Button>
+                {!paymentConfirmed && (
+                  <Button 
+                    variant="outline" 
+                    onClick={() => {
+                      setTransferStep(1);
+                      setPixData(null);
+                      setPaymentConfirmed(false);
+                    }}
+                    disabled={loadingPix}
+                  >
+                    Voltar
+                  </Button>
+                )}
                 <Button 
                   onClick={() => {
                     setIsTransferDialogOpen(false);
                     resetTransferDialog();
-                    loadRegistrations();
+                    if (paymentConfirmed) {
+                      loadRegistrations();
+                    }
                   }}
                   disabled={loadingPix}
                 >
-                  Fechar
+                  {paymentConfirmed ? "Fechar" : "Fechar"}
                 </Button>
               </DialogFooter>
             </>

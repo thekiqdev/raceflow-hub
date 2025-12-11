@@ -12,7 +12,7 @@ import {
   getRegistrationReceiptController,
   getPaymentStatusController,
 } from '../controllers/registrationsController.js';
-import { createTransferRequestController, generateTransferPaymentController } from '../controllers/transferRequestController.js';
+import { createTransferRequestController, generateTransferPaymentController, getTransferRequestByIdController } from '../controllers/transferRequestController.js';
 import { getEnabledModulesController } from '../controllers/systemSettingsController.js';
 
 const router = Router();
@@ -38,6 +38,7 @@ router.put('/:id/cancel', cancelRegistrationController);
 
 // Transfer requests routes
 router.post('/transfer-requests', createTransferRequestController);
+router.get('/transfer-requests/:id', getTransferRequestByIdController);
 router.post('/transfer-requests/:id/payment', generateTransferPaymentController);
 
 export default router;

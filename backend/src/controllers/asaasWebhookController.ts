@@ -117,15 +117,15 @@ export const handleWebhook = asyncHandler(async (req: Request, res: Response) =>
     // Fallback: buscar por external_reference
     if (payment.externalReference) {
       const externalRef = payment.externalReference;
-      
+    
       // Tentar buscar diretamente pelo ID se external_reference for UUID
       // ou pelo confirmation_code
-      const regResult = await query(
+    const regResult = await query(
         'SELECT id FROM registrations WHERE id = $1 OR confirmation_code = $2',
         [externalRef, externalRef]
-      );
-      
-      if (regResult.rows.length > 0) {
+    );
+    
+    if (regResult.rows.length > 0) {
         registrationId = regResult.rows[0].id;
         console.log(`✅ Inscrição encontrada por external_reference: ${externalRef} -> ${registrationId}`);
       } else {
@@ -316,13 +316,13 @@ async function processWebhookEvent(
         );
         console.log(`🔄 Inscrição ${registrationId} atualizada: payment_status=${newPaymentStatus}, status=${newStatus}`);
       } else {
-        await query(
-          `UPDATE registrations 
-           SET payment_status = $1,
-               updated_at = NOW()
-           WHERE id = $2`,
-          [newPaymentStatus, registrationId]
-        );
+      await query(
+        `UPDATE registrations 
+         SET payment_status = $1,
+             updated_at = NOW()
+         WHERE id = $2`,
+        [newPaymentStatus, registrationId]
+      );
         console.log(`🔄 Inscrição ${registrationId} atualizada: payment_status=${newPaymentStatus}`);
       }
       break;
