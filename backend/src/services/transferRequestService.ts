@@ -168,13 +168,15 @@ export const updateTransferRequest = async (
   }
 
   fields.push(`updated_at = NOW()`);
+  
+  // Add id as the last parameter (use current paramIndex before incrementing)
+  const idParamIndex = paramIndex;
   values.push(id);
-  paramIndex++;
 
   const result = await query(
     `UPDATE transfer_requests 
      SET ${fields.join(', ')}
-     WHERE id = $${paramIndex}
+     WHERE id = $${idParamIndex}
      RETURNING *`,
     values
   );
