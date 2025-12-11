@@ -2340,7 +2340,7 @@ export function RegistrationFlow({
 
             {/* Botões de ação - mostrar apenas quando pagamento confirmado ou evento gratuito */}
             {(paymentStatus === 'paid' || totalPrice === 0) && (
-              <div className="flex gap-3">
+            <div className="flex gap-3">
                 {registrationId ? (
                   <>
                     <Button 
@@ -2363,9 +2363,9 @@ export function RegistrationFlow({
                     </Button>
                   </>
                 ) : (
-                  <Button variant="outline" className="flex-1" onClick={handleReset}>
-                    Fechar
-                  </Button>
+              <Button variant="outline" className="flex-1" onClick={handleReset}>
+                Fechar
+              </Button>
                 )}
               </div>
             )}
@@ -2383,8 +2383,8 @@ export function RegistrationFlow({
                 >
                   <List className="w-4 h-4 mr-2" />
                   Minhas Inscrições
-                </Button>
-              </div>
+              </Button>
+            </div>
             )}
           </div>
         )}

@@ -602,6 +602,7 @@ export const exportRegistrationsController = asyncHandler(async (req: AuthReques
 });
 
 // Transfer registration to another runner by CPF
+// If transfer module is enabled, creates a request instead of transferring directly
 export const transferRegistrationController = asyncHandler(async (req: AuthRequest, res: Response) => {
   if (!req.user) {
     res.status(401).json({
@@ -647,6 +648,60 @@ export const transferRegistrationController = asyncHandler(async (req: AuthReque
     return;
   }
 
+  // Check if transfer module is enabled
+  const { getSystemSettings } = await import('../services/systemSettingsService.js');
+  const settings = await getSystemSettings();
+  
+  if (settings.enabled_modules?.transfers) {
+    // Module enabled: create transfer request instead
+    const { createTransferRequest } = await import('../services/transferRequestService.js');
+    const transferFee = settings.transfer_fee || 0;
+    
+    // Try to find the new runner
+    let newRunnerId: string | undefined;
+    const newRunner = await findUserByCpfOrEmail(cpf, email);
+    if (newRunner) {
+      newRunnerId = newRunner.id;
+      
+      // Check if trying to transfer to the same user
+      if (newRunner.id === registration.runner_id) {
+        res.status(400).json({
+          success: false,
+          error: 'Invalid transfer',
+          message: 'A inscrição já pertence a este usuário',
+        });
+        return;
+      }
+    }
+
+    // Create transfer request
+    const transferRequest = await createTransferRequest({
+      registration_id: id,
+      requested_by: req.user.id,
+      new_runner_cpf: cpf || undefined,
+      new_runner_email: email || undefined,
+      new_runner_id: newRunnerId,
+      transfer_fee: transferFee,
+    });
+
+    res.status(201).json({
+      success: true,
+      data: transferRequest,
+      message: 'Solicitação de transferência criada com sucesso. Aguarde a aprovação do administrador.',
+    });
+    return;
+  }
+
+  // Module disabled: direct transfer (legacy behavior for admins)
+  if (!isAdmin) {
+    res.status(403).json({
+      success: false,
+      error: 'Module disabled',
+      message: 'O módulo de transferência está desabilitado',
+    });
+    return;
+  }
+
   // Find user by CPF or email
   const newRunner = await findUserByCpfOrEmail(cpf, email);
 
@@ -669,7 +724,7 @@ export const transferRegistrationController = asyncHandler(async (req: AuthReque
     return;
   }
 
-  // Transfer registration
+  // Transfer registration directly (admin only when module is disabled)
   const transferredRegistration = await transferRegistration(id, newRunner.id);
 
   if (!transferredRegistration) {

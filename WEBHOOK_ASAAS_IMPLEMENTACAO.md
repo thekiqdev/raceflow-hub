@@ -347,3 +347,4 @@ LIMIT 20;
 4. Fazer deploy
 5. Monitorar logs e eventos
 
+

@@ -49,6 +49,38 @@ export const handleWebhook = asyncHandler(async (req: Request, res: Response) =>
     billingType: payment.billingType,
   });
 
+  // Check if this is a transfer request payment
+  const isTransferPayment = payment.externalReference?.startsWith('TRANSFER-');
+  
+  if (isTransferPayment) {
+    const transferRequestId = payment.externalReference.replace('TRANSFER-', '');
+    console.log(`🔄 Processando pagamento de transferência: ${transferRequestId}`);
+    
+    // Update transfer request payment status
+    if (paymentStatus === 'CONFIRMED' || paymentStatus === 'RECEIVED') {
+      await query(
+        `UPDATE transfer_requests 
+         SET payment_status = 'paid', updated_at = NOW()
+         WHERE id = $1`,
+        [transferRequestId]
+      );
+      console.log(`✅ Pagamento de transferência confirmado: ${transferRequestId}`);
+    }
+    
+    // Mark webhook event as processed
+    if (webhookEventId) {
+      await query(
+        'UPDATE asaas_webhook_events SET processed = true WHERE id = $1',
+        [webhookEventId]
+      );
+    }
+    
+    return res.status(200).json({
+      success: true,
+      message: 'Transfer payment webhook processed',
+    });
+  }
+
   // Find registration by external_reference or asaas_payment_id
   let registrationId: string | null = null;
 

@@ -19,6 +19,8 @@ import { format, isFuture } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { useAuth } from "@/contexts/AuthContext";
 import { getRegistrations, transferRegistration, cancelRegistration, getPaymentStatus, type Registration } from "@/lib/api/registrations";
+import { getSystemSettings } from "@/lib/api/systemSettings";
+import { createTransferRequest, generateTransferPayment, type TransferRequest } from "@/lib/api/transferRequests";
 import { toast } from "sonner";
 import { PixQrCode } from "@/components/payment/PixQrCode";
 
@@ -27,6 +29,7 @@ export function MyRegistrations() {
   const [searchParams] = useSearchParams();
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
+  const [transfersEnabled, setTransfersEnabled] = useState(false);
   
   // Get initial tab from URL parameter, default to "active"
   const initialTab = searchParams.get("subtab") || "active";
@@ -46,6 +49,9 @@ export function MyRegistrations() {
     dueDate: string;
   } | null>(null);
   const [loadingPix, setLoadingPix] = useState(false);
+  const [transferStep, setTransferStep] = useState<1 | 2>(1);
+  const [currentTransferRequest, setCurrentTransferRequest] = useState<TransferRequest | null>(null);
+  const [transferFee, setTransferFee] = useState<number>(0);
 
   useEffect(() => {
     if (user) {
@@ -61,17 +67,37 @@ export function MyRegistrations() {
     }
   }, [searchParams]);
 
+  // Listen for settings updates
+  useEffect(() => {
+    const handleSettingsUpdate = () => {
+      loadRegistrations();
+    };
+
+    window.addEventListener('admin-settings-updated', handleSettingsUpdate);
+    return () => {
+      window.removeEventListener('admin-settings-updated', handleSettingsUpdate);
+    };
+  }, []);
+
   const loadRegistrations = async () => {
     if (!user) return;
 
     try {
       setLoading(true);
-      const response = await getRegistrations({ runner_id: user.id });
+      const [registrationsResponse, settingsResponse] = await Promise.all([
+        getRegistrations({ runner_id: user.id }),
+        getSystemSettings(),
+      ]);
 
-      if (response.success && response.data) {
-        setRegistrations(response.data);
+      if (registrationsResponse.success && registrationsResponse.data) {
+        setRegistrations(registrationsResponse.data);
       } else {
-        toast.error(response.error || "Erro ao carregar inscrições");
+        toast.error(registrationsResponse.error || "Erro ao carregar inscrições");
+      }
+
+      if (settingsResponse.success && settingsResponse.data) {
+        setTransfersEnabled(settingsResponse.data.enabled_modules?.transfers || false);
+        setTransferFee(settingsResponse.data.transfer_fee || 0);
       }
     } catch (error: any) {
       console.error("Error loading registrations:", error);
@@ -89,28 +115,68 @@ export function MyRegistrations() {
 
     setIsTransferring(true);
     try {
-      const response = await transferRegistration(
-        selectedRegistration.id, 
-        transferCpf.trim() || undefined,
-        transferEmail.trim() || undefined
-      );
+      // Step 1: Create transfer request
+      const response = await createTransferRequest({
+        registration_id: selectedRegistration.id,
+        new_runner_cpf: transferCpf.trim() || undefined,
+        new_runner_email: transferEmail.trim() || undefined,
+      });
 
-      if (response.success) {
-        toast.success(response.message || "Inscrição transferida com sucesso!");
-        setIsTransferDialogOpen(false);
-        setTransferCpf("");
-        setTransferEmail("");
-        setSelectedRegistration(null);
-        loadRegistrations();
+      if (response.success && response.data) {
+        setCurrentTransferRequest(response.data);
+        
+        // If there's a fee, go to step 2 (payment)
+        if (response.data.transfer_fee > 0) {
+          setTransferStep(2);
+          // Generate payment
+          await handleGeneratePayment(response.data.id);
+        } else {
+          // No fee, transfer completed
+          toast.success(response.message || "Solicitação de transferência criada com sucesso!");
+          setIsTransferDialogOpen(false);
+          resetTransferDialog();
+          loadRegistrations();
+        }
       } else {
-        toast.error(response.error || response.message || "Erro ao transferir inscrição");
+        toast.error(response.error || response.message || "Erro ao criar solicitação de transferência");
       }
     } catch (error: any) {
-      console.error("Error transferring registration:", error);
-      toast.error(error.message || "Erro ao transferir inscrição");
+      console.error("Error creating transfer request:", error);
+      toast.error(error.message || "Erro ao criar solicitação de transferência");
     } finally {
       setIsTransferring(false);
     }
+  };
+
+  const handleGeneratePayment = async (transferRequestId: string) => {
+    setLoadingPix(true);
+    try {
+      const response = await generateTransferPayment(transferRequestId);
+
+      if (response.success && response.data) {
+        setPixData({
+          qrCode: response.data.pix_qr_code,
+          value: response.data.value,
+          dueDate: response.data.due_date,
+        });
+      } else {
+        toast.error(response.error || "Erro ao gerar pagamento");
+      }
+    } catch (error: any) {
+      console.error("Error generating payment:", error);
+      toast.error(error.message || "Erro ao gerar pagamento");
+    } finally {
+      setLoadingPix(false);
+    }
+  };
+
+  const resetTransferDialog = () => {
+    setTransferStep(1);
+    setCurrentTransferRequest(null);
+    setTransferCpf("");
+    setTransferEmail("");
+    setSelectedRegistration(null);
+    setPixData(null);
   };
 
   const handleCancel = async () => {
@@ -226,7 +292,8 @@ export function MyRegistrations() {
 
   const RegistrationCard = ({ registration }: { registration: Registration }) => {
     const isUpcoming = registration.event_date && isFuture(new Date(registration.event_date));
-    const canTransfer = registration.status === "confirmed" && 
+    const canTransfer = transfersEnabled && 
+                       registration.status === "confirmed" && 
                        registration.payment_status === "paid" && 
                        isUpcoming;
     const canCancel = (registration.status === "pending" || 
@@ -468,63 +535,134 @@ export function MyRegistrations() {
       </div>
 
       {/* Transfer Dialog */}
-      <Dialog open={isTransferDialogOpen} onOpenChange={setIsTransferDialogOpen}>
-        <DialogContent>
+      <Dialog open={isTransferDialogOpen} onOpenChange={(open) => {
+        setIsTransferDialogOpen(open);
+        if (!open) {
+          resetTransferDialog();
+        }
+      }}>
+        <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Transferir Inscrição</DialogTitle>
+            <DialogTitle>
+              {transferStep === 1 ? "Transferir Inscrição" : "Pagamento da Taxa"}
+            </DialogTitle>
             <DialogDescription>
-              Informe o email e CPF da pessoa que irá receber a inscrição de {selectedRegistration?.event_title}
+              {transferStep === 1 
+                ? `Informe o email e CPF da pessoa que irá receber a inscrição de ${selectedRegistration?.event_title}`
+                : `Complete o pagamento da taxa de transferência para finalizar a solicitação`
+              }
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="email">Email do novo titular</Label>
-              <Input
-                id="email"
-                type="email"
-                placeholder="email@exemplo.com"
-                value={transferEmail}
-                onChange={(e) => setTransferEmail(e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="cpf">CPF do novo titular</Label>
-              <Input
-                id="cpf"
-                placeholder="000.000.000-00"
-                value={transferCpf}
-                onChange={(e) => setTransferCpf(e.target.value)}
-                maxLength={14}
-              />
-              <p className="text-xs text-muted-foreground">
-                Informe pelo menos o email ou CPF. A pessoa deve estar cadastrada na plataforma.
-              </p>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button 
-              variant="outline" 
-              onClick={() => {
-                setIsTransferDialogOpen(false);
-                setTransferCpf("");
-                setTransferEmail("");
-                setSelectedRegistration(null);
-              }}
-              disabled={isTransferring}
-            >
-              Cancelar
-            </Button>
-            <Button onClick={handleTransfer} disabled={isTransferring}>
-              {isTransferring ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Transferindo...
-                </>
-              ) : (
-                "Confirmar Transferência"
-              )}
-            </Button>
-          </DialogFooter>
+          
+          {transferStep === 1 ? (
+            <>
+              <div className="space-y-4 py-4">
+                <div className="space-y-2">
+                  <Label htmlFor="email">Email do novo titular</Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    placeholder="email@exemplo.com"
+                    value={transferEmail}
+                    onChange={(e) => setTransferEmail(e.target.value)}
+                    disabled={isTransferring}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="cpf">CPF do novo titular</Label>
+                  <Input
+                    id="cpf"
+                    placeholder="000.000.000-00"
+                    value={transferCpf}
+                    onChange={(e) => setTransferCpf(e.target.value)}
+                    maxLength={14}
+                    disabled={isTransferring}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Informe pelo menos o email ou CPF. A pessoa deve estar cadastrada na plataforma.
+                  </p>
+                  {transferFee > 0 && (
+                    <p className="text-sm font-medium text-primary mt-2">
+                      Taxa de transferência: R$ {transferFee.toFixed(2).replace('.', ',')}
+                    </p>
+                  )}
+                </div>
+              </div>
+              <DialogFooter>
+                <Button 
+                  variant="outline" 
+                  onClick={() => {
+                    setIsTransferDialogOpen(false);
+                    resetTransferDialog();
+                  }}
+                  disabled={isTransferring}
+                >
+                  Cancelar
+                </Button>
+                <Button onClick={handleTransfer} disabled={isTransferring}>
+                  {isTransferring ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Criando solicitação...
+                    </>
+                  ) : (
+                    "Próximo"
+                  )}
+                </Button>
+              </DialogFooter>
+            </>
+          ) : (
+            <>
+              <div className="space-y-4 py-4">
+                {loadingPix ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                  </div>
+                ) : pixData ? (
+                  <div className="space-y-4">
+                    <PixQrCode
+                      qrCode={pixData.qrCode}
+                      value={pixData.value}
+                      dueDate={pixData.dueDate}
+                      hideHeader={true}
+                    />
+                    <p className="text-sm text-muted-foreground text-center">
+                      Após o pagamento, sua solicitação será enviada para aprovação do administrador.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="text-center py-4">
+                    <AlertCircle className="h-8 w-8 mx-auto mb-2 text-destructive" />
+                    <p className="text-sm text-muted-foreground">
+                      Erro ao gerar pagamento. Tente novamente.
+                    </p>
+                  </div>
+                )}
+              </div>
+              <DialogFooter>
+                <Button 
+                  variant="outline" 
+                  onClick={() => {
+                    setTransferStep(1);
+                    setPixData(null);
+                  }}
+                  disabled={loadingPix}
+                >
+                  Voltar
+                </Button>
+                <Button 
+                  onClick={() => {
+                    setIsTransferDialogOpen(false);
+                    resetTransferDialog();
+                    loadRegistrations();
+                  }}
+                  disabled={loadingPix}
+                >
+                  Fechar
+                </Button>
+              </DialogFooter>
+            </>
+          )}
         </DialogContent>
       </Dialog>
 

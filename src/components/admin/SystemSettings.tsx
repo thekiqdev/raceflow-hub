@@ -53,6 +53,7 @@ const SystemSettings = () => {
     support: false,
     notifications: false,
     analytics: false,
+    transfers: false,
   });
 
   useEffect(() => {
@@ -113,6 +114,7 @@ const SystemSettings = () => {
           support: false,
           notifications: false,
           analytics: false,
+          transfers: false,
         });
       }
     } catch (error) {
@@ -292,6 +294,8 @@ const SystemSettings = () => {
           setSettings(response.data);
         }
         toast.success('Configurações de módulos salvas com sucesso!');
+        // Dispatch event to update sidebar
+        window.dispatchEvent(new CustomEvent('admin-settings-updated'));
       } else {
         toast.error(response.error || 'Erro ao salvar configurações');
       }
@@ -682,6 +686,16 @@ const SystemSettings = () => {
                 <Switch 
                   checked={modulesForm.analytics || false}
                   onCheckedChange={(checked) => setModulesForm({ ...modulesForm, analytics: checked })}
+                />
+              </div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="font-medium">Transferência de Inscrições</p>
+                  <p className="text-sm text-muted-foreground">Permitir transferência de inscrições entre corredores</p>
+                </div>
+                <Switch 
+                  checked={modulesForm.transfers || false}
+                  onCheckedChange={(checked) => setModulesForm({ ...modulesForm, transfers: checked })}
                 />
               </div>
               <Button onClick={handleSaveModules} disabled={saving}>

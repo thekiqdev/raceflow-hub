@@ -14,24 +14,54 @@ import SystemSettings from "@/components/admin/SystemSettings";
 import CommunicationSupport from "@/components/admin/CommunicationSupport";
 import KnowledgeBase from "@/components/admin/KnowledgeBase";
 import HomeCustomization from "@/components/admin/HomeCustomization";
+import TransferManagement from "@/components/admin/TransferManagement";
+import { getSystemSettings } from "@/lib/api/systemSettings";
 
 const AdminDashboard = () => {
   const navigate = useNavigate();
   const { logout } = useAuth();
   const [activeSection, setActiveSection] = useState("overview");
+  const [transfersEnabled, setTransfersEnabled] = useState(false);
 
   useEffect(() => {
+    loadSystemSettings();
+    
     // Escutar evento para navegar para uma seção
     const handleNavigateToSection = (event: CustomEvent) => {
       setActiveSection(event.detail);
     };
 
+    // Escutar atualizações de configurações
+    const handleSettingsUpdate = () => {
+      loadSystemSettings();
+    };
+
     window.addEventListener('admin:navigate-to-section', handleNavigateToSection as EventListener);
+    window.addEventListener('admin-settings-updated', handleSettingsUpdate);
     
     return () => {
       window.removeEventListener('admin:navigate-to-section', handleNavigateToSection as EventListener);
+      window.removeEventListener('admin-settings-updated', handleSettingsUpdate);
     };
   }, []);
+
+  useEffect(() => {
+    // Redirect if transfers section is active but module is disabled
+    if (activeSection === "transfers" && !transfersEnabled) {
+      setActiveSection("overview");
+    }
+  }, [activeSection, transfersEnabled]);
+
+  const loadSystemSettings = async () => {
+    try {
+      const response = await getSystemSettings();
+      if (response.success && response.data) {
+        setTransfersEnabled(response.data.enabled_modules?.transfers || false);
+      }
+    } catch (error) {
+      console.error("Erro ao carregar configurações:", error);
+    }
+  };
 
   const handleSignOut = async () => {
     await logout();
@@ -58,6 +88,8 @@ const AdminDashboard = () => {
         return <SystemSettings />;
       case "support":
         return <CommunicationSupport />;
+      case "transfers":
+        return <TransferManagement />;
       default:
         return <DashboardOverview />;
     }

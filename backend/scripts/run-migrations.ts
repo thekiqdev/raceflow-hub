@@ -45,10 +45,14 @@ const migrations = [
   '016_add_variant_attributes.sql',
   '017_add_profile_is_public.sql',
   '018_allow_null_valid_from.sql',
+  '019_create_test_users.sql',
   '020_create_asaas_customers.sql',
   '021_create_asaas_payments.sql',
   '022_create_asaas_webhook_events.sql',
   '023_add_asaas_payment_id_to_registrations.sql',
+  '024_verify_foreign_keys.sql',
+  '025_fix_users_without_roles.sql',
+  '026_transfer_requests.sql',
 ];
 
 // Create migrations tracking table

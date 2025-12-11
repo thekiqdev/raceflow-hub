@@ -12,6 +12,7 @@ import {
   getRegistrationReceiptController,
   getPaymentStatusController,
 } from '../controllers/registrationsController.js';
+import { createTransferRequestController, generateTransferPaymentController } from '../controllers/transferRequestController.js';
 
 const router = Router();
 
@@ -30,6 +31,10 @@ router.post('/', createRegistrationController);
 router.put('/:id', updateRegistrationController);
 router.put('/:id/transfer', transferRegistrationController);
 router.put('/:id/cancel', cancelRegistrationController);
+
+// Transfer requests routes
+router.post('/transfer-requests', createTransferRequestController);
+router.post('/transfer-requests/:id/payment', generateTransferPaymentController);
 
 export default router;
 

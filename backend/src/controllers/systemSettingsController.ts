@@ -29,6 +29,7 @@ const updateSystemSettingsSchema = z.object({
   payment_public_key: z.string().optional().nullable(),
   payment_secret_key: z.string().optional().nullable(),
   enabled_modules: z.record(z.boolean()).optional(),
+  transfer_fee: z.number().min(0).optional(),
   maintenance_mode: z.boolean().optional(),
   maintenance_message: z.string().optional().nullable(),
   timezone: z.string().optional(),

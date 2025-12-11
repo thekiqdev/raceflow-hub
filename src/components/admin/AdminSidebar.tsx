@@ -1,4 +1,4 @@
-import { LayoutDashboard, Users, Calendar, DollarSign, FileText, Settings, MessageSquare, Building2, Palette } from "lucide-react";
+import { LayoutDashboard, Users, Calendar, DollarSign, FileText, Settings, MessageSquare, Building2, Palette, ArrowRightLeft } from "lucide-react";
 import { useState, useEffect } from "react";
 import {
   Sidebar,
@@ -11,6 +11,7 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
+import { getSystemSettings } from "@/lib/api/systemSettings";
 
 interface AdminSidebarProps {
   activeSection: string;
@@ -22,6 +23,7 @@ const menuItems = [
   { id: "users", title: "Usuários", icon: Users },
   { id: "events", title: "Eventos", icon: Calendar },
   { id: "financial", title: "Financeiro", icon: DollarSign },
+  { id: "transfers", title: "Transferências", icon: ArrowRightLeft },
   { id: "reports", title: "Relatórios", icon: FileText },
   { id: "knowledge", title: "Base de Conhecimento", icon: FileText },
   { id: "customize", title: "Personalizar", icon: Palette },
@@ -32,18 +34,27 @@ const menuItems = [
 export function AdminSidebar({ activeSection, onSectionChange }: AdminSidebarProps) {
   const { open } = useSidebar();
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const [transfersEnabled, setTransfersEnabled] = useState(false);
 
   useEffect(() => {
     loadAdminLogo();
+    loadSystemSettings();
     
     // Listen for logo updates
     const handleLogoUpdate = () => {
       loadAdminLogo();
     };
     
+    // Listen for settings updates
+    const handleSettingsUpdate = () => {
+      loadSystemSettings();
+    };
+    
     window.addEventListener('admin-logo-updated', handleLogoUpdate);
+    window.addEventListener('admin-settings-updated', handleSettingsUpdate);
     return () => {
       window.removeEventListener('admin-logo-updated', handleLogoUpdate);
+      window.removeEventListener('admin-settings-updated', handleSettingsUpdate);
     };
   }, []);
 
@@ -51,6 +62,17 @@ export function AdminSidebar({ activeSection, onSectionChange }: AdminSidebarPro
     const savedLogo = localStorage.getItem('admin-logo');
     if (savedLogo) {
       setLogoUrl(savedLogo);
+    }
+  };
+
+  const loadSystemSettings = async () => {
+    try {
+      const response = await getSystemSettings();
+      if (response.success && response.data) {
+        setTransfersEnabled(response.data.enabled_modules?.transfers || false);
+      }
+    } catch (error) {
+      console.error("Erro ao carregar configurações:", error);
     }
   };
 
@@ -79,18 +101,26 @@ export function AdminSidebar({ activeSection, onSectionChange }: AdminSidebarPro
         <SidebarGroup>
           <SidebarGroupContent>
             <SidebarMenu>
-              {menuItems.map((item) => (
-                <SidebarMenuItem key={item.id}>
-                  <SidebarMenuButton
-                    onClick={() => onSectionChange(item.id)}
-                    isActive={activeSection === item.id}
-                    className="hover:bg-muted/50"
-                  >
-                    <item.icon className="h-4 w-4" />
-                    {open && <span>{item.title}</span>}
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
+              {menuItems
+                .filter((item) => {
+                  // Hide transfers menu item if module is disabled
+                  if (item.id === "transfers" && !transfersEnabled) {
+                    return false;
+                  }
+                  return true;
+                })
+                .map((item) => (
+                  <SidebarMenuItem key={item.id}>
+                    <SidebarMenuButton
+                      onClick={() => onSectionChange(item.id)}
+                      isActive={activeSection === item.id}
+                      className="hover:bg-muted/50"
+                    >
+                      <item.icon className="h-4 w-4" />
+                      {open && <span>{item.title}</span>}
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                ))}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>

@@ -302,3 +302,4 @@ LIMIT 20;
 - **Logs**: Monitore os logs regularmente para identificar problemas
 - **Retry**: O Asaas tenta reenviar webhooks que falham (até 3 tentativas)
 
+

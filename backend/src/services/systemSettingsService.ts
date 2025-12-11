@@ -26,6 +26,7 @@ export interface SystemSettings {
   payment_public_key?: string;
   payment_secret_key?: string;
   enabled_modules: Record<string, boolean>;
+  transfer_fee?: number;
   maintenance_mode: boolean;
   maintenance_message?: string;
   timezone: string;
@@ -62,6 +63,7 @@ export const getSystemSettings = async (): Promise<SystemSettings> => {
         analytics: true,
         reports: true,
       },
+      transfer_fee: 0,
       maintenance_mode: false,
       timezone: 'America/Sao_Paulo',
       date_format: 'DD/MM/YYYY',
@@ -97,6 +99,7 @@ export const getSystemSettings = async (): Promise<SystemSettings> => {
       reports: true,
     },
     smtp_port: row.smtp_port ? parseInt(row.smtp_port) : undefined,
+    transfer_fee: row.transfer_fee ? parseFloat(row.transfer_fee) : undefined,
   } as SystemSettings;
 };
 
@@ -172,6 +175,7 @@ export const updateSystemSettings = async (
       reports: true,
     },
     smtp_port: row.smtp_port ? parseInt(row.smtp_port) : undefined,
+    transfer_fee: row.transfer_fee ? parseFloat(row.transfer_fee) : undefined,
   } as SystemSettings;
 };
 

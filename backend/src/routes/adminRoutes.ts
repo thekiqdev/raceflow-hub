@@ -51,6 +51,11 @@ import {
   updateSystemSettingsController,
 } from '../controllers/systemSettingsController.js';
 import {
+  getTransferRequestsController,
+  getTransferRequestByIdController,
+  updateTransferRequestController,
+} from '../controllers/transferRequestController.js';
+import {
   getRegistrationsByPeriodController,
   getNewUsersByMonthController,
   getRevenueByEventController,
@@ -125,6 +130,11 @@ router.post('/knowledge/articles/:id/toggle-status', toggleArticleStatusControll
 // System Settings
 router.get('/settings', getSystemSettingsController);
 router.put('/settings', updateSystemSettingsController);
+
+// Transfer Requests
+router.get('/transfer-requests', getTransferRequestsController);
+router.get('/transfer-requests/:id', getTransferRequestByIdController);
+router.put('/transfer-requests/:id', updateTransferRequestController);
 
 // Reports
 router.get('/reports/registrations-by-period', getRegistrationsByPeriodController);
