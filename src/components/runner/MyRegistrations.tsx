@@ -288,17 +288,22 @@ export function MyRegistrations() {
     r.status === "confirmed" && r.payment_status === "paid"
   );
   const pendingRegistrations = registrations.filter((r) => 
-    r.status !== "cancelled" && (r.status === "pending" || r.payment_status === "pending")
+    r.status !== "cancelled" && r.status !== "transferred" && (r.status === "pending" || r.payment_status === "pending")
   );
   const cancelledRegistrations = registrations.filter((r) => 
-    r.status === "cancelled"
+    r.status === "cancelled" || r.status === "transferred"
   );
 
   const getStatusBadge = (status: string | undefined, paymentStatus: string | undefined) => {
     // Verificar cancelado primeiro (prioridade máxima)
     if (status === "cancelled") {
-      return <Badge variant="destructive">Cancelado</Badge>;
+      return <Badge variant="destructive">Cancelada</Badge>;
     }
+    // Verificar transferido
+    if (status === "transferred") {
+      return <Badge variant="secondary" className="bg-purple-500 hover:bg-purple-600">Transferido</Badge>;
+    }
+    // Verificar confirmado e pago
     if (status === "confirmed" && paymentStatus === "paid") {
       return <Badge className="bg-accent">Confirmada</Badge>;
     }
@@ -331,6 +336,7 @@ export function MyRegistrations() {
     const canTransfer = transfersEnabled && 
                        registration.status === "confirmed" && 
                        registration.payment_status === "paid" && 
+                       registration.status !== "transferred" &&
                        isUpcoming;
     const canCancel = (registration.status === "pending" || 
                       (registration.status === "confirmed" && registration.payment_status === "paid")) &&
@@ -516,7 +522,7 @@ export function MyRegistrations() {
               Pendentes ({pendingRegistrations.length})
             </TabsTrigger>
             <TabsTrigger value="cancelled">
-              Canceladas ({cancelledRegistrations.length})
+              Canceladas/Transferidas ({cancelledRegistrations.length})
             </TabsTrigger>
           </TabsList>
 
@@ -558,7 +564,7 @@ export function MyRegistrations() {
               <Card>
                 <CardContent className="py-12 text-center">
                   <X className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-                  <p className="text-muted-foreground">Nenhuma inscrição cancelada</p>
+                  <p className="text-muted-foreground">Nenhuma inscrição cancelada ou transferida</p>
                 </CardContent>
               </Card>
             ) : (
