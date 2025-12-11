@@ -18,7 +18,6 @@ export interface TransferRequest {
   created_at: string;
   updated_at: string;
   // Joined data
-  registration_code?: string;
   confirmation_code?: string;
   event_title?: string;
   runner_name?: string;
@@ -66,7 +65,6 @@ export const getTransferRequestById = async (id: string): Promise<TransferReques
   const result = await query(
     `SELECT 
       tr.*,
-      r.registration_code,
       r.confirmation_code,
       e.title as event_title,
       p_requester.full_name as requester_name,
@@ -99,7 +97,6 @@ export const getTransferRequests = async (filters?: {
   let queryStr = `
     SELECT 
       tr.*,
-      r.registration_code,
       r.confirmation_code,
       e.title as event_title,
       p_requester.full_name as requester_name,

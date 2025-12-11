@@ -119,9 +119,9 @@ export const handleWebhook = asyncHandler(async (req: Request, res: Response) =>
       const externalRef = payment.externalReference;
       
       // Tentar buscar diretamente pelo ID se external_reference for UUID
-      // ou pelo registration_code
+      // ou pelo confirmation_code
       const regResult = await query(
-        'SELECT id FROM registrations WHERE id = $1 OR registration_code = $2',
+        'SELECT id FROM registrations WHERE id = $1 OR confirmation_code = $2',
         [externalRef, externalRef]
       );
       

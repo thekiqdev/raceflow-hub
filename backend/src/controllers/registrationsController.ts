@@ -85,7 +85,6 @@ export const getRegistrationForValidation = asyncHandler(async (req: Request, re
     success: true,
     data: {
       id: registration.id,
-      registration_code: registration.registration_code,
       confirmation_code: registration.confirmation_code,
       status: registration.status,
       payment_status: registration.payment_status,
