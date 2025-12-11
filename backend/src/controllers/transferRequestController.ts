@@ -1,4 +1,4 @@
-import { Request, Response } from 'express';
+import { Response } from 'express';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { AuthRequest } from '../middleware/auth.js';
 import { hasRole } from '../services/userRolesService.js';
@@ -7,13 +7,12 @@ import {
   getTransferRequestById,
   getTransferRequests,
   updateTransferRequest,
-  type TransferRequest,
 } from '../services/transferRequestService.js';
 import { getRegistrationById } from '../services/registrationsService.js';
 import { findUserByCpfOrEmail } from '../services/registrationsService.js';
 import { transferRegistration } from '../services/registrationsService.js';
 import { getSystemSettings } from '../services/systemSettingsService.js';
-import { getProfileByUserId } from '../services/userManagementService.js';
+import { getProfileByUserId } from '../services/profilesService.js';
 import { createCustomer, getCustomerByUserId, createPayment } from '../services/asaasService.js';
 import { query } from '../config/database.js';
 

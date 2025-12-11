@@ -52,12 +52,32 @@ export const handleWebhook = asyncHandler(async (req: Request, res: Response) =>
   // Check if this is a transfer request payment
   const isTransferPayment = payment.externalReference?.startsWith('TRANSFER-');
   
-  if (isTransferPayment) {
+  if (isTransferPayment && payment.externalReference) {
     const transferRequestId = payment.externalReference.replace('TRANSFER-', '');
     console.log(`🔄 Processando pagamento de transferência: ${transferRequestId}`);
     
+    // Save webhook event to database first
+    let webhookEventId: string | null = null;
+    try {
+      const webhookResult = await query(
+        `INSERT INTO asaas_webhook_events (
+          event_type, asaas_payment_id, registration_id, payload, processed
+        ) VALUES ($1, $2, $3, $4, false)
+        RETURNING id`,
+        [
+          event,
+          asaasPaymentId,
+          null, // No registration_id for transfer payments
+          JSON.stringify(payload),
+        ]
+      );
+      webhookEventId = webhookResult.rows[0].id;
+    } catch (error: any) {
+      console.error('❌ Erro ao salvar evento do webhook:', error);
+    }
+    
     // Update transfer request payment status
-    if (paymentStatus === 'CONFIRMED' || paymentStatus === 'RECEIVED') {
+    if (payment.status === 'CONFIRMED' || payment.status === 'RECEIVED') {
       await query(
         `UPDATE transfer_requests 
          SET payment_status = 'paid', updated_at = NOW()
@@ -210,7 +230,7 @@ export const handleWebhook = asyncHandler(async (req: Request, res: Response) =>
   }
 
   // Always return 200 OK to Asaas
-  res.status(200).json({
+  return res.status(200).json({
     success: true,
     message: 'Webhook received and processed',
   });
