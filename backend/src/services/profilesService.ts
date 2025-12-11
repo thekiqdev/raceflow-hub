@@ -12,6 +12,7 @@ export interface UpdateProfileData {
   contact_phone?: string;
   bio?: string;
   website_url?: string;
+  is_public?: boolean;
 }
 
 // Get profile by user ID

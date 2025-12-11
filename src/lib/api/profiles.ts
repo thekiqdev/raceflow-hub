@@ -9,6 +9,7 @@ export interface Profile {
   gender?: string;
   birth_date: string;
   lgpd_consent?: boolean;
+  is_public?: boolean;
   created_at?: string;
   updated_at?: string;
 }
@@ -18,6 +19,7 @@ export interface UpdateProfileData {
   phone?: string;
   gender?: string;
   birth_date?: string;
+  is_public?: boolean;
 }
 
 // Get own profile

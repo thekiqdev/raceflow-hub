@@ -23,6 +23,7 @@ export interface Profile {
   gender: string | null;
   birth_date: Date;
   lgpd_consent: boolean | null;
+  is_public: boolean | null;
   created_at: Date | null;
   updated_at: Date | null;
 }
