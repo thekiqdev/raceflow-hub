@@ -428,10 +428,15 @@ export const getPaymentStatusController = asyncHandler(async (req: AuthRequest, 
   }
 
   // Check if user owns this registration or is admin/organizer
+  // User can access if:
+  // 1. They are the runner (runner_id)
+  // 2. They registered for someone else (registered_by)
+  // 3. They are admin or organizer
   const isAdmin = await hasRole(req.user.id, 'admin');
   const isOrganizer = await hasRole(req.user.id, 'organizer');
+  const isOwner = registration.runner_id === req.user.id || registration.registered_by === req.user.id;
   
-  if (!isAdmin && !isOrganizer && registration.runner_id !== req.user.id) {
+  if (!isAdmin && !isOrganizer && !isOwner) {
     res.status(403).json({
       success: false,
       error: 'Forbidden: You can only check payment status of your own registrations',

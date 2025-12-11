@@ -392,12 +392,19 @@ export const handleWebhook = asyncHandler(async (req: Request, res: Response) =>
 
   // Process event based on type
   if (registrationId) {
+    console.log(`🔄 Processando webhook para inscrição ${registrationId}:`, {
+      event,
+      paymentStatus: payment.status,
+      asaasPaymentId,
+      externalReference: payment.externalReference,
+    });
+    
     try {
       await processWebhookEvent(event, payment.status, registrationId);
       
       // Verify if the update was successful
       const verifyResult = await query(
-        'SELECT status, payment_status FROM registrations WHERE id = $1',
+        'SELECT status, payment_status, runner_id, registered_by FROM registrations WHERE id = $1',
         [registrationId]
       );
       
@@ -405,10 +412,17 @@ export const handleWebhook = asyncHandler(async (req: Request, res: Response) =>
         console.log(`✅ Status verificado - Inscrição ${registrationId}:`, {
           status: verifyResult.rows[0].status,
           payment_status: verifyResult.rows[0].payment_status,
+          runner_id: verifyResult.rows[0].runner_id,
+          registered_by: verifyResult.rows[0].registered_by,
         });
       }
     } catch (error: any) {
-      console.error(`❌ Erro ao processar evento ${event}:`, error);
+      console.error(`❌ Erro ao processar evento ${event} para inscrição ${registrationId}:`, {
+        error: error.message,
+        stack: error.stack,
+        event,
+        paymentStatus: payment.status,
+      });
       
       // Mark webhook event as failed
       if (webhookEventId) {
@@ -419,7 +433,11 @@ export const handleWebhook = asyncHandler(async (req: Request, res: Response) =>
       }
     }
   } else {
-    console.warn(`⚠️ Inscrição não encontrada para payment: ${asaasPaymentId}`);
+    console.warn(`⚠️ Inscrição não encontrada para payment: ${asaasPaymentId}`, {
+      externalReference: payment.externalReference,
+      event,
+      paymentStatus: payment.status,
+    });
     
     // Save event even without registrationId for later analysis
     if (webhookEventId) {
