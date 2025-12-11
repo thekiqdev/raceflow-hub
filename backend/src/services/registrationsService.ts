@@ -38,12 +38,16 @@ export const getRegistrations = async (filters?: {
       p.full_name as runner_name,
       p.cpf as runner_cpf,
       ek.name as kit_name,
-      -- Se a inscrição foi transferida e o runner_id atual é diferente do registered_by,
-      -- mostrar como 'confirmed' para o novo titular, senão manter o status original
+      -- Se a inscrição foi transferida:
+      -- - Se o runner_id atual é diferente do registered_by, mostrar como 'confirmed' para o novo titular
+      -- - Se o registered_by está visualizando (será calculado no map), mostrar como 'transferred'
+      -- - Caso contrário, manter o status original
       CASE 
         WHEN r.status = 'transferred' AND r.runner_id != r.registered_by THEN 'confirmed'
         ELSE r.status
-      END as display_status
+      END as display_status,
+      -- Flag para identificar se esta é uma inscrição transferida visualizada pelo antigo titular
+      (r.status = 'transferred' AND r.runner_id != r.registered_by) as is_transferred
     FROM registrations r
     LEFT JOIN events e ON r.event_id = e.id
     LEFT JOIN event_categories ec ON r.category_id = ec.id
@@ -59,7 +63,13 @@ export const getRegistrations = async (filters?: {
   }
 
   if (filters?.runner_id) {
-    conditions.push(`r.runner_id = $${params.length + 1}`);
+    // Include registrations where:
+    // 1. runner_id matches (current owner)
+    // 2. OR registered_by matches AND status is 'transferred' (transferred by this user)
+    conditions.push(`(
+      r.runner_id = $${params.length + 1} OR 
+      (r.registered_by = $${params.length + 1} AND r.status = 'transferred')
+    )`);
     params.push(filters.runner_id);
   }
 
@@ -110,10 +120,22 @@ export const getRegistrations = async (filters?: {
   const result = await query(queryText, params);
   
   // Replace status with display_status in the results
-  return result.rows.map(row => ({
-    ...row,
-    status: row.display_status || row.status,
-  }));
+  // If this is a transferred registration viewed by the original owner (registered_by),
+  // show as 'transferred' instead of 'confirmed'
+  return result.rows.map(row => {
+    let finalStatus = row.display_status || row.status;
+    
+    // If filtering by runner_id and this is a transferred registration
+    // where the runner_id filter matches registered_by, show as 'transferred'
+    if (filters?.runner_id && row.is_transferred && row.registered_by === filters.runner_id) {
+      finalStatus = 'transferred';
+    }
+    
+    return {
+      ...row,
+      status: finalStatus,
+    };
+  });
 };
 
 // Get registration by ID
