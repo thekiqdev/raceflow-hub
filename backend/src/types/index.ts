@@ -1,7 +1,7 @@
 // Database types
 export type AppRole = 'admin' | 'organizer' | 'runner';
 export type EventStatus = 'draft' | 'published' | 'ongoing' | 'finished' | 'cancelled';
-export type RegistrationStatus = 'pending' | 'confirmed' | 'cancelled' | 'refund_requested' | 'refunded';
+export type RegistrationStatus = 'pending' | 'confirmed' | 'cancelled' | 'refund_requested' | 'refunded' | 'transferred';
 export type PaymentStatus = 'pending' | 'paid' | 'refunded' | 'failed';
 export type PaymentMethod = 'pix' | 'credit_card' | 'boleto';
 

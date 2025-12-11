@@ -259,10 +259,10 @@ export const transferRegistration = async (
     throw new Error('Registration not found');
   }
 
-  // Update runner_id
+  // Update runner_id and set status to transferred
   const result = await query(
     `UPDATE registrations 
-     SET runner_id = $1, updated_at = NOW()
+     SET runner_id = $1, status = 'transferred', updated_at = NOW()
      WHERE id = $2
      RETURNING *`,
     [newRunnerId, registrationId]
