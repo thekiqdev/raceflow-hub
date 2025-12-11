@@ -37,7 +37,13 @@ export const getRegistrations = async (filters?: {
       ec.distance as category_distance,
       p.full_name as runner_name,
       p.cpf as runner_cpf,
-      ek.name as kit_name
+      ek.name as kit_name,
+      -- Se a inscrição foi transferida e o runner_id atual é diferente do registered_by,
+      -- mostrar como 'confirmed' para o novo titular, senão manter o status original
+      CASE 
+        WHEN r.status = 'transferred' AND r.runner_id != r.registered_by THEN 'confirmed'
+        ELSE r.status
+      END as display_status
     FROM registrations r
     LEFT JOIN events e ON r.event_id = e.id
     LEFT JOIN event_categories ec ON r.category_id = ec.id
@@ -68,8 +74,17 @@ export const getRegistrations = async (filters?: {
   }
 
   if (filters?.status) {
-    conditions.push(`r.status = $${params.length + 1}`);
-    params.push(filters.status);
+    // When filtering by status, also check display_status for transferred registrations
+    if (filters.status === 'confirmed') {
+      conditions.push(`(
+        r.status = $${params.length + 1} OR 
+        (r.status = 'transferred' AND r.runner_id != r.registered_by)
+      )`);
+      params.push(filters.status);
+    } else {
+      conditions.push(`r.status = $${params.length + 1}`);
+      params.push(filters.status);
+    }
   }
 
   if (filters?.payment_status) {
@@ -93,11 +108,16 @@ export const getRegistrations = async (filters?: {
   queryText += ' ORDER BY r.created_at DESC';
 
   const result = await query(queryText, params);
-  return result.rows;
+  
+  // Replace status with display_status in the results
+  return result.rows.map(row => ({
+    ...row,
+    status: row.display_status || row.status,
+  }));
 };
 
 // Get registration by ID
-export const getRegistrationById = async (registrationId: string) => {
+export const getRegistrationById = async (registrationId: string, viewerId?: string) => {
   const result = await query(
     `SELECT 
       r.*,
@@ -112,7 +132,20 @@ export const getRegistrationById = async (registrationId: string) => {
       p.cpf as runner_cpf,
       p.phone as runner_phone,
       u.email as runner_email,
-      ek.name as kit_name
+      ek.name as kit_name,
+      -- Se a inscrição foi transferida:
+      -- - Se o viewer é o novo titular (runner_id), mostrar como 'confirmed'
+      -- - Se o viewer é o antigo titular (registered_by), mostrar como 'transferred'
+      -- - Caso contrário, manter o status original
+      CASE 
+        WHEN r.status = 'transferred' AND r.runner_id != r.registered_by THEN
+          CASE 
+            WHEN $2::uuid IS NOT NULL AND r.runner_id = $2::uuid THEN 'confirmed'
+            WHEN $2::uuid IS NOT NULL AND r.registered_by = $2::uuid THEN 'transferred'
+            ELSE r.status
+          END
+        ELSE r.status
+      END as display_status
     FROM registrations r
     LEFT JOIN events e ON r.event_id = e.id
     LEFT JOIN event_categories ec ON r.category_id = ec.id
@@ -120,14 +153,18 @@ export const getRegistrationById = async (registrationId: string) => {
     LEFT JOIN users u ON p.id = u.id
     LEFT JOIN event_kits ek ON r.kit_id = ek.id
     WHERE r.id = $1`,
-    [registrationId]
+    [registrationId, viewerId || null]
   );
 
   if (result.rows.length === 0) {
     return null;
   }
 
-  return result.rows[0];
+  const row = result.rows[0];
+  return {
+    ...row,
+    status: row.display_status || row.status,
+  };
 };
 
 // Create registration

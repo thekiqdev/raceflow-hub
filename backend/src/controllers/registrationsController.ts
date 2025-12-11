@@ -115,7 +115,8 @@ export const getRegistration = asyncHandler(async (req: AuthRequest, res: Respon
   }
 
   const { id } = req.params;
-  const registration = await getRegistrationById(id);
+  // Pass viewerId to get correct display status (confirmed for new owner, transferred for old owner)
+  const registration = await getRegistrationById(id, req.user.id);
 
   if (!registration) {
     res.status(404).json({
