@@ -6,6 +6,8 @@ import {
   AsaasWebhookEventType,
   AsaasPaymentStatus,
 } from '../types/asaas.js';
+import { getTransferRequestById, updateTransferRequest } from '../services/transferRequestService.js';
+import { findUserByCpfOrEmail, transferRegistration } from '../services/registrationsService.js';
 
 /**
  * Handle Asaas webhook events
@@ -85,6 +87,81 @@ export const handleWebhook = asyncHandler(async (req: Request, res: Response) =>
         [transferRequestId]
       );
       console.log(`✅ Pagamento de transferência confirmado: ${transferRequestId}`);
+      
+      // Automatically transfer the registration
+      try {
+        const transferRequest = await getTransferRequestById(transferRequestId);
+        
+        if (transferRequest && transferRequest.payment_status === 'paid') {
+          // Find or get the new runner ID
+          let newRunnerId = transferRequest.new_runner_id;
+          
+          if (!newRunnerId) {
+            // Try to find by CPF or email
+            if (transferRequest.new_runner_cpf || transferRequest.new_runner_email) {
+              const newRunner = await findUserByCpfOrEmail(
+                transferRequest.new_runner_cpf || undefined,
+                transferRequest.new_runner_email || undefined
+              );
+              
+              if (newRunner) {
+                newRunnerId = newRunner.id;
+                // Update transfer request with the found runner ID
+                await updateTransferRequest(transferRequestId, {
+                  new_runner_id: newRunnerId,
+                });
+              } else {
+                console.error(`❌ Novo titular não encontrado para transfer request: ${transferRequestId}`);
+                // Mark webhook event as processed but don't transfer
+                if (webhookEventId) {
+                  await query(
+                    'UPDATE asaas_webhook_events SET processed = true, error_message = $1 WHERE id = $2',
+                    ['New runner not found', webhookEventId]
+                  );
+                }
+                return res.status(200).json({
+                  success: true,
+                  message: 'Payment confirmed but transfer pending - new runner not found',
+                });
+              }
+            } else {
+              console.error(`❌ Nenhum identificador do novo titular para transfer request: ${transferRequestId}`);
+              if (webhookEventId) {
+                await query(
+                  'UPDATE asaas_webhook_events SET processed = true, error_message = $1 WHERE id = $2',
+                  ['No new runner identifier', webhookEventId]
+                );
+              }
+              return res.status(200).json({
+                success: true,
+                message: 'Payment confirmed but transfer pending - no new runner identifier',
+              });
+            }
+          }
+          
+          // Perform the transfer
+          if (newRunnerId) {
+            await transferRegistration(transferRequest.registration_id, newRunnerId);
+            
+            // Mark transfer request as completed (this will also set processed_at)
+            await updateTransferRequest(transferRequestId, {
+              status: 'completed',
+            });
+            
+            console.log(`✅ Transferência automática concluída: ${transferRequestId} -> Registration ${transferRequest.registration_id} transferida para runner ${newRunnerId}`);
+          }
+        }
+      } catch (transferError: any) {
+        console.error(`❌ Erro ao transferir inscrição automaticamente:`, transferError);
+        // Mark webhook event with error but don't fail the webhook
+        if (webhookEventId) {
+          await query(
+            'UPDATE asaas_webhook_events SET processed = true, error_message = $1 WHERE id = $2',
+            [`Transfer error: ${transferError.message}`, webhookEventId]
+          );
+        }
+        // Continue - payment is confirmed, transfer can be done manually later
+      }
     }
     
     // Mark webhook event as processed

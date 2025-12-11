@@ -3,25 +3,22 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Loader2, CheckCircle, XCircle, Clock, DollarSign, User, Mail, FileText } from "lucide-react";
+import { Loader2, CheckCircle, Clock, DollarSign, User, Mail, FileText } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { getTransferRequests, updateTransferRequest, type TransferRequest } from "@/lib/api/transferRequests";
+import { getTransferRequests, type TransferRequest } from "@/lib/api/transferRequests";
 import { getSystemSettings, updateSystemSettings } from "@/lib/api/systemSettings";
 
 const TransferManagement = () => {
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [transferRequests, setTransferRequests] = useState<TransferRequest[]>([]);
   const [selectedRequest, setSelectedRequest] = useState<TransferRequest | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isFeeDialogOpen, setIsFeeDialogOpen] = useState(false);
-  const [adminNotes, setAdminNotes] = useState("");
   const [transferFee, setTransferFee] = useState<number>(0);
   const [savingFee, setSavingFee] = useState(false);
 
@@ -75,72 +72,15 @@ const TransferManagement = () => {
 
   const handleOpenDialog = (request: TransferRequest) => {
     setSelectedRequest(request);
-    setAdminNotes(request.admin_notes || "");
     setIsDialogOpen(true);
-  };
-
-  const handleApprove = async () => {
-    if (!selectedRequest) return;
-
-    setSaving(true);
-    try {
-      const response = await updateTransferRequest(selectedRequest.id, {
-        status: "approved",
-        admin_notes: adminNotes,
-      });
-
-      if (response.success) {
-        toast.success(response.message || "Solicitação aprovada com sucesso!");
-        setIsDialogOpen(false);
-        setSelectedRequest(null);
-        loadData();
-      } else {
-        toast.error(response.error || "Erro ao aprovar solicitação");
-      }
-    } catch (error: any) {
-      console.error("Erro ao aprovar solicitação:", error);
-      toast.error(error.message || "Erro ao aprovar solicitação");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleReject = async () => {
-    if (!selectedRequest) return;
-
-    setSaving(true);
-    try {
-      const response = await updateTransferRequest(selectedRequest.id, {
-        status: "rejected",
-        admin_notes: adminNotes,
-      });
-
-      if (response.success) {
-        toast.success("Solicitação rejeitada");
-        setIsDialogOpen(false);
-        setSelectedRequest(null);
-        loadData();
-      } else {
-        toast.error(response.error || "Erro ao rejeitar solicitação");
-      }
-    } catch (error: any) {
-      console.error("Erro ao rejeitar solicitação:", error);
-      toast.error(error.message || "Erro ao rejeitar solicitação");
-    } finally {
-      setSaving(false);
-    }
   };
 
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "pending":
         return <Badge variant="secondary"><Clock className="w-3 h-3 mr-1" /> Pendente</Badge>;
-      case "approved":
-        return <Badge variant="default" className="bg-green-600"><CheckCircle className="w-3 h-3 mr-1" /> Aprovada</Badge>;
-      case "rejected":
-        return <Badge variant="destructive"><XCircle className="w-3 h-3 mr-1" /> Rejeitada</Badge>;
       case "completed":
-        return <Badge variant="default" className="bg-blue-600"><CheckCircle className="w-3 h-3 mr-1" /> Concluída</Badge>;
+        return <Badge variant="default" className="bg-green-600"><CheckCircle className="w-3 h-3 mr-1" /> Concluída</Badge>;
       case "cancelled":
         return <Badge variant="outline">Cancelada</Badge>;
       default:
@@ -213,16 +153,22 @@ const TransferManagement = () => {
             <TabsContent value="pending" className="space-y-4 mt-4">
               {pendingRequests.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
-                  Nenhuma solicitação pendente
+                  Nenhuma solicitação pendente de pagamento
                 </div>
               ) : (
                 pendingRequests.map((request) => (
                   <Card key={request.id} className="p-4">
                     <div className="flex items-start justify-between">
                       <div className="space-y-2 flex-1">
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                           <h3 className="font-semibold">{request.event_title || "Evento"}</h3>
                           {getStatusBadge(request.status)}
+                          {request.payment_status === 'paid' && (
+                            <Badge variant="default" className="bg-green-600">Pagamento Confirmado</Badge>
+                          )}
+                          {request.payment_status === 'pending' && (
+                            <Badge variant="secondary">Aguardando Pagamento</Badge>
+                          )}
                         </div>
                         <div className="grid grid-cols-2 gap-2 text-sm text-muted-foreground">
                           <div className="flex items-center gap-2">
@@ -233,10 +179,16 @@ const TransferManagement = () => {
                             <FileText className="h-4 w-4" />
                             <span>Código: {request.confirmation_code || "N/A"}</span>
                           </div>
+                          {request.new_runner_name && (
+                            <div className="flex items-center gap-2">
+                              <User className="h-4 w-4" />
+                              <span>Novo titular: {request.new_runner_name}</span>
+                            </div>
+                          )}
                           {request.new_runner_email && (
                             <div className="flex items-center gap-2">
                               <Mail className="h-4 w-4" />
-                              <span>Novo titular: {request.new_runner_email}</span>
+                              <span>Email: {request.new_runner_email}</span>
                             </div>
                           )}
                           {request.new_runner_cpf && (
@@ -254,6 +206,13 @@ const TransferManagement = () => {
                               Criada em: {format(new Date(request.created_at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
                             </span>
                           </div>
+                          {request.processed_at && (
+                            <div>
+                              <span>
+                                Processada em: {format(new Date(request.processed_at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
+                              </span>
+                            </div>
+                          )}
                         </div>
                         {request.reason && (
                           <div className="text-sm">
@@ -261,9 +220,15 @@ const TransferManagement = () => {
                             <span className="text-muted-foreground">{request.reason}</span>
                           </div>
                         )}
+                        {request.admin_notes && (
+                          <div className="text-sm">
+                            <span className="font-medium">Observações: </span>
+                            <span className="text-muted-foreground">{request.admin_notes}</span>
+                          </div>
+                        )}
                       </div>
-                      <Button onClick={() => handleOpenDialog(request)}>
-                        Processar
+                      <Button variant="outline" onClick={() => handleOpenDialog(request)}>
+                        Ver Detalhes
                       </Button>
                     </div>
                   </Card>
@@ -323,11 +288,9 @@ const TransferManagement = () => {
                           </div>
                         )}
                       </div>
-                      {request.status === "pending" && (
-                        <Button onClick={() => handleOpenDialog(request)}>
-                          Processar
-                        </Button>
-                      )}
+                      <Button variant="outline" onClick={() => handleOpenDialog(request)}>
+                        Ver Detalhes
+                      </Button>
                     </div>
                   </Card>
                 ))
@@ -378,16 +341,25 @@ const TransferManagement = () => {
         </DialogContent>
       </Dialog>
 
-      {/* Dialog de Processamento */}
+      {/* Dialog de Detalhes */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Processar Solicitação de Transferência</DialogTitle>
+            <DialogTitle>Detalhes da Solicitação de Transferência</DialogTitle>
             <DialogDescription>
               {selectedRequest?.event_title || "Evento"} - {selectedRequest?.confirmation_code || "N/A"}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
+            <div className="flex items-center gap-2">
+              {selectedRequest && getStatusBadge(selectedRequest.status)}
+              {selectedRequest?.payment_status === 'paid' && (
+                <Badge variant="default" className="bg-green-600">Pagamento Confirmado</Badge>
+              )}
+              {selectedRequest?.payment_status === 'pending' && (
+                <Badge variant="secondary">Aguardando Pagamento</Badge>
+              )}
+            </div>
             <div className="grid grid-cols-2 gap-4 text-sm">
               <div>
                 <span className="font-medium">Solicitante:</span>
@@ -397,6 +369,12 @@ const TransferManagement = () => {
                 <span className="font-medium">Taxa:</span>
                 <p className="text-muted-foreground">{selectedRequest ? formatPrice(selectedRequest.transfer_fee) : "N/A"}</p>
               </div>
+              {selectedRequest?.new_runner_name && (
+                <div>
+                  <span className="font-medium">Novo titular:</span>
+                  <p className="text-muted-foreground">{selectedRequest.new_runner_name}</p>
+                </div>
+              )}
               {selectedRequest?.new_runner_email && (
                 <div>
                   <span className="font-medium">Email do novo titular:</span>
@@ -409,35 +387,51 @@ const TransferManagement = () => {
                   <p className="text-muted-foreground">{selectedRequest.new_runner_cpf}</p>
                 </div>
               )}
+              <div>
+                <span className="font-medium">Criada em:</span>
+                <p className="text-muted-foreground">
+                  {selectedRequest ? format(new Date(selectedRequest.created_at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR }) : "N/A"}
+                </p>
+              </div>
+              {selectedRequest?.processed_at && (
+                <div>
+                  <span className="font-medium">Processada em:</span>
+                  <p className="text-muted-foreground">
+                    {format(new Date(selectedRequest.processed_at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
+                  </p>
+                </div>
+              )}
               {selectedRequest?.reason && (
                 <div className="col-span-2">
                   <span className="font-medium">Motivo:</span>
                   <p className="text-muted-foreground">{selectedRequest.reason}</p>
                 </div>
               )}
+              {selectedRequest?.admin_notes && (
+                <div className="col-span-2">
+                  <span className="font-medium">Observações:</span>
+                  <p className="text-muted-foreground">{selectedRequest.admin_notes}</p>
+                </div>
+              )}
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="admin-notes">Observações Administrativas</Label>
-              <Textarea
-                id="admin-notes"
-                value={adminNotes}
-                onChange={(e) => setAdminNotes(e.target.value)}
-                placeholder="Adicione observações sobre esta solicitação..."
-                rows={4}
-              />
-            </div>
+            {selectedRequest?.status === 'completed' && (
+              <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                <p className="text-sm text-green-800">
+                  ✅ Transferência concluída automaticamente após confirmação do pagamento.
+                </p>
+              </div>
+            )}
+            {selectedRequest?.status === 'pending' && selectedRequest?.payment_status === 'paid' && (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                <p className="text-sm text-blue-800">
+                  ⏳ Aguardando processamento automático da transferência...
+                </p>
+              </div>
+            )}
           </div>
-          <DialogFooter className="flex gap-2">
+          <DialogFooter>
             <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
-              Cancelar
-            </Button>
-            <Button variant="destructive" onClick={handleReject} disabled={saving}>
-              {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-              Rejeitar
-            </Button>
-            <Button onClick={handleApprove} disabled={saving}>
-              {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-              Aprovar
+              Fechar
             </Button>
           </DialogFooter>
         </DialogContent>
