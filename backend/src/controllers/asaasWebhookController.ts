@@ -436,14 +436,25 @@ export const handleWebhook = asyncHandler(async (req: Request, res: Response) =>
 
   // Process event based on type
   if (registrationId) {
-    console.log(`🔄 Processando webhook para inscrição ${registrationId}:`, {
+    console.log(`🔄 ============================================`);
+    console.log(`🔄 PROCESSANDO WEBHOOK PARA INSCRIÇÃO ${registrationId}`);
+    console.log(`🔄 ============================================`);
+    console.log(`📋 Detalhes:`, {
       event,
       paymentStatus: payment.status,
       asaasPaymentId,
       externalReference: payment.externalReference,
+      invoiceNumber: payment.invoiceNumber,
     });
     
     try {
+      // Get current status before processing
+      const beforeResult = await query(
+        'SELECT status, payment_status FROM registrations WHERE id = $1',
+        [registrationId]
+      );
+      console.log(`📊 Status ANTES do processamento:`, beforeResult.rows[0]);
+      
       await processWebhookEvent(event, payment.status, registrationId);
       
       // Verify if the update was successful
@@ -453,19 +464,36 @@ export const handleWebhook = asyncHandler(async (req: Request, res: Response) =>
       );
       
       if (verifyResult.rows.length > 0) {
-        console.log(`✅ Status verificado - Inscrição ${registrationId}:`, {
+        console.log(`✅ ============================================`);
+        console.log(`✅ STATUS ATUALIZADO COM SUCESSO`);
+        console.log(`✅ ============================================`);
+        console.log(`📊 Status DEPOIS do processamento:`, {
           status: verifyResult.rows[0].status,
           payment_status: verifyResult.rows[0].payment_status,
           runner_id: verifyResult.rows[0].runner_id,
           registered_by: verifyResult.rows[0].registered_by,
         });
+        console.log(`📊 Comparação:`, {
+          antes: {
+            status: beforeResult.rows[0]?.status,
+            payment_status: beforeResult.rows[0]?.payment_status,
+          },
+          depois: {
+            status: verifyResult.rows[0].status,
+            payment_status: verifyResult.rows[0].payment_status,
+          },
+        });
       }
     } catch (error: any) {
-      console.error(`❌ Erro ao processar evento ${event} para inscrição ${registrationId}:`, {
+      console.error(`❌ ============================================`);
+      console.error(`❌ ERRO AO PROCESSAR WEBHOOK`);
+      console.error(`❌ ============================================`);
+      console.error(`📋 Detalhes do erro:`, {
         error: error.message,
         stack: error.stack,
         event,
         paymentStatus: payment.status,
+        registrationId,
       });
       
       // Mark webhook event as failed
@@ -477,10 +505,15 @@ export const handleWebhook = asyncHandler(async (req: Request, res: Response) =>
       }
     }
   } else {
-    console.warn(`⚠️ Inscrição não encontrada para payment: ${asaasPaymentId}`, {
+    console.warn(`⚠️ ============================================`);
+    console.warn(`⚠️ INSCRIÇÃO NÃO ENCONTRADA`);
+    console.warn(`⚠️ ============================================`);
+    console.warn(`📋 Detalhes:`, {
+      asaasPaymentId,
       externalReference: payment.externalReference,
       event,
       paymentStatus: payment.status,
+      invoiceNumber: payment.invoiceNumber,
     });
     
     // Save event even without registrationId for later analysis
