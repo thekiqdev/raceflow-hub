@@ -111,8 +111,22 @@ app.use('/uploads', express.static(path.join(__dirname, '../uploads'), {
   }
 }));
 
-// Request logging middleware
+// Request logging middleware - MUST be before routes to catch all requests
 app.use((req: Request, _res: Response, next) => {
+  // Special logging for webhooks
+  if (req.path.startsWith('/api/webhooks')) {
+    console.log('🔔 ============================================');
+    console.log('🔔 WEBHOOK REQUEST DETECTED');
+    console.log('🔔 ============================================');
+    console.log('📋 Timestamp:', new Date().toISOString());
+    console.log('📋 Method:', req.method);
+    console.log('📋 Path:', req.path);
+    console.log('📋 URL:', req.url);
+    console.log('📋 IP:', req.ip);
+    console.log('📋 Headers:', JSON.stringify(req.headers, null, 2));
+    console.log('📋 Body (raw):', req.body);
+  }
+  
   console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`, {
     ip: req.ip,
     body: req.method === 'POST' ? req.body : undefined,
