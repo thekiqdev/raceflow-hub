@@ -154,6 +154,10 @@ export function MyRegistrations() {
       const response = await generateTransferPayment(transferRequestId);
 
       if (response.success && response.data) {
+        if (!response.data.pix_qr_code) {
+          toast.error("QR Code PIX não foi gerado. Tente novamente.");
+          return;
+        }
         setPixData({
           qrCode: response.data.pix_qr_code,
           value: response.data.value,
@@ -618,10 +622,10 @@ export function MyRegistrations() {
                   <div className="flex items-center justify-center py-8">
                     <Loader2 className="h-8 w-8 animate-spin text-primary" />
                   </div>
-                ) : pixData ? (
+                ) : pixData && pixData.qrCode ? (
                   <div className="space-y-4">
                     <PixQrCode
-                      qrCode={pixData.qrCode}
+                      pixQrCode={pixData.qrCode}
                       value={pixData.value}
                       dueDate={pixData.dueDate}
                       hideHeader={true}
@@ -724,13 +728,22 @@ export function MyRegistrations() {
               </div>
             ) : pixData ? (
               <div className="w-full">
-                <PixQrCode
-                  pixQrCode={pixData.qrCode}
-                  value={pixData.value}
-                  dueDate={pixData.dueDate}
-                  registrationId={selectedRegistration?.confirmation_code}
-                  hideHeader={true}
-                />
+                {pixData.qrCode ? (
+                  <PixQrCode
+                    pixQrCode={pixData.qrCode}
+                    value={pixData.value}
+                    dueDate={pixData.dueDate}
+                    registrationId={selectedRegistration?.confirmation_code}
+                    hideHeader={true}
+                  />
+                ) : (
+                  <div className="text-center py-8">
+                    <AlertCircle className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+                    <p className="text-sm text-muted-foreground">
+                      QR Code PIX não disponível no momento
+                    </p>
+                  </div>
+                )}
               </div>
             ) : (
               <div className="text-center py-8">
