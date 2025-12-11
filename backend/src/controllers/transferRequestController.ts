@@ -13,7 +13,7 @@ import { findUserByCpfOrEmail } from '../services/registrationsService.js';
 import { transferRegistration } from '../services/registrationsService.js';
 import { getSystemSettings } from '../services/systemSettingsService.js';
 import { getProfileByUserId } from '../services/profilesService.js';
-import { createCustomer, getCustomerByUserId, createPayment } from '../services/asaasService.js';
+import { createCustomer, getCustomerByUserId, createTransferPayment } from '../services/asaasService.js';
 import { query } from '../config/database.js';
 
 /**
@@ -414,8 +414,8 @@ export const generateTransferPaymentController = asyncHandler(async (req: AuthRe
     const registration = await getRegistrationById(transferRequest.registration_id);
 
     // Create payment in Asaas (using transfer request ID as reference)
-    const paymentResult = await createPayment(
-      transferRequest.id, // Use transfer request ID as reference (will be stored in external_reference)
+    const paymentResult = await createTransferPayment(
+      transferRequest.id,
       asaasCustomerId,
       {
         value: transferRequest.transfer_fee,

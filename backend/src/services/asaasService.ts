@@ -424,6 +424,169 @@ export const createPayment = async (
   }
 };
 
+/**
+ * Create payment for transfer fee (doesn't update registrations table)
+ */
+export const createTransferPayment = async (
+  transferRequestId: string,
+  customerId: string,
+  paymentData: {
+    value: number;
+    dueDate: string; // YYYY-MM-DD
+    description: string;
+    billingType: AsaasBillingType;
+    externalReference?: string;
+  }
+): Promise<CreatePaymentResult> => {
+  const asaasClient = createAsaasClient();
+
+  try {
+    // Prepare payment request
+    const paymentRequest: AsaasPaymentRequest = {
+      customer: customerId,
+      billingType: paymentData.billingType,
+      value: paymentData.value,
+      dueDate: paymentData.dueDate,
+      description: paymentData.description,
+      externalReference: paymentData.externalReference || `TRANSFER-${transferRequestId}`,
+      installmentCount: 1,
+      installmentValue: paymentData.value,
+    };
+
+    console.log('💳 Criando pagamento de transferência no Asaas...', { 
+      transferRequestId, 
+      customerId, 
+      value: paymentData.value,
+      billingType: paymentData.billingType,
+      dueDate: paymentData.dueDate
+    });
+
+    // Create payment in Asaas
+    const response = await asaasClient.post<AsaasPaymentResponse>('/payments', paymentRequest);
+    const asaasPayment = response.data;
+
+    console.log(`✅ Pagamento de transferência criado no Asaas:`, {
+      id: asaasPayment.id,
+      status: asaasPayment.status,
+      value: asaasPayment.value,
+    });
+
+    // If PIX, wait and fetch QR Code
+    let pixQrCode: string | null = null;
+    let pixQrCodeId: string | null = null;
+
+    if (paymentData.billingType === 'PIX') {
+      console.log('🔍 Buscando QR Code PIX para transferência...');
+      
+      if (asaasPayment.pixQrCode) {
+        pixQrCode = asaasPayment.pixQrCode;
+        pixQrCodeId = asaasPayment.pixQrCodeId || null;
+        console.log('✅ QR Code PIX já disponível na resposta inicial');
+      } else {
+        await new Promise(resolve => setTimeout(resolve, 2000));
+
+        const invoiceNumber = (asaasPayment as any).invoiceNumber;
+        const paymentIdToUse = invoiceNumber || asaasPayment.id;
+        
+        for (let attempt = 1; attempt <= 5; attempt++) {
+          try {
+            const paymentResponse = await asaasClient.get<AsaasPaymentResponse>(
+              `/payments/${paymentIdToUse}`
+            );
+            const payment = paymentResponse.data;
+
+            try {
+              const qrCodeResponse = await asaasClient.get(
+                `/payments/${paymentIdToUse}/pixQrCode`
+              );
+              
+              if (qrCodeResponse.data?.payload) {
+                pixQrCode = qrCodeResponse.data.payload;
+                pixQrCodeId = qrCodeResponse.data.id || payment.pixQrCodeId || null;
+                console.log(`✅ QR Code PIX obtido para transferência`);
+                break;
+              }
+            } catch (qrError: any) {
+              const pixTransaction = (payment as any).pixTransaction;
+              const qrCode = payment.pixQrCode || 
+                            (pixTransaction?.payload) || 
+                            (pixTransaction?.qrCode);
+              
+              if (qrCode) {
+                pixQrCode = qrCode;
+                pixQrCodeId = payment.pixQrCodeId || pixTransaction?.id || null;
+                console.log(`✅ QR Code PIX obtido para transferência`);
+                break;
+              }
+            }
+
+            if (attempt < 5) {
+              const waitTime = attempt * 2000;
+              await new Promise(resolve => setTimeout(resolve, waitTime));
+            }
+          } catch (error: any) {
+            console.error(`❌ Erro ao buscar QR Code (tentativa ${attempt}/5):`, error.message);
+            if (attempt < 5) {
+              const waitTime = attempt * 2000;
+              await new Promise(resolve => setTimeout(resolve, waitTime));
+            }
+          }
+        }
+      }
+    }
+
+    // Save payment to database (without updating registrations table)
+    await query(
+      `INSERT INTO asaas_payments (
+        registration_id, asaas_payment_id, asaas_customer_id, value, net_value,
+        billing_type, status, due_date, payment_link, invoice_url, bank_slip_url,
+        external_reference, pix_qr_code_id, pix_qr_code
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+      [
+        null, // No registration_id for transfer payments
+        asaasPayment.id,
+        customerId,
+        asaasPayment.value,
+        asaasPayment.netValue || null,
+        asaasPayment.billingType,
+        asaasPayment.status,
+        asaasPayment.dueDate,
+        asaasPayment.paymentLink || null,
+        asaasPayment.invoiceUrl || null,
+        asaasPayment.bankSlipUrl || null,
+        asaasPayment.externalReference || null,
+        pixQrCodeId,
+        pixQrCode,
+      ]
+    );
+
+    console.log(`✅ Pagamento de transferência salvo no banco de dados`);
+
+    return {
+      asaas_payment_id: asaasPayment.id,
+      payment_link: asaasPayment.paymentLink,
+      pix_qr_code: pixQrCode,
+      pix_qr_code_id: pixQrCodeId,
+      status: asaasPayment.status,
+      value: asaasPayment.value,
+      net_value: asaasPayment.netValue,
+      due_date: asaasPayment.dueDate,
+    };
+  } catch (error: any) {
+    console.error('❌ Erro ao criar pagamento de transferência no Asaas:', error);
+    
+    if (error.response?.data) {
+      const errorData = error.response.data;
+      if (errorData.errors) {
+        const errorMessages = errorData.errors.map((e: any) => e.description).join(', ');
+        throw new Error(`Erro ao criar pagamento de transferência no Asaas: ${errorMessages}`);
+      }
+    }
+
+    throw new Error(`Erro ao criar pagamento de transferência no Asaas: ${error.message}`);
+  }
+};
+
 // Get payment status from Asaas
 export const getPaymentStatus = async (
   asaasPaymentId: string
