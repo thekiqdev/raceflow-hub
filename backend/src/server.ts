@@ -15,6 +15,7 @@ import organizerRouter from './routes/organizerRoutes.js';
 import runnerRouter from './routes/runnerRoutes.js';
 import uploadRouter from './routes/upload.js';
 import webhooksRouter from './routes/webhooks.js';
+import groupLeadersRouter from './routes/groupLeaders.js';
 
 // Load environment variables
 // Try to load from backend/.env explicitly

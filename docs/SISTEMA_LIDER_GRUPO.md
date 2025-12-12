@@ -273,13 +273,13 @@ Adicionar campo:
 ## 🔧 Funcionalidades Técnicas
 
 ### Geração de Código de Referência
-- Formato: `LEADER-XXXXX` (5 caracteres alfanuméricos)
-- Exemplo: `LEADER-A3B7C`
+- Formato: `XXX###` (3 letras + 3 números)
+- Exemplo: `ABC123`, `XYZ789`
 - Deve ser único e não pode ser adivinhado facilmente
 
 ### Link de Referência
-- Formato: `https://cronoteam.com/cadastro?ref=LEADER-XXXXX`
-- Ou: `https://cronoteam.com/register?code=LEADER-XXXXX`
+- Formato: `https://cronoteam.com/cadastro?ref=XXX###`
+- Ou: `https://cronoteam.com/register?code=XXX###`
 
 ### Cálculo de Comissão
 ```typescript

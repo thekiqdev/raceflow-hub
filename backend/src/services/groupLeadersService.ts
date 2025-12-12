@@ -13,21 +13,28 @@ export interface UpdateGroupLeaderData {
 
 /**
  * Generate unique referral code
- * Format: LEADER-XXXXX (5 alphanumeric characters)
+ * Format: 3 letras + 3 números (ex: ABC123)
  */
 const generateReferralCode = async (): Promise<string> => {
-  const characters = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // Removed I, O, 0, 1 for clarity
+  const letters = 'ABCDEFGHJKLMNPQRSTUVWXYZ'; // Removed I, O for clarity
+  const numbers = '23456789'; // Removed 0, 1 for clarity
   let code: string;
   let exists = true;
   
   // Try to generate a unique code (max 10 attempts)
   let attempts = 0;
   while (exists && attempts < 10) {
-    const randomPart = Array.from({ length: 5 }, () => 
-      characters.charAt(Math.floor(Math.random() * characters.length))
+    // Generate 3 random letters
+    const letterPart = Array.from({ length: 3 }, () => 
+      letters.charAt(Math.floor(Math.random() * letters.length))
     ).join('');
     
-    code = `LEADER-${randomPart}`;
+    // Generate 3 random numbers
+    const numberPart = Array.from({ length: 3 }, () => 
+      numbers.charAt(Math.floor(Math.random() * numbers.length))
+    ).join('');
+    
+    code = `${letterPart}${numberPart}`;
     
     const checkResult = await query(
       'SELECT id FROM group_leaders WHERE referral_code = $1',
