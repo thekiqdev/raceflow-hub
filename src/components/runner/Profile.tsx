@@ -48,6 +48,17 @@ export function Profile() {
     if (user) {
       loadProfileData();
     }
+
+    // Listen for profile update events
+    const handleProfileUpdate = () => {
+      loadProfileData();
+    };
+
+    window.addEventListener('profile:updated', handleProfileUpdate);
+
+    return () => {
+      window.removeEventListener('profile:updated', handleProfileUpdate);
+    };
   }, [user]);
 
   const loadProfileData = async () => {

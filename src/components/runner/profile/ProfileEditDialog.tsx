@@ -109,8 +109,8 @@ export function ProfileEditDialog({ open, onOpenChange, profile }: ProfileEditDi
       if (response.success) {
         toast.success("Dados atualizados com sucesso!");
         onOpenChange(false);
-        // Recarregar a página para atualizar os dados
-        window.location.reload();
+        // Disparar evento para recarregar dados do perfil
+        window.dispatchEvent(new CustomEvent('profile:updated'));
       } else {
         toast.error(response.error || "Erro ao atualizar dados");
       }
