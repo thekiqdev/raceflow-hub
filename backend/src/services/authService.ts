@@ -20,6 +20,7 @@ export interface RegisterData {
   city?: string;
   state?: string;
   lgpd_consent: boolean;
+  referral_code?: string; // Código de referência opcional
 }
 
 export interface LoginData {

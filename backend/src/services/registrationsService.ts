@@ -213,7 +213,33 @@ export const createRegistration = async (data: CreateRegistrationData) => {
     ]
   );
 
-  return result.rows[0];
+  const registration = result.rows[0];
+
+  // Check if user has a referral and create commission if applicable
+  try {
+    const { getUserReferral } = await import('./referralsService.js');
+    const { createCommission } = await import('./commissionsService.js');
+    
+    const userReferral = await getUserReferral(data.runner_id);
+    
+    if (userReferral) {
+      // User was referred by a leader, create commission
+      await createCommission({
+        leader_id: userReferral.leader_id,
+        registration_id: registration.id,
+        referred_user_id: data.runner_id,
+        event_id: data.event_id,
+        registration_amount: data.total_amount,
+      });
+      
+      console.log(`✅ Comissão criada para líder ${userReferral.leader_id} na inscrição ${registration.id}`);
+    }
+  } catch (error: any) {
+    // Log error but don't fail registration if commission creation fails
+    console.error('❌ Erro ao criar comissão para inscrição:', error.message);
+  }
+
+  return registration;
 };
 
 // Update registration
