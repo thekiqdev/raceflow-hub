@@ -39,17 +39,7 @@ export const createGroupLeaderController = asyncHandler(
       return;
     }
 
-    // Check if user is admin
-    const isAdmin = req.user.roles?.includes('admin');
-    if (!isAdmin) {
-      res.status(403).json({
-        success: false,
-        error: 'Forbidden',
-        message: 'Only admins can create group leaders',
-      });
-      return;
-    }
-
+    // Admin check is done by requireRole middleware in adminRoutes.ts
     const validation = createGroupLeaderSchema.safeParse(req.body);
 
     if (!validation.success) {
@@ -131,17 +121,7 @@ export const getAllGroupLeadersController = asyncHandler(
       return;
     }
 
-    // Check if user is admin
-    const isAdmin = req.user.roles?.includes('admin');
-    if (!isAdmin) {
-      res.status(403).json({
-        success: false,
-        error: 'Forbidden',
-        message: 'Only admins can view all group leaders',
-      });
-      return;
-    }
-
+    // Admin check is done by requireRole middleware in adminRoutes.ts
     const leaders = await getAllGroupLeaders();
 
     res.json({
@@ -210,16 +190,7 @@ export const updateGroupLeaderController = asyncHandler(
       return;
     }
 
-    // Check if user is admin
-    const isAdmin = req.user.roles?.includes('admin');
-    if (!isAdmin) {
-      res.status(403).json({
-        success: false,
-        error: 'Forbidden',
-        message: 'Only admins can update group leaders',
-      });
-      return;
-    }
+    // Admin check is done by requireRole middleware in adminRoutes.ts
 
     const { id } = req.params;
 

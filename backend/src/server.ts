@@ -162,13 +162,11 @@ app.use((req: Request, _res: Response, next) => {
 app.use('/api/webhooks', webhooksRouter);
 app.use('/api/health', healthRouter);
 app.use('/api/auth', authRouter);
-// Group leaders routes (for leaders to see their own data) - must be before /api/admin
 app.use('/api/group-leaders', groupLeadersRouter);
 app.use('/api/events', eventsRouter);
 app.use('/api/profiles', profilesRouter);
 app.use('/api/registrations', registrationsRouter);
 app.use('/api/home-page-settings', homePageSettingsRouter);
-// Admin routes (includes /api/admin/group-leaders) - must be after /api/group-leaders
 app.use('/api/admin', adminRouter);
 app.use('/api/organizer', organizerRouter);
 app.use('/api/runner', runnerRouter);
