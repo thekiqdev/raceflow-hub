@@ -789,6 +789,18 @@ export function MultiStepRegistration({ open, onOpenChange }: MultiStepRegistrat
         <div className="space-y-4">
           <h3 className="text-lg font-semibold">Revise seus dados</h3>
           
+          {/* Referral Code Badge */}
+          {referralCode && (
+            <div className="bg-primary/10 border border-primary/20 rounded-lg p-3">
+              <div className="flex items-center gap-2">
+                <div className="flex-1">
+                  <p className="text-xs text-muted-foreground">Código de Referência</p>
+                  <p className="text-sm font-semibold text-primary">{referralCode}</p>
+                </div>
+              </div>
+            </div>
+          )}
+          
           {/* Dados Pessoais */}
           <div className="space-y-3 p-4 border rounded-lg">
             <h4 className="font-medium text-sm text-muted-foreground uppercase">Dados Pessoais</h4>
