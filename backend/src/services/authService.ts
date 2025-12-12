@@ -181,7 +181,7 @@ export const register = async (data: RegisterData): Promise<AuthResponse> => {
           user_id: user.id,
           referral_code: data.referral_code,
           referral_type: 'code', // Default to 'code', can be 'link' if needed
-        });
+        }, client); // Pass transaction client
         console.log(`✅ Referência criada para usuário ${user.id} com código ${data.referral_code}`);
       } catch (error: any) {
         // Log error but don't fail registration if referral creation fails

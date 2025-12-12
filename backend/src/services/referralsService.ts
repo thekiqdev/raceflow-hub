@@ -1,4 +1,4 @@
-import { query } from '../config/database.js';
+import { query, PoolClient } from '../config/database.js';
 import { UserReferral } from '../types/index.js';
 import { getGroupLeaderByCode } from './groupLeadersService.js';
 import { incrementTotalReferrals } from './groupLeadersService.js';
@@ -11,10 +11,15 @@ export interface CreateUserReferralData {
 
 /**
  * Create user referral
+ * @param data - Referral data
+ * @param client - Optional database client for transaction support
  */
 export const createUserReferral = async (
-  data: CreateUserReferralData
+  data: CreateUserReferralData,
+  client?: PoolClient
 ): Promise<UserReferral> => {
+  const queryFn = client ? client.query.bind(client) : query;
+  
   // Validate referral code and get leader
   const leader = await getGroupLeaderByCode(data.referral_code);
   
@@ -23,7 +28,7 @@ export const createUserReferral = async (
   }
   
   // Check if user already has a referral
-  const existingReferral = await query(
+  const existingReferral = await queryFn(
     'SELECT id FROM user_referrals WHERE user_id = $1',
     [data.user_id]
   );
@@ -38,7 +43,7 @@ export const createUserReferral = async (
   }
   
   // Create referral
-  const result = await query(
+  const result = await queryFn(
     `INSERT INTO user_referrals (
       user_id, leader_id, referral_code, referral_type
     )
@@ -52,8 +57,16 @@ export const createUserReferral = async (
     ]
   );
   
-  // Increment total referrals count for the leader
-  await incrementTotalReferrals(leader.id);
+  // Increment total referrals count for the leader (only if not in transaction)
+  if (!client) {
+    await incrementTotalReferrals(leader.id);
+  } else {
+    // If in transaction, update directly
+    await queryFn(
+      'UPDATE group_leaders SET total_referrals = total_referrals + 1 WHERE id = $1',
+      [leader.id]
+    );
+  }
   
   return result.rows[0] as UserReferral;
 };
