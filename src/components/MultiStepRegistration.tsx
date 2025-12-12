@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { getDashboardRoute } from "@/lib/utils/navigation";
@@ -11,6 +11,9 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Loader2, ChevronLeft, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
+import { maskCpf, maskPhone, maskCep, unmask } from "@/lib/utils/masks";
+import { validateCpf, validateCep, validatePhone } from "@/lib/utils/validators";
+import { fetchAddressByCep } from "@/lib/api/viacep";
 
 interface MultiStepRegistrationProps {
   open: boolean;
@@ -152,6 +155,46 @@ export function MultiStepRegistration({ open, onOpenChange }: MultiStepRegistrat
     }
   };
 
+  // Buscar endereço por CEP com debounce
+  const handleCepChange = useCallback(async (cep: string) => {
+    // Aplicar máscara
+    const maskedCep = maskCep(cep);
+    updateField('postalCode', maskedCep);
+    
+    // Buscar endereço quando CEP estiver completo
+    const cleanCep = unmask(maskedCep);
+    if (cleanCep.length === 8) {
+      setLoadingCep(true);
+      try {
+        const address = await fetchAddressByCep(maskedCep);
+        
+        if (address) {
+          updateField('street', address.logradouro || '');
+          updateField('neighborhood', address.bairro || '');
+          updateField('city', address.localidade || '');
+          updateField('state', address.uf || '');
+          
+          // Limpar erro de CEP se encontrado
+          if (errors.postalCode) {
+            setErrors(prev => {
+              const newErrors = { ...prev };
+              delete newErrors.postalCode;
+              return newErrors;
+            });
+          }
+        } else {
+          toast.error('CEP não encontrado');
+          setErrors(prev => ({ ...prev, postalCode: 'CEP não encontrado' }));
+        }
+      } catch (error) {
+        console.error('Erro ao buscar CEP:', error);
+        toast.error('Erro ao buscar endereço. Tente novamente.');
+      } finally {
+        setLoadingCep(false);
+      }
+    }
+  }, [errors.postalCode]);
+
   // Validação básica por etapa
   const validateStep = (step: number): boolean => {
     const newErrors: StepErrors = {};
@@ -159,13 +202,13 @@ export function MultiStepRegistration({ open, onOpenChange }: MultiStepRegistrat
     switch (step) {
       case 1:
         // Validar Etapa 1: Dados Pessoais
-        if (!formData.cpf || formData.cpf.replace(/\D/g, '').length !== 11) {
+        if (!formData.cpf || !validateCpf(formData.cpf)) {
           newErrors.cpf = 'CPF inválido';
         }
         if (!formData.birthDate) {
           newErrors.birthDate = 'Data de nascimento é obrigatória';
         }
-        if (!formData.phone || formData.phone.replace(/\D/g, '').length < 10) {
+        if (!formData.phone || !validatePhone(formData.phone)) {
           newErrors.phone = 'Telefone inválido';
         }
         if (!formData.fullName || formData.fullName.trim().length < 3) {
@@ -178,7 +221,7 @@ export function MultiStepRegistration({ open, onOpenChange }: MultiStepRegistrat
 
       case 2:
         // Validar Etapa 2: Endereço
-        if (!formData.postalCode || formData.postalCode.replace(/\D/g, '').length !== 8) {
+        if (!formData.postalCode || !validateCep(formData.postalCode)) {
           newErrors.postalCode = 'CEP inválido';
         }
         if (!formData.street || formData.street.trim().length < 3) {
@@ -331,7 +374,8 @@ export function MultiStepRegistration({ open, onOpenChange }: MultiStepRegistrat
             id="cpf"
             placeholder="000.000.000-00"
             value={formData.cpf}
-            onChange={(e) => updateField('cpf', e.target.value)}
+            onChange={(e) => updateField('cpf', maskCpf(e.target.value))}
+            maxLength={14}
             className={errors.cpf ? "border-destructive" : ""}
           />
           {errors.cpf && <p className="text-sm text-destructive">{errors.cpf}</p>}
@@ -344,6 +388,7 @@ export function MultiStepRegistration({ open, onOpenChange }: MultiStepRegistrat
             type="date"
             value={formData.birthDate}
             onChange={(e) => updateField('birthDate', e.target.value)}
+            max={new Date().toISOString().split('T')[0]}
             className={errors.birthDate ? "border-destructive" : ""}
           />
           {errors.birthDate && <p className="text-sm text-destructive">{errors.birthDate}</p>}
@@ -355,7 +400,8 @@ export function MultiStepRegistration({ open, onOpenChange }: MultiStepRegistrat
             id="phone"
             placeholder="(00) 00000-0000"
             value={formData.phone}
-            onChange={(e) => updateField('phone', e.target.value)}
+            onChange={(e) => updateField('phone', maskPhone(e.target.value))}
+            maxLength={15}
             className={errors.phone ? "border-destructive" : ""}
           />
           {errors.phone && <p className="text-sm text-destructive">{errors.phone}</p>}
@@ -387,7 +433,7 @@ export function MultiStepRegistration({ open, onOpenChange }: MultiStepRegistrat
           <Label>Sexo *</Label>
           <RadioGroup
             value={formData.gender}
-            onValueChange={(value) => updateField('gender', value)}
+            onValueChange={(value) => updateField('gender', value as 'M' | 'F')}
             className="flex gap-6"
           >
             <div className="flex items-center space-x-2">
@@ -405,11 +451,146 @@ export function MultiStepRegistration({ open, onOpenChange }: MultiStepRegistrat
     );
   };
 
-  // Renderizar etapa 2: Endereço (placeholder - será implementado na ETAPA 3)
+  // Renderizar etapa 2: Endereço
   const renderStep2 = () => {
+    // Lista de estados brasileiros
+    const estados = [
+      { value: 'AC', label: 'Acre' },
+      { value: 'AL', label: 'Alagoas' },
+      { value: 'AP', label: 'Amapá' },
+      { value: 'AM', label: 'Amazonas' },
+      { value: 'BA', label: 'Bahia' },
+      { value: 'CE', label: 'Ceará' },
+      { value: 'DF', label: 'Distrito Federal' },
+      { value: 'ES', label: 'Espírito Santo' },
+      { value: 'GO', label: 'Goiás' },
+      { value: 'MA', label: 'Maranhão' },
+      { value: 'MT', label: 'Mato Grosso' },
+      { value: 'MS', label: 'Mato Grosso do Sul' },
+      { value: 'MG', label: 'Minas Gerais' },
+      { value: 'PA', label: 'Pará' },
+      { value: 'PB', label: 'Paraíba' },
+      { value: 'PR', label: 'Paraná' },
+      { value: 'PE', label: 'Pernambuco' },
+      { value: 'PI', label: 'Piauí' },
+      { value: 'RJ', label: 'Rio de Janeiro' },
+      { value: 'RN', label: 'Rio Grande do Norte' },
+      { value: 'RS', label: 'Rio Grande do Sul' },
+      { value: 'RO', label: 'Rondônia' },
+      { value: 'RR', label: 'Roraima' },
+      { value: 'SC', label: 'Santa Catarina' },
+      { value: 'SP', label: 'São Paulo' },
+      { value: 'SE', label: 'Sergipe' },
+      { value: 'TO', label: 'Tocantins' },
+    ];
+
     return (
       <div className="space-y-4">
-        <p className="text-muted-foreground">Etapa 2: Endereço (em implementação)</p>
+        <div className="space-y-2">
+          <Label htmlFor="postalCode">CEP *</Label>
+          <div className="relative">
+            <Input
+              id="postalCode"
+              placeholder="00000-000"
+              value={formData.postalCode}
+              onChange={(e) => handleCepChange(e.target.value)}
+              maxLength={9}
+              className={errors.postalCode ? "border-destructive" : ""}
+              disabled={loadingCep}
+            />
+            {loadingCep && (
+              <Loader2 className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground" />
+            )}
+          </div>
+          {errors.postalCode && <p className="text-sm text-destructive">{errors.postalCode}</p>}
+          <p className="text-xs text-muted-foreground">Digite o CEP para buscar o endereço automaticamente</p>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="street">Logradouro *</Label>
+          <Input
+            id="street"
+            placeholder="Rua, Avenida, etc."
+            value={formData.street}
+            onChange={(e) => updateField('street', e.target.value)}
+            className={errors.street ? "border-destructive" : ""}
+            disabled={loadingCep}
+          />
+          {errors.street && <p className="text-sm text-destructive">{errors.street}</p>}
+        </div>
+
+        <div className="grid grid-cols-3 gap-4">
+          <div className="space-y-2 col-span-1">
+            <Label htmlFor="addressNumber">Número *</Label>
+            <Input
+              id="addressNumber"
+              placeholder="123"
+              value={formData.addressNumber}
+              onChange={(e) => updateField('addressNumber', e.target.value)}
+              className={errors.addressNumber ? "border-destructive" : ""}
+            />
+            {errors.addressNumber && <p className="text-sm text-destructive">{errors.addressNumber}</p>}
+          </div>
+
+          <div className="space-y-2 col-span-2">
+            <Label htmlFor="addressComplement">Complemento</Label>
+            <Input
+              id="addressComplement"
+              placeholder="Apto, Bloco, etc."
+              value={formData.addressComplement}
+              onChange={(e) => updateField('addressComplement', e.target.value)}
+            />
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="neighborhood">Bairro *</Label>
+          <Input
+            id="neighborhood"
+            placeholder="Nome do bairro"
+            value={formData.neighborhood}
+            onChange={(e) => updateField('neighborhood', e.target.value)}
+            className={errors.neighborhood ? "border-destructive" : ""}
+            disabled={loadingCep}
+          />
+          {errors.neighborhood && <p className="text-sm text-destructive">{errors.neighborhood}</p>}
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <Label htmlFor="city">Cidade *</Label>
+            <Input
+              id="city"
+              placeholder="Nome da cidade"
+              value={formData.city}
+              onChange={(e) => updateField('city', e.target.value)}
+              className={errors.city ? "border-destructive" : ""}
+              disabled={loadingCep}
+            />
+            {errors.city && <p className="text-sm text-destructive">{errors.city}</p>}
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="state">Estado *</Label>
+            <Select
+              value={formData.state}
+              onValueChange={(value) => updateField('state', value)}
+              disabled={loadingCep}
+            >
+              <SelectTrigger className={errors.state ? "border-destructive" : ""}>
+                <SelectValue placeholder="Selecione o estado" />
+              </SelectTrigger>
+              <SelectContent>
+                {estados.map((estado) => (
+                  <SelectItem key={estado.value} value={estado.value}>
+                    {estado.label} ({estado.value})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {errors.state && <p className="text-sm text-destructive">{errors.state}</p>}
+          </div>
+        </div>
       </div>
     );
   };
