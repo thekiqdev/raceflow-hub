@@ -17,6 +17,7 @@ import Quote from "./pages/Quote";
 import FAQ from "./pages/FAQ";
 import RegistrationQRCode from "./pages/RegistrationQRCode";
 import ValidateRegistration from "./pages/ValidateRegistration";
+import Cadastro from "./pages/Cadastro";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -31,6 +32,7 @@ const App = () => (
           {/* Public routes */}
           <Route path="/" element={<Index />} />
           <Route path="/auth" element={<Auth />} />
+          <Route path="/cadastro" element={<Cadastro />} />
           <Route path="/events" element={<Events />} />
           <Route path="/events/:id" element={<EventDetails />} />
           <Route path="/orcamento" element={<Quote />} />

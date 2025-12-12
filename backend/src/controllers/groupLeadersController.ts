@@ -12,6 +12,7 @@ import {
 } from '../services/groupLeadersService.js';
 import { getReferralsByLeader, getReferralStats } from '../services/referralsService.js';
 import { getCommissionsByLeader } from '../services/commissionsService.js';
+// Note: Admin role verification is handled by requireRole('admin') middleware in adminRoutes.ts
 import { z } from 'zod';
 
 // Validation schemas
@@ -31,15 +32,7 @@ const updateGroupLeaderSchema = z.object({
  */
 export const createGroupLeaderController = asyncHandler(
   async (req: AuthRequest, res: Response) => {
-    if (!req.user) {
-      res.status(401).json({
-        success: false,
-        error: 'Not authenticated',
-      });
-      return;
-    }
-
-    // Admin check is done by requireRole middleware in adminRoutes.ts
+    // Note: Admin role is already verified by requireRole('admin') middleware in adminRoutes.ts
     const validation = createGroupLeaderSchema.safeParse(req.body);
 
     if (!validation.success) {
@@ -110,18 +103,10 @@ export const getMyGroupLeaderController = asyncHandler(
 /**
  * GET /api/admin/group-leaders
  * Get all group leaders (admin only)
+ * Note: Admin role is already verified by requireRole('admin') middleware in adminRoutes.ts
  */
 export const getAllGroupLeadersController = asyncHandler(
   async (req: AuthRequest, res: Response) => {
-    if (!req.user) {
-      res.status(401).json({
-        success: false,
-        error: 'Not authenticated',
-      });
-      return;
-    }
-
-    // Admin check is done by requireRole middleware in adminRoutes.ts
     const leaders = await getAllGroupLeaders();
 
     res.json({
@@ -134,28 +119,10 @@ export const getAllGroupLeadersController = asyncHandler(
 /**
  * GET /api/admin/group-leaders/:id
  * Get group leader by ID (admin only)
+ * Note: Admin role is already verified by requireRole('admin') middleware in adminRoutes.ts
  */
 export const getGroupLeaderByIdController = asyncHandler(
   async (req: AuthRequest, res: Response) => {
-    if (!req.user) {
-      res.status(401).json({
-        success: false,
-        error: 'Not authenticated',
-      });
-      return;
-    }
-
-    // Check if user is admin
-    const isAdmin = req.user.roles?.includes('admin');
-    if (!isAdmin) {
-      res.status(403).json({
-        success: false,
-        error: 'Forbidden',
-        message: 'Only admins can view group leader details',
-      });
-      return;
-    }
-
     const { id } = req.params;
 
     const leader = await getGroupLeaderById(id);
@@ -179,19 +146,10 @@ export const getGroupLeaderByIdController = asyncHandler(
 /**
  * PUT /api/admin/group-leaders/:id
  * Update group leader (admin only)
+ * Note: Admin role is already verified by requireRole('admin') middleware in adminRoutes.ts
  */
 export const updateGroupLeaderController = asyncHandler(
   async (req: AuthRequest, res: Response) => {
-    if (!req.user) {
-      res.status(401).json({
-        success: false,
-        error: 'Not authenticated',
-      });
-      return;
-    }
-
-    // Admin check is done by requireRole middleware in adminRoutes.ts
-
     const { id } = req.params;
 
     const validation = updateGroupLeaderSchema.safeParse(req.body);
@@ -232,28 +190,10 @@ export const updateGroupLeaderController = asyncHandler(
 /**
  * DELETE /api/admin/group-leaders/:id
  * Deactivate group leader (admin only)
+ * Note: Admin role is already verified by requireRole('admin') middleware in adminRoutes.ts
  */
 export const deactivateGroupLeaderController = asyncHandler(
   async (req: AuthRequest, res: Response) => {
-    if (!req.user) {
-      res.status(401).json({
-        success: false,
-        error: 'Not authenticated',
-      });
-      return;
-    }
-
-    // Check if user is admin
-    const isAdmin = req.user.roles?.includes('admin');
-    if (!isAdmin) {
-      res.status(403).json({
-        success: false,
-        error: 'Forbidden',
-        message: 'Only admins can deactivate group leaders',
-      });
-      return;
-    }
-
     const { id } = req.params;
 
     try {
@@ -282,28 +222,10 @@ export const deactivateGroupLeaderController = asyncHandler(
 /**
  * POST /api/admin/group-leaders/:id/activate
  * Activate group leader (admin only)
+ * Note: Admin role is already verified by requireRole('admin') middleware in adminRoutes.ts
  */
 export const activateGroupLeaderController = asyncHandler(
   async (req: AuthRequest, res: Response) => {
-    if (!req.user) {
-      res.status(401).json({
-        success: false,
-        error: 'Not authenticated',
-      });
-      return;
-    }
-
-    // Check if user is admin
-    const isAdmin = req.user.roles?.includes('admin');
-    if (!isAdmin) {
-      res.status(403).json({
-        success: false,
-        error: 'Forbidden',
-        message: 'Only admins can activate group leaders',
-      });
-      return;
-    }
-
     const { id } = req.params;
 
     try {
@@ -366,19 +288,10 @@ export const getMyReferralsController = asyncHandler(
 /**
  * GET /api/admin/group-leaders/:id/referrals
  * Get referrals by leader ID (admin only)
+ * Note: Admin role is already verified by requireRole('admin') middleware in adminRoutes.ts
  */
 export const getReferralsByLeaderController = asyncHandler(
   async (req: AuthRequest, res: Response) => {
-    if (!req.user) {
-      res.status(401).json({
-        success: false,
-        error: 'Not authenticated',
-      });
-      return;
-    }
-
-    // Check if user is admin or the leader themselves
-    const isAdmin = req.user.roles?.includes('admin');
     const leader = await getGroupLeaderById(req.params.id);
 
     if (!leader) {
@@ -386,16 +299,6 @@ export const getReferralsByLeaderController = asyncHandler(
         success: false,
         error: 'Not found',
         message: 'Group leader not found',
-      });
-      return;
-    }
-
-    // Allow if admin or if user is the leader
-    if (!isAdmin && leader.user_id !== req.user.id) {
-      res.status(403).json({
-        success: false,
-        error: 'Forbidden',
-        message: 'You can only view your own referrals',
       });
       return;
     }
@@ -453,19 +356,10 @@ export const getMyCommissionsController = asyncHandler(
 /**
  * GET /api/admin/group-leaders/:id/commissions
  * Get commissions by leader ID (admin only)
+ * Note: Admin role is already verified by requireRole('admin') middleware in adminRoutes.ts
  */
 export const getCommissionsByLeaderController = asyncHandler(
   async (req: AuthRequest, res: Response) => {
-    if (!req.user) {
-      res.status(401).json({
-        success: false,
-        error: 'Not authenticated',
-      });
-      return;
-    }
-
-    // Check if user is admin or the leader themselves
-    const isAdmin = req.user.roles?.includes('admin');
     const leader = await getGroupLeaderById(req.params.id);
 
     if (!leader) {
@@ -473,16 +367,6 @@ export const getCommissionsByLeaderController = asyncHandler(
         success: false,
         error: 'Not found',
         message: 'Group leader not found',
-      });
-      return;
-    }
-
-    // Allow if admin or if user is the leader
-    if (!isAdmin && leader.user_id !== req.user.id) {
-      res.status(403).json({
-        success: false,
-        error: 'Forbidden',
-        message: 'You can only view your own commissions',
       });
       return;
     }
