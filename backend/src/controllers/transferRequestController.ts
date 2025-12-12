@@ -213,9 +213,9 @@ export const getTransferRequestByIdController = asyncHandler(async (req: AuthReq
       
       console.log(`📊 Status retornado do Asaas:`, asaasStatus);
       
-      // If payment was confirmed in Asaas, update transfer request status
+      // If payment was confirmed in Asaas, update transfer request status and process transfer
       if (asaasStatus.status === 'CONFIRMED' || asaasStatus.status === 'RECEIVED') {
-        console.log(`✅ Pagamento de transferência confirmado no Asaas! Atualizando transfer request ${id}`);
+        console.log(`✅ Pagamento de transferência confirmado no Asaas! Processando transferência ${id}`);
         
         // Update transfer request payment status
         const { updateTransferRequest } = await import('../services/transferRequestService.js');
@@ -223,16 +223,176 @@ export const getTransferRequestByIdController = asyncHandler(async (req: AuthReq
           payment_status: 'paid',
         });
         
-        // Refresh transfer request data
+        // Get fresh transfer request data after payment update
         const updatedRequest = await getTransferRequestById(id);
         
-        if (updatedRequest) {
+        if (!updatedRequest) {
+          console.error(`❌ Transfer request não encontrado após atualização: ${id}`);
+          res.json({
+            success: true,
+            data: transferRequest,
+          });
+          return;
+        }
+
+        // Check if already completed to avoid duplicate processing
+        if (updatedRequest.status === 'completed') {
+          console.log(`ℹ️ Transfer request já foi processado: ${id}`);
           res.json({
             success: true,
             data: updatedRequest,
           });
           return;
         }
+
+        // Automatically transfer the registration
+        try {
+          // Find or get the new runner ID
+          let newRunnerId = updatedRequest.new_runner_id;
+          
+          if (!newRunnerId) {
+            // Try to find by CPF or email
+            const { findUserByCpfOrEmail } = await import('../services/registrationsService.js');
+            if (updatedRequest.new_runner_cpf || updatedRequest.new_runner_email) {
+              const newRunner = await findUserByCpfOrEmail(
+                updatedRequest.new_runner_cpf || undefined,
+                updatedRequest.new_runner_email || undefined
+              );
+              
+              if (newRunner) {
+                newRunnerId = newRunner.id;
+                // Update transfer request with the found runner ID
+                await updateTransferRequest(id, {
+                  new_runner_id: newRunnerId,
+                });
+              } else {
+                console.error(`❌ Novo titular não encontrado para transfer request: ${id}`);
+                res.json({
+                  success: true,
+                  data: updatedRequest,
+                });
+                return;
+              }
+            } else {
+              console.error(`❌ Nenhum identificador do novo titular para transfer request: ${id}`);
+              res.json({
+                success: true,
+                data: updatedRequest,
+              });
+              return;
+            }
+          }
+
+          // Perform the transfer
+          if (newRunnerId) {
+            console.log(`🔄 Realizando transferência da inscrição ${updatedRequest.registration_id} para runner ${newRunnerId}`);
+            const { transferRegistration } = await import('../services/registrationsService.js');
+            await transferRegistration(updatedRequest.registration_id, newRunnerId);
+            
+            // Mark transfer request as completed
+            await updateTransferRequest(id, {
+              status: 'completed',
+            });
+            
+            // Create notifications for both runners
+            try {
+              const { query } = await import('../config/database.js');
+              
+              // Get registration and event details for notifications
+              const registrationResult = await query(
+                `SELECT r.*, e.title as event_title, p_old.full_name as old_runner_name, p_new.full_name as new_runner_name
+                 FROM registrations r
+                 LEFT JOIN events e ON r.event_id = e.id
+                 LEFT JOIN profiles p_old ON r.registered_by = p_old.id
+                 LEFT JOIN profiles p_new ON $1::uuid = p_new.id
+                 WHERE r.id = $2`,
+                [newRunnerId, updatedRequest.registration_id]
+              );
+              
+              const registrationData = registrationResult.rows[0];
+              const eventTitle = registrationData?.event_title || 'Evento';
+              const newRunnerName = registrationData?.new_runner_name || 'o novo titular';
+              const oldRunnerId = updatedRequest.requested_by;
+              
+              // Notification for the requester (old runner) - create announcement
+              if (oldRunnerId) {
+                const announcementResult = await query(
+                  `INSERT INTO announcements (title, content, target_audience, status, published_at, created_by)
+                   VALUES ($1, $2, 'runners', 'published', NOW(), $3)
+                   RETURNING id`,
+                  [
+                    '✅ Transferência Realizada com Sucesso',
+                    `Sua inscrição no evento "${eventTitle}" foi transferida com sucesso para ${newRunnerName}. O pagamento da taxa foi confirmado e a transferência está completa.`,
+                    oldRunnerId
+                  ]
+                );
+                
+                // Mark as unread for the requester (so they see it as new notification)
+                if (announcementResult.rows[0]?.id) {
+                  await query(
+                    `INSERT INTO announcement_reads (announcement_id, user_id, read_at)
+                     VALUES ($1, $2, NULL)
+                     ON CONFLICT (announcement_id, user_id) DO UPDATE SET read_at = NULL`,
+                    [announcementResult.rows[0].id, oldRunnerId]
+                  );
+                }
+              }
+              
+              // Notification for the new runner - create announcement
+              if (newRunnerId) {
+                const oldRunnerName = registrationData?.old_runner_name || 'o titular anterior';
+                const announcementResult = await query(
+                  `INSERT INTO announcements (title, content, target_audience, status, published_at, created_by)
+                   VALUES ($1, $2, 'runners', 'published', NOW(), $3)
+                   RETURNING id`,
+                  [
+                    '🎉 Inscrição Recebida por Transferência',
+                    `Você recebeu uma inscrição transferida para o evento "${eventTitle}" de ${oldRunnerName}. A inscrição foi confirmada e está ativa em sua conta.`,
+                    newRunnerId
+                  ]
+                );
+                
+                // Mark as unread for the new runner (so they see it as new notification)
+                if (announcementResult.rows[0]?.id) {
+                  await query(
+                    `INSERT INTO announcement_reads (announcement_id, user_id, read_at)
+                     VALUES ($1, $2, NULL)
+                     ON CONFLICT (announcement_id, user_id) DO UPDATE SET read_at = NULL`,
+                    [announcementResult.rows[0].id, newRunnerId]
+                  );
+                }
+              }
+              
+              console.log(`✅ Notificações criadas para transferência: ${id}`);
+            } catch (notificationError: any) {
+              // Don't fail the transfer if notification fails
+              console.error(`⚠️ Erro ao criar notificações (transferência foi realizada):`, notificationError);
+            }
+            
+            console.log(`✅ Transferência concluída com sucesso!`);
+            
+            // Get final updated request
+            const finalRequest = await getTransferRequestById(id);
+            if (finalRequest) {
+              res.json({
+                success: true,
+                data: finalRequest,
+              });
+              return;
+            }
+          }
+        } catch (transferError: any) {
+          console.error(`❌ Erro ao realizar transferência:`, transferError);
+          console.error(`❌ Stack trace:`, transferError.stack);
+          // Continue and return updated request even if transfer fails
+        }
+        
+        // Return updated request even if transfer processing had issues
+        res.json({
+          success: true,
+          data: updatedRequest,
+        });
+        return;
       } else {
         console.log(`⏳ Pagamento ainda pendente no Asaas. Status: ${asaasStatus.status}`);
       }
