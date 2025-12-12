@@ -58,6 +58,7 @@ export function MultiStepRegistration({ open, onOpenChange }: MultiStepRegistrat
   const [currentStep, setCurrentStep] = useState(1);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<StepErrors>({});
+  const [loadingCep, setLoadingCep] = useState(false);
 
   // Estado para todos os dados do formulário
   const [formData, setFormData] = useState<RegistrationData>({
