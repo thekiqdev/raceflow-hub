@@ -482,10 +482,6 @@ export const getPaymentStatusController = asyncHandler(async (req: AuthRequest, 
         
         // Refresh payment data
         const updatedPayment = await getPaymentByRegistrationId(id);
-        const updatedReg = await query(
-          'SELECT status, payment_status FROM registrations WHERE id = $1',
-          [id]
-        );
         
         res.json({
           success: true,
