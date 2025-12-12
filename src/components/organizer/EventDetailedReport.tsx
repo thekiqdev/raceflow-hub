@@ -200,6 +200,9 @@ const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
   };
 
   const formatCurrency = (value: number) => {
+    if (value === 0 || !value) {
+      return ''; // Retorna espaço em branco ao invés de "Grátis" ou "R$ 0,00"
+    }
     return new Intl.NumberFormat("pt-BR", {
       style: "currency",
       currency: "BRL",

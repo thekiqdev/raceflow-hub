@@ -84,7 +84,7 @@ interface Kit {
 
 // Helper function to format price
 const formatPrice = (price: number): string => {
-  if (price === 0) return "Grátis";
+  if (price === 0) return ""; // Retorna espaço em branco ao invés de "Grátis"
   return `R$ ${price.toFixed(2).replace('.', ',')}`;
 };
 
@@ -650,7 +650,7 @@ const EventDetails = () => {
                           {categories.length > 0 ? (
                             formatPrice(Math.min(...categories.map((c) => c.price)))
                           ) : (
-                            'Grátis'
+                            ''
                           )}
                         </p>
                       </div>
@@ -884,7 +884,7 @@ const EventDetails = () => {
                     {categories.length > 0 ? (
                       formatPrice(Math.min(...categories.map((c) => c.price)))
                     ) : (
-                      'Grátis'
+                      ''
                     )}
                   </p>
                 </div>
