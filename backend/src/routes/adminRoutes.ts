@@ -166,5 +166,15 @@ router.post('/support/announcements', createAnnouncementController);
 router.put('/support/announcements/:id', updateAnnouncementController);
 router.delete('/support/announcements/:id', deleteAnnouncementController);
 
+// Group Leaders endpoints (admin only)
+router.post('/group-leaders', createGroupLeaderController);
+router.get('/group-leaders', getAllGroupLeadersController);
+router.get('/group-leaders/:id', getGroupLeaderByIdController);
+router.put('/group-leaders/:id', updateGroupLeaderController);
+router.delete('/group-leaders/:id', deactivateGroupLeaderController);
+router.post('/group-leaders/:id/activate', activateGroupLeaderController);
+router.get('/group-leaders/:id/referrals', getReferralsByLeaderController);
+router.get('/group-leaders/:id/commissions', getCommissionsByLeaderController);
+
 export default router;
 
