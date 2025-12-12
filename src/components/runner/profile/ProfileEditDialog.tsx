@@ -36,13 +36,17 @@ export function ProfileEditDialog({ open, onOpenChange, profile }: ProfileEditDi
 
   useEffect(() => {
     if (open && profile) {
+      // Formatar telefone e CEP ao carregar
+      const formattedPhone = profile.phone ? maskPhone(profile.phone) : "";
+      const formattedCep = profile.postal_code ? maskCep(profile.postal_code) : "";
+      
       setFormData({
         full_name: profile.full_name || "",
         preferred_name: profile.preferred_name || "",
-        phone: profile.phone || "",
-        birth_date: profile.birth_date || "",
+        phone: formattedPhone,
+        birth_date: profile.birth_date ? profile.birth_date.split('T')[0] : "",
         gender: profile.gender || "",
-        postal_code: profile.postal_code || "",
+        postal_code: formattedCep,
         street: profile.street || "",
         address_number: profile.address_number || "",
         address_complement: profile.address_complement || "",
