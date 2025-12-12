@@ -24,11 +24,11 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Plus, Search, MoreVertical, Eye, RefreshCw, X, MessageSquare, FileDown, Loader2 } from "lucide-react";
+import { Plus, Search, MoreVertical, Eye, MessageSquare, FileDown, Loader2 } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { useAuth } from "@/contexts/AuthContext";
-import { getRegistrations, exportRegistrations, updateRegistration, type Registration } from "@/lib/api/registrations";
+import { getRegistrations, exportRegistrations, type Registration } from "@/lib/api/registrations";
 import { getEvents, type Event } from "@/lib/api/events";
 import { toast } from "sonner";
 import { useDebounce } from "@/hooks/useDebounce";
@@ -135,30 +135,6 @@ const OrganizerRegistrations = () => {
     }
   };
 
-  const handleCancelRegistration = async (registrationId: string) => {
-    if (!confirm("Tem certeza que deseja cancelar esta inscrição?")) {
-      return;
-    }
-
-    try {
-      setIsCancelling(registrationId);
-      const response = await updateRegistration(registrationId, {
-        status: "cancelled",
-      });
-
-      if (response.success) {
-        toast.success("Inscrição cancelada com sucesso!");
-        loadRegistrations();
-      } else {
-        toast.error(response.error || "Erro ao cancelar inscrição");
-      }
-    } catch (error: any) {
-      console.error("Error cancelling registration:", error);
-      toast.error(error.message || "Erro ao cancelar inscrição");
-    } finally {
-      setIsCancelling(null);
-    }
-  };
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -198,6 +174,9 @@ const OrganizerRegistrations = () => {
   };
 
   const formatCurrency = (value: number) => {
+    if (value === 0 || !value) {
+      return ''; // Retorna espaço em branco ao invés de "Grátis" ou "R$ 0,00"
+    }
     return new Intl.NumberFormat("pt-BR", {
       style: "currency",
       currency: "BRL",
