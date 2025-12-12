@@ -9,8 +9,16 @@ export interface RegisterData {
   full_name: string;
   cpf: string;
   phone: string;
-  gender?: string;
+  gender?: 'M' | 'F';
   birth_date: string;
+  preferred_name?: string;
+  postal_code?: string;
+  street?: string;
+  address_number?: string;
+  address_complement?: string;
+  neighborhood?: string;
+  city?: string;
+  state?: string;
   lgpd_consent: boolean;
 }
 
@@ -104,10 +112,14 @@ export const register = async (data: RegisterData): Promise<AuthResponse> => {
 
     const user = userResult.rows[0];
 
-    // Create profile
+    // Create profile with new address fields
     const profileResult = await client.query(
-      `INSERT INTO profiles (id, full_name, cpf, phone, gender, birth_date, lgpd_consent)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+      `INSERT INTO profiles (
+        id, full_name, cpf, phone, gender, birth_date, lgpd_consent,
+        preferred_name, postal_code, street, address_number, address_complement,
+        neighborhood, city, state
+      )
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
        RETURNING id, full_name, cpf, phone`,
       [
         user.id,
@@ -117,6 +129,14 @@ export const register = async (data: RegisterData): Promise<AuthResponse> => {
         data.gender || null,
         data.birth_date,
         data.lgpd_consent,
+        data.preferred_name || null,
+        data.postal_code || null,
+        data.street || null,
+        data.address_number || null,
+        data.address_complement || null,
+        data.neighborhood || null,
+        data.city || null,
+        data.state || null,
       ]
     );
 

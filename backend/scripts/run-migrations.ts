@@ -55,6 +55,7 @@ const migrations = [
   '026_transfer_requests.sql',
   '027_allow_null_registration_id_in_asaas_payments.sql',
   '028_add_transferred_status.sql',
+  '029_add_address_fields_to_profiles.sql',
 ];
 
 // Create migrations tracking table

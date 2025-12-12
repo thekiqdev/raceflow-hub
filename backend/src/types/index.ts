@@ -24,6 +24,14 @@ export interface Profile {
   birth_date: Date;
   lgpd_consent: boolean | null;
   is_public: boolean | null;
+  preferred_name: string | null;
+  postal_code: string | null;
+  street: string | null;
+  address_number: string | null;
+  address_complement: string | null;
+  neighborhood: string | null;
+  city: string | null;
+  state: string | null;
   created_at: Date | null;
   updated_at: Date | null;
 }

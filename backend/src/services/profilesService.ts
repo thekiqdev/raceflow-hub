@@ -13,6 +13,14 @@ export interface UpdateProfileData {
   bio?: string;
   website_url?: string;
   is_public?: boolean;
+  preferred_name?: string;
+  postal_code?: string;
+  street?: string;
+  address_number?: string;
+  address_complement?: string;
+  neighborhood?: string;
+  city?: string;
+  state?: string;
 }
 
 // Get profile by user ID
