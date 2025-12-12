@@ -42,11 +42,11 @@ Modificar o sistema de cadastro atual para um cadastro em etapas (multi-step), m
 3. Contato/Telefone (com máscara)
 4. Nome Completo
 5. Como você quer ser chamado(a)? (campo opcional)
-6. Sexo: Masculino | Feminino (select/radio buttons)
+6. Sexo: Masculino | Feminino (select)
 
 **Validações:**
 - CPF válido e único
-- Data de nascimento válida (idade mínima se necessário)
+- Data de nascimento válida 
 - Telefone válido (formato brasileiro)
 - Nome completo obrigatório (mínimo 3 caracteres)
 
