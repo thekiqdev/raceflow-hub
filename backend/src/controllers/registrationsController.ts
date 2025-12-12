@@ -458,7 +458,53 @@ export const getPaymentStatusController = asyncHandler(async (req: AuthRequest, 
     return;
   }
 
-  // Return registration status (which is updated by webhook)
+  // If payment is still pending, check Asaas directly for real-time status
+  // This ensures we get the latest status even if webhook hasn't arrived yet
+  if (payment.status === 'PENDING' && payment.asaas_payment_id) {
+    try {
+      console.log(`🔄 Consultando Asaas diretamente para atualizar status: ${payment.asaas_payment_id}`);
+      const { getPaymentStatus } = await import('../services/asaasService.js');
+      const asaasStatus = await getPaymentStatus(payment.asaas_payment_id);
+      
+      // If payment was confirmed in Asaas, update registration status
+      if (asaasStatus.status === 'CONFIRMED' || asaasStatus.status === 'RECEIVED') {
+        console.log(`✅ Pagamento confirmado no Asaas! Atualizando inscrição ${id}`);
+        
+        // Update registration status
+        await query(
+          `UPDATE registrations 
+           SET payment_status = 'paid', 
+               status = 'confirmed',
+               updated_at = NOW()
+           WHERE id = $1`,
+          [id]
+        );
+        
+        // Refresh payment data
+        const updatedPayment = await getPaymentByRegistrationId(id);
+        const updatedReg = await query(
+          'SELECT status, payment_status FROM registrations WHERE id = $1',
+          [id]
+        );
+        
+        res.json({
+          success: true,
+          data: {
+            status: 'confirmed',
+            payment_date: updatedPayment?.payment_date || asaasStatus.payment_date || null,
+            pix_qr_code: updatedPayment?.pix_qr_code || null,
+            due_date: updatedPayment?.due_date || null,
+          },
+        });
+        return;
+      }
+    } catch (error: any) {
+      console.error('⚠️ Erro ao consultar Asaas diretamente (continuando com status do banco):', error.message);
+      // Continue with database status if Asaas query fails
+    }
+  }
+
+  // Return registration status (which is updated by webhook or direct Asaas query)
   const regResult = await query(
     'SELECT status, payment_status FROM registrations WHERE id = $1',
     [id]
