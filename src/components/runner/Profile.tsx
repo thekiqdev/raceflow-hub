@@ -25,8 +25,10 @@ import { PrivacySettings } from "./profile/PrivacySettings";
 import { PaymentHistory } from "./profile/PaymentHistory";
 import { NotificationSettings } from "./profile/NotificationSettings";
 import { AccountSettings } from "./profile/AccountSettings";
+import { LeaderDashboard } from "./leader/LeaderDashboard";
 import { getOwnProfile, type Profile } from "@/lib/api/profiles";
 import { getRunnerStats, type RunnerStats } from "@/lib/api/runnerStats";
+import { getMyGroupLeader } from "@/lib/api/groupLeaders";
 
 export function Profile() {
   const navigate = useNavigate();
@@ -66,9 +68,10 @@ export function Profile() {
 
     try {
       setLoading(true);
-      const [profileResponse, statsResponse] = await Promise.all([
+      const [profileResponse, statsResponse, leaderResponse] = await Promise.all([
         getOwnProfile(),
         getRunnerStats(),
+        getMyGroupLeader().catch(() => ({ success: false, data: null })),
       ]);
 
       if (profileResponse.success && profileResponse.data) {
@@ -81,6 +84,13 @@ export function Profile() {
         setStats(statsResponse.data);
       } else {
         toast.error(statsResponse.error || "Erro ao carregar estatísticas");
+      }
+
+      // Check if user is a leader
+      if (leaderResponse.success && leaderResponse.data) {
+        setIsLeader(true);
+      } else {
+        setIsLeader(false);
       }
     } catch (error: any) {
       console.error("Error loading profile data:", error);
