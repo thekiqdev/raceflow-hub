@@ -606,11 +606,91 @@ export function MultiStepRegistration({ open, onOpenChange }: MultiStepRegistrat
     );
   };
 
-  // Renderizar etapa 3: Credenciais (placeholder - será implementado na ETAPA 4)
+  // Renderizar etapa 3: Credenciais
   const renderStep3 = () => {
+    const passwordValidation = validatePassword(formData.password);
+    const passwordStrength = formData.password.length >= 8 ? 'strong' : formData.password.length >= 6 ? 'medium' : 'weak';
+
     return (
       <div className="space-y-4">
-        <p className="text-muted-foreground">Etapa 3: Credenciais (em implementação)</p>
+        <div className="space-y-2">
+          <Label htmlFor="email">E-mail *</Label>
+          <Input
+            id="email"
+            type="email"
+            placeholder="seu@email.com"
+            value={formData.email}
+            onChange={(e) => updateField('email', e.target.value.toLowerCase().trim())}
+            className={errors.email ? "border-destructive" : ""}
+          />
+          {errors.email && <p className="text-sm text-destructive">{errors.email}</p>}
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="confirmEmail">Confirme seu e-mail *</Label>
+          <Input
+            id="confirmEmail"
+            type="email"
+            placeholder="seu@email.com"
+            value={formData.confirmEmail}
+            onChange={(e) => updateField('confirmEmail', e.target.value.toLowerCase().trim())}
+            className={errors.confirmEmail ? "border-destructive" : ""}
+          />
+          {errors.confirmEmail && <p className="text-sm text-destructive">{errors.confirmEmail}</p>}
+          {formData.email && formData.confirmEmail && formData.email === formData.confirmEmail && (
+            <p className="text-sm text-green-600">✓ E-mails correspondem</p>
+          )}
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="password">Senha *</Label>
+          <Input
+            id="password"
+            type="password"
+            placeholder="••••••••"
+            value={formData.password}
+            onChange={(e) => updateField('password', e.target.value)}
+            className={errors.password ? "border-destructive" : ""}
+            minLength={6}
+          />
+          {errors.password && <p className="text-sm text-destructive">{errors.password}</p>}
+          {formData.password && (
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <div className={`h-2 flex-1 rounded ${
+                  passwordStrength === 'strong' ? 'bg-green-500' :
+                  passwordStrength === 'medium' ? 'bg-yellow-500' :
+                  'bg-red-500'
+                }`} />
+                <span className="text-xs text-muted-foreground">
+                  {passwordStrength === 'strong' ? 'Forte' :
+                   passwordStrength === 'medium' ? 'Média' :
+                   'Fraca'}
+                </span>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Mínimo de 6 caracteres {formData.password.length >= 8 && '✓'}
+              </p>
+            </div>
+          )}
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="confirmPassword">Confirme sua senha *</Label>
+          <Input
+            id="confirmPassword"
+            type="password"
+            placeholder="••••••••"
+            value={formData.confirmPassword}
+            onChange={(e) => updateField('confirmPassword', e.target.value)}
+            className={errors.confirmPassword ? "border-destructive" : ""}
+            minLength={6}
+          />
+          {errors.confirmPassword && <p className="text-sm text-destructive">{errors.confirmPassword}</p>}
+          {formData.password && formData.confirmPassword && formData.password === formData.confirmPassword && (
+            <p className="text-sm text-green-600">✓ Senhas correspondem</p>
+          )}
+        </div>
       </div>
     );
   };
