@@ -637,6 +637,32 @@ export function MultiStepRegistration({ open, onOpenChange }: MultiStepRegistrat
 
     return (
       <div className="space-y-4">
+        {/* Referral Code - Only show if present */}
+        {referralCode && (
+          <div className="bg-primary/10 border border-primary/20 rounded-lg p-3">
+            <div className="flex items-center gap-2">
+              <div className="flex-1">
+                <Label className="text-xs text-muted-foreground">Código de Referência</Label>
+                <p className="text-sm font-semibold text-primary">{referralCode}</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Você está se cadastrando através de um líder de grupo
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setReferralCode("");
+                  localStorage.removeItem('registration_referral_code');
+                }}
+              >
+                Remover
+              </Button>
+            </div>
+          </div>
+        )}
+
         <div className="space-y-2">
           <Label htmlFor="email">E-mail *</Label>
           <Input
