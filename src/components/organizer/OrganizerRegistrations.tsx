@@ -43,7 +43,6 @@ const OrganizerRegistrations = () => {
   const [paymentStatusFilter, setPaymentStatusFilter] = useState("all");
   const [eventFilter, setEventFilter] = useState("all");
   const [isExporting, setIsExporting] = useState(false);
-  const [isCancelling, setIsCancelling] = useState<string | null>(null);
 
   const debouncedSearch = useDebounce(searchQuery, 500);
 
@@ -418,27 +417,9 @@ const OrganizerRegistrations = () => {
                                 Ver Detalhes
                               </DropdownMenuItem>
                               <DropdownMenuItem>
-                                <RefreshCw className="mr-2 h-4 w-4" />
-                                Transferir
-                              </DropdownMenuItem>
-                              <DropdownMenuItem>
                                 <MessageSquare className="mr-2 h-4 w-4" />
                                 Enviar Mensagem
                               </DropdownMenuItem>
-                              {registration.status !== "cancelled" && (
-                                <DropdownMenuItem 
-                                  className="text-destructive"
-                                  onClick={() => handleCancelRegistration(registration.id)}
-                                  disabled={isCancelling === registration.id}
-                                >
-                                  {isCancelling === registration.id ? (
-                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                  ) : (
-                                    <X className="mr-2 h-4 w-4" />
-                                  )}
-                                  Cancelar Inscrição
-                                </DropdownMenuItem>
-                              )}
                             </DropdownMenuContent>
                           </DropdownMenu>
                         </TableCell>
