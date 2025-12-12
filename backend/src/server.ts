@@ -162,6 +162,7 @@ app.use((req: Request, _res: Response, next) => {
 app.use('/api/webhooks', webhooksRouter);
 app.use('/api/health', healthRouter);
 app.use('/api/auth', authRouter);
+app.use('/api/group-leaders', groupLeadersRouter);
 app.use('/api/events', eventsRouter);
 app.use('/api/profiles', profilesRouter);
 app.use('/api/registrations', registrationsRouter);
