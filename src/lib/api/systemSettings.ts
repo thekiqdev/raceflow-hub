@@ -27,6 +27,7 @@ export interface SystemSettings {
   payment_secret_key?: string;
   enabled_modules: Record<string, boolean>;
   transfer_fee?: number;
+  leader_commission_percentage?: number;
   maintenance_mode: boolean;
   maintenance_message?: string;
   timezone: string;
@@ -64,6 +65,7 @@ export interface UpdateSystemSettingsData {
   payment_secret_key?: string | null;
   enabled_modules?: Record<string, boolean>;
   transfer_fee?: number;
+  leader_commission_percentage?: number;
   maintenance_mode?: boolean;
   maintenance_message?: string | null;
   timezone?: string;
