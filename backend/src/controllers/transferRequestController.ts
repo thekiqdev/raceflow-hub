@@ -197,6 +197,41 @@ export const getTransferRequestByIdController = asyncHandler(async (req: AuthReq
     return;
   }
 
+  // If payment is still pending, check Asaas directly for real-time status
+  // This ensures we get the latest status even if webhook hasn't arrived yet
+  if (transferRequest.payment_status === 'pending' && transferRequest.asaas_payment_id) {
+    try {
+      console.log(`🔄 Consultando Asaas diretamente para transferência ${id}: ${transferRequest.asaas_payment_id}`);
+      const { getPaymentStatus } = await import('../services/asaasService.js');
+      const asaasStatus = await getPaymentStatus(transferRequest.asaas_payment_id);
+      
+      // If payment was confirmed in Asaas, update transfer request status
+      if (asaasStatus.status === 'CONFIRMED' || asaasStatus.status === 'RECEIVED') {
+        console.log(`✅ Pagamento de transferência confirmado no Asaas! Atualizando transfer request ${id}`);
+        
+        // Update transfer request payment status
+        const { updateTransferRequest } = await import('../services/transferRequestService.js');
+        await updateTransferRequest(id, {
+          payment_status: 'paid',
+        });
+        
+        // Refresh transfer request data
+        const updatedRequest = await getTransferRequestById(id);
+        
+        if (updatedRequest) {
+          res.json({
+            success: true,
+            data: updatedRequest,
+          });
+          return;
+        }
+      }
+    } catch (error: any) {
+      console.error('⚠️ Erro ao consultar Asaas diretamente (continuando com status do banco):', error.message);
+      // Continue with database status if Asaas query fails
+    }
+  }
+
   res.json({
     success: true,
     data: transferRequest,

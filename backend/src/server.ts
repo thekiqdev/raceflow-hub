@@ -41,8 +41,11 @@ const isProduction = process.env.NODE_ENV === 'production';
 
 app.use(cors({
   origin: (origin, callback) => {
-    // Allow requests with no origin (like mobile apps or curl requests)
-    if (!origin) return callback(null, true);
+    // Always allow requests with no origin (webhooks, mobile apps, curl requests)
+    if (!origin) {
+      console.log('🌐 CORS: Request sem origin permitida (webhook ou app mobile)');
+      return callback(null, true);
+    }
     
     if (allowedOrigins.indexOf(origin) !== -1) {
       callback(null, true);
@@ -59,8 +62,8 @@ app.use(cors({
     }
   },
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS', 'HEAD'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'asaas-access-token', 'x-asaas-access-token'],
 }));
 
 // Security middleware
@@ -87,12 +90,28 @@ const smartRateLimiter = (req: Request, res: Response, next: NextFunction) => {
 
 app.use('/api/events', smartRateLimiter);
 app.use('/api/registrations', smartRateLimiter);
+// Webhooks should NOT have rate limiting (external services need to call them)
 // General rate limiting for all other routes - increased limit for normal operations
-app.use(rateLimiter(15 * 60 * 1000, isDevelopment ? 1000 : 1000)); // 1000 in dev, 1000 in prod
+app.use((req: Request, res: Response, next: NextFunction) => {
+  // Skip rate limiting for webhooks
+  if (req.path.startsWith('/api/webhooks')) {
+    return next();
+  }
+  return rateLimiter(15 * 60 * 1000, isDevelopment ? 1000 : 1000)(req, res, next);
+});
 
-// Body parsing
+// Body parsing - MUST be before request logging to parse body
 app.use(express.json({ limit: '10mb' })); // Limit body size
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// Log body parsing for webhooks
+app.use((req: Request, _res: Response, next: NextFunction) => {
+  if (req.path.startsWith('/api/webhooks') && req.method === 'POST') {
+    console.log('📦 Body parsing middleware executado para webhook');
+    console.log('📦 Body após parsing:', JSON.stringify(req.body, null, 2));
+  }
+  next();
+});
 
 // Serve static files (uploads)
 import path from 'path';
