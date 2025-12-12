@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -395,6 +395,9 @@ export function RegistrationFlow({
 
     setIsRegisteringAccount(true);
     try {
+      // Get referral code from URL
+      const referralCodeFromUrl = searchParams.get('ref');
+      
       const success = await register({
         email: registerData.email,
         password: registerData.password,
@@ -404,6 +407,7 @@ export function RegistrationFlow({
         birth_date: registerData.birthDate || undefined,
         gender: registerData.gender || undefined,
         lgpd_consent: lgpdConsent,
+        referral_code: referralCodeFromUrl ? referralCodeFromUrl.toUpperCase().trim() : undefined,
       });
 
       if (success) {

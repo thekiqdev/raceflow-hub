@@ -17,6 +17,7 @@ export interface RegisterData {
   city?: string;
   state?: string;
   lgpd_consent: boolean;
+  referral_code?: string;
 }
 
 export interface LoginData {

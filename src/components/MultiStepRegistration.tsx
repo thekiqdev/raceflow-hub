@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { getDashboardRoute } from "@/lib/utils/navigation";
 import { Button } from "@/components/ui/button";
@@ -54,11 +54,13 @@ interface StepErrors {
 
 export function MultiStepRegistration({ open, onOpenChange }: MultiStepRegistrationProps) {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { register } = useAuth();
   const [currentStep, setCurrentStep] = useState(1);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<StepErrors>({});
   const [loadingCep, setLoadingCep] = useState(false);
+  const [referralCode, setReferralCode] = useState<string>("");
 
   // Estado para todos os dados do formulário
   const [formData, setFormData] = useState<RegistrationData>({
@@ -89,6 +91,14 @@ export function MultiStepRegistration({ open, onOpenChange }: MultiStepRegistrat
     lgpdConsent: false,
   });
 
+  // Carregar código de referência da URL
+  useEffect(() => {
+    const refFromUrl = searchParams.get('ref');
+    if (refFromUrl) {
+      setReferralCode(refFromUrl.toUpperCase().trim());
+    }
+  }, [searchParams]);
+
   // Carregar dados do localStorage ao abrir o dialog
   useEffect(() => {
     if (open) {
@@ -101,15 +111,24 @@ export function MultiStepRegistration({ open, onOpenChange }: MultiStepRegistrat
           console.error('Erro ao carregar dados salvos:', error);
         }
       }
+      
+      // Carregar referral code salvo se não vier da URL
+      const savedReferralCode = localStorage.getItem('registration_referral_code');
+      if (savedReferralCode && !searchParams.get('ref')) {
+        setReferralCode(savedReferralCode);
+      }
     }
-  }, [open]);
+  }, [open, searchParams]);
 
   // Salvar dados no localStorage sempre que houver mudanças
   useEffect(() => {
     if (open) {
       localStorage.setItem('registration_form_data', JSON.stringify(formData));
+      if (referralCode) {
+        localStorage.setItem('registration_referral_code', referralCode);
+      }
     }
-  }, [formData, open]);
+  }, [formData, referralCode, open]);
 
   // Limpar dados ao fechar o dialog
   useEffect(() => {
@@ -314,13 +333,18 @@ export function MultiStepRegistration({ open, onOpenChange }: MultiStepRegistrat
         city: formData.city || undefined,
         state: formData.state || undefined,
         lgpd_consent: formData.lgpdConsent,
+        referral_code: referralCode || undefined,
       });
 
       if (success) {
         // Limpar dados salvos
         localStorage.removeItem('registration_form_data');
+        localStorage.removeItem('registration_referral_code');
         onOpenChange(false);
-        toast.success('Cadastro realizado com sucesso!');
+        const message = referralCode 
+          ? 'Cadastro realizado com sucesso! Você foi referenciado por um líder de grupo.'
+          : 'Cadastro realizado com sucesso!';
+        toast.success(message);
         
         setTimeout(() => {
           const currentUser = JSON.parse(localStorage.getItem('auth_user') || '{}');
