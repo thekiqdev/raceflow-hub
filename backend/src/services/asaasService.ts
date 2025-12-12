@@ -611,10 +611,17 @@ export const getPaymentStatus = async (
   const asaasClient = createAsaasClient();
 
   try {
-    console.log(`🔍 Consultando status do pagamento: ${asaasPaymentId}`);
+    console.log(`🔍 Consultando status do pagamento no Asaas: ${asaasPaymentId}`);
 
     const response = await asaasClient.get<AsaasPaymentResponse>(`/payments/${asaasPaymentId}`);
     const payment = response.data;
+    
+    console.log(`📊 Status retornado do Asaas:`, {
+      id: payment.id,
+      status: payment.status,
+      invoiceNumber: payment.invoiceNumber,
+      paymentDate: payment.paymentDate,
+    });
 
     // Update payment in database
     await query(
