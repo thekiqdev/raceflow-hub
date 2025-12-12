@@ -173,6 +173,23 @@ export const register = async (data: RegisterData): Promise<AuthResponse> => {
     
     console.log(`✅ User registered: ${user.email}, roles: ${roles.join(', ')}`);
 
+    // Create user referral if referral_code is provided
+    if (data.referral_code) {
+      try {
+        const { createUserReferral } = await import('./referralsService.js');
+        await createUserReferral({
+          user_id: user.id,
+          referral_code: data.referral_code,
+          referral_type: 'code', // Default to 'code', can be 'link' if needed
+        });
+        console.log(`✅ Referência criada para usuário ${user.id} com código ${data.referral_code}`);
+      } catch (error: any) {
+        // Log error but don't fail registration if referral creation fails
+        console.error('⚠️ Erro ao criar referência (não bloqueia cadastro):', error.message);
+        // Don't rollback - referral is optional and shouldn't block registration
+      }
+    }
+
     // Generate token
     const token = generateToken(user.id, user.email);
 
