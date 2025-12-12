@@ -15,6 +15,7 @@ import CommunicationSupport from "@/components/admin/CommunicationSupport";
 import KnowledgeBase from "@/components/admin/KnowledgeBase";
 import HomeCustomization from "@/components/admin/HomeCustomization";
 import TransferManagement from "@/components/admin/TransferManagement";
+import { GroupLeadersManagement } from "@/components/admin/GroupLeadersManagement";
 import { getSystemSettings } from "@/lib/api/systemSettings";
 
 const AdminDashboard = () => {
@@ -90,6 +91,8 @@ const AdminDashboard = () => {
         return <CommunicationSupport />;
       case "transfers":
         return <TransferManagement />;
+      case "group-leaders":
+        return <GroupLeadersManagement />;
       default:
         return <DashboardOverview />;
     }

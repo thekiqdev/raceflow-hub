@@ -116,6 +116,14 @@ const SystemSettings = () => {
           analytics: false,
           transfers: false,
         });
+
+        // Initialize leader_commission_percentage if not in settings
+        if (data.leader_commission_percentage === undefined) {
+          setSettings({
+            ...data,
+            leader_commission_percentage: 0,
+          });
+        }
       }
     } catch (error) {
       console.error("Erro ao carregar configurações:", error);
@@ -326,6 +334,7 @@ const SystemSettings = () => {
           <TabsTrigger value="general">Geral</TabsTrigger>
           <TabsTrigger value="email">E-mail</TabsTrigger>
           <TabsTrigger value="payment">Pagamento</TabsTrigger>
+          <TabsTrigger value="commissions">Comissões</TabsTrigger>
           <TabsTrigger value="modules">Módulos</TabsTrigger>
         </TabsList>
 

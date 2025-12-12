@@ -1,4 +1,4 @@
-import { LayoutDashboard, Users, Calendar, DollarSign, FileText, Settings, MessageSquare, Building2, Palette, ArrowRightLeft } from "lucide-react";
+import { LayoutDashboard, Users, Calendar, DollarSign, FileText, Settings, MessageSquare, Building2, Palette, ArrowRightLeft, UserCog } from "lucide-react";
 import { useState, useEffect } from "react";
 import {
   Sidebar,
@@ -24,6 +24,7 @@ const menuItems = [
   { id: "events", title: "Eventos", icon: Calendar },
   { id: "financial", title: "Financeiro", icon: DollarSign },
   { id: "transfers", title: "Transferências", icon: ArrowRightLeft },
+  { id: "group-leaders", title: "Líderes de Grupo", icon: UserCog },
   { id: "reports", title: "Relatórios", icon: FileText },
   { id: "knowledge", title: "Base de Conhecimento", icon: FileText },
   { id: "customize", title: "Personalizar", icon: Palette },
