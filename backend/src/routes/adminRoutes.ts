@@ -75,6 +75,16 @@ import {
   updateAnnouncementController,
   deleteAnnouncementController,
 } from '../controllers/supportController.js';
+import {
+  createGroupLeaderController,
+  getAllGroupLeadersController,
+  getGroupLeaderByIdController,
+  updateGroupLeaderController,
+  deactivateGroupLeaderController,
+  activateGroupLeaderController,
+  getReferralsByLeaderController,
+  getCommissionsByLeaderController,
+} from '../controllers/groupLeadersController.js';
 
 const router = Router();
 
