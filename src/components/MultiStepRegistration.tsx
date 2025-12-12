@@ -12,7 +12,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Loader2, ChevronLeft, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
 import { maskCpf, maskPhone, maskCep, unmask } from "@/lib/utils/masks";
-import { validateCpf, validateCep, validatePhone } from "@/lib/utils/validators";
+import { validateCpf, validateCep, validatePhone, validateEmail, validatePassword } from "@/lib/utils/validators";
 import { fetchAddressByCep } from "@/lib/api/viacep";
 
 interface MultiStepRegistrationProps {
@@ -241,16 +241,16 @@ export function MultiStepRegistration({ open, onOpenChange }: MultiStepRegistrat
 
       case 3:
         // Validar Etapa 3: Credenciais
-        if (!formData.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
+        if (!formData.email || !validateEmail(formData.email)) {
           newErrors.email = 'E-mail inválido';
         }
-        if (formData.email !== formData.confirmEmail) {
+        if (formData.email && formData.confirmEmail && formData.email !== formData.confirmEmail) {
           newErrors.confirmEmail = 'E-mails não correspondem';
         }
         if (!formData.password || formData.password.length < 6) {
           newErrors.password = 'Senha deve ter pelo menos 6 caracteres';
         }
-        if (formData.password !== formData.confirmPassword) {
+        if (formData.password && formData.confirmPassword && formData.password !== formData.confirmPassword) {
           newErrors.confirmPassword = 'Senhas não correspondem';
         }
         break;
@@ -300,18 +300,18 @@ export function MultiStepRegistration({ open, onOpenChange }: MultiStepRegistrat
         email: formData.email,
         password: formData.password,
         full_name: formData.fullName,
-        cpf: formData.cpf.replace(/\D/g, ''),
-        phone: formData.phone.replace(/\D/g, ''),
+        cpf: unmask(formData.cpf),
+        phone: unmask(formData.phone),
         gender: formData.gender as 'M' | 'F',
         birth_date: formData.birthDate,
         preferred_name: formData.preferredName || undefined,
-        postal_code: formData.postalCode.replace(/\D/g, ''),
-        street: formData.street,
-        address_number: formData.addressNumber,
+        postal_code: unmask(formData.postalCode) || undefined,
+        street: formData.street || undefined,
+        address_number: formData.addressNumber || undefined,
         address_complement: formData.addressComplement || undefined,
-        neighborhood: formData.neighborhood,
-        city: formData.city,
-        state: formData.state,
+        neighborhood: formData.neighborhood || undefined,
+        city: formData.city || undefined,
+        state: formData.state || undefined,
         lgpd_consent: formData.lgpdConsent,
       });
 
@@ -328,7 +328,19 @@ export function MultiStepRegistration({ open, onOpenChange }: MultiStepRegistrat
       }
     } catch (error: any) {
       console.error('Erro ao cadastrar:', error);
-      toast.error(error.message || 'Erro ao realizar cadastro. Tente novamente.');
+      
+      // Tratar erros específicos do backend
+      if (error.message?.includes('Email already registered') || error.message?.includes('email')) {
+        toast.error('Este e-mail já está cadastrado. Tente fazer login.');
+        setCurrentStep(3);
+        setErrors({ email: 'Este e-mail já está cadastrado' });
+      } else if (error.message?.includes('CPF already registered') || error.message?.includes('cpf')) {
+        toast.error('Este CPF já está cadastrado.');
+        setCurrentStep(1);
+        setErrors({ cpf: 'Este CPF já está cadastrado' });
+      } else {
+        toast.error(error.message || 'Erro ao realizar cadastro. Tente novamente.');
+      }
     } finally {
       setLoading(false);
     }
@@ -602,11 +614,145 @@ export function MultiStepRegistration({ open, onOpenChange }: MultiStepRegistrat
     );
   };
 
-  // Renderizar etapa 4: Confirmação (placeholder - será implementado na ETAPA 4)
+  // Renderizar etapa 4: Confirmação
   const renderStep4 = () => {
+    // Formatar data de nascimento
+    const formatDate = (dateString: string) => {
+      if (!dateString) return '-';
+      const date = new Date(dateString + 'T00:00:00');
+      return date.toLocaleDateString('pt-BR');
+    };
+
+    // Formatar CPF
+    const formatCpf = (cpf: string) => {
+      const clean = cpf.replace(/\D/g, '');
+      if (clean.length === 11) {
+        return `${clean.slice(0, 3)}.${clean.slice(3, 6)}.${clean.slice(6, 9)}-${clean.slice(9)}`;
+      }
+      return cpf;
+    };
+
+    // Formatar telefone
+    const formatPhone = (phone: string) => {
+      const clean = phone.replace(/\D/g, '');
+      if (clean.length === 11) {
+        return `(${clean.slice(0, 2)}) ${clean.slice(2, 7)}-${clean.slice(7)}`;
+      } else if (clean.length === 10) {
+        return `(${clean.slice(0, 2)}) ${clean.slice(2, 6)}-${clean.slice(6)}`;
+      }
+      return phone;
+    };
+
+    // Formatar CEP
+    const formatCep = (cep: string) => {
+      const clean = cep.replace(/\D/g, '');
+      if (clean.length === 8) {
+        return `${clean.slice(0, 5)}-${clean.slice(5)}`;
+      }
+      return cep;
+    };
+
     return (
-      <div className="space-y-4">
-        <p className="text-muted-foreground">Etapa 4: Confirmação (em implementação)</p>
+      <div className="space-y-6">
+        {/* Resumo dos Dados */}
+        <div className="space-y-4">
+          <h3 className="text-lg font-semibold">Revise seus dados</h3>
+          
+          {/* Dados Pessoais */}
+          <div className="space-y-3 p-4 border rounded-lg">
+            <h4 className="font-medium text-sm text-muted-foreground uppercase">Dados Pessoais</h4>
+            <div className="grid grid-cols-2 gap-4 text-sm">
+              <div>
+                <span className="text-muted-foreground">Nome Completo:</span>
+                <p className="font-medium">{formData.fullName || '-'}</p>
+              </div>
+              {formData.preferredName && (
+                <div>
+                  <span className="text-muted-foreground">Como quer ser chamado(a):</span>
+                  <p className="font-medium">{formData.preferredName}</p>
+                </div>
+              )}
+              <div>
+                <span className="text-muted-foreground">CPF:</span>
+                <p className="font-medium">{formatCpf(formData.cpf) || '-'}</p>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Data de Nascimento:</span>
+                <p className="font-medium">{formatDate(formData.birthDate)}</p>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Telefone:</span>
+                <p className="font-medium">{formatPhone(formData.phone) || '-'}</p>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Sexo:</span>
+                <p className="font-medium">{formData.gender === 'M' ? 'Masculino' : formData.gender === 'F' ? 'Feminino' : '-'}</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Endereço */}
+          <div className="space-y-3 p-4 border rounded-lg">
+            <h4 className="font-medium text-sm text-muted-foreground uppercase">Endereço</h4>
+            <div className="grid grid-cols-2 gap-4 text-sm">
+              <div>
+                <span className="text-muted-foreground">CEP:</span>
+                <p className="font-medium">{formatCep(formData.postalCode) || '-'}</p>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Estado:</span>
+                <p className="font-medium">{formData.state || '-'}</p>
+              </div>
+              <div className="col-span-2">
+                <span className="text-muted-foreground">Logradouro:</span>
+                <p className="font-medium">{formData.street || '-'}</p>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Número:</span>
+                <p className="font-medium">{formData.addressNumber || '-'}</p>
+              </div>
+              {formData.addressComplement && (
+                <div>
+                  <span className="text-muted-foreground">Complemento:</span>
+                  <p className="font-medium">{formData.addressComplement}</p>
+                </div>
+              )}
+              <div>
+                <span className="text-muted-foreground">Bairro:</span>
+                <p className="font-medium">{formData.neighborhood || '-'}</p>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Cidade:</span>
+                <p className="font-medium">{formData.city || '-'}</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Credenciais */}
+          <div className="space-y-3 p-4 border rounded-lg">
+            <h4 className="font-medium text-sm text-muted-foreground uppercase">Credenciais de Acesso</h4>
+            <div className="text-sm">
+              <span className="text-muted-foreground">E-mail:</span>
+              <p className="font-medium">{formData.email || '-'}</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Termos LGPD */}
+        <div className="space-y-2">
+          <div className="flex items-start space-x-2">
+            <Checkbox
+              id="lgpd"
+              checked={formData.lgpdConsent}
+              onCheckedChange={(checked) => updateField('lgpdConsent', checked as boolean)}
+              className={errors.lgpdConsent ? "border-destructive" : ""}
+            />
+            <Label htmlFor="lgpd" className="text-sm leading-relaxed cursor-pointer">
+              Aceito os termos de uso e política de privacidade (LGPD) *
+            </Label>
+          </div>
+          {errors.lgpdConsent && <p className="text-sm text-destructive">{errors.lgpdConsent}</p>}
+        </div>
       </div>
     );
   };

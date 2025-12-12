@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Loader2 } from "lucide-react";
+import { MultiStepRegistration } from "@/components/MultiStepRegistration";
 
 interface LoginDialogProps {
   open: boolean;
@@ -17,23 +18,13 @@ interface LoginDialogProps {
 
 export function LoginDialog({ open, onOpenChange }: LoginDialogProps) {
   const navigate = useNavigate();
-  const { login, register } = useAuth();
+  const { login } = useAuth();
   const [loading, setLoading] = useState(false);
-  const [isSignUp, setIsSignUp] = useState(false);
+  const [isMultiStepOpen, setIsMultiStepOpen] = useState(false);
   
   // Login state
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
-  
-  // Signup state
-  const [signupEmail, setSignupEmail] = useState("");
-  const [signupPassword, setSignupPassword] = useState("");
-  const [fullName, setFullName] = useState("");
-  const [cpf, setCpf] = useState("");
-  const [phone, setPhone] = useState("");
-  const [birthDate, setBirthDate] = useState("");
-  const [gender, setGender] = useState("");
-  const [lgpdConsent, setLgpdConsent] = useState(false);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -53,36 +44,16 @@ export function LoginDialog({ open, onOpenChange }: LoginDialogProps) {
     }
   };
 
-  const handleSignUp = async (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    if (!lgpdConsent) {
-      return;
-    }
+  const handleOpenMultiStep = () => {
+    setIsMultiStepOpen(true);
+    onOpenChange(false);
+  };
 
-    setLoading(true);
-
-    try {
-      const success = await register({
-        email: signupEmail,
-        password: signupPassword,
-        full_name: fullName,
-        cpf: cpf.replace(/\D/g, ""),
-        phone: phone.replace(/\D/g, ""),
-        birth_date: birthDate,
-        gender: gender || undefined,
-        lgpd_consent: lgpdConsent,
-      });
-
-      if (success) {
-        onOpenChange(false);
-        setTimeout(() => {
-          const currentUser = JSON.parse(localStorage.getItem('auth_user') || '{}');
-          navigate(getDashboardRoute(currentUser as any));
-        }, 100);
-      }
-    } finally {
-      setLoading(false);
+  const handleCloseMultiStep = (open: boolean) => {
+    setIsMultiStepOpen(open);
+    if (!open) {
+      // Reabrir o dialog de login se o multi-step for fechado
+      onOpenChange(true);
     }
   };
 
@@ -96,139 +67,60 @@ export function LoginDialog({ open, onOpenChange }: LoginDialogProps) {
           </DialogDescription>
         </DialogHeader>
         
-        <Tabs value={isSignUp ? "signup" : "login"} onValueChange={(v) => setIsSignUp(v === "signup")}>
-          <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="login">Entrar</TabsTrigger>
-            <TabsTrigger value="signup">Criar Conta</TabsTrigger>
-          </TabsList>
+        <div className="space-y-4">
+          <form onSubmit={handleLogin} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="login-email">Email</Label>
+              <Input
+                id="login-email"
+                type="email"
+                placeholder="seu@email.com"
+                value={loginEmail}
+                onChange={(e) => setLoginEmail(e.target.value)}
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="login-password">Senha</Label>
+              <Input
+                id="login-password"
+                type="password"
+                placeholder="••••••••"
+                value={loginPassword}
+                onChange={(e) => setLoginPassword(e.target.value)}
+                required
+              />
+            </div>
+            <Button type="submit" className="w-full" disabled={loading}>
+              {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Entrar
+            </Button>
+          </form>
           
-          <TabsContent value="login" className="space-y-4">
-            <form onSubmit={handleLogin} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="login-email">Email</Label>
-                <Input
-                  id="login-email"
-                  type="email"
-                  placeholder="seu@email.com"
-                  value={loginEmail}
-                  onChange={(e) => setLoginEmail(e.target.value)}
-                  required
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="login-password">Senha</Label>
-                <Input
-                  id="login-password"
-                  type="password"
-                  placeholder="••••••••"
-                  value={loginPassword}
-                  onChange={(e) => setLoginPassword(e.target.value)}
-                  required
-                />
-              </div>
-              <Button type="submit" className="w-full" disabled={loading}>
-                {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Entrar
-              </Button>
-            </form>
-          </TabsContent>
+          <div className="relative">
+            <div className="absolute inset-0 flex items-center">
+              <span className="w-full border-t" />
+            </div>
+            <div className="relative flex justify-center text-xs uppercase">
+              <span className="bg-background px-2 text-muted-foreground">ou</span>
+            </div>
+          </div>
           
-          <TabsContent value="signup" className="space-y-4">
-            <form onSubmit={handleSignUp} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="signup-name">Nome Completo</Label>
-                <Input
-                  id="signup-name"
-                  placeholder="João da Silva"
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  required
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="signup-cpf">CPF</Label>
-                  <Input
-                    id="signup-cpf"
-                    placeholder="000.000.000-00"
-                    value={cpf}
-                    onChange={(e) => setCpf(e.target.value)}
-                    required
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="signup-phone">Telefone</Label>
-                  <Input
-                    id="signup-phone"
-                    placeholder="(00) 00000-0000"
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                    required
-                  />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="signup-birthdate">Data de Nascimento</Label>
-                  <Input
-                    id="signup-birthdate"
-                    type="date"
-                    value={birthDate}
-                    onChange={(e) => setBirthDate(e.target.value)}
-                    required
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="signup-gender">Gênero</Label>
-                  <Input
-                    id="signup-gender"
-                    placeholder="M/F/Outro"
-                    value={gender}
-                    onChange={(e) => setGender(e.target.value)}
-                  />
-                </div>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="signup-email">Email</Label>
-                <Input
-                  id="signup-email"
-                  type="email"
-                  placeholder="seu@email.com"
-                  value={signupEmail}
-                  onChange={(e) => setSignupEmail(e.target.value)}
-                  required
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="signup-password">Senha</Label>
-                <Input
-                  id="signup-password"
-                  type="password"
-                  placeholder="••••••••"
-                  value={signupPassword}
-                  onChange={(e) => setSignupPassword(e.target.value)}
-                  required
-                  minLength={6}
-                />
-              </div>
-              <div className="flex items-start space-x-2">
-                <Checkbox
-                  id="lgpd"
-                  checked={lgpdConsent}
-                  onCheckedChange={(checked) => setLgpdConsent(checked as boolean)}
-                />
-                <Label htmlFor="lgpd" className="text-sm leading-relaxed cursor-pointer">
-                  Aceito os termos de uso e política de privacidade (LGPD)
-                </Label>
-              </div>
-              <Button type="submit" className="w-full" disabled={loading || !lgpdConsent}>
-                {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Criar Conta
-              </Button>
-            </form>
-          </TabsContent>
-        </Tabs>
+          <Button 
+            type="button" 
+            variant="outline" 
+            className="w-full" 
+            onClick={handleOpenMultiStep}
+          >
+            Criar Nova Conta
+          </Button>
+        </div>
       </DialogContent>
+      
+      <MultiStepRegistration 
+        open={isMultiStepOpen} 
+        onOpenChange={handleCloseMultiStep} 
+      />
     </Dialog>
   );
 }
