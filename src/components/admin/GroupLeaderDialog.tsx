@@ -83,18 +83,22 @@ export function GroupLeaderDialog({
                 <SelectValue placeholder="Selecione um usuário" />
               </SelectTrigger>
               <SelectContent>
-                {availableUsers
-                  .filter((user) => user.profile) // Apenas usuários com perfil
-                  .map((user) => (
+                {availableUsers.length === 0 ? (
+                  <SelectItem value="no-users" disabled>
+                    Nenhum runner disponível
+                  </SelectItem>
+                ) : (
+                  availableUsers.map((user) => (
                     <SelectItem key={user.id} value={user.id}>
-                      {user.profile?.full_name || user.email} ({user.email})
+                      {user.name || user.email} ({user.email})
                     </SelectItem>
-                  ))}
+                  ))
+                )}
               </SelectContent>
             </Select>
             {selectedUser && (
               <p className="text-xs text-muted-foreground">
-                CPF: {selectedUser.profile?.cpf || "N/A"}
+                CPF: {selectedUser.cpf || "N/A"}
               </p>
             )}
           </div>

@@ -271,7 +271,7 @@ export function GroupLeadersManagement() {
                         <TableCell>
                           {user ? (
                             <div>
-                              <div className="font-medium">{user.profile?.full_name || "N/A"}</div>
+                              <div className="font-medium">{user.name || "N/A"}</div>
                               <div className="text-sm text-muted-foreground">{user.email}</div>
                             </div>
                           ) : (

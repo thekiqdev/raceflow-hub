@@ -637,31 +637,44 @@ export function MultiStepRegistration({ open, onOpenChange }: MultiStepRegistrat
 
     return (
       <div className="space-y-4">
-        {/* Referral Code - Only show if present */}
-        {referralCode && (
-          <div className="bg-primary/10 border border-primary/20 rounded-lg p-3">
-            <div className="flex items-center gap-2">
-              <div className="flex-1">
-                <Label className="text-xs text-muted-foreground">Código de Referência</Label>
-                <p className="text-sm font-semibold text-primary">{referralCode}</p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Você está se cadastrando através de um líder de grupo
-                </p>
-              </div>
+        {/* Referral Code Input */}
+        <div className="space-y-2">
+          <Label htmlFor="referralCode">Código de Referência (Opcional)</Label>
+          <div className="flex gap-2">
+            <Input
+              id="referralCode"
+              placeholder="ABC123"
+              value={referralCode}
+              onChange={(e) => {
+                const value = e.target.value.toUpperCase().trim().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+                setReferralCode(value);
+              }}
+              maxLength={6}
+              className="font-mono"
+            />
+            {referralCode && (
               <Button
                 type="button"
-                variant="ghost"
-                size="sm"
+                variant="outline"
+                size="icon"
                 onClick={() => {
                   setReferralCode("");
                   localStorage.removeItem('registration_referral_code');
                 }}
               >
-                Remover
+                ×
               </Button>
-            </div>
+            )}
           </div>
-        )}
+          {referralCode && (
+            <p className="text-xs text-muted-foreground">
+              Você está se cadastrando através de um líder de grupo
+            </p>
+          )}
+          <p className="text-xs text-muted-foreground">
+            Digite o código de referência se você foi indicado por um líder de grupo
+          </p>
+        </div>
 
         <div className="space-y-2">
           <Label htmlFor="email">E-mail *</Label>
