@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
 import {
   User,
   CreditCard,
@@ -15,6 +16,7 @@ import {
   Settings,
   Edit,
   Loader2,
+  UserCog,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -36,6 +38,7 @@ export function Profile() {
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [stats, setStats] = useState<RunnerStats | null>(null);
+  const [isLeader, setIsLeader] = useState(false);
 
   const [openDialogs, setOpenDialogs] = useState({
     editProfile: false,
@@ -44,6 +47,7 @@ export function Profile() {
     payments: false,
     notifications: false,
     account: false,
+    leaderDashboard: false,
   });
 
   useEffect(() => {
@@ -225,6 +229,19 @@ export function Profile() {
 
       {/* Menu Sections */}
       <div className="px-4 -mt-6">
+        {isLeader && (
+          <MenuSection
+            title="Líder de Grupo"
+            items={[
+              {
+                icon: UserCog,
+                label: "Painel do Líder",
+                action: () => openDialog("leaderDashboard"),
+              },
+            ]}
+          />
+        )}
+
         <MenuSection
           title="Dados Pessoais"
           items={[
@@ -322,6 +339,17 @@ export function Profile() {
         open={openDialogs.account}
         onOpenChange={(open) => !open && closeDialog("account")}
       />
+
+      {/* Leader Dashboard Dialog */}
+      {isLeader && (
+        <Dialog open={openDialogs.leaderDashboard} onOpenChange={(open) => {
+          if (!open) closeDialog("leaderDashboard");
+        }}>
+          <DialogContent className="max-w-full max-h-[90vh] overflow-y-auto p-0">
+            <LeaderDashboard />
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }
