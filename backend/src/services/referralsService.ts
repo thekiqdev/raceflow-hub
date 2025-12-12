@@ -1,5 +1,4 @@
 import { query } from '../config/database.js';
-import type { PoolClient } from 'pg';
 import { UserReferral } from '../types/index.js';
 import { getGroupLeaderByCode } from './groupLeadersService.js';
 import { incrementTotalReferrals } from './groupLeadersService.js';
