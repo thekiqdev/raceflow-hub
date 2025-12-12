@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { getDashboardRoute } from "@/lib/utils/navigation";
@@ -155,8 +155,8 @@ export function MultiStepRegistration({ open, onOpenChange }: MultiStepRegistrat
     }
   };
 
-  // Buscar endereço por CEP com debounce
-  const handleCepChange = useCallback(async (cep: string) => {
+  // Buscar endereço por CEP
+  const handleCepChange = async (cep: string) => {
     // Aplicar máscara
     const maskedCep = maskCep(cep);
     updateField('postalCode', maskedCep);
@@ -175,13 +175,11 @@ export function MultiStepRegistration({ open, onOpenChange }: MultiStepRegistrat
           updateField('state', address.uf || '');
           
           // Limpar erro de CEP se encontrado
-          if (errors.postalCode) {
-            setErrors(prev => {
-              const newErrors = { ...prev };
-              delete newErrors.postalCode;
-              return newErrors;
-            });
-          }
+          setErrors(prev => {
+            const newErrors = { ...prev };
+            delete newErrors.postalCode;
+            return newErrors;
+          });
         } else {
           toast.error('CEP não encontrado');
           setErrors(prev => ({ ...prev, postalCode: 'CEP não encontrado' }));
@@ -193,7 +191,7 @@ export function MultiStepRegistration({ open, onOpenChange }: MultiStepRegistrat
         setLoadingCep(false);
       }
     }
-  }, [errors.postalCode]);
+  };
 
   // Validação básica por etapa
   const validateStep = (step: number): boolean => {
