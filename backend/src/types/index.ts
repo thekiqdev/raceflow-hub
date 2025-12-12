@@ -43,6 +43,46 @@ export interface UserRole {
   created_at: Date | null;
 }
 
+// Group Leaders types
+export type CommissionStatus = 'pending' | 'paid' | 'cancelled';
+export type ReferralType = 'link' | 'code';
+
+export interface GroupLeader {
+  id: string;
+  user_id: string;
+  referral_code: string;
+  is_active: boolean;
+  commission_percentage: number | null;
+  total_earnings: number;
+  total_referrals: number;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface UserReferral {
+  id: string;
+  user_id: string;
+  leader_id: string;
+  referral_code: string;
+  referral_type: ReferralType;
+  created_at: Date;
+}
+
+export interface LeaderCommission {
+  id: string;
+  leader_id: string;
+  registration_id: string;
+  referred_user_id: string;
+  event_id: string;
+  commission_amount: number;
+  commission_percentage: number;
+  registration_amount: number;
+  status: CommissionStatus;
+  paid_at: Date | null;
+  created_at: Date;
+  updated_at: Date;
+}
+
 // Event types
 export interface Event {
   id: string;
