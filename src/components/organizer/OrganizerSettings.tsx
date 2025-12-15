@@ -13,6 +13,7 @@ import {
   updateOrganizerSettings,
   type OrganizerSettings,
 } from "@/lib/api/organizerSettings";
+import { CouponsManagement } from "./CouponsManagement";
 
 export default function OrganizerSettings() {
   const { user } = useAuth();
@@ -184,6 +185,7 @@ export default function OrganizerSettings() {
       <Tabs defaultValue="general" className="space-y-4">
         <TabsList>
           <TabsTrigger value="general">Geral</TabsTrigger>
+          <TabsTrigger value="coupons">Cupons</TabsTrigger>
           <TabsTrigger value="notifications">Notificações</TabsTrigger>
           <TabsTrigger value="security">Segurança</TabsTrigger>
         </TabsList>
@@ -348,6 +350,10 @@ export default function OrganizerSettings() {
               </Button>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="coupons" className="space-y-4">
+          <CouponsManagement />
         </TabsContent>
 
         <TabsContent value="notifications">

@@ -31,6 +31,7 @@ export interface CreateRegistrationData {
   kit_id?: string;
   payment_method?: 'pix' | 'credit_card' | 'boleto';
   total_amount: number;
+  coupon_code?: string;
 }
 
 export interface UpdateRegistrationData {

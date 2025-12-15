@@ -127,6 +127,26 @@ export interface Registration {
   updated_at: Date | null;
 }
 
+// Coupon types
+export type CouponType = 'percentage' | 'fixed';
+
+export interface Coupon {
+  id: string;
+  organizer_id: string;
+  event_id: string | null; // Deprecated, use event_ids instead
+  event_ids?: string[]; // Array of event IDs
+  code: string;
+  name: string;
+  type: CouponType;
+  discount_value: number;
+  expiration_date: Date | null;
+  max_uses: number | null;
+  current_uses: number;
+  is_active: boolean;
+  created_at: Date;
+  updated_at: Date;
+}
+
 // API Response types
 export interface ApiResponse<T = any> {
   success: boolean;

@@ -16,6 +16,7 @@ import runnerRouter from './routes/runnerRoutes.js';
 import uploadRouter from './routes/upload.js';
 import webhooksRouter from './routes/webhooks.js';
 import groupLeadersRouter from './routes/groupLeaders.js';
+import couponsRouter from './routes/coupons.js';
 
 // Load environment variables
 // Try to load from backend/.env explicitly
@@ -171,6 +172,7 @@ app.use('/api/admin', adminRouter);
 app.use('/api/organizer', organizerRouter);
 app.use('/api/runner', runnerRouter);
 app.use('/api/upload', uploadRouter);
+app.use('/api/coupons', couponsRouter);
 
 // Root endpoint
 app.get('/', (_req: Request, res: Response) => {

@@ -12,6 +12,13 @@ import {
   getOrganizerSettingsController,
   updateOrganizerSettingsController,
 } from '../controllers/organizerController.js';
+import {
+  createCouponController,
+  getCouponsController,
+  getCouponByIdController,
+  updateCouponController,
+  deleteCouponController,
+} from '../controllers/couponsController.js';
 
 const router = Router();
 
@@ -35,6 +42,13 @@ router.get('/reports/event-revenues', getEventRevenuesController);
 // Settings endpoints
 router.get('/settings', getOrganizerSettingsController);
 router.put('/settings', updateOrganizerSettingsController);
+
+// Coupons endpoints
+router.get('/coupons', getCouponsController);
+router.post('/coupons', createCouponController);
+router.get('/coupons/:id', getCouponByIdController);
+router.put('/coupons/:id', updateCouponController);
+router.delete('/coupons/:id', deleteCouponController);
 
 export default router;
 

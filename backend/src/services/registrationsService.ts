@@ -9,6 +9,7 @@ export interface CreateRegistrationData {
   kit_id?: string;
   payment_method?: PaymentMethod;
   total_amount: number;
+  coupon_code?: string;
 }
 
 export interface UpdateRegistrationData {
@@ -194,12 +195,38 @@ export const createRegistration = async (data: CreateRegistrationData) => {
   // Generate confirmation code
   const confirmationCode = `REG-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
 
+  // Validate and apply coupon if provided
+  if (data.coupon_code) {
+    try {
+      const { getEventById } = await import('./eventsService.js');
+      const { validateCoupon, incrementCouponUsage } = await import('./couponsService.js');
+      
+      const event = await getEventById(data.event_id);
+      if (event) {
+        const validation = await validateCoupon(data.coupon_code, event.organizer_id, data.event_id);
+        
+        if (!validation.valid || !validation.coupon) {
+          throw new Error(validation.error || 'Cupom inválido');
+        }
+        
+        // Increment coupon usage
+        await incrementCouponUsage(validation.coupon.id);
+        console.log(`✅ Cupom ${data.coupon_code} aplicado e uso incrementado`);
+      }
+    } catch (error: any) {
+      // Log error but don't fail registration if coupon validation fails
+      console.error('⚠️ Erro ao validar/aplicar cupom (não bloqueia inscrição):', error.message);
+      // Remove coupon_code if validation failed
+      data.coupon_code = undefined;
+    }
+  }
+
   const result = await query(
     `INSERT INTO registrations (
       event_id, runner_id, registered_by, category_id, kit_id,
-      payment_method, total_amount, confirmation_code, status, payment_status
+      payment_method, total_amount, confirmation_code, status, payment_status, coupon_code
     )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending', 'pending')
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending', 'pending', $9)
     RETURNING *`,
     [
       data.event_id,
@@ -210,6 +237,7 @@ export const createRegistration = async (data: CreateRegistrationData) => {
       data.payment_method || null,
       data.total_amount,
       confirmationCode,
+      data.coupon_code || null,
     ]
   );
 

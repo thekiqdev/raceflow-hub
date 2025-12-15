@@ -19,6 +19,7 @@ import { createRegistration, getPaymentStatus } from "@/lib/api/registrations";
 import { PixQrCode } from "@/components/payment/PixQrCode";
 import { getEventCategories, EventCategory, CategoryBatch } from "@/lib/api/eventCategories";
 import { EventKit, KitProduct, ProductVariant } from "@/lib/api/eventKits";
+import { validateCoupon } from "@/lib/api/coupons";
 
 // Re-export ProductVariant type for use in component
 type ProductVariantType = ProductVariant;
@@ -54,7 +55,7 @@ interface RegistrationFlowProps {
 
 // Helper function to format price
 const formatPrice = (price: number): string => {
-  if (price === 0) return "Grátis";
+  if (price === 0) return ""; // Retorna espaço em branco ao invés de "Grátis"
   return `R$ ${price.toFixed(2).replace('.', ',')}`;
 };
 
@@ -121,9 +122,30 @@ export function RegistrationFlow({
     cpf: "",
   });
 
+  // Coupon state
+  const [couponCode, setCouponCode] = useState("");
+  const [appliedCoupon, setAppliedCoupon] = useState<{ code: string; discount: number; type: 'percentage' | 'fixed' } | null>(null);
+  const [validatingCoupon, setValidatingCoupon] = useState(false);
+  const [couponError, setCouponError] = useState<string | null>(null);
+
   // Calculate total price based on selected batch or category price
   const categoryPrice = selectedBatch?.price || selectedCategory?.price || 0;
-  const totalPrice = categoryPrice + (selectedKit?.price || 0);
+  const kitPrice = selectedKit?.price || 0;
+  const subtotal = categoryPrice + kitPrice;
+  
+  // Calculate discount
+  let discountAmount = 0;
+  if (appliedCoupon) {
+    if (appliedCoupon.type === 'percentage') {
+      discountAmount = (subtotal * appliedCoupon.discount) / 100;
+    } else {
+      discountAmount = appliedCoupon.discount;
+    }
+    // Ensure discount doesn't exceed subtotal
+    discountAmount = Math.min(discountAmount, subtotal);
+  }
+  
+  const totalPrice = Math.max(0, subtotal - discountAmount);
 
   // Debug: Log quando o modal abre ou categorias mudam
   useEffect(() => {
@@ -490,6 +512,38 @@ export function RegistrationFlow({
     setStep((prev) => prev - 1);
   };
 
+  const handleValidateCoupon = async () => {
+    if (!couponCode.trim()) {
+      return;
+    }
+
+    setValidatingCoupon(true);
+    setCouponError(null);
+
+    try {
+      const response = await validateCoupon(couponCode.trim(), event.id);
+      
+      if (response.success && response.data) {
+        const coupon = response.data;
+        setAppliedCoupon({
+          code: coupon.code,
+          discount: coupon.discount_value,
+          type: coupon.type,
+        });
+        toast.success("Cupom aplicado com sucesso!");
+      } else {
+        setCouponError(response.error || response.message || "Cupom inválido");
+        setAppliedCoupon(null);
+      }
+    } catch (error: any) {
+      console.error("Error validating coupon:", error);
+      setCouponError(error.message || "Erro ao validar cupom");
+      setAppliedCoupon(null);
+    } finally {
+      setValidatingCoupon(false);
+    }
+  };
+
   const handleSubmit = async () => {
     if (!user || !selectedCategory) {
       toast.error("Erro: usuário não autenticado ou categoria não selecionada");
@@ -544,6 +598,7 @@ export function RegistrationFlow({
         kit_id: selectedKit?.id,
         payment_method: "pix" as const, // Default payment method, can be changed later
         total_amount: totalPrice,
+        coupon_code: appliedCoupon?.code || undefined,
       };
 
       console.log('📤 Enviando dados de inscrição:', {
@@ -828,6 +883,9 @@ export function RegistrationFlow({
     setSelectedCategory(null);
     setSelectedBatch(null);
     setSelectedKit(null);
+    setCouponCode("");
+    setAppliedCoupon(null);
+    setCouponError(null);
     setExpandedKits(new Set());
     setSelectedProducts(new Map());
     setVariantSelections(new Map());
@@ -853,6 +911,9 @@ export function RegistrationFlow({
       setShirtSize("");
       setConfirmationCode("");
       setRegistrationId(null);
+      setCouponCode("");
+      setAppliedCoupon(null);
+      setCouponError(null);
     }
   }, [open]);
 
@@ -2090,6 +2151,65 @@ export function RegistrationFlow({
                     <div className="flex justify-between items-center">
                       <span>Valor do kit:</span>
                       <span>{formatPrice(selectedKit.price)}</span>
+                    </div>
+                  )}
+                  <Separator />
+                  {/* Coupon input */}
+                  <div className="space-y-2">
+                    <Label htmlFor="couponCode">Cupom de Desconto</Label>
+                    <div className="flex gap-2">
+                      <Input
+                        id="couponCode"
+                        placeholder="Digite o código do cupom"
+                        value={couponCode}
+                        onChange={(e) => {
+                          setCouponCode(e.target.value.toUpperCase());
+                          setCouponError(null);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && couponCode.trim()) {
+                            handleValidateCoupon();
+                          }
+                        }}
+                        disabled={validatingCoupon || !!appliedCoupon}
+                        className="flex-1"
+                      />
+                      {appliedCoupon ? (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => {
+                            setAppliedCoupon(null);
+                            setCouponCode("");
+                            setCouponError(null);
+                          }}
+                        >
+                          Remover
+                        </Button>
+                      ) : (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={handleValidateCoupon}
+                          disabled={!couponCode.trim() || validatingCoupon}
+                        >
+                          {validatingCoupon ? "Validando..." : "Aplicar"}
+                        </Button>
+                      )}
+                    </div>
+                    {couponError && (
+                      <p className="text-xs text-destructive">{couponError}</p>
+                    )}
+                    {appliedCoupon && (
+                      <p className="text-xs text-green-600">
+                        Cupom {appliedCoupon.code} aplicado com sucesso!
+                      </p>
+                    )}
+                  </div>
+                  {appliedCoupon && discountAmount > 0 && (
+                    <div className="flex justify-between items-center text-sm text-green-600">
+                      <span>Desconto ({appliedCoupon.code}):</span>
+                      <span className="font-semibold">-{formatPrice(discountAmount)}</span>
                     </div>
                   )}
                   <Separator />

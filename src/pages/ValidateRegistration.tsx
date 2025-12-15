@@ -14,9 +14,9 @@ import { List } from "lucide-react";
 
 // Helper function to format price
 const formatPrice = (price: number | string | undefined): string => {
-  if (!price) return "Grátis";
+  if (!price) return ""; // Retorna espaço em branco ao invés de "Grátis"
   const numPrice = typeof price === 'string' ? parseFloat(price) : price;
-  if (isNaN(numPrice) || numPrice === 0) return "Grátis";
+  if (isNaN(numPrice) || numPrice === 0) return ""; // Retorna espaço em branco ao invés de "Grátis"
   return `R$ ${numPrice.toFixed(2).replace('.', ',')}`;
 };
 

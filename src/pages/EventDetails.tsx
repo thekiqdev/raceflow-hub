@@ -645,7 +645,9 @@ const EventDetails = () => {
                     </CardHeader>
                     <CardContent className="space-y-4">
                       <div className="space-y-2">
-                        <p className="text-sm text-muted-foreground">A partir de:</p>
+                        {categories.length > 0 && Math.min(...categories.map((c) => c.price)) > 0 && (
+                          <p className="text-sm text-muted-foreground">A partir de:</p>
+                        )}
                         <p className="text-3xl font-bold text-primary">
                           {categories.length > 0 ? (
                             formatPrice(Math.min(...categories.map((c) => c.price)))
@@ -879,7 +881,9 @@ const EventDetails = () => {
             <div className="container mx-auto px-4 py-4">
               <div className="flex items-center justify-between gap-4">
                 <div>
-                  <p className="text-sm text-muted-foreground">A partir de:</p>
+                  {categories.length > 0 && Math.min(...categories.map((c) => c.price)) > 0 && (
+                    <p className="text-sm text-muted-foreground">A partir de:</p>
+                  )}
                   <p className="text-2xl font-bold text-primary">
                     {categories.length > 0 ? (
                       formatPrice(Math.min(...categories.map((c) => c.price)))

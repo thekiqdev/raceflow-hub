@@ -57,6 +57,10 @@ const migrations = [
   '028_add_transferred_status.sql',
   '029_add_address_fields_to_profiles.sql',
   '030_create_group_leaders_system.sql',
+  '031_create_coupons.sql',
+  '032_add_event_id_to_coupons.sql',
+  '033_create_coupon_events_relation.sql',
+  '034_add_coupon_code_to_registrations.sql',
 ];
 
 // Create migrations tracking table
