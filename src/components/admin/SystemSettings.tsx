@@ -7,6 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Separator } from "@/components/ui/separator";
 import { Building2, Trash2, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { getSystemSettings, updateSystemSettings, type SystemSettings as SystemSettingsType } from "@/lib/api/systemSettings";
@@ -55,6 +56,14 @@ const SystemSettings = () => {
     analytics: false,
     transfers: false,
     senior_discount_60_plus: false,
+    platform_fees: false,
+  });
+
+  const [feesForm, setFeesForm] = useState({
+    platform_fee: 0,
+    platform_fee_type: 'fixed' as 'fixed' | 'percentage',
+    withdrawal_fee: 0,
+    withdrawal_fee_type: 'fixed' as 'fixed' | 'percentage',
   });
 
   useEffect(() => {
@@ -117,6 +126,14 @@ const SystemSettings = () => {
           analytics: false,
           transfers: false,
           senior_discount_60_plus: false,
+          platform_fees: false,
+        });
+
+        setFeesForm({
+          platform_fee: data.platform_fee || 0,
+          platform_fee_type: data.platform_fee_type || 'fixed',
+          withdrawal_fee: data.withdrawal_fee || 0,
+          withdrawal_fee_type: data.withdrawal_fee_type || 'fixed',
         });
 
         // Initialize leader_commission_percentage if not in settings
@@ -316,6 +333,31 @@ const SystemSettings = () => {
     }
   };
 
+  const handleSaveFees = async () => {
+    setSaving(true);
+    try {
+      const response = await updateSystemSettings({
+        platform_fee: feesForm.platform_fee,
+        platform_fee_type: feesForm.platform_fee_type,
+        withdrawal_fee: feesForm.withdrawal_fee,
+        withdrawal_fee_type: feesForm.withdrawal_fee_type,
+      });
+      
+      if (response.success) {
+        if (response.data) {
+          setSettings(response.data);
+        }
+        toast.success('Configurações de taxas salvas com sucesso!');
+      } else {
+        toast.error(response.error || 'Erro ao salvar configurações');
+      }
+    } catch (error) {
+      toast.error('Erro ao salvar configurações');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -338,6 +380,9 @@ const SystemSettings = () => {
           <TabsTrigger value="payment">Pagamento</TabsTrigger>
           <TabsTrigger value="commissions">Comissões</TabsTrigger>
           <TabsTrigger value="modules">Módulos</TabsTrigger>
+          {modulesForm.platform_fees && (
+            <TabsTrigger value="fees">Taxas</TabsTrigger>
+          )}
         </TabsList>
 
         <TabsContent value="general" className="space-y-4">
@@ -719,6 +764,16 @@ const SystemSettings = () => {
                   onCheckedChange={(checked) => setModulesForm({ ...modulesForm, senior_discount_60_plus: checked })}
                 />
               </div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="font-medium">Taxas da Plataforma</p>
+                  <p className="text-sm text-muted-foreground">Configurar taxas da plataforma, saque e transferência</p>
+                </div>
+                <Switch 
+                  checked={modulesForm.platform_fees || false}
+                  onCheckedChange={(checked) => setModulesForm({ ...modulesForm, platform_fees: checked })}
+                />
+              </div>
               <Button onClick={handleSaveModules} disabled={saving}>
                 {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                 Salvar Alterações
@@ -726,6 +781,124 @@ const SystemSettings = () => {
             </CardContent>
           </Card>
         </TabsContent>
+
+        {modulesForm.platform_fees && (
+          <TabsContent value="fees" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>Taxas da Plataforma</CardTitle>
+                <CardDescription>Configure as taxas cobradas pela plataforma</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                {/* Taxa da Plataforma */}
+                <div className="space-y-4">
+                  <div>
+                    <Label htmlFor="platform_fee_type">Tipo de Taxa da Plataforma</Label>
+                    <Select
+                      value={feesForm.platform_fee_type}
+                      onValueChange={(value: 'fixed' | 'percentage') => 
+                        setFeesForm({ ...feesForm, platform_fee_type: value })
+                      }
+                    >
+                      <SelectTrigger className="mt-1">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="fixed">Valor Fixo (R$)</SelectItem>
+                        <SelectItem value="percentage">Percentual (%)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label htmlFor="platform_fee">
+                      Taxa da Plataforma {feesForm.platform_fee_type === 'fixed' ? '(R$)' : '(%)'}
+                    </Label>
+                    <Input
+                      id="platform_fee"
+                      type="number"
+                      step={feesForm.platform_fee_type === 'fixed' ? '0.01' : '0.1'}
+                      min="0"
+                      value={feesForm.platform_fee}
+                      onChange={(e) => setFeesForm({ ...feesForm, platform_fee: parseFloat(e.target.value) || 0 })}
+                      placeholder={feesForm.platform_fee_type === 'fixed' ? '0.00' : '0.0'}
+                      className="mt-1"
+                    />
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Taxa cobrada dos corredores ao fazer inscrições
+                    </p>
+                  </div>
+                </div>
+
+                <Separator />
+
+                {/* Taxa de Saque */}
+                <div className="space-y-4">
+                  <div>
+                    <Label htmlFor="withdrawal_fee_type">Tipo de Taxa de Saque</Label>
+                    <Select
+                      value={feesForm.withdrawal_fee_type}
+                      onValueChange={(value: 'fixed' | 'percentage') => 
+                        setFeesForm({ ...feesForm, withdrawal_fee_type: value })
+                      }
+                    >
+                      <SelectTrigger className="mt-1">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="fixed">Valor Fixo (R$)</SelectItem>
+                        <SelectItem value="percentage">Percentual (%)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label htmlFor="withdrawal_fee">
+                      Taxa de Saque {feesForm.withdrawal_fee_type === 'fixed' ? '(R$)' : '(%)'}
+                    </Label>
+                    <Input
+                      id="withdrawal_fee"
+                      type="number"
+                      step={feesForm.withdrawal_fee_type === 'fixed' ? '0.01' : '0.1'}
+                      min="0"
+                      value={feesForm.withdrawal_fee}
+                      onChange={(e) => setFeesForm({ ...feesForm, withdrawal_fee: parseFloat(e.target.value) || 0 })}
+                      placeholder={feesForm.withdrawal_fee_type === 'fixed' ? '0.00' : '0.0'}
+                      className="mt-1"
+                    />
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Taxa cobrada dos organizadores ao realizar saques
+                    </p>
+                  </div>
+                </div>
+
+                <Separator />
+
+                {/* Taxa de Transferência - Apenas exibição (configurada em TransferManagement) */}
+                <div className="space-y-4">
+                  <div>
+                    <Label htmlFor="transfer_fee_display">Taxa de Transferência (R$)</Label>
+                    <Input
+                      id="transfer_fee_display"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={settings?.transfer_fee || 0}
+                      disabled
+                      className="mt-1 bg-muted"
+                    />
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Esta taxa é configurada em <strong>Transferências &gt; Configurar Taxa</strong>
+                    </p>
+                  </div>
+                </div>
+
+                <Button onClick={handleSaveFees} disabled={saving}>
+                  {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                  Salvar Alterações
+                </Button>
+              </CardContent>
+            </Card>
+          </TabsContent>
+        )}
       </Tabs>
     </div>
   );

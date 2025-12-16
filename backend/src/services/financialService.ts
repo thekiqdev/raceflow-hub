@@ -63,12 +63,23 @@ export const getFinancialOverview = async (): Promise<FinancialOverview> => {
   );
   const total_revenue = parseFloat(revenueResult.rows[0].total_revenue) || 0;
 
-  // Platform commissions (5% by default, but should use settings)
-  const settingsResult = await query('SELECT commission_percentage FROM financial_settings LIMIT 1');
-  const commissionPercentage = settingsResult.rows.length > 0 
-    ? parseFloat(settingsResult.rows[0].commission_percentage) / 100 
-    : 0.05;
-  const platform_commissions = total_revenue * commissionPercentage;
+  // Platform commissions - use platform_fee from system_settings
+  const { getSystemSettings } = await import('./systemSettingsService.js');
+  const settings = await getSystemSettings();
+  
+  let platform_commissions = 0;
+  if (settings.platform_fee && settings.platform_fee > 0) {
+    if (settings.platform_fee_type === 'percentage') {
+      platform_commissions = (total_revenue * settings.platform_fee) / 100;
+    } else {
+      // For fixed fee, we need to count registrations
+      const registrationsCountResult = await query(
+        `SELECT COUNT(*) as count FROM registrations WHERE payment_status = 'paid'`
+      );
+      const registrationsCount = parseInt(registrationsCountResult.rows[0].count) || 0;
+      platform_commissions = registrationsCount * settings.platform_fee;
+    }
+  }
 
   // Total withdrawals
   const withdrawalsResult = await query(
@@ -420,12 +431,27 @@ export const getOrganizerFinancialOverview = async (organizerId: string): Promis
   );
   const total_revenue = parseFloat(revenueResult.rows[0].total_revenue) || 0;
 
-  // Platform commissions (5% by default, but should use settings)
-  const settingsResult = await query('SELECT commission_percentage FROM financial_settings LIMIT 1');
-  const commissionPercentage = settingsResult.rows.length > 0 
-    ? parseFloat(settingsResult.rows[0].commission_percentage) / 100 
-    : 0.05;
-  const platform_commissions = total_revenue * commissionPercentage;
+  // Platform commissions - use platform_fee from system_settings
+  const { getSystemSettings } = await import('./systemSettingsService.js');
+  const settings = await getSystemSettings();
+  
+  let platform_commissions = 0;
+  if (settings.platform_fee && settings.platform_fee > 0) {
+    if (settings.platform_fee_type === 'percentage') {
+      platform_commissions = (total_revenue * settings.platform_fee) / 100;
+    } else {
+      // For fixed fee, we need to count registrations for this organizer
+      const registrationsCountResult = await query(
+        `SELECT COUNT(*) as count 
+         FROM registrations r
+         JOIN events e ON r.event_id = e.id
+         WHERE r.payment_status = 'paid' AND e.organizer_id = $1`,
+        [organizerId]
+      );
+      const registrationsCount = parseInt(registrationsCountResult.rows[0].count) || 0;
+      platform_commissions = registrationsCount * settings.platform_fee;
+    }
+  }
 
   // Total withdrawals for this organizer
   const withdrawalsResult = await query(
@@ -529,8 +555,19 @@ export const createWithdrawRequest = async (data: CreateWithdrawRequestData): Pr
     throw new Error(`Valor mínimo para saque é R$ ${minWithdrawAmount.toFixed(2)}`);
   }
 
-  // Calculate fee (1% of amount)
-  const fee = data.amount * 0.01;
+  // Calculate fee using withdrawal_fee from system_settings
+  const { getSystemSettings } = await import('./systemSettingsService.js');
+  const systemSettings = await getSystemSettings();
+  
+  let fee = 0;
+  if (systemSettings.withdrawal_fee && systemSettings.withdrawal_fee > 0) {
+    if (systemSettings.withdrawal_fee_type === 'percentage') {
+      fee = (data.amount * systemSettings.withdrawal_fee) / 100;
+    } else {
+      fee = systemSettings.withdrawal_fee;
+    }
+  }
+  
   const net_amount = data.amount - fee;
 
   // Get organizer's available balance

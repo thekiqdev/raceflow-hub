@@ -27,6 +27,10 @@ export interface SystemSettings {
   payment_secret_key?: string;
   enabled_modules: Record<string, boolean>;
   transfer_fee?: number;
+  platform_fee?: number;
+  platform_fee_type?: 'fixed' | 'percentage';
+  withdrawal_fee?: number;
+  withdrawal_fee_type?: 'fixed' | 'percentage';
   leader_commission_percentage?: number;
   maintenance_mode: boolean;
   maintenance_message?: string;
@@ -65,6 +69,10 @@ export const getSystemSettings = async (): Promise<SystemSettings> => {
         reports: true,
       },
       transfer_fee: 0,
+      platform_fee: 0,
+      platform_fee_type: 'fixed',
+      withdrawal_fee: 0,
+      withdrawal_fee_type: 'fixed',
       maintenance_mode: false,
       timezone: 'America/Sao_Paulo',
       date_format: 'DD/MM/YYYY',
@@ -101,6 +109,10 @@ export const getSystemSettings = async (): Promise<SystemSettings> => {
     },
     smtp_port: row.smtp_port ? parseInt(row.smtp_port) : undefined,
     transfer_fee: row.transfer_fee ? parseFloat(row.transfer_fee) : undefined,
+    platform_fee: row.platform_fee ? parseFloat(row.platform_fee) : undefined,
+    platform_fee_type: row.platform_fee_type || 'fixed',
+    withdrawal_fee: row.withdrawal_fee ? parseFloat(row.withdrawal_fee) : undefined,
+    withdrawal_fee_type: row.withdrawal_fee_type || 'fixed',
   } as SystemSettings;
 };
 
@@ -125,11 +137,19 @@ export const updateSystemSettings = async (
         // Convert object to JSON string for JSONB
         fields.push(`${key} = $${paramIndex}::jsonb`);
         values.push(JSON.stringify(value));
+        paramIndex++;
+      } else if (key === 'platform_fee_type' || key === 'withdrawal_fee_type') {
+        // Handle string enum types - ensure they're valid
+        if (value === 'fixed' || value === 'percentage') {
+          fields.push(`${key} = $${paramIndex}`);
+          values.push(value);
+          paramIndex++;
+        }
       } else {
         fields.push(`${key} = $${paramIndex}`);
         values.push(value);
+        paramIndex++;
       }
-      paramIndex++;
     }
   });
 
@@ -177,6 +197,10 @@ export const updateSystemSettings = async (
     },
     smtp_port: row.smtp_port ? parseInt(row.smtp_port) : undefined,
     transfer_fee: row.transfer_fee ? parseFloat(row.transfer_fee) : undefined,
+    platform_fee: row.platform_fee ? parseFloat(row.platform_fee) : undefined,
+    platform_fee_type: row.platform_fee_type || 'fixed',
+    withdrawal_fee: row.withdrawal_fee ? parseFloat(row.withdrawal_fee) : undefined,
+    withdrawal_fee_type: row.withdrawal_fee_type || 'fixed',
   } as SystemSettings;
 };
 

@@ -30,6 +30,10 @@ const updateSystemSettingsSchema = z.object({
   payment_secret_key: z.string().optional().nullable(),
   enabled_modules: z.record(z.boolean()).optional(),
   transfer_fee: z.number().min(0).optional(),
+  platform_fee: z.number().min(0).optional(),
+  platform_fee_type: z.enum(['fixed', 'percentage']).optional(),
+  withdrawal_fee: z.number().min(0).optional(),
+  withdrawal_fee_type: z.enum(['fixed', 'percentage']).optional(),
   leader_commission_percentage: z.number().min(0).max(100).optional(),
   maintenance_mode: z.boolean().optional(),
   maintenance_message: z.string().optional().nullable(),
@@ -81,6 +85,10 @@ export const getEnabledModulesController = async (
       data: {
         enabled_modules: settings.enabled_modules || {},
         transfer_fee: settings.transfer_fee || 0,
+        platform_fee: settings.platform_fee || 0,
+        platform_fee_type: settings.platform_fee_type || 'fixed',
+        withdrawal_fee: settings.withdrawal_fee || 0,
+        withdrawal_fee_type: settings.withdrawal_fee_type || 'fixed',
       },
     });
   } catch (error: any) {
@@ -128,10 +136,18 @@ export const updateSystemSettingsController = async (
     });
   } catch (error: any) {
     console.error('Error updating system settings:', error);
+    console.error('Error details:', {
+      message: error.message,
+      code: error.code,
+      detail: error.detail,
+      hint: error.hint,
+    });
     res.status(500).json({
       success: false,
       error: 'Internal server error',
       message: error.message || 'Failed to update system settings',
+      detail: error.detail || undefined,
+      hint: error.hint || undefined,
     });
   }
 };

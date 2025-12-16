@@ -146,6 +146,11 @@ export function RegistrationFlow({
   const [userProfile, setUserProfile] = useState<{ birth_date?: string } | null>(null);
   const [otherPersonProfile, setOtherPersonProfile] = useState<{ birth_date?: string } | null>(null);
 
+  // Platform fee state
+  const [platformFee, setPlatformFee] = useState<number>(0);
+  const [platformFeeType, setPlatformFeeType] = useState<'fixed' | 'percentage'>('fixed');
+  const [platformFeesEnabled, setPlatformFeesEnabled] = useState(false);
+
   // Calculate total price based on selected batch or category price
   const categoryPrice = selectedBatch?.price || selectedCategory?.price || 0;
   const kitPrice = selectedKit?.price || 0;
@@ -179,17 +184,32 @@ export function RegistrationFlow({
   // Calculate total: subtotal - senior discount - coupon discount
   // Senior discount is applied first, then coupon discount on the remaining amount
   const totalAfterSeniorDiscount = Math.max(0, subtotal - seniorDiscountAmount);
-  const totalPrice = Math.max(0, totalAfterSeniorDiscount - discountAmount);
+  const totalAfterDiscounts = Math.max(0, totalAfterSeniorDiscount - discountAmount);
+  
+  // Calculate platform fee (applied after discounts)
+  let platformFeeAmount = 0;
+  if (platformFeesEnabled && platformFee > 0) {
+    if (platformFeeType === 'percentage') {
+      platformFeeAmount = (totalAfterDiscounts * platformFee) / 100;
+    } else {
+      platformFeeAmount = platformFee;
+    }
+  }
+  
+  const totalPrice = Math.max(0, totalAfterDiscounts + platformFeeAmount);
 
   // Load system settings and user profile when modal opens
   useEffect(() => {
     if (open) {
-      // Load enabled modules to check if senior discount is enabled
+      // Load enabled modules to check if senior discount and platform fees are enabled
       const loadSettings = async () => {
         try {
           const response = await getEnabledModules();
           if (response.success && response.data) {
             setSeniorDiscountEnabled(response.data.enabled_modules?.senior_discount_60_plus || false);
+            setPlatformFeesEnabled(response.data.enabled_modules?.platform_fees || false);
+            setPlatformFee(response.data.platform_fee || 0);
+            setPlatformFeeType(response.data.platform_fee_type || 'fixed');
           }
         } catch (error) {
           console.error('Erro ao carregar configurações:', error);
@@ -2319,6 +2339,12 @@ export function RegistrationFlow({
                     <div className="flex justify-between items-center text-sm text-green-600">
                       <span>Desconto ({appliedCoupon.code}):</span>
                       <span className="font-semibold">-{formatPrice(discountAmount)}</span>
+                    </div>
+                  )}
+                  {platformFeeAmount > 0 && (
+                    <div className="flex justify-between items-center text-sm">
+                      <span>Taxa da Plataforma {platformFeeType === 'percentage' ? `(${platformFee}%)` : ''}:</span>
+                      <span className="font-semibold">+{formatPrice(platformFeeAmount)}</span>
                     </div>
                   )}
                   <Separator />

@@ -1997,13 +1997,6 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess }: EventF
                     </div>
 
                     <div className="rounded-lg border p-4 space-y-2">
-                      <h4 className="font-medium">Taxa de Serviço</h4>
-                      <p className="text-sm text-muted-foreground">
-                        Taxa da plataforma: <strong>5% + R$ 2,00</strong> por inscrição
-                      </p>
-                    </div>
-
-                    <div className="rounded-lg border p-4 space-y-2">
                       <h4 className="font-medium">Política de Reembolso</h4>
                       <p className="text-sm text-muted-foreground">
                         Configure em Configurações {'>'} Financeiro

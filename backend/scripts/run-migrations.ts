@@ -61,6 +61,7 @@ const migrations = [
   '032_add_event_id_to_coupons.sql',
   '033_create_coupon_events_relation.sql',
   '034_add_coupon_code_to_registrations.sql',
+  '035_add_platform_fees.sql',
 ];
 
 // Create migrations tracking table

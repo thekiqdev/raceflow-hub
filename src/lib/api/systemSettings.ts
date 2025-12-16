@@ -27,6 +27,10 @@ export interface SystemSettings {
   payment_secret_key?: string;
   enabled_modules: Record<string, boolean>;
   transfer_fee?: number;
+  platform_fee?: number;
+  platform_fee_type?: 'fixed' | 'percentage';
+  withdrawal_fee?: number;
+  withdrawal_fee_type?: 'fixed' | 'percentage';
   leader_commission_percentage?: number;
   maintenance_mode: boolean;
   maintenance_message?: string;
@@ -65,6 +69,9 @@ export interface UpdateSystemSettingsData {
   payment_secret_key?: string | null;
   enabled_modules?: Record<string, boolean>;
   transfer_fee?: number;
+  platform_fee?: number;
+  platform_fee_type?: 'fixed' | 'percentage';
+  withdrawal_fee?: number;
   leader_commission_percentage?: number;
   maintenance_mode?: boolean;
   maintenance_message?: string | null;
@@ -95,6 +102,10 @@ export const getEnabledModules = async (): Promise<{
   data?: {
     enabled_modules: Record<string, boolean>;
     transfer_fee: number;
+    platform_fee?: number;
+    platform_fee_type?: 'fixed' | 'percentage';
+    withdrawal_fee?: number;
+    withdrawal_fee_type?: 'fixed' | 'percentage';
   };
   error?: string;
   message?: string;
@@ -102,6 +113,10 @@ export const getEnabledModules = async (): Promise<{
   return apiClient.get<{
     enabled_modules: Record<string, boolean>;
     transfer_fee: number;
+    platform_fee?: number;
+    platform_fee_type?: 'fixed' | 'percentage';
+    withdrawal_fee?: number;
+    withdrawal_fee_type?: 'fixed' | 'percentage';
   }>('/registrations/settings/modules');
 };
 
