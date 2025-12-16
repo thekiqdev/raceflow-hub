@@ -54,6 +54,7 @@ const SystemSettings = () => {
     notifications: false,
     analytics: false,
     transfers: false,
+    senior_discount_60_plus: false,
   });
 
   useEffect(() => {
@@ -115,6 +116,7 @@ const SystemSettings = () => {
           notifications: false,
           analytics: false,
           transfers: false,
+          senior_discount_60_plus: false,
         });
 
         // Initialize leader_commission_percentage if not in settings
@@ -705,6 +707,16 @@ const SystemSettings = () => {
                 <Switch 
                   checked={modulesForm.transfers || false}
                   onCheckedChange={(checked) => setModulesForm({ ...modulesForm, transfers: checked })}
+                />
+              </div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="font-medium">Desconto 60+</p>
+                  <p className="text-sm text-muted-foreground">Aplicar desconto automático de 50% para pessoas com 60 anos ou mais</p>
+                </div>
+                <Switch 
+                  checked={modulesForm.senior_discount_60_plus || false}
+                  onCheckedChange={(checked) => setModulesForm({ ...modulesForm, senior_discount_60_plus: checked })}
                 />
               </div>
               <Button onClick={handleSaveModules} disabled={saving}>

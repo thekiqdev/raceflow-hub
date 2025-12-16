@@ -20,10 +20,23 @@ import { PixQrCode } from "@/components/payment/PixQrCode";
 import { getEventCategories, EventCategory, CategoryBatch } from "@/lib/api/eventCategories";
 import { EventKit, KitProduct, ProductVariant } from "@/lib/api/eventKits";
 import { validateCoupon } from "@/lib/api/coupons";
+import { getEnabledModules } from "@/lib/api/systemSettings";
 
 // Re-export ProductVariant type for use in component
 type ProductVariantType = ProductVariant;
 import { toast } from "sonner";
+
+// Utility function to calculate age from birth date
+const calculateAge = (birthDate: string): number => {
+  const today = new Date();
+  const birth = new Date(birthDate);
+  let age = today.getFullYear() - birth.getFullYear();
+  const monthDiff = today.getMonth() - birth.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) {
+    age--;
+  }
+  return age;
+};
 
 interface Category extends EventCategory {
   batches?: CategoryBatch[];
@@ -128,13 +141,31 @@ export function RegistrationFlow({
   const [validatingCoupon, setValidatingCoupon] = useState(false);
   const [couponError, setCouponError] = useState<string | null>(null);
 
+  // Senior discount state
+  const [seniorDiscountEnabled, setSeniorDiscountEnabled] = useState(false);
+  const [userProfile, setUserProfile] = useState<{ birth_date?: string } | null>(null);
+  const [otherPersonProfile, setOtherPersonProfile] = useState<{ birth_date?: string } | null>(null);
+
   // Calculate total price based on selected batch or category price
   const categoryPrice = selectedBatch?.price || selectedCategory?.price || 0;
   const kitPrice = selectedKit?.price || 0;
   const subtotal = categoryPrice + kitPrice;
   
-  // Calculate discount
+  // Calculate discounts
   let discountAmount = 0;
+  let seniorDiscountAmount = 0;
+  
+  // Apply senior discount (50% for 60+ years) if enabled and user is eligible
+  // Check both logged-in user profile and other person profile
+  const profileToCheck = otherPersonId ? otherPersonProfile : userProfile;
+  if (seniorDiscountEnabled && profileToCheck?.birth_date) {
+    const age = calculateAge(profileToCheck.birth_date);
+    if (age >= 60) {
+      seniorDiscountAmount = subtotal * 0.5; // 50% discount
+    }
+  }
+  
+  // Apply coupon discount (if any)
   if (appliedCoupon) {
     if (appliedCoupon.type === 'percentage') {
       discountAmount = (subtotal * appliedCoupon.discount) / 100;
@@ -145,7 +176,68 @@ export function RegistrationFlow({
     discountAmount = Math.min(discountAmount, subtotal);
   }
   
-  const totalPrice = Math.max(0, subtotal - discountAmount);
+  // Calculate total: subtotal - senior discount - coupon discount
+  // Senior discount is applied first, then coupon discount on the remaining amount
+  const totalAfterSeniorDiscount = Math.max(0, subtotal - seniorDiscountAmount);
+  const totalPrice = Math.max(0, totalAfterSeniorDiscount - discountAmount);
+
+  // Load system settings and user profile when modal opens
+  useEffect(() => {
+    if (open) {
+      // Load enabled modules to check if senior discount is enabled
+      const loadSettings = async () => {
+        try {
+          const response = await getEnabledModules();
+          if (response.success && response.data) {
+            setSeniorDiscountEnabled(response.data.enabled_modules?.senior_discount_60_plus || false);
+          }
+        } catch (error) {
+          console.error('Erro ao carregar configurações:', error);
+        }
+      };
+
+      // Load user profile if logged in
+      const loadUserProfile = async () => {
+        if (user) {
+          try {
+            const profileResponse = await getOwnProfile();
+            if (profileResponse.success && profileResponse.data) {
+              setUserProfile({
+                birth_date: profileResponse.data.birth_date,
+              });
+            }
+          } catch (error) {
+            console.error('Erro ao carregar perfil:', error);
+          }
+        }
+      };
+
+      loadSettings();
+      loadUserProfile();
+    }
+  }, [open, user]);
+
+  // Load other person profile when otherPersonId changes
+  useEffect(() => {
+    const loadOtherPersonProfile = async () => {
+      if (otherPersonId) {
+        try {
+          const profileResponse = await getPublicProfileByCpf(searchCpf);
+          if (profileResponse.success && profileResponse.data) {
+            setOtherPersonProfile({
+              birth_date: profileResponse.data.birth_date,
+            });
+          }
+        } catch (error) {
+          console.error('Erro ao carregar perfil da outra pessoa:', error);
+        }
+      } else {
+        setOtherPersonProfile(null);
+      }
+    };
+
+    loadOtherPersonProfile();
+  }, [otherPersonId, searchCpf]);
 
   // Debug: Log quando o modal abre ou categorias mudam
   useEffect(() => {
@@ -434,6 +526,13 @@ export function RegistrationFlow({
 
       if (success) {
         // Registration successful - user data will be loaded by useEffect
+        // Update user profile state with birth_date for senior discount calculation
+        if (registerData.birthDate) {
+          setUserProfile({
+            birth_date: registerData.birthDate,
+          });
+        }
+
         setRegisterData({
           fullName: "",
           email: "",
@@ -478,6 +577,10 @@ export function RegistrationFlow({
           cpf: profile.cpf || "",
         });
         setOtherPersonId(profile.id);
+        // Update other person profile for senior discount calculation
+        setOtherPersonProfile({
+          birth_date: profile.birth_date,
+        });
         toast.success("Perfil encontrado!");
       } else {
         toast.error(response.error || "Perfil não encontrado ou não está público");
@@ -2206,6 +2309,12 @@ export function RegistrationFlow({
                       </p>
                     )}
                   </div>
+                  {seniorDiscountAmount > 0 && (
+                    <div className="flex justify-between items-center text-sm text-green-600">
+                      <span>Desconto 60+ (50%):</span>
+                      <span className="font-semibold">-{formatPrice(seniorDiscountAmount)}</span>
+                    </div>
+                  )}
                   {appliedCoupon && discountAmount > 0 && (
                     <div className="flex justify-between items-center text-sm text-green-600">
                       <span>Desconto ({appliedCoupon.code}):</span>
