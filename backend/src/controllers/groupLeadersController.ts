@@ -106,7 +106,7 @@ export const getMyGroupLeaderController = asyncHandler(
  * Note: Admin role is already verified by requireRole('admin') middleware in adminRoutes.ts
  */
 export const getAllGroupLeadersController = asyncHandler(
-  async (req: AuthRequest, res: Response) => {
+  async (_req: AuthRequest, res: Response) => {
     const leaders = await getAllGroupLeaders();
 
     res.json({
