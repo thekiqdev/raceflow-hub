@@ -108,7 +108,12 @@ export const createCoupon = async (data: CreateCouponData): Promise<Coupon> => {
     ]
   );
   
-  const coupon = result.rows[0] as Coupon;
+  const row = result.rows[0];
+  const coupon: Coupon = {
+    ...row,
+    discount_value: parseFloat(row.discount_value) || 0,
+    current_uses: parseInt(row.current_uses) || 0,
+  } as Coupon;
   
   // Set event relationships if provided
   if (data.event_ids && data.event_ids.length > 0) {
@@ -133,7 +138,12 @@ export const getCouponById = async (couponId: string): Promise<Coupon | null> =>
     return null;
   }
   
-  const coupon = result.rows[0] as Coupon;
+  const row = result.rows[0];
+  const coupon: Coupon = {
+    ...row,
+    discount_value: parseFloat(row.discount_value) || 0,
+    current_uses: parseInt(row.current_uses) || 0,
+  } as Coupon;
   const eventIds = await getCouponEventIds(couponId);
   return { ...coupon, event_ids: eventIds } as any;
 };
@@ -151,7 +161,12 @@ export const getCouponByCode = async (code: string, organizerId: string): Promis
     return null;
   }
   
-  return result.rows[0] as Coupon;
+  const row = result.rows[0];
+  return {
+    ...row,
+    discount_value: parseFloat(row.discount_value) || 0,
+    current_uses: parseInt(row.current_uses) || 0,
+  } as Coupon;
 };
 
 /**
@@ -165,7 +180,12 @@ export const getCouponsByOrganizer = async (organizerId: string): Promise<Coupon
   
   // Get event IDs for each coupon
   const coupons = await Promise.all(
-    result.rows.map(async (coupon) => {
+    result.rows.map(async (row) => {
+      const coupon: Coupon = {
+        ...row,
+        discount_value: parseFloat(row.discount_value) || 0,
+        current_uses: parseInt(row.current_uses) || 0,
+      } as Coupon;
       const eventIds = await getCouponEventIds(coupon.id);
       return { ...coupon, event_ids: eventIds } as any;
     })
@@ -247,7 +267,12 @@ export const updateCoupon = async (couponId: string, data: UpdateCouponData): Pr
       values
     );
     
-    updatedCoupon = result.rows[0] as Coupon;
+    const row = result.rows[0];
+    updatedCoupon = {
+      ...row,
+      discount_value: parseFloat(row.discount_value) || 0,
+      current_uses: parseInt(row.current_uses) || 0,
+    } as Coupon;
   } else {
     // Even if no fields to update, still update updated_at if event_ids changed
     if (data.event_ids !== undefined) {

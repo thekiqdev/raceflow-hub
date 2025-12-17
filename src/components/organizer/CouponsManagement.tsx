@@ -172,9 +172,15 @@ export function CouponsManagement() {
 
   const formatDiscount = (coupon: Coupon) => {
     if (coupon.type === "percentage") {
-      return `${coupon.discount_value}%`;
+      const value = typeof coupon.discount_value === 'string' 
+        ? parseFloat(coupon.discount_value) 
+        : coupon.discount_value;
+      return `${value}%`;
     }
-    return `R$ ${coupon.discount_value.toFixed(2).replace(".", ",")}`;
+    const value = typeof coupon.discount_value === 'string' 
+      ? parseFloat(coupon.discount_value) 
+      : coupon.discount_value;
+    return `R$ ${value.toFixed(2).replace(".", ",")}`;
   };
 
   const formatUses = (coupon: Coupon) => {
