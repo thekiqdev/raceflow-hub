@@ -101,6 +101,7 @@ export interface Event {
   updated_at: Date | null;
 }
 
+// Legacy EventCategory (mantida para compatibilidade durante transição)
 export interface EventCategory {
   id: string;
   event_id: string;
@@ -109,6 +110,75 @@ export interface EventCategory {
   price: number;
   max_participants: number | null;
   created_at: Date | null;
+}
+
+// New Modality and Category types
+export type CategoryType = 'visitante' | 'local' | 'geral' | 'PCD' | 'militar' | 'civil' | 'outro';
+export type CategoryGender = 'ambos' | 'masculino' | 'feminino';
+
+export interface Modality {
+  id: string;
+  event_id: string;
+  name: string;
+  distance: string;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface Category {
+  id: string;
+  event_id: string;
+  name: string;
+  price: number;
+  category_type: CategoryType;
+  gender: CategoryGender;
+  min_age: number | null;
+  max_participants: number | null;
+  is_default: boolean;
+  created_at: Date;
+  updated_at: Date;
+  modality_ids?: string[]; // Para relacionamento (não está no banco, apenas para API)
+}
+
+export interface CategoryModality {
+  category_id: string;
+  modality_id: string;
+  created_at: Date;
+}
+
+// Data types for creating/updating modalities and categories
+export interface CreateModalityData {
+  event_id: string;
+  name: string;
+  distance: string;
+}
+
+export interface UpdateModalityData {
+  name?: string;
+  distance?: string;
+}
+
+export interface CreateCategoryData {
+  event_id: string;
+  name: string;
+  price: number;
+  category_type: CategoryType;
+  gender: CategoryGender;
+  min_age?: number | null;
+  max_participants?: number | null;
+  is_default?: boolean;
+  modality_ids?: string[]; // IDs das modalidades associadas
+}
+
+export interface UpdateCategoryData {
+  name?: string;
+  price?: number;
+  category_type?: CategoryType;
+  gender?: CategoryGender;
+  min_age?: number | null;
+  max_participants?: number | null;
+  is_default?: boolean;
+  modality_ids?: string[]; // IDs das modalidades associadas
 }
 
 export interface Registration {

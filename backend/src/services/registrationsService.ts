@@ -34,8 +34,10 @@ export const getRegistrations = async (filters?: {
       e.title as event_title,
       e.event_date,
       e.organizer_id as event_organizer_id,
-      ec.name as category_name,
-      ec.distance as category_distance,
+      c.name as category_name,
+      c.category_type as category_type,
+      c.gender as category_gender,
+      c.min_age as category_min_age,
       p.full_name as runner_name,
       p.cpf as runner_cpf,
       ek.name as kit_name,
@@ -51,7 +53,7 @@ export const getRegistrations = async (filters?: {
       (r.status = 'transferred' AND r.runner_id != r.registered_by) as is_transferred
     FROM registrations r
     LEFT JOIN events e ON r.event_id = e.id
-    LEFT JOIN event_categories ec ON r.category_id = ec.id
+    LEFT JOIN categories c ON r.category_id = c.id
     LEFT JOIN profiles p ON r.runner_id = p.id
     LEFT JOIN event_kits ek ON r.kit_id = ek.id
   `;
@@ -149,8 +151,10 @@ export const getRegistrationById = async (registrationId: string, viewerId?: str
       e.location,
       e.city,
       e.state,
-      ec.name as category_name,
-      ec.distance as category_distance,
+      c.name as category_name,
+      c.category_type as category_type,
+      c.gender as category_gender,
+      c.min_age as category_min_age,
       p.full_name as runner_name,
       p.cpf as runner_cpf,
       p.phone as runner_phone,
@@ -171,7 +175,7 @@ export const getRegistrationById = async (registrationId: string, viewerId?: str
       END as display_status
     FROM registrations r
     LEFT JOIN events e ON r.event_id = e.id
-    LEFT JOIN event_categories ec ON r.category_id = ec.id
+    LEFT JOIN categories c ON r.category_id = c.id
     LEFT JOIN profiles p ON r.runner_id = p.id
     LEFT JOIN users u ON p.id = u.id
     LEFT JOIN event_kits ek ON r.kit_id = ek.id
@@ -192,6 +196,77 @@ export const getRegistrationById = async (registrationId: string, viewerId?: str
 
 // Create registration
 export const createRegistration = async (data: CreateRegistrationData) => {
+  // Validate category and runner eligibility
+  const { getCategoryById } = await import('./categoriesService.js');
+  const category = await getCategoryById(data.category_id);
+  
+  if (!category) {
+    throw new Error('Categoria não encontrada');
+  }
+
+  // Get runner profile to validate eligibility
+  const runnerProfile = await query(
+    `SELECT id, birth_date, gender FROM profiles WHERE id = $1`,
+    [data.runner_id]
+  );
+
+  if (runnerProfile.rows.length === 0) {
+    throw new Error('Perfil do corredor não encontrado');
+  }
+
+  const runner = runnerProfile.rows[0];
+
+  // Validate age (if category has min_age requirement)
+  if (category.min_age !== null && category.min_age > 0) {
+    const birthDate = new Date(runner.birth_date);
+    const today = new Date();
+    const age = today.getFullYear() - birthDate.getFullYear();
+    const monthDiff = today.getMonth() - birthDate.getMonth();
+    const dayDiff = today.getDate() - birthDate.getDate();
+    
+    const actualAge = monthDiff < 0 || (monthDiff === 0 && dayDiff < 0) ? age - 1 : age;
+    
+    if (actualAge < category.min_age) {
+      throw new Error(`Idade mínima para esta categoria é ${category.min_age} anos. Você tem ${actualAge} anos.`);
+    }
+  }
+
+  // Validate gender (if category has gender restriction)
+  if (category.gender !== 'ambos') {
+    const runnerGender = runner.gender?.toLowerCase();
+    const categoryGender = category.gender.toLowerCase();
+    
+    // Map common gender values
+    const genderMap: { [key: string]: string } = {
+      'm': 'masculino',
+      'masculino': 'masculino',
+      'f': 'feminino',
+      'feminino': 'feminino',
+      'o': 'ambos',
+      'outro': 'ambos',
+    };
+    
+    const normalizedRunnerGender = genderMap[runnerGender || ''] || 'ambos';
+    
+    if (normalizedRunnerGender !== categoryGender && normalizedRunnerGender !== 'ambos') {
+      throw new Error(`Esta categoria é exclusiva para ${categoryGender === 'masculino' ? 'homens' : 'mulheres'}.`);
+    }
+  }
+
+  // Check max_participants if set
+  if (category.max_participants !== null && category.max_participants > 0) {
+    const currentRegistrations = await query(
+      `SELECT COUNT(*) as count FROM registrations 
+       WHERE category_id = $1 AND status != 'cancelled'`,
+      [data.category_id]
+    );
+    
+    const count = parseInt(currentRegistrations.rows[0].count);
+    if (count >= category.max_participants) {
+      throw new Error(`Esta categoria atingiu o limite máximo de ${category.max_participants} participantes.`);
+    }
+  }
+
   // Generate confirmation code
   const confirmationCode = `REG-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
 

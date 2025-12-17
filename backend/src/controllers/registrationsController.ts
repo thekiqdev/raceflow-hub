@@ -12,7 +12,7 @@ import {
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { hasRole } from '../services/userRolesService.js';
 import { getEventById } from '../services/eventsService.js';
-import { getEventCategories } from '../services/eventCategoriesService.js';
+import { getCategoriesByEvent, getCategoryById } from '../services/categoriesService.js';
 import { createCustomer, createPayment, getCustomerByUserId, getPaymentByRegistrationId } from '../services/asaasService.js';
 import { getProfileByUserId } from '../services/profilesService.js';
 import { query } from '../config/database.js';
@@ -227,8 +227,7 @@ export const createRegistrationController = asyncHandler(async (req: AuthRequest
   }
 
   // ETAPA 7.3: Validate available spots per category
-  const categories = await getEventCategories(event_id);
-  const selectedCategory = categories.find(cat => cat.id === category_id);
+  const selectedCategory = await getCategoryById(category_id);
   
   if (!selectedCategory) {
     res.status(404).json({
@@ -239,9 +238,31 @@ export const createRegistrationController = asyncHandler(async (req: AuthRequest
     return;
   }
 
+  // Verify category belongs to the event
+  if (selectedCategory.event_id !== event_id) {
+    res.status(400).json({
+      success: false,
+      error: 'Category does not belong to this event',
+      message: 'A categoria não pertence a este evento',
+    });
+    return;
+  }
+
   // Check if category has available spots
-  if (selectedCategory.max_participants !== null) {
-    const availableSpots = selectedCategory.available_spots ?? 0;
+  if (selectedCategory.max_participants !== null && selectedCategory.max_participants > 0) {
+    // Count current registrations for this category
+    const registrationsCount = await query(
+      `SELECT COUNT(*) as count 
+       FROM registrations 
+       WHERE category_id = $1 
+       AND status != 'cancelled' 
+       AND payment_status IN ('pending', 'paid')`,
+      [category_id]
+    );
+    
+    const currentCount = parseInt(registrationsCount.rows[0].count) || 0;
+    const availableSpots = selectedCategory.max_participants - currentCount;
+    
     if (availableSpots <= 0) {
       res.status(400).json({
         success: false,

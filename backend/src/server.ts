@@ -17,6 +17,8 @@ import uploadRouter from './routes/upload.js';
 import webhooksRouter from './routes/webhooks.js';
 import groupLeadersRouter from './routes/groupLeaders.js';
 import couponsRouter from './routes/coupons.js';
+import modalitiesRouter from './routes/modalities.js';
+import categoriesRouter from './routes/categories.js';
 
 // Load environment variables
 // Try to load from backend/.env explicitly
@@ -173,6 +175,8 @@ app.use('/api/organizer', organizerRouter);
 app.use('/api/runner', runnerRouter);
 app.use('/api/upload', uploadRouter);
 app.use('/api/coupons', couponsRouter);
+app.use('/api/modalities', modalitiesRouter);
+app.use('/api/categories', categoriesRouter);
 
 // Root endpoint
 app.get('/', (_req: Request, res: Response) => {

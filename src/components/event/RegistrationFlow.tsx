@@ -21,6 +21,8 @@ import { getEventCategories, EventCategory, CategoryBatch } from "@/lib/api/even
 import { EventKit, KitProduct, ProductVariant } from "@/lib/api/eventKits";
 import { validateCoupon } from "@/lib/api/coupons";
 import { getEnabledModules } from "@/lib/api/systemSettings";
+import { getModalities, type Modality } from "@/lib/api/modalities";
+import { getCategoriesByModality, type Category as CategoryType, type CategoryGender, type CategoryType as CategoryTypeEnum } from "@/lib/api/categories";
 
 // Re-export ProductVariant type for use in component
 type ProductVariantType = ProductVariant;
@@ -40,6 +42,10 @@ const calculateAge = (birthDate: string): number => {
 
 interface Category extends EventCategory {
   batches?: CategoryBatch[];
+}
+
+interface NewCategory extends CategoryType {
+  available_spots?: number | null;
 }
 
 interface Kit extends EventKit {
@@ -82,8 +88,12 @@ export function RegistrationFlow({
   const navigate = useNavigate();
   const { user, login, register } = useAuth();
   const [step, setStep] = useState(1);
-  const [selectedCategory, setSelectedCategory] = useState<Category | null>(null);
+  const [selectedModality, setSelectedModality] = useState<Modality | null>(null);
+  const [selectedCategory, setSelectedCategory] = useState<NewCategory | null>(null);
   const [selectedBatch, setSelectedBatch] = useState<CategoryBatch | null>(null);
+  const [modalities, setModalities] = useState<Modality[]>([]);
+  const [availableCategories, setAvailableCategories] = useState<NewCategory[]>([]);
+  const [loadingModalities, setLoadingModalities] = useState(false);
   const [selectedKit, setSelectedKit] = useState<Kit | null>(null);
   const [expandedKits, setExpandedKits] = useState<Set<string>>(new Set());
   const [selectedProducts, setSelectedProducts] = useState<Map<string, { productId: string; variantId?: string }>>(new Map());
@@ -232,10 +242,38 @@ export function RegistrationFlow({
         }
       };
 
+      // Load modalities when modal opens
+      const loadModalities = async () => {
+        setLoadingModalities(true);
+        try {
+          const response = await getModalities(event.id);
+          if (response.success && response.data) {
+            setModalities(response.data);
+            console.log('✅ Modalidades carregadas:', response.data.length);
+          } else {
+            console.error('Erro ao carregar modalidades:', response.error);
+            setModalities([]);
+          }
+        } catch (error) {
+          console.error('Erro ao carregar modalidades:', error);
+          setModalities([]);
+        } finally {
+          setLoadingModalities(false);
+        }
+      };
+
       loadSettings();
       loadUserProfile();
+      loadModalities();
+    } else {
+      // Reset states when modal closes
+      setSelectedModality(null);
+      setSelectedCategory(null);
+      setSelectedBatch(null);
+      setAvailableCategories([]);
+      setStep(1);
     }
-  }, [open, user]);
+  }, [open, user, event.id]);
 
   // Load other person profile when otherPersonId changes
   useEffect(() => {
@@ -376,7 +414,116 @@ export function RegistrationFlow({
     loadUserData();
   }, [open, user]);
 
-  const handleCategorySelect = (category: Category) => {
+  // Load categories when modality is selected
+  useEffect(() => {
+    const loadCategoriesForModality = async () => {
+      if (selectedModality?.id) {
+        setLoadingCategories(true);
+        try {
+          const response = await getCategoriesByModality(selectedModality.id);
+          if (response.success && response.data) {
+            // Filter categories based on user profile (gender, age, type)
+            const profileToCheck = otherPersonId ? otherPersonProfile : userProfile;
+            const userGender = otherPersonId 
+              ? formData.gender?.toLowerCase() 
+              : user?.profile?.gender?.toLowerCase();
+            
+            let filteredCategories = response.data;
+            
+            // Filter by gender
+            if (userGender) {
+              const genderMap: { [key: string]: CategoryGender } = {
+                'm': 'masculino',
+                'masculino': 'masculino',
+                'f': 'feminino',
+                'feminino': 'feminino',
+                'o': 'ambos',
+                'outro': 'ambos',
+              };
+              const normalizedGender = genderMap[userGender] || 'ambos';
+              
+              filteredCategories = filteredCategories.filter(cat => {
+                if (cat.gender === 'ambos') return true;
+                const matchesGender = cat.gender === normalizedGender;
+                if (!matchesGender) {
+                  console.log(`⚠️ Categoria ${cat.name} é para ${cat.gender}, mas o usuário é ${normalizedGender}`);
+                }
+                return matchesGender;
+              });
+            } else {
+              // If no gender, filter out gender-specific categories
+              filteredCategories = filteredCategories.filter(cat => {
+                if (cat.gender === 'ambos') return true;
+                console.log(`⚠️ Categoria ${cat.name} é para ${cat.gender}, mas gênero do usuário não está disponível`);
+                return false;
+              });
+            }
+            
+            // Filter by age
+            if (profileToCheck?.birth_date) {
+              const age = calculateAge(profileToCheck.birth_date);
+              filteredCategories = filteredCategories.filter(cat => {
+                if (cat.min_age === null || cat.min_age === 0) return true;
+                const meetsAgeRequirement = age >= cat.min_age;
+                if (!meetsAgeRequirement) {
+                  console.log(`⚠️ Categoria ${cat.name} requer idade mínima de ${cat.min_age} anos, mas o usuário tem ${age} anos`);
+                }
+                return meetsAgeRequirement;
+              });
+            } else {
+              // If no birth date, filter out categories with age requirements
+              filteredCategories = filteredCategories.filter(cat => {
+                if (cat.min_age === null || cat.min_age === 0) return true;
+                console.log(`⚠️ Categoria ${cat.name} requer idade mínima de ${cat.min_age} anos, mas data de nascimento não está disponível`);
+                return false;
+              });
+            }
+            
+            // Add available_spots calculation (if max_participants is set)
+            const categoriesWithSpots = await Promise.all(
+              filteredCategories.map(async (cat) => {
+                if (cat.max_participants !== null && cat.max_participants > 0) {
+                  // TODO: Get current registrations count from API
+                  // For now, assume available
+                  return {
+                    ...cat,
+                    available_spots: cat.max_participants,
+                  };
+                }
+                return {
+                  ...cat,
+                  available_spots: null,
+                };
+              })
+            );
+            
+            setAvailableCategories(categoriesWithSpots);
+            console.log('✅ Categorias carregadas para modalidade:', categoriesWithSpots.length);
+          } else {
+            console.error('Erro ao carregar categorias:', response.error);
+            setAvailableCategories([]);
+          }
+        } catch (error) {
+          console.error('Erro ao carregar categorias:', error);
+          setAvailableCategories([]);
+        } finally {
+          setLoadingCategories(false);
+        }
+      } else {
+        setAvailableCategories([]);
+      }
+    };
+    
+    loadCategoriesForModality();
+  }, [selectedModality, userProfile, otherPersonProfile, otherPersonId, formData.gender]);
+
+  const handleModalitySelect = (modality: Modality) => {
+    setSelectedModality(modality);
+    setSelectedCategory(null);
+    setSelectedBatch(null);
+  };
+
+  const handleCategorySelect = (category: NewCategory) => {
     // Check if category is full
     const isFull = category.max_participants !== null && 
                   category.available_spots !== null && 
@@ -628,7 +775,11 @@ export function RegistrationFlow({
   };
 
   const handleNextStep = () => {
-    setStep((prev) => prev + 1);
+    setStep((prev) => {
+      const nextStep = prev + 1;
+      console.log(`🔄 Navegando do step ${prev} para step ${nextStep}`);
+      return nextStep;
+    });
   };
 
   const handlePreviousStep = () => {
@@ -668,7 +819,7 @@ export function RegistrationFlow({
   };
 
   const handleSubmit = async () => {
-    if (!user || !selectedCategory) {
+    if (!user || !selectedModality || !selectedCategory) {
       toast.error("Erro: usuário não autenticado ou categoria não selecionada");
       return;
     }
@@ -942,8 +1093,12 @@ export function RegistrationFlow({
       doc.text("DADOS DA INSCRIÇÃO:", margin, yPos);
       yPos += 8;
       doc.setFont("helvetica", "normal");
+      if (selectedModality) {
+        doc.text(`Modalidade: ${selectedModality.name} (${selectedModality.distance})`, margin, yPos);
+        yPos += 7;
+      }
       if (selectedCategory) {
-        doc.text(`Categoria: ${selectedCategory.name}${selectedCategory.distance ? ` (${selectedCategory.distance})` : ''}`, margin, yPos);
+        doc.text(`Categoria: ${selectedCategory.name}`, margin, yPos);
         yPos += 7;
       }
       if (selectedKit) {
@@ -1045,7 +1200,7 @@ export function RegistrationFlow({
       <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="text-2xl">
-            {step === 5 
+            {step === 6 
               ? (totalPrice > 0 && paymentStatus === 'pending' 
                   ? "Pagamento Pendente" 
                   : "Confirmação de Inscrição")
@@ -1054,9 +1209,10 @@ export function RegistrationFlow({
           <DialogDescription>
             {step === 1 && "Faça login ou crie uma conta para continuar"}
             {step === 2 && "Selecione a modalidade desejada"}
-            {step === 3 && "Escolha o kit e configure os produtos"}
-            {step === 4 && "Revise seus dados e finalize a inscrição"}
-            {step === 5 && (
+            {step === 3 && "Selecione a categoria"}
+            {step === 4 && "Escolha o kit e configure os produtos"}
+            {step === 5 && "Revise seus dados e finalize a inscrição"}
+            {step === 6 && (
               totalPrice > 0 && paymentStatus === 'pending'
                 ? "Complete o pagamento para confirmar sua inscrição"
                 : "Sua inscrição foi confirmada com sucesso"
@@ -1498,7 +1654,7 @@ export function RegistrationFlow({
           </div>
         )}
 
-        {/* Step 2: Category Selection */}
+        {/* Step 2: Modality Selection */}
         {step === 2 && (
           <div className="space-y-4">
             {/* Check if user is logged in but doesn't have runner role */}
@@ -1522,53 +1678,136 @@ export function RegistrationFlow({
               </div>
             )}
             
-            {/* Only show category selection if user is runner or not logged in */}
+            {/* Only show modality selection if user is runner or not logged in */}
             {(!user || user.roles?.includes('runner')) && (
               <>
                 <h3 className="text-lg font-semibold">Escolha a Modalidade</h3>
-                {loadingCategories ? (
+                {loadingModalities ? (
+                  <Card>
+                    <CardContent className="py-8 text-center">
+                      <p className="text-muted-foreground">Carregando modalidades...</p>
+                    </CardContent>
+                  </Card>
+                ) : modalities.length === 0 ? (
+                  <Card>
+                    <CardContent className="py-8 text-center">
+                      <p className="text-muted-foreground mb-2">
+                        Nenhuma modalidade disponível para este evento.
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        Entre em contato com o organizador para mais informações.
+                      </p>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  <>
+                    <div className="grid gap-4">
+                      {modalities.map((modality) => (
+                        <Card
+                          key={modality.id}
+                          className={`transition-all hover:shadow-md cursor-pointer ${
+                            selectedModality?.id === modality.id
+                              ? "ring-2 ring-primary"
+                              : ""
+                          }`}
+                          onClick={() => handleModalitySelect(modality)}
+                        >
+                          <CardContent className="p-4 flex justify-between items-center">
+                            <div>
+                              <h4 className="font-semibold">{modality.name}</h4>
+                              <p className="text-sm text-muted-foreground">
+                                {modality.distance}
+                              </p>
+                            </div>
+                            {selectedModality?.id === modality.id && (
+                              <CheckCircle2 className="h-5 w-5 text-primary" />
+                            )}
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </div>
+                    <div className="flex justify-between pt-4">
+                      <Button
+                        variant="outline"
+                        onClick={handlePreviousStep}
+                      >
+                        Voltar
+                      </Button>
+                      <Button
+                        onClick={handleNextStep}
+                        disabled={!selectedModality}
+                      >
+                        Próximo
+                      </Button>
+                    </div>
+                  </>
+                )}
+              </>
+            )}
+          </div>
+        )}
+
+        {/* Step 3: Category Selection */}
+        {step === 3 && (
+          <div className="space-y-4">
+            {selectedModality && (
+              <div className="mb-4 p-3 bg-muted rounded-lg">
+                <p className="text-sm text-muted-foreground">
+                  Modalidade selecionada: <span className="font-semibold">{selectedModality.name} ({selectedModality.distance})</span>
+                </p>
+              </div>
+            )}
+            
+            <h3 className="text-lg font-semibold">Escolha a Categoria</h3>
+            {loadingCategories ? (
               <Card>
                 <CardContent className="py-8 text-center">
                   <p className="text-muted-foreground">Carregando categorias...</p>
                 </CardContent>
               </Card>
-            ) : categories.length === 0 ? (
-              <Card>
-                <CardContent className="py-8 text-center">
-                  <p className="text-muted-foreground mb-2">
-                    Nenhuma categoria disponível para este evento.
-                  </p>
-                  <p className="text-sm text-muted-foreground">
-                    Entre em contato com o organizador para mais informações.
-                  </p>
+            ) : availableCategories.length === 0 ? (
+              <>
+                <Card>
+                  <CardContent className="py-8 text-center">
+                    <p className="text-muted-foreground mb-2">
+                      {selectedModality 
+                        ? "Nenhuma categoria disponível para esta modalidade."
+                        : "Selecione uma modalidade primeiro."}
+                    </p>
+                    {selectedModality && (!userProfile?.birth_date && !otherPersonProfile?.birth_date) && (
+                      <p className="text-sm text-yellow-600 dark:text-yellow-400 mb-2">
+                        ⚠️ Algumas categorias podem não aparecer porque sua data de nascimento não está cadastrada.
+                      </p>
+                    )}
+                    {selectedModality && (!user?.profile?.gender && !formData.gender) && (
+                      <p className="text-sm text-yellow-600 dark:text-yellow-400 mb-2">
+                        ⚠️ Algumas categorias podem não aparecer porque seu gênero não está cadastrado.
+                      </p>
+                    )}
+                    <p className="text-sm text-muted-foreground">
+                      Entre em contato com o organizador para mais informações.
+                    </p>
+                  </CardContent>
+                </Card>
+                <div className="flex justify-between pt-4">
                   <Button
                     variant="outline"
-                    className="mt-4"
-                    onClick={async () => {
-                      setLoadingCategories(true);
-                      try {
-                        const response = await getEventCategories(event.id);
-                        if (response.success && response.data) {
-                          setCategories(response.data);
-                          toast.success('Categorias recarregadas!');
-                        } else {
-                          toast.error('Erro ao recarregar categorias');
-                        }
-                      } catch (error) {
-                        toast.error('Erro ao recarregar categorias');
-                      } finally {
-                        setLoadingCategories(false);
-                      }
-                    }}
+                    onClick={handlePreviousStep}
                   >
-                    Tentar Novamente
+                    Voltar
                   </Button>
-                </CardContent>
-              </Card>
+                  <Button
+                    onClick={handlePreviousStep}
+                    variant="outline"
+                  >
+                    Voltar para Modalidades
+                  </Button>
+                </div>
+              </>
             ) : (
               <>
                 <div className="grid gap-4">
-                  {categories.map((category) => {
+                  {availableCategories.map((category) => {
                     const isFull = category.max_participants !== null && 
                                   category.available_spots !== null && 
                                   category.available_spots <= 0;
@@ -1587,96 +1826,28 @@ export function RegistrationFlow({
                         }`}
                         onClick={() => !isFull && handleCategorySelect(category)}
                       >
-                      <CardContent className="p-4 flex justify-between items-center">
-                        <div>
-                          <h4 className="font-semibold">{category.name}</h4>
-                          <p className="text-sm text-muted-foreground">
-                            {category.distance}
-                          </p>
-                        </div>
-                        <div className="text-right">
-                          {(() => {
-                            const now = new Date();
-                            // Filtrar lotes ativos (data já chegou) e ordenar por data (mais recente primeiro)
-                            const activeBatches = (category.batches || [])
-                              .filter(batch => {
-                                if (!batch.valid_from) return false;
-                                const batchDate = new Date(batch.valid_from);
-                                return !isNaN(batchDate.getTime()) && batchDate <= now;
-                              })
-                              .sort((a, b) => {
-                                const dateA = new Date(a.valid_from!);
-                                const dateB = new Date(b.valid_from!);
-                                // Ordenar do mais recente para o mais antigo
-                                return dateB.getTime() - dateA.getTime();
-                              });
-                            
-                            // Se houver lotes ativos, mostrar APENAS o mais recente (ocultar anteriores)
-                            if (activeBatches.length > 0) {
-                              const currentBatch = activeBatches[0]; // Lote mais recente ativo
-                              const isSelected = selectedCategory?.id === category.id && selectedBatch?.id === currentBatch.id;
-                              
-                              // Calcular o número do lote (baseado na ordem original de criação)
-                              const allBatches = (category.batches || [])
-                                .filter(b => b.valid_from)
-                                .sort((a, b) => {
-                                  const dateA = new Date(a.valid_from!);
-                                  const dateB = new Date(b.valid_from!);
-                                  return dateA.getTime() - dateB.getTime();
-                                });
-                              const batchNumber = allBatches.findIndex(b => b.id === currentBatch.id) + 1;
-                              
-                              return (
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleCategorySelect(category);
-                                    handleBatchSelect(currentBatch);
-                                  }}
-                                  className={`text-left px-2 py-1 rounded text-sm transition-all ${
-                                    isSelected
-                                      ? "bg-primary text-primary-foreground font-semibold"
-                                      : "bg-muted hover:bg-muted/80"
-                                  }`}
-                                >
-                                  <div className="flex justify-between items-center">
-                                    <span>{batchNumber}º lote</span>
-                                    <span className="font-bold ml-2">
-                                      {formatPrice(currentBatch.price)}
-                                    </span>
-                                  </div>
-                                </button>
-                              );
-                            }
-                            
-                            // Se não houver lotes ativos, mostrar apenas o preço inicial
-                            return (
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleCategorySelect(category);
-                                  setSelectedBatch(null);
-                                }}
-                                className={`text-left px-2 py-1 rounded text-sm transition-all ${
-                                  selectedCategory?.id === category.id && !selectedBatch
-                                    ? "bg-primary text-primary-foreground font-semibold"
-                                    : "bg-muted hover:bg-muted/80"
-                                }`}
-                              >
-                                <div className="flex justify-between items-center">
-                                  <span>Preço inicial</span>
-                                  <span className="font-bold ml-2">
-                                    {formatPrice(category.price)}
-                                  </span>
-                                </div>
-                              </button>
-                            );
-                          })()}
-                        </div>
-                      </CardContent>
-                    </Card>
+                        <CardContent className="p-4">
+                          <div className="flex justify-between items-start">
+                            <div className="flex-1">
+                              <h4 className="font-semibold">{category.name}</h4>
+                              <div className="mt-2 flex flex-wrap gap-2">
+                                <Badge variant="outline">{category.category_type}</Badge>
+                                <Badge variant="outline">
+                                  {category.gender === 'ambos' ? 'Ambos' : category.gender === 'masculino' ? 'Masculino' : 'Feminino'}
+                                </Badge>
+                                {category.min_age && (
+                                  <Badge variant="outline">Idade mínima: {category.min_age} anos</Badge>
+                                )}
+                              </div>
+                            </div>
+                            <div className="text-right ml-4">
+                              <div className="text-lg font-bold">
+                                {formatPrice(category.price)}
+                              </div>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
                     );
                   })}
                 </div>
@@ -1689,42 +1860,18 @@ export function RegistrationFlow({
                   </Button>
                   <Button
                     onClick={handleNextStep}
-                    disabled={!selectedCategory || (() => {
-                      // If category has active batches, require batch selection
-                      if (selectedCategory.batches && selectedCategory.batches.length > 0) {
-                        const now = new Date();
-                        const activeBatches = selectedCategory.batches
-                          .filter(batch => {
-                            if (!batch.valid_from) return false;
-                            const batchDate = new Date(batch.valid_from);
-                            return !isNaN(batchDate.getTime()) && batchDate <= now;
-                          })
-                          .sort((a, b) => {
-                            const dateA = new Date(a.valid_from!);
-                            const dateB = new Date(b.valid_from!);
-                            return dateB.getTime() - dateA.getTime();
-                          });
-                        if (activeBatches.length > 0) {
-                          // Se houver lote ativo, deve estar selecionado
-                          return !selectedBatch || selectedBatch.id !== activeBatches[0].id;
-                        }
-                      }
-                      return false;
-                    })()}
-                    className="min-w-32"
+                    disabled={!selectedCategory}
                   >
                     Próximo
                   </Button>
                 </div>
               </>
             )}
-              </>
-            )}
           </div>
         )}
 
-        {/* Step 3: Kit & Shirt Size Selection */}
-        {step === 3 && (
+        {/* Step 4: Kit & Shirt Size Selection */}
+        {step === 4 && (
           <div className="space-y-6">
             <div>
               <h3 className="text-lg font-semibold mb-4">Escolha o Kit</h3>
@@ -2094,8 +2241,8 @@ export function RegistrationFlow({
           </div>
         )}
 
-        {/* Step 4: Checkout */}
-        {step === 4 && (
+        {/* Step 5: Checkout */}
+        {step === 5 && (
           <div className="space-y-6">
             <div>
               <h3 className="text-lg font-semibold mb-4">Dados Pessoais</h3>
@@ -2195,10 +2342,18 @@ export function RegistrationFlow({
               <h3 className="text-lg font-semibold mb-4">Resumo da Compra</h3>
               <Card>
                 <CardContent className="p-4 space-y-3">
-                  <div className="flex justify-between">
-                    <span>Modalidade:</span>
-                    <span className="font-medium">{selectedCategory?.name}</span>
-                  </div>
+                  {selectedModality && (
+                    <div className="flex justify-between">
+                      <span>Modalidade:</span>
+                      <span className="font-medium">{selectedModality.name} ({selectedModality.distance})</span>
+                    </div>
+                  )}
+                  {selectedCategory && (
+                    <div className="flex justify-between">
+                      <span>Categoria:</span>
+                      <span className="font-medium">{selectedCategory.name}</span>
+                    </div>
+                  )}
                   <div className="flex justify-between">
                     <span>Kit:</span>
                     <span className="font-medium">{selectedKit?.name}</span>
@@ -2379,8 +2534,8 @@ export function RegistrationFlow({
           </div>
         )}
 
-        {/* Step 5: Confirmation Ticket / Payment */}
-        {step === 5 && (
+        {/* Step 6: Confirmation Ticket / Payment */}
+        {step === 6 && (
           <div className="space-y-6 text-center">
             {/* Show QR Code PIX if payment is pending */}
             {paymentData && paymentData.pix_qr_code && paymentStatus === 'pending' && (
@@ -2489,10 +2644,18 @@ export function RegistrationFlow({
                     <span className="text-muted-foreground">Atleta:</span>
                     <span className="font-medium">{formData.fullName}</span>
                   </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Modalidade:</span>
-                    <span className="font-medium">{selectedCategory?.name}</span>
-                  </div>
+                  {selectedModality && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Modalidade:</span>
+                      <span className="font-medium">{selectedModality.name} ({selectedModality.distance})</span>
+                    </div>
+                  )}
+                  {selectedCategory && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Categoria:</span>
+                      <span className="font-medium">{selectedCategory.name}</span>
+                    </div>
+                  )}
                   <div className="flex justify-between text-sm">
                     <span className="text-muted-foreground">Kit:</span>
                     <span className="font-medium">{selectedKit?.name}</span>
@@ -2651,3 +2814,5 @@ export function RegistrationFlow({
     </Dialog>
   );
 }
+
+

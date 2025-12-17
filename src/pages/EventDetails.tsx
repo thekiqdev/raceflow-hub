@@ -22,7 +22,7 @@ import { FlipCountdown } from "@/components/event/FlipCountdown";
 import { ContactDialog } from "@/components/event/ContactDialog";
 import { CreditCard, Smartphone, Barcode, Building2, Mail, Phone, Loader2 } from "lucide-react";
 import { getEventById } from "@/lib/api/events";
-import { getEventCategories } from "@/lib/api/eventCategories";
+import { getCategories } from "@/lib/api/categories";
 import { getEventKits } from "@/lib/api/eventKits";
 import { getEventPickupLocations } from "@/lib/api/kitPickup";
 import { toast } from "sonner";
@@ -51,15 +51,13 @@ interface EventDetail {
 interface Category {
   id: string;
   name: string;
-  distance: string;
   price: number;
+  category_type: string;
+  gender: string;
+  min_age: number | null;
   max_participants: number | null;
-  batches?: Array<{
-    id: string;
-    category_id: string;
-    price: number;
-    valid_from: string;
-  }>;
+  is_default: boolean;
+  modality_ids?: string[];
 }
 
 interface Kit {
@@ -119,7 +117,7 @@ const EventDetails = () => {
         setOrganizerLogoError(false); // Reset logo error when loading new event
         const [eventResponse, categoriesResponse, kitsResponse] = await Promise.all([
           getEventById(id),
-          getEventCategories(id),
+          getCategories(id),
           getEventKits(id),
           getEventPickupLocations(id).catch(() => ({ success: true, data: [] })),
         ]);
@@ -401,46 +399,44 @@ const EventDetails = () => {
                     ) : (
                       categories.map((category) => {
                         const isFull = category.max_participants !== null && 
-                                      category.available_spots !== null && 
-                                      category.available_spots <= 0;
-                        const isAlmostFull = category.max_participants !== null && 
-                                           category.available_spots !== null && 
-                                           category.available_spots > 0 && 
-                                           category.available_spots <= 5;
+                                      category.max_participants <= 0;
 
                         return (
                           <div
                             key={category.id}
                             className={`flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50 transition-colors ${
                               isFull ? 'opacity-60' : ''
-                            }`}
+                            } ${category.is_default ? 'border-primary border-2' : ''}`}
                           >
                             <div className="flex-1">
                               <div className="flex items-center gap-2">
                                 <h3 className="font-semibold">{category.name}</h3>
+                                {category.is_default && (
+                                  <Badge variant="default" className="text-xs">Padrão</Badge>
+                                )}
                                 {isFull && (
                                   <Badge variant="destructive" className="text-xs">Esgotada</Badge>
                                 )}
-                                {isAlmostFull && !isFull && (
-                                  <Badge variant="secondary" className="text-xs">Últimas vagas</Badge>
+                              </div>
+                              <div className="flex flex-wrap gap-2 mt-1">
+                                <p className="text-xs text-muted-foreground capitalize">
+                                  Tipo: {category.category_type}
+                                </p>
+                                {category.gender !== 'ambos' && (
+                                  <p className="text-xs text-muted-foreground capitalize">
+                                    • Gênero: {category.gender}
+                                  </p>
+                                )}
+                                {category.min_age !== null && (
+                                  <p className="text-xs text-muted-foreground">
+                                    • Idade mínima: {category.min_age} anos
+                                  </p>
                                 )}
                               </div>
-                              <p className="text-sm text-muted-foreground">Distância: {category.distance}</p>
                               {category.max_participants !== null && (
                                 <p className="text-xs text-muted-foreground flex items-center gap-1 mt-1">
                                   <Users className="h-3 w-3" />
-                                  {category.current_registrations !== undefined && category.available_spots !== null ? (
-                                    <>
-                                      {category.current_registrations} / {category.max_participants} inscritos
-                                      {category.available_spots > 0 && (
-                                        <span className="text-primary font-medium ml-1">
-                                          ({category.available_spots} vagas disponíveis)
-                                        </span>
-                                      )}
-                                    </>
-                                  ) : (
-                                    `Máximo: ${category.max_participants} participantes`
-                                  )}
+                                  Máximo: {category.max_participants} participantes
                                 </p>
                               )}
                             </div>
@@ -645,16 +641,23 @@ const EventDetails = () => {
                     </CardHeader>
                     <CardContent className="space-y-4">
                       <div className="space-y-2">
-                        {categories.length > 0 && Math.min(...categories.map((c) => c.price)) > 0 && (
-                          <p className="text-sm text-muted-foreground">A partir de:</p>
-                        )}
-                        <p className="text-3xl font-bold text-primary">
-                          {categories.length > 0 ? (
-                            formatPrice(Math.min(...categories.map((c) => c.price)))
-                          ) : (
-                            ''
-                          )}
-                        </p>
+                        {(() => {
+                          const defaultCategory = categories.find(c => c.is_default === true);
+                          const priceToShow = defaultCategory ? defaultCategory.price : (categories.length > 0 ? Math.min(...categories.map((c) => c.price)) : 0);
+                          
+                          return (
+                            <>
+                              {priceToShow > 0 && (
+                                <p className="text-sm text-muted-foreground">
+                                  {defaultCategory ? "Valor:" : "A partir de:"}
+                                </p>
+                              )}
+                              <p className="text-3xl font-bold text-primary">
+                                {priceToShow > 0 ? formatPrice(priceToShow) : ''}
+                              </p>
+                            </>
+                          );
+                        })()}
                       </div>
                       <Button
                         className="w-full"
@@ -881,16 +884,23 @@ const EventDetails = () => {
             <div className="container mx-auto px-4 py-4">
               <div className="flex items-center justify-between gap-4">
                 <div>
-                  {categories.length > 0 && Math.min(...categories.map((c) => c.price)) > 0 && (
-                    <p className="text-sm text-muted-foreground">A partir de:</p>
-                  )}
-                  <p className="text-2xl font-bold text-primary">
-                    {categories.length > 0 ? (
-                      formatPrice(Math.min(...categories.map((c) => c.price)))
-                    ) : (
-                      ''
-                    )}
-                  </p>
+                  {(() => {
+                    const defaultCategory = categories.find(c => c.is_default === true);
+                    const priceToShow = defaultCategory ? defaultCategory.price : (categories.length > 0 ? Math.min(...categories.map((c) => c.price)) : 0);
+                    
+                    return (
+                      <>
+                        {priceToShow > 0 && (
+                          <p className="text-sm text-muted-foreground">
+                            {defaultCategory ? "Valor:" : "A partir de:"}
+                          </p>
+                        )}
+                        <p className="text-2xl font-bold text-primary">
+                          {priceToShow > 0 ? formatPrice(priceToShow) : ''}
+                        </p>
+                      </>
+                    );
+                  })()}
                 </div>
                 <Button
                   size="lg"

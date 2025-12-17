@@ -36,6 +36,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import { createEvent, updateEvent, getEventById } from "@/lib/api/events";
 import { getEventCategories } from "@/lib/api/eventCategories";
 import { getEventKits } from "@/lib/api/eventKits";
+import { getModalities, createModality, updateModality, deleteModality, type Modality as ModalityType } from "@/lib/api/modalities";
+import { getCategories, createCategory, updateCategory, deleteCategory, type Category as CategoryType, type CategoryType as CategoryTypeEnum, type CategoryGender } from "@/lib/api/categories";
 import { FileUpload } from "@/components/ui/file-upload";
 import { deleteUploadedFile } from "@/lib/api/upload";
 
@@ -63,9 +65,18 @@ interface Modality {
   id?: string;
   name: string;
   distance: string;
-  max_participants: number | null;
+}
+
+interface Category {
+  id?: string;
+  name: string;
   price: number;
-  batches: Batch[];
+  category_type: CategoryTypeEnum;
+  gender: CategoryGender;
+  min_age: number | null;
+  max_participants: number | null;
+  is_default: boolean;
+  modality_ids: string[];
 }
 
 interface ProductVariant {
@@ -130,6 +141,7 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess }: EventF
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState("info");
   const [modalities, setModalities] = useState<Modality[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [kits, setKits] = useState<Kit[]>([]);
   const [pickupLocations, setPickupLocations] = useState<PickupLocation[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -166,6 +178,7 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess }: EventF
           status: "draft",
         });
         setModalities([]);
+        setCategories([]);
         setKits([]);
         setPickupLocations([]);
         setActiveTab("info");
@@ -195,42 +208,41 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess }: EventF
               status: eventData.status || "draft",
             });
 
-            // Load categories (modalities)
-            const categoriesResponse = await getEventCategories(event.id);
-            if (categoriesResponse.success && categoriesResponse.data) {
-              const loadedModalities: Modality[] = categoriesResponse.data.map((cat: any) => ({
-                id: cat.id,
-                name: cat.name,
-                distance: cat.distance,
-                price: cat.price,
-                max_participants: cat.max_participants,
-                batches: cat.batches?.map((batch: any) => {
-                  // Convert UTC date from database to local date format (YYYY-MM-DD) with T00:00
-                  // O campo agora é apenas data, então sempre salvamos com T00:00
-                  let validFrom: string | null = null;
-                  if (batch.valid_from) {
-                    const date = new Date(batch.valid_from);
-                    if (!isNaN(date.getTime())) {
-                      // Get local date components (apenas data, sem hora)
-                      const year = date.getFullYear();
-                      const month = String(date.getMonth() + 1).padStart(2, '0');
-                      const day = String(date.getDate()).padStart(2, '0');
-                      // Sempre usar 00:00 para o campo de data
-                      validFrom = `${year}-${month}-${day}T00:00`;
-                    }
-                  }
-                  return {
-                    id: batch.id,
-                    price: batch.price,
-                    valid_from: validFrom,
-                  };
-                }) || [],
+            // Load modalities
+            const modalitiesResponse = await getModalities(event.id);
+            if (modalitiesResponse.success && modalitiesResponse.data) {
+              const loadedModalities: Modality[] = modalitiesResponse.data.map((mod: ModalityType) => ({
+                id: mod.id,
+                name: mod.name,
+                distance: mod.distance,
               }));
               console.log("✅ Modalidades carregadas:", loadedModalities.length);
               setModalities(loadedModalities);
             } else {
               console.log("⚠️ Nenhuma modalidade encontrada");
               setModalities([]);
+            }
+
+            // Load categories
+            const categoriesResponse = await getCategories(event.id);
+            if (categoriesResponse.success && categoriesResponse.data) {
+              const loadedCategories: Category[] = categoriesResponse.data.map((cat: CategoryType) => ({
+                id: cat.id,
+                name: cat.name,
+                price: cat.price,
+                category_type: cat.category_type,
+                gender: cat.gender,
+                min_age: cat.min_age,
+                max_participants: cat.max_participants,
+                is_default: cat.is_default === true, // Garantir boolean explícito
+                modality_ids: cat.modality_ids || [],
+              }));
+              console.log("✅ Categorias carregadas:", loadedCategories.length);
+              console.log("📋 Categorias com is_default:", loadedCategories.map(c => ({ name: c.name, is_default: c.is_default })));
+              setCategories(loadedCategories);
+            } else {
+              console.log("⚠️ Nenhuma categoria encontrada");
+              setCategories([]);
             }
 
             // Load kits
@@ -380,6 +392,7 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess }: EventF
           status: "draft",
         });
         setModalities([]);
+        setCategories([]);
         setKits([]);
         setPickupLocations([]);
         setActiveTab("info");
@@ -393,7 +406,7 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess }: EventF
   const addModality = () => {
     setModalities([
       ...modalities,
-      { name: "", distance: "", max_participants: null, price: 0, batches: [] },
+      { name: "", distance: "" },
     ]);
   };
 
@@ -405,6 +418,48 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess }: EventF
     const updated = [...modalities];
     updated[index] = { ...updated[index], [field]: value };
     setModalities(updated);
+  };
+
+  const addCategory = () => {
+    setCategories([
+      ...categories,
+      {
+        name: "",
+        price: 0,
+        category_type: "geral",
+        gender: "ambos",
+        min_age: null,
+        max_participants: null,
+        is_default: categories.length === 0, // Primeira categoria sempre é padrão
+        modality_ids: [],
+      },
+    ]);
+  };
+
+  const removeCategory = (index: number) => {
+    setCategories(categories.filter((_, i) => i !== index));
+  };
+
+  const updateCategoryLocal = (index: number, field: keyof Category, value: any) => {
+    console.log(`🔄 updateCategoryLocal chamado: index=${index}, field=${String(field)}, value=${value}`);
+    console.log(`📋 Estado ANTES de updateCategoryLocal:`, categories.map(c => ({ name: c.name, is_default: c.is_default })));
+    const updated = [...categories];
+    updated[index] = { ...updated[index], [field]: value };
+    console.log(`📋 Estado DEPOIS de updateCategoryLocal (antes de setCategories):`, updated.map(c => ({ name: c.name, is_default: c.is_default })));
+    setCategories(updated);
+  };
+
+  const toggleCategoryModality = (categoryIndex: number, modalityId: string | undefined, modalityIndex?: number) => {
+    const category = categories[categoryIndex];
+    const currentIds = category.modality_ids || [];
+    
+    // Se a modalidade não tem ID (ainda não foi salva), usar um identificador temporário baseado no índice
+    const idToUse = modalityId || `temp-${modalityIndex}`;
+    
+    const newIds = currentIds.includes(idToUse)
+      ? currentIds.filter(id => id !== idToUse)
+      : [...currentIds, idToUse];
+    updateCategoryLocal(categoryIndex, "modality_ids", newIds);
   };
 
   const addKit = () => {
@@ -834,86 +889,288 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess }: EventF
         eventId = response.data.id;
       }
 
-      // Sync modalities (categories)
-      if (modalities.length > 0 && eventId) {
+      // Sync modalities first, then categories (categories depend on modality IDs)
+      let finalModalities = modalities;
+      if (eventId) {
         try {
           console.log('📤 Syncing modalities:', modalities.length);
-          const modalitiesData = modalities.map((modality, modIndex) => {
-            console.log(`📋 Modality ${modIndex + 1}:`, {
-              id: modality.id,
-              name: modality.name,
-              batchesCount: modality.batches.length,
-              batches: modality.batches.map(b => ({
-                id: b.id,
-                price: b.price,
-                valid_from: b.valid_from,
-              })),
-            });
-            
-            return {
-              id: modality.id,
+          
+          // Get existing modalities from the server
+          const existingModalitiesResponse = await getModalities(eventId);
+          const existingModalities = existingModalitiesResponse.success && existingModalitiesResponse.data 
+            ? existingModalitiesResponse.data 
+            : [];
+          
+          // Find modalities to create, update, and delete
+          const modalitiesToCreate = modalities.filter(m => !m.id && m.name && m.distance);
+          const modalitiesToUpdate = modalities.filter(m => m.id && m.name && m.distance);
+          const existingIds = existingModalities.map(m => m.id);
+          const currentIds = modalities.filter(m => m.id).map(m => m.id!);
+          const modalitiesToDelete = existingIds.filter(id => !currentIds.includes(id));
+          
+          // Create new modalities and update local state with returned IDs
+          const createdModalities: Modality[] = [];
+          for (const modality of modalitiesToCreate) {
+            const response = await createModality({
+              event_id: eventId,
               name: modality.name,
               distance: modality.distance,
-              price: modality.price, // Use the initial price, not the first batch
-              max_participants: modality.max_participants || null,
-              batches: modality.batches.map((batch, batchIndex) => {
-              // Convert datetime-local string to ISO string in UTC
-              // datetime-local format: "YYYY-MM-DDTHH:mm" (local time, no timezone)
-              let validFrom: string | null = null;
-              // Check if valid_from exists and is not empty (handle null, undefined, and empty string)
-              const validFromValue = batch.valid_from;
-              if (validFromValue != null && validFromValue !== '' && String(validFromValue).trim() !== '') {
-                try {
-                  let validFromStr = String(validFromValue).trim();
-                  
-                  // Se for apenas data (sem hora), adicionar 00:00
-                  if (validFromStr.length === 10 && !validFromStr.includes('T')) {
-                    validFromStr = `${validFromStr}T00:00`;
-                  }
-                  
-                  // Parse as local time - new Date() interprets datetime-local as local time
-                  const localDate = new Date(validFromStr);
-                  if (!isNaN(localDate.getTime())) {
-                    // Convert to ISO string (will be in UTC)
-                    // toISOString() automatically converts local time to UTC
-                    validFrom = localDate.toISOString();
-                    console.log(`📅 Modality ${modIndex + 1}, Batch ${batchIndex + 1} date conversion: "${validFromStr}" -> "${validFrom}"`);
-                  } else {
-                    console.warn(`⚠️ Modality ${modIndex + 1}, Batch ${batchIndex + 1}: Invalid date "${validFromStr}"`);
-                  }
-                } catch (error) {
-                  console.error(`❌ Modality ${modIndex + 1}, Batch ${batchIndex + 1}: Error converting date "${validFromValue}":`, error);
+            });
+            if (response.success && response.data) {
+              createdModalities.push(response.data);
+            } else {
+              console.error('Error creating modality:', response.error);
+            }
+          }
+          
+          // Update existing modalities
+          for (const modality of modalitiesToUpdate) {
+            if (modality.id) {
+              try {
+                const response = await updateModality(modality.id, {
+                  name: modality.name,
+                  distance: modality.distance,
+                });
+                if (response && !response.success) {
+                  console.error('Error updating modality:', response.error);
                 }
-              } else {
-                console.log(`ℹ️ Modality ${modIndex + 1}, Batch ${batchIndex + 1}: valid_from is null/empty. Value:`, validFromValue, `Type:`, typeof validFromValue);
+              } catch (error) {
+                console.error('Error updating modality:', error);
               }
-              return {
-                id: batch.id,
-                price: batch.price,
-                valid_from: validFrom,
-              };
-            }),
-            };
+            }
+          }
+          
+          // Delete removed modalities
+          for (const id of modalitiesToDelete) {
+            try {
+              const response = await deleteModality(id);
+              if (response && !response.success) {
+                console.error('Error deleting modality:', response.error);
+              }
+            } catch (error) {
+              console.error('Error deleting modality:', error);
+            }
+          }
+          
+          // Update local modalities state with new IDs from created modalities
+          if (createdModalities.length > 0) {
+            finalModalities = modalities.map(mod => {
+              // Find matching created modality by name and distance
+              const created = createdModalities.find(
+                cm => cm.name === mod.name && cm.distance === mod.distance && !mod.id
+              );
+              return created ? { ...mod, id: created.id } : mod;
+            });
+            setModalities(finalModalities);
+          }
+          
+          console.log('✅ Modalidades sincronizadas com sucesso');
+        } catch (error: any) {
+          console.error('Error syncing modalities:', error);
+          toast({
+            title: "Aviso",
+            description: "Evento salvo, mas houve erro ao salvar modalidades",
+            variant: "destructive",
+          });
+        }
+      }
+
+      // Sync categories (use finalModalities which has updated IDs)
+      if (eventId) {
+        try {
+          console.log('📤 Syncing categories:', categories.length);
+          
+          // Get existing categories from the server
+          const existingCategoriesResponse = await getCategories(eventId);
+          const existingCategories = existingCategoriesResponse.success && existingCategoriesResponse.data 
+            ? existingCategoriesResponse.data 
+            : [];
+          
+          // Validate categories before syncing
+          const categoryErrors: string[] = [];
+          categories.forEach((category, index) => {
+            if (!category.name || category.name.trim().length === 0) {
+              categoryErrors.push(`Categoria ${index + 1}: Nome é obrigatório`);
+            }
+            if (category.price < 0) {
+              categoryErrors.push(`Categoria ${index + 1}: Preço deve ser maior ou igual a zero`);
+            }
+            if (!category.modality_ids || category.modality_ids.length === 0) {
+              categoryErrors.push(`Categoria ${index + 1}: Selecione pelo menos uma modalidade`);
+            }
           });
           
-          console.log('📤 Final modalitiesData to send:', JSON.stringify(modalitiesData, null, 2));
-          
-          const { syncEventCategories } = await import('@/lib/api/eventCategories');
-          const categoriesResponse = await syncEventCategories(eventId, modalitiesData);
-          
-          if (!categoriesResponse.success) {
-            console.error('Error syncing categories:', categoriesResponse.error);
+          if (categoryErrors.length > 0) {
             toast({
-              title: "Aviso",
-              description: "Evento salvo, mas houve erro ao salvar modalidades",
+              title: "Erro de validação",
+              description: categoryErrors.join('\n'),
               variant: "destructive",
             });
+            return;
+          }
+          
+          // Map temporary modality IDs to real IDs using finalModalities (which has updated IDs)
+          const mapModalityIds = (modalityIds: string[]): string[] => {
+            return modalityIds
+              .map(id => {
+                // Se for um ID temporário (temp-X), encontrar a modalidade correspondente pelo índice
+                if (id.startsWith('temp-')) {
+                  const tempIndex = parseInt(id.replace('temp-', ''));
+                  const modality = finalModalities[tempIndex];
+                  return modality?.id || null;
+                }
+                // Se for um ID real, retornar como está
+                return id;
+              })
+              .filter((id): id is string => id !== null && id !== undefined);
+          };
+          
+          // Garantir que apenas uma categoria seja padrão antes de processar
+          let categoriesToProcess = [...categories];
+          console.log('🔍 Estado inicial das categorias:', categories.map(c => ({ 
+            id: c.id, 
+            name: c.name, 
+            is_default: c.is_default,
+            hasId: !!c.id,
+            hasName: !!c.name && c.name.trim().length > 0,
+            hasValidPrice: c.price >= 0
+          })));
+          
+          const defaultCategories = categoriesToProcess.filter(c => c.is_default === true);
+          if (defaultCategories.length > 1) {
+            console.warn('⚠️ Múltiplas categorias marcadas como padrão. Mantendo apenas a primeira.');
+            const firstDefaultIndex = categoriesToProcess.findIndex(c => c.is_default === true);
+            categoriesToProcess = categoriesToProcess.map((cat, idx) => ({
+              ...cat,
+              is_default: idx === firstDefaultIndex,
+            }));
+            // Atualizar o estado local também
+            setCategories(categoriesToProcess);
+          }
+          
+          // Find categories to create, update, and delete (usando categoriesToProcess)
+          const categoriesToCreate = categoriesToProcess.filter(c => !c.id && c.name && c.name.trim().length > 0 && c.price >= 0);
+          const categoriesToUpdate = categoriesToProcess.filter(c => c.id && c.name && c.name.trim().length > 0 && c.price >= 0);
+          
+          console.log('🔍 Categorias para criar:', categoriesToCreate.length);
+          console.log('🔍 Categorias para atualizar:', categoriesToUpdate.length);
+          console.log('🔍 Detalhes das categorias para atualizar:', categoriesToUpdate.map(c => ({ 
+            id: c.id, 
+            name: c.name, 
+            is_default: c.is_default 
+          })));
+          const existingIds = existingCategories.map(c => c.id);
+          const currentIds = categoriesToProcess.filter(c => c.id).map(c => c.id!);
+          const categoriesToDelete = existingIds.filter(id => !currentIds.includes(id));
+          
+          // Create new categories
+          for (let i = 0; i < categoriesToCreate.length; i++) {
+            const category = categoriesToCreate[i];
+            const mappedModalityIds = mapModalityIds(category.modality_ids || []);
+            // Se for a primeira categoria do evento, marcar como padrão
+            const shouldBeDefault = existingCategories.length === 0 && i === 0 
+              ? true 
+              : category.is_default === true;
+            
+            const response = await createCategory({
+              event_id: eventId,
+              name: category.name,
+              price: category.price,
+              category_type: category.category_type,
+              gender: category.gender,
+              min_age: category.min_age,
+              max_participants: category.max_participants,
+              is_default: shouldBeDefault,
+              modality_ids: mappedModalityIds,
+            });
+            if (!response.success) {
+              console.error('Error creating category:', response.error);
+            }
+          }
+          
+          // Update existing categories
+          console.log(`📋 Total de categorias para atualizar: ${categoriesToUpdate.length}`);
+          console.log(`📋 Estado atual das categorias antes de salvar:`, categoriesToUpdate.map(c => ({ 
+            id: c.id, 
+            name: c.name, 
+            is_default: c.is_default 
+          })));
+          
+          for (const category of categoriesToUpdate) {
+            if (category.id) {
+              try {
+                const mappedModalityIds = mapModalityIds(category.modality_ids || []);
+                const isDefaultValue = category.is_default === true; // Garantir boolean explícito
+                console.log(`📤 Atualizando categoria "${category.name}" (ID: ${category.id}): is_default = ${isDefaultValue}`);
+                
+                const updatePayload = {
+                  name: category.name,
+                  price: category.price,
+                  category_type: category.category_type,
+                  gender: category.gender,
+                  min_age: category.min_age,
+                  max_participants: category.max_participants,
+                  is_default: isDefaultValue, // Sempre enviar, mesmo se false
+                  modality_ids: mappedModalityIds,
+                };
+                console.log(`📦 Payload enviado para API:`, JSON.stringify(updatePayload, null, 2));
+                console.log(`📦 Tipo de is_default no payload:`, typeof updatePayload.is_default);
+                console.log(`📦 Valor de is_default no payload:`, updatePayload.is_default);
+                
+                const response = await updateCategory(category.id, updatePayload);
+                
+                if (response && !response.success) {
+                  console.error(`❌ Erro ao atualizar categoria "${category.name}":`, response.error);
+                } else if (response && response.success) {
+                  console.log(`✅ Categoria "${category.name}" atualizada. is_default = ${response.data?.is_default}`);
+                  console.log(`📥 Resposta completa:`, JSON.stringify(response.data, null, 2));
+                } else {
+                  console.error(`❌ Resposta inválida ao atualizar categoria "${category.name}":`, response);
+                }
+              } catch (error) {
+                console.error(`❌ Erro ao atualizar categoria "${category.name}":`, error);
+              }
+            }
+          }
+          
+          // Delete removed categories
+          for (const id of categoriesToDelete) {
+            try {
+              const response = await deleteCategory(id);
+              if (response && !response.success) {
+                console.error('Error deleting category:', response.error);
+              }
+            } catch (error) {
+              console.error('Error deleting category:', error);
+            }
+          }
+          
+          console.log('✅ Categorias sincronizadas com sucesso');
+          
+          // Recarregar categorias do servidor para garantir que os valores estão atualizados
+          if (eventId) {
+            const reloadResponse = await getCategories(eventId);
+            if (reloadResponse.success && reloadResponse.data) {
+              const reloadedCategories: Category[] = reloadResponse.data.map((cat: CategoryType) => ({
+                id: cat.id,
+                name: cat.name,
+                price: cat.price,
+                category_type: cat.category_type,
+                gender: cat.gender,
+                min_age: cat.min_age,
+                max_participants: cat.max_participants,
+                is_default: cat.is_default === true,
+                modality_ids: cat.modality_ids || [],
+              }));
+              console.log("🔄 Categorias recarregadas após salvar:", reloadedCategories.map(c => ({ name: c.name, is_default: c.is_default })));
+              setCategories(reloadedCategories);
+            }
           }
         } catch (error: any) {
           console.error('Error syncing categories:', error);
           toast({
             title: "Aviso",
-            description: "Evento salvo, mas houve erro ao salvar modalidades",
+            description: "Evento salvo, mas houve erro ao salvar categorias",
             variant: "destructive",
           });
         }
@@ -1049,9 +1306,10 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess }: EventF
             }}
           >
             <Tabs value={activeTab} onValueChange={setActiveTab}>
-              <TabsList className="grid w-full grid-cols-6">
+              <TabsList className="grid w-full grid-cols-7">
                 <TabsTrigger value="info">Informações</TabsTrigger>
                 <TabsTrigger value="modalities">Modalidades</TabsTrigger>
+                <TabsTrigger value="categories">Categorias</TabsTrigger>
                 <TabsTrigger value="kits">Kits</TabsTrigger>
                 <TabsTrigger value="pickup">Retirada</TabsTrigger>
                 <TabsTrigger value="payment">Valores</TabsTrigger>
@@ -1218,7 +1476,7 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess }: EventF
                   <div>
                     <h3 className="text-lg font-semibold">Modalidades</h3>
                     <p className="text-sm text-muted-foreground">
-                      Adicione as distâncias e categorias do evento
+                      Adicione as modalidades (distâncias) do evento
                     </p>
                   </div>
                   <Button type="button" onClick={addModality} size="sm">
@@ -1236,7 +1494,7 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess }: EventF
                 ) : (
                   <div className="space-y-4">
                     {modalities.map((modality, index) => (
-                      <Card key={index}>
+                      <Card key={modality.id || index}>
                         <CardHeader className="pb-3">
                           <div className="flex justify-between items-center">
                             <CardTitle className="text-base">
@@ -1256,10 +1514,10 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess }: EventF
                           <div className="grid grid-cols-2 gap-3">
                             <div>
                               <label className="text-sm font-medium">
-                                Nome da Categoria
+                                Nome da Modalidade
                               </label>
                               <Input
-                                placeholder="Ex: Elite, Local, PCD"
+                                placeholder="Ex: Corrida 5km, Corrida 10km"
                                 value={modality.name}
                                 onChange={(e) =>
                                   updateModality(index, "name", e.target.value)
@@ -1271,166 +1529,12 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess }: EventF
                                 Distância
                               </label>
                               <Input
-                                placeholder="Ex: 5K, 10K"
+                                placeholder="Ex: 5km, 10km, 21km, 42km"
                                 value={modality.distance}
                                 onChange={(e) =>
                                   updateModality(index, "distance", e.target.value)
                                 }
                               />
-                            </div>
-                          </div>
-
-                          <div className="grid grid-cols-2 gap-3">
-                            <div>
-                              <label className="text-sm font-medium">
-                                Limite de Vagas
-                              </label>
-                              <Input
-                                type="number"
-                                placeholder="Deixe vazio para ilimitado"
-                                value={modality.max_participants || ""}
-                                onChange={(e) =>
-                                  updateModality(
-                                    index,
-                                    "max_participants",
-                                    e.target.value ? parseInt(e.target.value) : null
-                                  )
-                                }
-                              />
-                            </div>
-                            <div>
-                              <label className="text-sm font-medium">
-                                Valor Inicial (R$)
-                              </label>
-                              <Input
-                                type="number"
-                                step="0.01"
-                                placeholder="0.00"
-                                value={modality.price}
-                                onChange={(e) =>
-                                  updateModality(
-                                    index,
-                                    "price",
-                                    parseFloat(e.target.value) || 0
-                                  )
-                                }
-                              />
-                            </div>
-                          </div>
-
-                          {/* Batches Section */}
-                          <div className="border-t pt-4 mt-4">
-                            <div className="flex justify-between items-start mb-4">
-                              <div>
-                                <h4 className="text-base font-semibold mb-1">Lotes</h4>
-                                <p className="text-sm text-muted-foreground">
-                                  Configure a virada de lotes por data
-                                </p>
-                              </div>
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                onClick={() => addBatch(index)}
-                              >
-                                <Plus className="mr-2 h-4 w-4" />
-                                Adicionar Lote
-                              </Button>
-                            </div>
-
-                            <div className="space-y-3">
-                              {modality.batches.map((batch, bIndex) => (
-                                <div
-                                  key={batch.id || `batch-${index}-${bIndex}`}
-                                  className="flex gap-3 items-start p-4 border rounded-lg bg-background"
-                                >
-                                  <div className="flex-1 grid grid-cols-2 gap-4">
-                                    <div>
-                                      <label className="text-sm font-medium mb-2 block">
-                                        Valor (R$)
-                                      </label>
-                                      <Input
-                                        type="number"
-                                        step="0.01"
-                                        placeholder="200"
-                                        value={batch.price}
-                                        onChange={(e) =>
-                                          updateBatch(
-                                            index,
-                                            bIndex,
-                                            "price",
-                                            parseFloat(e.target.value) || 0
-                                          )
-                                        }
-                                      />
-                                    </div>
-                                    <div>
-                                      <label className="text-sm font-medium mb-2 block">
-                                        Válido a partir de (opcional)
-                                      </label>
-                                      <Input
-                                        type="date"
-                                        value={batch.valid_from ? (batch.valid_from.includes('T') ? batch.valid_from.split('T')[0] : batch.valid_from.substring(0, 10)) : ""}
-                                        onChange={(e) => {
-                                          const dateValue = e.target.value;
-                                          console.log(`📝 Date input onChange - raw value:`, dateValue);
-                                          
-                                          if (dateValue && dateValue.length === 10) {
-                                            // Sempre adicionar 00:00 quando uma data for selecionada
-                                            const valueWithTime = `${dateValue}T00:00`;
-                                            console.log(`  ✅ Data selecionada, adicionando T00:00:`, valueWithTime);
-                                            
-                                            updateBatch(
-                                              index,
-                                              bIndex,
-                                              "valid_from",
-                                              valueWithTime
-                                            );
-                                          } else if (!dateValue) {
-                                            // Se o campo for limpo, salvar como null
-                                            console.log(`  🗑️ Campo limpo, salvando como null`);
-                                            updateBatch(
-                                              index,
-                                              bIndex,
-                                              "valid_from",
-                                              null
-                                            );
-                                          }
-                                        }}
-                                        onBlur={(e) => {
-                                          // Garantir que ao sair do campo, se houver data, ela tenha hora
-                                          const dateValue = e.target.value;
-                                          console.log(`👋 Date input onBlur - raw value:`, dateValue);
-                                          
-                                          if (dateValue && dateValue.length === 10) {
-                                            const valueWithTime = `${dateValue}T00:00`;
-                                            // Verificar se o estado atual não tem a hora
-                                            const currentValue = batch.valid_from;
-                                            if (!currentValue || !currentValue.includes('T') || currentValue.length === 10) {
-                                              console.log(`  ✅ onBlur: Garantindo T00:00:`, valueWithTime);
-                                              updateBatch(
-                                                index,
-                                                bIndex,
-                                                "valid_from",
-                                                valueWithTime
-                                              );
-                                            }
-                                          }
-                                        }}
-                                      />
-                                    </div>
-                                  </div>
-                                  <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-10 w-10 text-destructive hover:text-destructive hover:bg-destructive/10"
-                                    onClick={() => removeBatch(index, bIndex)}
-                                  >
-                                    <Trash2 className="h-4 w-4" />
-                                  </Button>
-                                </div>
-                              ))}
                             </div>
                           </div>
                         </CardContent>
@@ -1440,7 +1544,239 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess }: EventF
                 )}
               </TabsContent>
 
-              {/* Tab 3: Kits */}
+              {/* Tab 3: Categorias */}
+              <TabsContent value="categories" className="space-y-4">
+                <div className="flex justify-between items-center">
+                  <div>
+                    <h3 className="text-lg font-semibold">Categorias</h3>
+                    <p className="text-sm text-muted-foreground">
+                      Configure as categorias de inscrição com restrições de tipo, gênero e idade
+                    </p>
+                  </div>
+                  <Button type="button" onClick={addCategory} size="sm">
+                    <Plus className="mr-2 h-4 w-4" />
+                    Adicionar Categoria
+                  </Button>
+                </div>
+
+                {categories.length === 0 ? (
+                  <Card>
+                    <CardContent className="pt-6 text-center text-muted-foreground">
+                      Nenhuma categoria adicionada ainda
+                    </CardContent>
+                  </Card>
+                ) : (
+                  <div className="space-y-4">
+                    {categories.map((category, index) => (
+                      <Card key={category.id || index}>
+                        <CardHeader className="pb-3">
+                          <div className="flex justify-between items-center">
+                            <CardTitle className="text-base">
+                              Categoria {index + 1}
+                            </CardTitle>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => removeCategory(index)}
+                            >
+                              <Trash2 className="h-4 w-4 text-destructive" />
+                            </Button>
+                          </div>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <label className="text-sm font-medium">
+                                Nome da Categoria
+                              </label>
+                              <Input
+                                placeholder="Ex: Masculino 18-29, Feminino 30-39"
+                                value={category.name}
+                                onChange={(e) =>
+                                  updateCategoryLocal(index, "name", e.target.value)
+                                }
+                              />
+                            </div>
+                            <div>
+                              <label className="text-sm font-medium">
+                                Valor (R$)
+                              </label>
+                              <Input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                placeholder="0.00"
+                                value={category.price}
+                                onChange={(e) => {
+                                  const value = parseFloat(e.target.value);
+                                  if (!isNaN(value) && value >= 0) {
+                                    updateCategoryLocal(index, "price", value);
+                                  } else if (e.target.value === "" || e.target.value === "-") {
+                                    updateCategoryLocal(index, "price", 0);
+                                  }
+                                }}
+                                required
+                              />
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-3 gap-3">
+                            <div>
+                              <label className="text-sm font-medium">
+                                Tipo
+                              </label>
+                              <select
+                                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                                value={category.category_type}
+                                onChange={(e) =>
+                                  updateCategory(
+                                    index,
+                                    "category_type",
+                                    e.target.value as CategoryTypeEnum
+                                  )
+                                }
+                              >
+                                <option value="geral">Geral</option>
+                                <option value="visitante">Visitante</option>
+                                <option value="local">Local</option>
+                                <option value="PCD">PCD</option>
+                                <option value="militar">Militar</option>
+                                <option value="civil">Civil</option>
+                                <option value="outro">Outro</option>
+                              </select>
+                            </div>
+                            <div>
+                              <label className="text-sm font-medium">
+                                Sexo
+                              </label>
+                              <select
+                                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                                value={category.gender}
+                                onChange={(e) =>
+                                  updateCategory(
+                                    index,
+                                    "gender",
+                                    e.target.value as CategoryGender
+                                  )
+                                }
+                              >
+                                <option value="ambos">Ambos</option>
+                                <option value="masculino">Masculino</option>
+                                <option value="feminino">Feminino</option>
+                              </select>
+                            </div>
+                            <div>
+                              <label className="text-sm font-medium">
+                                Idade Mínima (opcional)
+                              </label>
+                              <Input
+                                type="number"
+                                min="0"
+                                max="120"
+                                placeholder="Deixe vazio para sem restrição"
+                                value={category.min_age || ""}
+                                onChange={(e) => {
+                                  const value = e.target.value;
+                                  if (value === "") {
+                                    updateCategoryLocal(index, "min_age", null);
+                                  } else {
+                                    const numValue = parseInt(value);
+                                    if (!isNaN(numValue) && numValue >= 0 && numValue <= 120) {
+                                      updateCategoryLocal(index, "min_age", numValue);
+                                    }
+                                  }
+                                }}
+                              />
+                            </div>
+                          </div>
+
+                          <div className="flex items-center space-x-2 p-3 border rounded-md bg-muted/50">
+                            <input
+                              type="checkbox"
+                              id={`category-${index}-is-default`}
+                              checked={category.is_default === true}
+                              onChange={(e) => {
+                                const newValue = e.target.checked;
+                                console.log(`🔄 Alterando is_default da categoria ${index} (${category.name}) para ${newValue}`);
+                                // Se está marcando como padrão, desmarcar todas as outras
+                                if (newValue) {
+                                  setCategories(prevCategories => {
+                                    const updated = prevCategories.map((cat, idx) => ({
+                                      ...cat,
+                                      is_default: idx === index ? true : false,
+                                    }));
+                                    console.log('📝 Categorias atualizadas:', updated.map(c => ({ name: c.name, is_default: c.is_default })));
+                                    return updated;
+                                  });
+                                } else {
+                                  updateCategoryLocal(index, "is_default", false);
+                                }
+                              }}
+                              className="h-4 w-4 rounded border-gray-300"
+                            />
+                            <label
+                              htmlFor={`category-${index}-is-default`}
+                              className="text-sm font-medium leading-none cursor-pointer"
+                            >
+                              Categoria Padrão (valor será exibido no site)
+                            </label>
+                            {category.is_default === true && (
+                              <Badge variant="default" className="ml-2">
+                                Padrão
+                              </Badge>
+                            )}
+                          </div>
+
+                          <div>
+                            <label className="text-sm font-medium mb-2 block">
+                              Modalidades Disponíveis
+                            </label>
+                            <p className="text-xs text-muted-foreground mb-3">
+                              Selecione em quais modalidades esta categoria estará disponível
+                            </p>
+                            {modalities.length === 0 ? (
+                              <p className="text-sm text-muted-foreground">
+                                Adicione modalidades primeiro na aba "Modalidades"
+                              </p>
+                            ) : (
+                              <div className="space-y-2 border rounded-md p-3">
+                                {modalities.map((modality, modIndex) => {
+                                  // Usar ID real se existir, senão usar identificador temporário baseado no índice
+                                  const modalityIdentifier = modality.id || `temp-${modIndex}`;
+                                  const isChecked = category.modality_ids?.includes(modalityIdentifier) || false;
+                                  
+                                  return (
+                                    <div key={modalityIdentifier} className="flex items-center space-x-2">
+                                      <input
+                                        type="checkbox"
+                                        id={`category-${index}-modality-${modalityIdentifier}`}
+                                        checked={isChecked}
+                                        onChange={() => {
+                                          toggleCategoryModality(index, modality.id, modIndex);
+                                        }}
+                                        className="h-4 w-4 rounded border-gray-300"
+                                      />
+                                      <label
+                                        htmlFor={`category-${index}-modality-${modalityIdentifier}`}
+                                        className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+                                      >
+                                        {modality.name} ({modality.distance})
+                                      </label>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                )}
+              </TabsContent>
+
+              {/* Tab 4: Kits */}
               <TabsContent value="kits" className="space-y-4">
                 <div className="flex justify-between items-center">
                   <div>
@@ -2118,9 +2454,11 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess }: EventF
                     type="button"
                     variant="outline"
                     onClick={() => {
-                      const tabs = ["info", "modalities", "kits", "payment", "publish"];
+                      const tabs = ["info", "modalities", "categories", "kits", "pickup", "payment", "publish"];
                       const currentIndex = tabs.indexOf(activeTab);
-                      setActiveTab(tabs[currentIndex - 1]);
+                      if (currentIndex > 0) {
+                        setActiveTab(tabs[currentIndex - 1]);
+                      }
                     }}
                   >
                     Voltar
@@ -2143,9 +2481,11 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess }: EventF
                     <Button
                       type="button"
                       onClick={() => {
-                        const tabs = ["info", "modalities", "kits", "payment", "publish"];
+                        const tabs = ["info", "modalities", "categories", "kits", "pickup", "payment", "publish"];
                         const currentIndex = tabs.indexOf(activeTab);
-                        setActiveTab(tabs[currentIndex + 1]);
+                        if (currentIndex < tabs.length - 1) {
+                          setActiveTab(tabs[currentIndex + 1]);
+                        }
                       }}
                     >
                       Próximo
