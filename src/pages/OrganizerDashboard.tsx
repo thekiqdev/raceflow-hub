@@ -11,11 +11,13 @@ import OrganizerRegistrations from "@/components/organizer/OrganizerRegistration
 import OrganizerFinancial from "@/components/organizer/OrganizerFinancial";
 import OrganizerSettings from "@/components/organizer/OrganizerSettings";
 import OrganizerReports from "@/components/organizer/OrganizerReports";
+import { getOrganizerSettings } from "@/lib/api/organizerSettings";
 
 const OrganizerDashboard = () => {
   const navigate = useNavigate();
-  const { logout } = useAuth();
+  const { logout, user } = useAuth();
   const [activeSection, setActiveSection] = useState("dashboard");
+  const [organizerName, setOrganizerName] = useState<string>("");
 
   useEffect(() => {
     // Escutar evento para navegar para uma seção
@@ -29,6 +31,35 @@ const OrganizerDashboard = () => {
       window.removeEventListener('organizer:navigate-to-section', handleNavigateToSection as EventListener);
     };
   }, []);
+
+  useEffect(() => {
+    const loadOrganizerName = async () => {
+      try {
+        const response = await getOrganizerSettings();
+        if (response.success && response.data) {
+          // Priorizar organization_name, depois full_name, depois email do usuário
+          const name = response.data.organization_name || 
+                      response.data.full_name || 
+                      user?.email || 
+                      "Organizador";
+          setOrganizerName(name);
+        } else {
+          // Fallback para o nome do perfil do usuário
+          const name = user?.profile?.full_name || user?.email || "Organizador";
+          setOrganizerName(name);
+        }
+      } catch (error) {
+        console.error("Erro ao carregar nome do organizador:", error);
+        // Fallback para o nome do perfil do usuário
+        const name = user?.profile?.full_name || user?.email || "Organizador";
+        setOrganizerName(name);
+      }
+    };
+
+    if (user) {
+      loadOrganizerName();
+    }
+  }, [user]);
 
   const handleSignOut = async () => {
     await logout();
@@ -74,7 +105,7 @@ const OrganizerDashboard = () => {
               </div>
               <div className="flex items-center gap-4">
                 <span className="text-sm text-muted-foreground">
-                  João Silva
+                  {organizerName || "Organizador"}
                 </span>
                 <Button variant="outline" size="sm" onClick={handleSignOut}>
                   <LogOut className="mr-2 h-4 w-4" />
