@@ -12,7 +12,7 @@ import {
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { hasRole } from '../services/userRolesService.js';
 import { getEventById } from '../services/eventsService.js';
-import { getCategoriesByEvent, getCategoryById } from '../services/categoriesService.js';
+import { getCategoryById } from '../services/categoriesService.js';
 import { createCustomer, createPayment, getCustomerByUserId, getPaymentByRegistrationId } from '../services/asaasService.js';
 import { getProfileByUserId } from '../services/profilesService.js';
 import { query } from '../config/database.js';
