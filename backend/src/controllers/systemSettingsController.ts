@@ -34,7 +34,7 @@ const updateSystemSettingsSchema = z.object({
   platform_fee_type: z.enum(['fixed', 'percentage']).optional(),
   withdrawal_fee: z.number().min(0).optional(),
   withdrawal_fee_type: z.enum(['fixed', 'percentage']).optional(),
-  leader_commission_percentage: z.number().min(0).max(100).optional(),
+  // leader_commission_percentage removed - now using event-specific commissions only
   maintenance_mode: z.boolean().optional(),
   maintenance_message: z.string().optional().nullable(),
   timezone: z.string().optional(),

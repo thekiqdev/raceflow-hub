@@ -7,7 +7,17 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Copy, ExternalLink, Loader2, CheckCircle, XCircle } from "lucide-react";
 import { toast } from "sonner";
-import { type GroupLeader, getReferralsByLeader, getCommissionsByLeader, type UserReferral, type LeaderCommission } from "@/lib/api/groupLeaders";
+import { 
+  type GroupLeader, 
+  getReferralsByLeader, 
+  getCommissionsByLeader,
+  getOrganizerReferralsByLeader,
+  getOrganizerCommissionsByLeader,
+  type UserReferral, 
+  type LeaderCommission 
+} from "@/lib/api/groupLeaders";
+import { LeaderEventCommissions } from "@/components/organizer/LeaderEventCommissions";
+import { LeaderCoupons } from "@/components/organizer/LeaderCoupons";
 
 interface GroupLeaderDetailsProps {
   open: boolean;
@@ -15,6 +25,7 @@ interface GroupLeaderDetailsProps {
   leader: GroupLeader | null;
   onCopyCode: (code: string) => void;
   onCopyLink: (code: string) => void;
+  isOrganizer?: boolean; // Indica se está sendo usado no contexto do organizador
 }
 
 export function GroupLeaderDetails({
@@ -23,6 +34,7 @@ export function GroupLeaderDetails({
   leader,
   onCopyCode,
   onCopyLink,
+  isOrganizer = false,
 }: GroupLeaderDetailsProps) {
   const [referrals, setReferrals] = useState<UserReferral[]>([]);
   const [commissions, setCommissions] = useState<LeaderCommission[]>([]);
@@ -37,12 +49,26 @@ export function GroupLeaderDetails({
     }
   }, [open, leader]);
 
+  // Listen for tab switch events
+  useEffect(() => {
+    const handleTabSwitch = (event: CustomEvent) => {
+      setActiveTab(event.detail);
+    };
+
+    window.addEventListener('leader-details:switch-tab', handleTabSwitch as EventListener);
+    return () => {
+      window.removeEventListener('leader-details:switch-tab', handleTabSwitch as EventListener);
+    };
+  }, []);
+
   const loadReferrals = async () => {
     if (!leader) return;
 
     setLoadingReferrals(true);
     try {
-      const response = await getReferralsByLeader(leader.id);
+      const response = isOrganizer 
+        ? await getOrganizerReferralsByLeader(leader.id)
+        : await getReferralsByLeader(leader.id);
       if (response.success && response.data) {
         setReferrals(response.data);
       } else {
@@ -61,7 +87,9 @@ export function GroupLeaderDetails({
 
     setLoadingCommissions(true);
     try {
-      const response = await getCommissionsByLeader(leader.id);
+      const response = isOrganizer
+        ? await getOrganizerCommissionsByLeader(leader.id)
+        : await getCommissionsByLeader(leader.id);
       if (response.success && response.data) {
         setCommissions(response.data);
       } else {
@@ -112,6 +140,8 @@ export function GroupLeaderDetails({
             <TabsTrigger value="overview">Visão Geral</TabsTrigger>
             <TabsTrigger value="referrals">Referências ({referrals.length})</TabsTrigger>
             <TabsTrigger value="commissions">Comissões ({commissions.length})</TabsTrigger>
+            <TabsTrigger value="event-commissions">Comissões por Evento</TabsTrigger>
+            <TabsTrigger value="coupons">Cupons Exclusivos</TabsTrigger>
           </TabsList>
 
           <TabsContent value="overview" className="space-y-4">
@@ -184,10 +214,8 @@ export function GroupLeaderDetails({
                   <CardDescription>Comissão</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-lg font-semibold">
-                    {leader.commission_percentage !== null
-                      ? `${leader.commission_percentage}%`
-                      : "Global"}
+                  <div className="text-sm text-muted-foreground">
+                    Configure comissões por evento na aba "Comissões por Evento"
                   </div>
                 </CardContent>
               </Card>
@@ -358,6 +386,14 @@ export function GroupLeaderDetails({
                 </TableBody>
               </Table>
             )}
+          </TabsContent>
+
+          <TabsContent value="event-commissions" className="space-y-4">
+            {leader && <LeaderEventCommissions leaderId={leader.id} />}
+          </TabsContent>
+
+          <TabsContent value="coupons" className="space-y-4">
+            {leader && <LeaderCoupons leaderId={leader.id} />}
           </TabsContent>
         </Tabs>
       </DialogContent>

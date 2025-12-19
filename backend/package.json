@@ -13,7 +13,14 @@
     "lint": "eslint src --ext .ts",
     "create-test-users": "tsx scripts/create-test-users.ts",
     "reset-rate-limit": "tsx scripts/reset-rate-limit.ts",
-    "migrate": "tsx scripts/run-migrations.ts"
+    "migrate": "tsx scripts/run-migrations.ts",
+    "process-past-invitations": "tsx scripts/process-past-invitations.ts",
+    "debug-invitations": "tsx scripts/debug-invitations.ts",
+    "fix-missing-invitations": "tsx scripts/fix-missing-invitations.ts",
+    "check-bonus-status": "tsx scripts/check-bonus-status.ts",
+    "verify-bonus-eligibility": "tsx scripts/verify-bonus-eligibility.ts",
+    "grant-missing-bonuses": "tsx scripts/grant-missing-bonuses.ts",
+    "fix-invitation-registrations": "tsx scripts/fix-invitation-registrations.ts"
   },
   "keywords": [
     "raceflow",

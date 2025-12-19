@@ -81,16 +81,21 @@ class ApiClient {
       if (!response.ok && response.status !== 401) {
         // Try to parse error response
         let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+        let errorDetails: any = null;
         try {
           const errorData = await response.json();
+          console.error('❌ [apiClient] Erro do servidor:', errorData);
           errorMessage = errorData.error || errorData.message || errorMessage;
-        } catch {
+          errorDetails = errorData.details || errorData;
+        } catch (e) {
           // If JSON parsing fails, use status text
+          console.error('❌ [apiClient] Erro ao parsear resposta de erro:', e);
         }
         return {
           success: false,
           error: errorMessage,
-          message: `Request failed with status ${response.status}`,
+          message: errorDetails?.message || `Request failed with status ${response.status}`,
+          details: errorDetails,
         };
       }
 
@@ -140,6 +145,10 @@ class ApiClient {
   }
 
   async post<T>(endpoint: string, data?: any): Promise<ApiResponse<T>> {
+    if (data) {
+      console.log('📤 [apiClient.post] Enviando dados:', JSON.stringify(data, null, 2));
+      console.log('📤 [apiClient.post] Endpoint:', endpoint);
+    }
     return this.request<T>(endpoint, {
       method: 'POST',
       body: data ? JSON.stringify(data) : undefined,

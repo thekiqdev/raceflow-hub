@@ -97,3 +97,84 @@ export const validatePassword = (password: string): { isValid: boolean; requirem
   };
 };
 
+/**
+ * Validate minimum age
+ * @param minAge - Minimum age value
+ * @returns true if valid (0 or positive integer), false otherwise
+ */
+export const validateMinAge = (minAge: number | null | undefined): boolean => {
+  if (minAge === null || minAge === undefined) return true; // Optional field
+  return Number.isInteger(minAge) && minAge >= 0 && minAge <= 120;
+};
+
+/**
+ * Validate category gender
+ * @param gender - Gender value
+ * @returns true if valid, false otherwise
+ */
+export const validateCategoryGender = (gender: string): boolean => {
+  const validGenders = ['ambos', 'masculino', 'feminino'];
+  return validGenders.includes(gender.toLowerCase());
+};
+
+/**
+ * Validate category type
+ * @param categoryType - Category type value
+ * @returns true if valid, false otherwise
+ */
+export const validateCategoryType = (categoryType: string): boolean => {
+  const validTypes = ['visitante', 'local', 'geral', 'PCD', 'militar', 'civil', 'outro'];
+  return validTypes.includes(categoryType.toLowerCase());
+};
+
+/**
+ * Check if user age meets category minimum age requirement
+ * @param birthDate - User's birth date (ISO string)
+ * @param minAge - Category minimum age requirement
+ * @returns true if user meets age requirement, false otherwise
+ */
+export const validateAgeRequirement = (birthDate: string | null | undefined, minAge: number | null | undefined): boolean => {
+  if (!birthDate || !minAge || minAge === 0) return true; // No requirement
+  
+  const today = new Date();
+  const birth = new Date(birthDate);
+  let age = today.getFullYear() - birth.getFullYear();
+  const monthDiff = today.getMonth() - birth.getMonth();
+  
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) {
+    age--;
+  }
+  
+  return age >= minAge;
+};
+
+/**
+ * Check if user gender matches category gender requirement
+ * @param userGender - User's gender ('M', 'F', 'masculino', 'feminino', etc.)
+ * @param categoryGender - Category gender requirement ('ambos', 'masculino', 'feminino')
+ * @returns true if user matches gender requirement, false otherwise
+ */
+export const validateGenderRequirement = (userGender: string | null | undefined, categoryGender: string): boolean => {
+  if (categoryGender === 'ambos') return true;
+  
+  if (!userGender) return false;
+  
+  const normalizedUserGender = userGender.toLowerCase();
+  const normalizedCategoryGender = categoryGender.toLowerCase();
+  
+  // Map various gender formats to standard format
+  const genderMap: { [key: string]: 'masculino' | 'feminino' } = {
+    'm': 'masculino',
+    'masculino': 'masculino',
+    'male': 'masculino',
+    'f': 'feminino',
+    'feminino': 'feminino',
+    'female': 'feminino',
+  };
+  
+  const mappedUserGender = genderMap[normalizedUserGender];
+  if (!mappedUserGender) return false;
+  
+  return mappedUserGender === normalizedCategoryGender;
+};
+

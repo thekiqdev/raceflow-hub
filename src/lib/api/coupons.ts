@@ -7,6 +7,7 @@ export interface Coupon {
   organizer_id: string;
   event_id: string | null; // Deprecated, use event_ids instead
   event_ids?: string[]; // Array of event IDs
+  leader_id?: string | null; // ID do líder de grupo (opcional - cupons exclusivos)
   code: string;
   name: string;
   type: CouponType;
@@ -68,5 +69,22 @@ export const deleteCoupon = async (id: string) => {
 // Validate coupon (public endpoint)
 export const validateCoupon = async (code: string, eventId: string) => {
   return apiClient.post<Coupon>('/coupons/validate', { code, event_id: eventId });
+};
+
+// Leader Coupons endpoints
+export const getLeaderCoupons = async (leaderId: string) => {
+  return apiClient.get<Coupon[]>(`/organizer/group-leaders/${leaderId}/coupons`);
+};
+
+export const createLeaderCoupon = async (leaderId: string, data: CreateCouponData) => {
+  return apiClient.post<Coupon>(`/organizer/group-leaders/${leaderId}/coupons`, data);
+};
+
+export const updateLeaderCoupon = async (leaderId: string, couponId: string, data: UpdateCouponData) => {
+  return apiClient.put<Coupon>(`/organizer/group-leaders/${leaderId}/coupons/${couponId}`, data);
+};
+
+export const deleteLeaderCoupon = async (leaderId: string, couponId: string) => {
+  return apiClient.delete(`/organizer/group-leaders/${leaderId}/coupons/${couponId}`);
 };
 

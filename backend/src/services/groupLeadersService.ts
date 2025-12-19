@@ -3,12 +3,13 @@ import { GroupLeader } from '../types/index.js';
 
 export interface CreateGroupLeaderData {
   user_id: string;
-  commission_percentage?: number | null;
+  // commission_percentage removed - now using event-specific commissions only
 }
 
 export interface UpdateGroupLeaderData {
   is_active?: boolean;
-  commission_percentage?: number | null;
+  // commission_percentage removed - now using event-specific commissions only
+  referral_code?: string;
 }
 
 /**
@@ -74,13 +75,12 @@ export const createGroupLeader = async (data: CreateGroupLeaderData): Promise<Gr
     `INSERT INTO group_leaders (
       user_id, referral_code, is_active, commission_percentage
     )
-    VALUES ($1, $2, $3, $4)
+    VALUES ($1, $2, $3, NULL)
     RETURNING *`,
     [
       data.user_id,
       referralCode,
       true,
-      data.commission_percentage || null,
     ]
   );
   
@@ -136,12 +136,58 @@ export const getGroupLeaderById = async (leaderId: string): Promise<GroupLeader 
 };
 
 /**
+ * Validate referral code format
+ * Format: 3 letras maiúsculas + 3 números (ex: ABC123)
+ */
+export const validateReferralCodeFormat = (code: string): boolean => {
+  const regex = /^[A-Z]{3}[0-9]{3}$/;
+  return regex.test(code);
+};
+
+/**
+ * Check if referral code is unique (excluding current leader)
+ */
+export const isReferralCodeUnique = async (
+  code: string,
+  excludeLeaderId?: string
+): Promise<boolean> => {
+  let queryText = 'SELECT id FROM group_leaders WHERE referral_code = $1';
+  const params: any[] = [code.toUpperCase()];
+  
+  if (excludeLeaderId) {
+    queryText += ' AND id != $2';
+    params.push(excludeLeaderId);
+  }
+  
+  const result = await query(queryText, params);
+  return result.rows.length === 0;
+};
+
+/**
  * Update group leader
  */
 export const updateGroupLeader = async (
   leaderId: string,
   data: UpdateGroupLeaderData
 ): Promise<GroupLeader> => {
+  // If updating referral_code, validate format and uniqueness
+  if (data.referral_code !== undefined) {
+    const code = data.referral_code.toUpperCase().trim();
+    
+    // Validate format
+    if (!validateReferralCodeFormat(code)) {
+      throw new Error('Código de referência deve ter formato: 3 letras maiúsculas + 3 números (ex: ABC123)');
+    }
+    
+    // Check uniqueness (excluding current leader)
+    const isUnique = await isReferralCodeUnique(code, leaderId);
+    if (!isUnique) {
+      throw new Error('Código de referência já está em uso por outro líder');
+    }
+    
+    data.referral_code = code;
+  }
+  
   const fields: string[] = [];
   const values: any[] = [];
   let paramIndex = 1;

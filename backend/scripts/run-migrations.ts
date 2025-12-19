@@ -65,6 +65,12 @@ const migrations = [
   '036_separate_modalities_categories.sql',
   '037_add_is_default_to_categories.sql',
   '038_update_registrations_category_fk.sql',
+  '039_add_leader_event_commissions.sql',
+  '040_add_leader_id_to_coupons.sql',
+  '041_add_referral_details.sql',
+  '042_add_bonus_system_to_leader_commissions.sql',
+  '043_add_both_bonus_type.sql',
+  '044_create_leader_invitations.sql',
 ];
 
 // Create migrations tracking table

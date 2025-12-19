@@ -3,22 +3,36 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
-import { Search, UserPlus, Edit, Eye, Loader2, CheckCircle, XCircle, Copy, ExternalLink } from "lucide-react";
+import { Search, UserPlus, Edit, Eye, Loader2, CheckCircle, XCircle, Copy, MoreVertical, DollarSign, Ticket } from "lucide-react";
 import { toast } from "sonner";
 import {
-  getAllGroupLeaders,
-  createGroupLeader,
-  updateGroupLeader,
-  deactivateGroupLeader,
-  activateGroupLeader,
+  getOrganizerGroupLeaders,
+  createOrganizerGroupLeader,
+  updateOrganizerGroupLeader,
+  deactivateOrganizerGroupLeader,
+  activateOrganizerGroupLeader,
   type GroupLeader,
 } from "@/lib/api/groupLeaders";
-import { GroupLeaderDialog } from "./GroupLeaderDialog";
-import { GroupLeaderDetails } from "./GroupLeaderDetails";
-import { getAthletes, type UserWithStats } from "@/lib/api/userManagement";
+import { GroupLeaderDialog } from "@/components/admin/GroupLeaderDialog";
+import { GroupLeaderDetails } from "@/components/admin/GroupLeaderDetails";
+import { getRegistrations, type Registration } from "@/lib/api/registrations";
+import { useAuth } from "@/contexts/AuthContext";
 
-export function GroupLeadersManagement() {
+interface UserOption {
+  id: string;
+  name: string;
+  email: string;
+}
+
+export function OrganizerGroupLeaders() {
+  const { user } = useAuth();
   const [leaders, setLeaders] = useState<GroupLeader[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
@@ -26,7 +40,7 @@ export function GroupLeadersManagement() {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [selectedLeader, setSelectedLeader] = useState<GroupLeader | null>(null);
   const [editingLeader, setEditingLeader] = useState<GroupLeader | null>(null);
-  const [availableUsers, setAvailableUsers] = useState<UserWithStats[]>([]);
+  const [availableUsers, setAvailableUsers] = useState<UserOption[]>([]);
 
   useEffect(() => {
     loadLeaders();
@@ -36,7 +50,7 @@ export function GroupLeadersManagement() {
   const loadLeaders = async () => {
     setLoading(true);
     try {
-      const response = await getAllGroupLeaders();
+      const response = await getOrganizerGroupLeaders();
       if (response.success && response.data) {
         setLeaders(response.data);
       } else {
@@ -51,10 +65,26 @@ export function GroupLeadersManagement() {
   };
 
   const loadAvailableUsers = async () => {
+    if (!user) return;
+    
     try {
-      const response = await getAthletes();
+      // Buscar usuários através das inscrições do organizador
+      const response = await getRegistrations({ organizer_id: user.id });
       if (response.success && response.data) {
-        setAvailableUsers(response.data);
+        // Extrair usuários únicos das inscrições
+        const usersMap = new Map<string, UserOption>();
+        response.data.forEach((reg: Registration) => {
+          if (reg.runner_id && reg.runner_name) {
+            if (!usersMap.has(reg.runner_id)) {
+              usersMap.set(reg.runner_id, {
+                id: reg.runner_id,
+                name: reg.runner_name,
+                email: "", // Email não está disponível nas inscrições
+              });
+            }
+          }
+        });
+        setAvailableUsers(Array.from(usersMap.values()));
       }
     } catch (error) {
       console.error("Erro ao carregar usuários:", error);
@@ -76,10 +106,34 @@ export function GroupLeadersManagement() {
     setDetailsOpen(true);
   };
 
-  const handleSaveLeader = async (data: { user_id: string }) => {
+  const handleManageEventCommissions = (leader: GroupLeader) => {
+    setSelectedLeader(leader);
+    setDetailsOpen(true);
+    // Navegar para a aba de comissões por evento após abrir o dialog
+    setTimeout(() => {
+      const event = new CustomEvent('leader-details:switch-tab', { detail: 'event-commissions' });
+      window.dispatchEvent(event);
+    }, 100);
+  };
+
+  const handleCreateLeaderCoupon = (leader: GroupLeader) => {
+    setSelectedLeader(leader);
+    setDetailsOpen(true);
+    // Navegar para a aba de cupons após abrir o dialog
+    setTimeout(() => {
+      const event = new CustomEvent('leader-details:switch-tab', { detail: 'coupons' });
+      window.dispatchEvent(event);
+    }, 100);
+  };
+
+  const handleSaveLeader = async (data: { user_id: string; referral_code?: string }) => {
     try {
       if (editingLeader) {
-        const response = await updateGroupLeader(editingLeader.id, {});
+        const updateData: any = {};
+        if (data.referral_code) {
+          updateData.referral_code = data.referral_code;
+        }
+        const response = await updateOrganizerGroupLeader(editingLeader.id, updateData);
         if (response.success) {
           toast.success("Líder atualizado com sucesso!");
           loadLeaders();
@@ -88,7 +142,7 @@ export function GroupLeadersManagement() {
           toast.error(response.error || "Erro ao atualizar líder");
         }
       } else {
-        const response = await createGroupLeader(data);
+        const response = await createOrganizerGroupLeader(data);
         if (response.success) {
           toast.success("Líder criado com sucesso!");
           loadLeaders();
@@ -105,8 +159,8 @@ export function GroupLeadersManagement() {
   const handleToggleActive = async (leader: GroupLeader) => {
     try {
       const response = leader.is_active
-        ? await deactivateGroupLeader(leader.id)
-        : await activateGroupLeader(leader.id);
+        ? await deactivateOrganizerGroupLeader(leader.id)
+        : await activateOrganizerGroupLeader(leader.id);
 
       if (response.success) {
         toast.success(`Líder ${leader.is_active ? "desativado" : "ativado"} com sucesso!`);
@@ -240,7 +294,7 @@ export function GroupLeadersManagement() {
               <TableBody>
                 {filteredLeaders.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+                    <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
                       Nenhum líder encontrado
                     </TableCell>
                   </TableRow>
@@ -269,7 +323,9 @@ export function GroupLeadersManagement() {
                           {user ? (
                             <div>
                               <div className="font-medium">{user.name || "N/A"}</div>
-                              <div className="text-sm text-muted-foreground">{user.email}</div>
+                              {user.email && (
+                                <div className="text-sm text-muted-foreground">{user.email}</div>
+                              )}
                             </div>
                           ) : (
                             <span className="text-muted-foreground">Carregando...</span>
@@ -296,36 +352,44 @@ export function GroupLeadersManagement() {
                           {new Date(leader.created_at).toLocaleDateString("pt-BR")}
                         </TableCell>
                         <TableCell className="text-right">
-                          <div className="flex items-center justify-end gap-2">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => handleViewDetails(leader)}
-                              title="Ver detalhes"
-                            >
-                              <Eye className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => handleEditLeader(leader)}
-                              title="Editar"
-                            >
-                              <Edit className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => handleToggleActive(leader)}
-                              title={leader.is_active ? "Desativar" : "Ativar"}
-                            >
-                              {leader.is_active ? (
-                                <XCircle className="h-4 w-4 text-destructive" />
-                              ) : (
-                                <CheckCircle className="h-4 w-4 text-green-600" />
-                              )}
-                            </Button>
-                          </div>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="icon">
+                                <MoreVertical className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={() => handleViewDetails(leader)}>
+                                <Eye className="mr-2 h-4 w-4" />
+                                Ver Detalhes
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleEditLeader(leader)}>
+                                <Edit className="mr-2 h-4 w-4" />
+                                Editar
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleManageEventCommissions(leader)}>
+                                <DollarSign className="mr-2 h-4 w-4" />
+                                Definir Comissão por Evento
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleCreateLeaderCoupon(leader)}>
+                                <Ticket className="mr-2 h-4 w-4" />
+                                Criar Cupom Exclusivo
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleToggleActive(leader)}>
+                                {leader.is_active ? (
+                                  <>
+                                    <XCircle className="mr-2 h-4 w-4" />
+                                    Desativar
+                                  </>
+                                ) : (
+                                  <>
+                                    <CheckCircle className="mr-2 h-4 w-4" />
+                                    Ativar
+                                  </>
+                                )}
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                         </TableCell>
                       </TableRow>
                     );
@@ -342,7 +406,15 @@ export function GroupLeadersManagement() {
         open={dialogOpen}
         onOpenChange={setDialogOpen}
         leader={editingLeader}
-        availableUsers={availableUsers}
+        availableUsers={availableUsers.map(u => ({
+          id: u.id,
+          name: u.name,
+          email: u.email || "",
+          cpf: "",
+          phone: "",
+          status: "active",
+          created_at: "",
+        }))}
         onSave={handleSaveLeader}
       />
 
@@ -352,6 +424,7 @@ export function GroupLeadersManagement() {
         leader={selectedLeader}
         onCopyCode={handleCopyCode}
         onCopyLink={handleCopyLink}
+        isOrganizer={true}
       />
     </div>
   );

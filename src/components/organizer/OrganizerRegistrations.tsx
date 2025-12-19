@@ -24,7 +24,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Plus, Search, MoreVertical, Eye, MessageSquare, FileDown, Loader2 } from "lucide-react";
+import { Plus, Search, MoreVertical, Eye, MessageSquare, FileDown, Loader2, UserCog } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { useAuth } from "@/contexts/AuthContext";
@@ -32,6 +32,7 @@ import { getRegistrations, exportRegistrations, type Registration } from "@/lib/
 import { getEvents, type Event } from "@/lib/api/events";
 import { toast } from "sonner";
 import { useDebounce } from "@/hooks/useDebounce";
+import { createOrganizerGroupLeader } from "@/lib/api/groupLeaders";
 
 const OrganizerRegistrations = () => {
   const { user } = useAuth();
@@ -103,6 +104,35 @@ const OrganizerRegistrations = () => {
       toast.error("Erro ao carregar inscrições");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleConvertToLeader = async (registration: Registration) => {
+    if (!registration.runner_id) {
+      toast.error("Não é possível converter: runner_id não encontrado");
+      return;
+    }
+
+    if (!confirm(`Deseja converter "${registration.runner_name || 'este usuário'}" em líder de grupo?`)) {
+      return;
+    }
+
+    try {
+      const response = await createOrganizerGroupLeader({
+        user_id: registration.runner_id,
+        commission_percentage: null, // Usar percentual global
+      });
+
+      if (response.success) {
+        toast.success("Usuário convertido para líder de grupo com sucesso!");
+        // Opcional: recarregar registros ou navegar para a seção de líderes
+        window.dispatchEvent(new CustomEvent('organizer:navigate-to-section', { detail: 'group-leaders' }));
+      } else {
+        toast.error(response.error || "Erro ao converter para líder de grupo");
+      }
+    } catch (error: any) {
+      console.error("Erro ao converter para líder:", error);
+      toast.error(error.message || "Erro ao converter para líder de grupo");
     }
   };
 
@@ -398,6 +428,10 @@ const OrganizerRegistrations = () => {
                               <DropdownMenuItem>
                                 <MessageSquare className="mr-2 h-4 w-4" />
                                 Enviar Mensagem
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleConvertToLeader(registration)}>
+                                <UserCog className="mr-2 h-4 w-4" />
+                                Converter para Líder de Grupo
                               </DropdownMenuItem>
                             </DropdownMenuContent>
                           </DropdownMenu>

@@ -3,7 +3,7 @@ export type AppRole = 'admin' | 'organizer' | 'runner';
 export type EventStatus = 'draft' | 'published' | 'ongoing' | 'finished' | 'cancelled';
 export type RegistrationStatus = 'pending' | 'confirmed' | 'cancelled' | 'refund_requested' | 'refunded' | 'transferred';
 export type PaymentStatus = 'pending' | 'paid' | 'refunded' | 'failed';
-export type PaymentMethod = 'pix' | 'credit_card' | 'boleto';
+export type PaymentMethod = 'pix' | 'credit_card' | 'boleto' | 'free_bonus';
 
 // User types
 export interface User {
@@ -81,6 +81,45 @@ export interface LeaderCommission {
   paid_at: Date | null;
   created_at: Date;
   updated_at: Date;
+}
+
+export interface LeaderEventCommission {
+  id: string;
+  leader_id: string;
+  event_id: string;
+  commission_percentage: number;
+  bonus_type: 'commission' | 'invitation' | 'both';
+  required_purchases: number | null;
+  bonus_registration_id: string | null;
+  bonus_earned_at: Date | null;
+  name: string | null;
+  created_at: Date;
+  updated_at: Date;
+  event_title?: string;
+  event_date?: string;
+  organizer_id?: string;
+  coupon?: {
+    id: string;
+    code: string;
+    link: string;
+  } | null;
+}
+
+export interface CreateLeaderEventCommissionData {
+  leader_id: string;
+  event_id: string;
+  commission_percentage: number;
+  bonus_type?: 'commission' | 'invitation' | 'both';
+  required_purchases?: number | null;
+  name?: string | null;
+}
+
+export interface UpdateLeaderEventCommissionData {
+  commission_percentage?: number;
+  bonus_type?: 'commission' | 'invitation' | 'both';
+  required_purchases?: number | null;
+  name?: string | null;
+  coupon_discount?: number;
 }
 
 // Event types
@@ -205,6 +244,7 @@ export interface Coupon {
   organizer_id: string;
   event_id: string | null; // Deprecated, use event_ids instead
   event_ids?: string[]; // Array of event IDs
+  leader_id: string | null; // ID do líder de grupo (opcional - cupons exclusivos)
   code: string;
   name: string;
   type: CouponType;

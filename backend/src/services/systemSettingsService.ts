@@ -31,7 +31,7 @@ export interface SystemSettings {
   platform_fee_type?: 'fixed' | 'percentage';
   withdrawal_fee?: number;
   withdrawal_fee_type?: 'fixed' | 'percentage';
-  leader_commission_percentage?: number;
+  // leader_commission_percentage removed - now using event-specific commissions only
   maintenance_mode: boolean;
   maintenance_message?: string;
   timezone: string;

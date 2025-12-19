@@ -14,6 +14,13 @@ import {
   getCommissionsByLeaderController,
   getMyStatsController,
 } from '../controllers/groupLeadersController.js';
+import { getMyEventCommissionsController } from '../controllers/leaderEventCommissionsController.js';
+import { getMyCouponRegistrationsController } from '../controllers/leaderRegistrationsController.js';
+import {
+  getMyInvitationsController,
+  getMyAvailableInvitationsController,
+  sendInvitationController,
+} from '../controllers/leaderInvitationsController.js';
 
 const router = Router();
 
@@ -23,7 +30,12 @@ const router = Router();
 router.get('/me', authenticate, getMyGroupLeaderController);
 router.get('/me/referrals', authenticate, getMyReferralsController);
 router.get('/me/commissions', authenticate, getMyCommissionsController);
+router.get('/me/event-commissions', authenticate, getMyEventCommissionsController);
+router.get('/me/coupon-registrations', authenticate, getMyCouponRegistrationsController);
 router.get('/me/stats', authenticate, getMyStatsController);
+router.get('/me/invitations', authenticate, getMyInvitationsController);
+router.get('/me/invitations/available', authenticate, getMyAvailableInvitationsController);
+router.post('/me/invitations/send', authenticate, sendInvitationController);
 
 // Admin routes
 router.post('/', authenticate, createGroupLeaderController);

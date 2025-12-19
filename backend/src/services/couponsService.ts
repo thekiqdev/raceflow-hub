@@ -4,6 +4,7 @@ import { Coupon, CouponType } from '../types/index.js';
 export interface CreateCouponData {
   organizer_id: string;
   event_ids?: string[] | null;
+  leader_id?: string | null;
   code: string;
   name: string;
   type: CouponType;
@@ -15,6 +16,7 @@ export interface CreateCouponData {
 
 export interface UpdateCouponData {
   event_ids?: string[] | null;
+  leader_id?: string | null;
   name?: string;
   type?: CouponType;
   discount_value?: number;
@@ -90,14 +92,15 @@ export const createCoupon = async (data: CreateCouponData): Promise<Coupon> => {
   // Create coupon (event_id is kept for backward compatibility, but will be NULL)
   const result = await query(
     `INSERT INTO coupons (
-      organizer_id, event_id, code, name, type, discount_value, 
+      organizer_id, event_id, leader_id, code, name, type, discount_value, 
       expiration_date, max_uses, is_active
     )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
     RETURNING *`,
     [
       data.organizer_id,
       null, // event_id is deprecated, use coupon_events instead
+      data.leader_id || null,
       data.code.toUpperCase().trim(),
       data.name,
       data.type,
@@ -149,6 +152,31 @@ export const getCouponById = async (couponId: string): Promise<Coupon | null> =>
 };
 
 /**
+ * Get coupon by code (without organizer ID - useful for finding leader coupons)
+ */
+export const getCouponByCodeOnly = async (code: string): Promise<Coupon | null> => {
+  const result = await query(
+    'SELECT * FROM coupons WHERE code = $1',
+    [code.toUpperCase().trim()]
+  );
+  
+  if (result.rows.length === 0) {
+    return null;
+  }
+  
+  const row = result.rows[0];
+  const coupon: Coupon = {
+    ...row,
+    discount_value: parseFloat(row.discount_value) || 0,
+    current_uses: parseInt(row.current_uses) || 0,
+  } as Coupon;
+  
+  // Get event IDs for this coupon
+  const eventIds = await getCouponEventIds(coupon.id);
+  return { ...coupon, event_ids: eventIds } as any;
+};
+
+/**
  * Get coupon by code and organizer ID
  */
 export const getCouponByCode = async (code: string, organizerId: string): Promise<Coupon | null> => {
@@ -179,6 +207,30 @@ export const getCouponsByOrganizer = async (organizerId: string): Promise<Coupon
   );
   
   // Get event IDs for each coupon
+  const coupons = await Promise.all(
+    result.rows.map(async (row) => {
+      const coupon: Coupon = {
+        ...row,
+        discount_value: parseFloat(row.discount_value) || 0,
+        current_uses: parseInt(row.current_uses) || 0,
+      } as Coupon;
+      const eventIds = await getCouponEventIds(coupon.id);
+      return { ...coupon, event_ids: eventIds } as any;
+    })
+  );
+  
+  return coupons;
+};
+
+/**
+ * Get coupons by leader ID
+ */
+export const getCouponsByLeader = async (leaderId: string): Promise<Coupon[]> => {
+  const result = await query(
+    'SELECT * FROM coupons WHERE leader_id = $1 ORDER BY created_at DESC',
+    [leaderId]
+  );
+  
   const coupons = await Promise.all(
     result.rows.map(async (row) => {
       const coupon: Coupon = {
@@ -252,6 +304,11 @@ export const updateCoupon = async (couponId: string, data: UpdateCouponData): Pr
     values.push(data.is_active);
   }
   
+  if (data.leader_id !== undefined) {
+    updates.push(`leader_id = $${paramIndex++}`);
+    values.push(data.leader_id || null);
+  }
+  
   let updatedCoupon = coupon;
   
   // Update coupon fields if there are any
@@ -323,7 +380,12 @@ export const incrementCouponUsage = async (couponId: string): Promise<void> => {
 /**
  * Validate coupon (check if it can be used)
  */
-export const validateCoupon = async (code: string, organizerId: string, eventId?: string): Promise<{ valid: boolean; coupon?: Coupon; error?: string }> => {
+export const validateCoupon = async (
+  code: string, 
+  organizerId: string, 
+  eventId?: string,
+  userId?: string
+): Promise<{ valid: boolean; coupon?: Coupon; error?: string }> => {
   const coupon = await getCouponByCode(code, organizerId);
   
   if (!coupon) {
@@ -355,6 +417,20 @@ export const validateCoupon = async (code: string, organizerId: string, eventId?
     if (eventIds.length > 0 && !eventIds.includes(eventId)) {
       return { valid: false, coupon, error: 'Cupom não é válido para este evento' };
     }
+  }
+  
+  // If coupon is exclusive to a leader, only validate that the leader exists
+  // The coupon can be used by anyone who has the code (sent by the leader)
+  if (coupon.leader_id) {
+    const { getGroupLeaderById } = await import('./groupLeadersService.js');
+    
+    const leader = await getGroupLeaderById(coupon.leader_id);
+    if (!leader || !leader.is_active) {
+      return { valid: false, coupon, error: 'Líder associado ao cupom não encontrado ou inativo' };
+    }
+    
+    // Cupom exclusivo do líder pode ser usado por qualquer pessoa que tenha o código
+    // Não há restrição de referência - o líder pode compartilhar com quem quiser
   }
   
   // Get coupon with event IDs

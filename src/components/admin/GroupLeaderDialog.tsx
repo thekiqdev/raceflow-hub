@@ -13,7 +13,7 @@ interface GroupLeaderDialogProps {
   onOpenChange: (open: boolean) => void;
   leader: GroupLeader | null;
   availableUsers: UserWithStats[];
-  onSave: (data: { user_id: string; commission_percentage?: number | null }) => void;
+  onSave: (data: { user_id: string }) => void;
 }
 
 export function GroupLeaderDialog({
@@ -24,34 +24,67 @@ export function GroupLeaderDialog({
   onSave,
 }: GroupLeaderDialogProps) {
   const [userId, setUserId] = useState("");
-  const [commissionPercentage, setCommissionPercentage] = useState<string>("");
+  const [referralCode, setReferralCode] = useState<string>("");
+  const [codeError, setCodeError] = useState<string>("");
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (open) {
       if (leader) {
         setUserId(leader.user_id);
-        setCommissionPercentage(
-          leader.commission_percentage !== null ? leader.commission_percentage.toString() : ""
-        );
+        setReferralCode(leader.referral_code || "");
       } else {
         setUserId("");
-        setCommissionPercentage("");
+        setReferralCode("");
       }
+      setCodeError("");
     }
   }, [open, leader]);
+
+  const validateCode = (code: string): boolean => {
+    const regex = /^[A-Z]{3}[0-9]{3}$/;
+    if (!code.trim()) {
+      setCodeError("");
+      return true; // Código vazio é válido (não será atualizado)
+    }
+    if (!regex.test(code.toUpperCase())) {
+      setCodeError("Código deve ter formato: 3 letras maiúsculas + 3 números (ex: ABC123)");
+      return false;
+    }
+    setCodeError("");
+    return true;
+  };
+
+  const handleCodeChange = (value: string) => {
+    const upperValue = value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6);
+    setReferralCode(upperValue);
+    validateCode(upperValue);
+  };
 
   const handleSave = async () => {
     if (!userId) {
       return;
     }
 
+    // Validar código se foi alterado
+    if (leader && referralCode && referralCode !== leader.referral_code) {
+      if (!validateCode(referralCode)) {
+        return;
+      }
+    }
+
     setSaving(true);
     try {
-      await onSave({
+      const saveData: any = {
         user_id: userId,
-        commission_percentage: commissionPercentage ? parseFloat(commissionPercentage) : null,
-      });
+      };
+      
+      // Incluir código apenas se estiver editando e o código foi alterado
+      if (leader && referralCode && referralCode !== leader.referral_code) {
+        saveData.referral_code = referralCode;
+      }
+      
+      await onSave(saveData);
     } finally {
       setSaving(false);
     }
@@ -103,44 +136,41 @@ export function GroupLeaderDialog({
             )}
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="commission_percentage">
-              Percentual de Comissão (%)
-            </Label>
-            <Input
-              id="commission_percentage"
-              type="number"
-              min="0"
-              max="100"
-              step="0.01"
-              placeholder="Deixe vazio para usar percentual global"
-              value={commissionPercentage}
-              onChange={(e) => setCommissionPercentage(e.target.value)}
-            />
-            <p className="text-xs text-muted-foreground">
-              Se deixado vazio, será usado o percentual global configurado nas configurações do sistema
-            </p>
-          </div>
-
           {leader && (
-            <div className="space-y-2 p-4 bg-muted rounded-lg">
-              <div>
-                <Label className="text-sm font-semibold">Código de Referência</Label>
-                <div className="flex items-center gap-2 mt-1">
-                  <code className="text-sm font-mono bg-background px-2 py-1 rounded flex-1">
-                    {leader.referral_code}
-                  </code>
+            <>
+              <div className="space-y-2">
+                <Label htmlFor="referral_code">
+                  Código de Referência
+                </Label>
+                <Input
+                  id="referral_code"
+                  type="text"
+                  placeholder="ABC123"
+                  value={referralCode}
+                  onChange={(e) => handleCodeChange(e.target.value)}
+                  maxLength={6}
+                  className={codeError ? "border-destructive" : ""}
+                />
+                {codeError && (
+                  <p className="text-xs text-destructive">{codeError}</p>
+                )}
+                {!codeError && referralCode && (
+                  <p className="text-xs text-muted-foreground">
+                    Formato: 3 letras maiúsculas + 3 números
+                  </p>
+                )}
+              </div>
+              <div className="space-y-2 p-4 bg-muted rounded-lg">
+                <div>
+                  <Label className="text-sm font-semibold">Link de Referência</Label>
+                  <div className="flex items-center gap-2 mt-1">
+                    <code className="text-xs font-mono bg-background px-2 py-1 rounded flex-1 truncate">
+                      {window.location.origin}/cadastro?ref={referralCode || leader.referral_code}
+                    </code>
+                  </div>
                 </div>
               </div>
-              <div>
-                <Label className="text-sm font-semibold">Link de Referência</Label>
-                <div className="flex items-center gap-2 mt-1">
-                  <code className="text-xs font-mono bg-background px-2 py-1 rounded flex-1 truncate">
-                    {window.location.origin}/cadastro?ref={leader.referral_code}
-                  </code>
-                </div>
-              </div>
-            </div>
+            </>
           )}
         </div>
 

@@ -19,6 +19,28 @@ import {
   updateCouponController,
   deleteCouponController,
 } from '../controllers/couponsController.js';
+import {
+  createLeaderCouponController,
+  getLeaderCouponsController,
+  updateLeaderCouponController,
+  deleteLeaderCouponController,
+} from '../controllers/leaderCouponsController.js';
+import {
+  createGroupLeaderController,
+  getAllGroupLeadersController,
+  getGroupLeaderByIdController,
+  updateGroupLeaderController,
+  activateGroupLeaderController,
+  deactivateGroupLeaderController,
+  getReferralsByLeaderController,
+  getCommissionsByLeaderController,
+} from '../controllers/groupLeadersController.js';
+import {
+  createLeaderEventCommissionController,
+  getLeaderEventCommissionsController,
+  updateLeaderEventCommissionController,
+  deleteLeaderEventCommissionController,
+} from '../controllers/leaderEventCommissionsController.js';
 
 const router = Router();
 
@@ -49,6 +71,28 @@ router.post('/coupons', createCouponController);
 router.get('/coupons/:id', getCouponByIdController);
 router.put('/coupons/:id', updateCouponController);
 router.delete('/coupons/:id', deleteCouponController);
+
+// Group Leaders endpoints (organizer can manage leaders for their events)
+router.get('/group-leaders', getAllGroupLeadersController);
+router.post('/group-leaders', createGroupLeaderController);
+router.get('/group-leaders/:id', getGroupLeaderByIdController);
+router.put('/group-leaders/:id', updateGroupLeaderController);
+router.post('/group-leaders/:id/activate', activateGroupLeaderController);
+router.delete('/group-leaders/:id', deactivateGroupLeaderController);
+router.get('/group-leaders/:id/referrals', getReferralsByLeaderController);
+router.get('/group-leaders/:id/commissions', getCommissionsByLeaderController);
+
+// Leader Event Commissions endpoints
+router.get('/group-leaders/:id/event-commissions', getLeaderEventCommissionsController);
+router.post('/group-leaders/:id/event-commissions', createLeaderEventCommissionController);
+router.put('/group-leaders/:id/event-commissions/:commissionId', updateLeaderEventCommissionController);
+router.delete('/group-leaders/:id/event-commissions/:commissionId', deleteLeaderEventCommissionController);
+
+// Leader Coupons endpoints
+router.get('/group-leaders/:id/coupons', getLeaderCouponsController);
+router.post('/group-leaders/:id/coupons', createLeaderCouponController);
+router.put('/group-leaders/:id/coupons/:couponId', updateLeaderCouponController);
+router.delete('/group-leaders/:id/coupons/:couponId', deleteLeaderCouponController);
 
 export default router;
 

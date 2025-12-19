@@ -18,12 +18,15 @@ import { z } from 'zod';
 // Validation schemas
 const createGroupLeaderSchema = z.object({
   user_id: z.string().uuid('Invalid user ID'),
-  commission_percentage: z.number().min(0).max(100).optional().nullable(),
+  // commission_percentage removed - now using event-specific commissions only
 });
 
 const updateGroupLeaderSchema = z.object({
   is_active: z.boolean().optional(),
-  commission_percentage: z.number().min(0).max(100).optional().nullable(),
+  // commission_percentage removed - now using event-specific commissions only
+  referral_code: z.string()
+    .regex(/^[A-Z]{3}[0-9]{3}$/, 'Código deve ter formato: 3 letras maiúsculas + 3 números (ex: ABC123)')
+    .optional(),
 });
 
 /**
@@ -182,6 +185,18 @@ export const updateGroupLeaderController = asyncHandler(
         return;
       }
 
+      if (
+        error.message.includes('Código de referência') ||
+        error.message.includes('já está em uso')
+      ) {
+        res.status(409).json({
+          success: false,
+          error: 'Validation Error',
+          message: error.message,
+        });
+        return;
+      }
+
       throw error;
     }
   }
@@ -303,7 +318,36 @@ export const getReferralsByLeaderController = asyncHandler(
       return;
     }
 
-    const referrals = await getReferralsByLeader(leader.id);
+    // If called from organizer route, filter referrals to only show those related to organizer's events
+    const isOrganizerRoute = req.path?.includes('/organizer/') || req.originalUrl?.includes('/organizer/');
+    let referrals = await getReferralsByLeader(leader.id);
+    
+    if (isOrganizerRoute && req.user) {
+      const { query } = await import('../config/database.js');
+      // Filter referrals to only show users who registered for organizer's events
+      const organizerEvents = await query(
+        'SELECT id FROM events WHERE organizer_id = $1',
+        [req.user.id]
+      );
+      const eventIds = organizerEvents.rows.map((row: any) => row.id);
+      
+      if (eventIds.length > 0) {
+        const filteredReferrals = await query(
+          `SELECT DISTINCT ur.*, u.email, p.full_name, p.cpf
+           FROM user_referrals ur
+           JOIN users u ON ur.user_id = u.id
+           LEFT JOIN profiles p ON u.id = p.id
+           JOIN registrations r ON ur.user_id = r.runner_id
+           WHERE ur.leader_id = $1 AND r.event_id = ANY($2::uuid[])
+           ORDER BY ur.created_at DESC`,
+          [leader.id, eventIds]
+        );
+        referrals = filteredReferrals.rows;
+      } else {
+        // No events, return empty array
+        referrals = [];
+      }
+    }
 
     res.json({
       success: true,
@@ -371,14 +415,28 @@ export const getCommissionsByLeaderController = asyncHandler(
       return;
     }
 
+    // If called from organizer route, filter commissions to only show those from organizer's events
+    const isOrganizerRoute = req.path?.includes('/organizer/') || req.originalUrl?.includes('/organizer/');
+    
     const { status, start_date, end_date, event_id } = req.query;
 
-    const commissions = await getCommissionsByLeader(leader.id, {
+    let commissions = await getCommissionsByLeader(leader.id, {
       status: status as 'pending' | 'paid' | 'cancelled' | undefined,
       start_date: start_date as string | undefined,
       end_date: end_date as string | undefined,
       event_id: event_id as string | undefined,
     });
+
+    // Filter commissions to only show those from organizer's events if organizer route
+    if (isOrganizerRoute && req.user) {
+      const { query } = await import('../config/database.js');
+      const organizerEvents = await query(
+        'SELECT id FROM events WHERE organizer_id = $1',
+        [req.user.id]
+      );
+      const eventIds = organizerEvents.rows.map((row: any) => row.id);
+      commissions = commissions.filter((c: any) => eventIds.includes(c.event_id));
+    }
 
     res.json({
       success: true,

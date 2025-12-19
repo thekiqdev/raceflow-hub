@@ -1,4 +1,4 @@
-import { LayoutDashboard, Calendar, Users, DollarSign, FileText, MessageSquare, Settings, BarChart3, Trophy, Building2 } from "lucide-react";
+import { LayoutDashboard, Calendar, Users, DollarSign, FileText, MessageSquare, Settings, BarChart3, Trophy, Building2, UserCog } from "lucide-react";
 import {
   Sidebar,
   SidebarContent,
@@ -22,6 +22,7 @@ const menuItems = [
   { id: "events", title: "Eventos", icon: Calendar },
   { id: "registrations", title: "Inscrições", icon: Users },
   { id: "financial", title: "Financeiro", icon: DollarSign },
+  { id: "group-leaders", title: "Líderes de Grupo", icon: UserCog },
   { id: "reports", title: "Relatórios", icon: FileText },
   { id: "results", title: "Resultados", icon: Trophy },
   { id: "messages", title: "Mensagens", icon: MessageSquare },

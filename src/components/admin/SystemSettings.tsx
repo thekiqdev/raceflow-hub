@@ -136,13 +136,10 @@ const SystemSettings = () => {
           withdrawal_fee_type: data.withdrawal_fee_type || 'fixed',
         });
 
-        // Initialize leader_commission_percentage if not in settings
-        if (data.leader_commission_percentage === undefined) {
-          setSettings({
-            ...data,
-            leader_commission_percentage: 0,
-          });
-        }
+        // leader_commission_percentage removed - now using event-specific commissions only
+        setSettings({
+          ...data,
+        });
       }
     } catch (error) {
       console.error("Erro ao carregar configurações:", error);

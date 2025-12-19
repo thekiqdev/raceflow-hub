@@ -278,7 +278,12 @@ export const createRegistration = async (data: CreateRegistrationData) => {
       
       const event = await getEventById(data.event_id);
       if (event) {
-        const validation = await validateCoupon(data.coupon_code, event.organizer_id, data.event_id);
+        const validation = await validateCoupon(
+          data.coupon_code, 
+          event.organizer_id, 
+          data.event_id,
+          data.runner_id
+        );
         
         if (!validation.valid || !validation.coupon) {
           throw new Error(validation.error || 'Cupom inválido');
@@ -296,12 +301,22 @@ export const createRegistration = async (data: CreateRegistrationData) => {
     }
   }
 
+  console.log('📝 Criando inscrição com dados:', {
+    event_id: data.event_id,
+    runner_id: data.runner_id,
+    coupon_code: data.coupon_code,
+    total_amount: data.total_amount,
+  });
+
+  // Set payment_status to 'paid' if it's a free bonus registration
+  const paymentStatus = data.payment_method === 'free_bonus' ? 'paid' : 'pending';
+
   const result = await query(
     `INSERT INTO registrations (
       event_id, runner_id, registered_by, category_id, kit_id,
       payment_method, total_amount, confirmation_code, status, payment_status, coupon_code
     )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending', 'pending', $9)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending', $9, $10)
     RETURNING *`,
     [
       data.event_id,
@@ -312,34 +327,96 @@ export const createRegistration = async (data: CreateRegistrationData) => {
       data.payment_method || null,
       data.total_amount,
       confirmationCode,
+      paymentStatus,
       data.coupon_code || null,
     ]
   );
 
+  console.log('✅ Inscrição criada:', {
+    id: result.rows[0].id,
+    coupon_code: result.rows[0].coupon_code,
+  });
+
   const registration = result.rows[0];
 
-  // Check if user has a referral and create commission if applicable
+  // Check if user has a referral OR if coupon belongs to a leader, and create commission if applicable
+  // Only create commission if payment is already paid (free registrations or instant payments)
+  // For pending payments, commission will be created when payment is confirmed
   try {
     const { getUserReferral } = await import('./referralsService.js');
+    const { getCouponByCodeOnly } = await import('./couponsService.js');
     const { createCommission } = await import('./commissionsService.js');
     
-    const userReferral = await getUserReferral(data.runner_id);
-    
-    if (userReferral) {
-      // User was referred by a leader, create commission
-      await createCommission({
-        leader_id: userReferral.leader_id,
-        registration_id: registration.id,
-        referred_user_id: data.runner_id,
-        event_id: data.event_id,
-        registration_amount: data.total_amount,
-      });
+    // Only create commission if payment is already paid
+    if (registration.payment_status === 'paid') {
+      let leaderId: string | null = null;
       
-      console.log(`✅ Comissão criada para líder ${userReferral.leader_id} na inscrição ${registration.id}`);
+      // Priority: check coupon first (coupon determines commission type)
+      if (data.coupon_code) {
+        try {
+          const coupon = await getCouponByCodeOnly(data.coupon_code);
+          if (coupon && coupon.leader_id) {
+            leaderId = coupon.leader_id;
+            console.log(`✅ Cupom ${data.coupon_code} pertence ao líder ${leaderId}`);
+          }
+        } catch (couponError: any) {
+          console.log(`ℹ️ Erro ao buscar cupom ${data.coupon_code}:`, couponError.message);
+        }
+      }
+      
+      // If no coupon leader, check if user has a referral
+      if (!leaderId) {
+        const userReferral = await getUserReferral(data.runner_id);
+        if (userReferral) {
+          leaderId = userReferral.leader_id;
+        }
+      }
+      
+      if (leaderId) {
+        // User was referred by a leader or used leader's coupon, create commission (only if event commission is configured)
+        try {
+          await createCommission({
+            leader_id: leaderId,
+            registration_id: registration.id,
+            referred_user_id: data.runner_id,
+            event_id: data.event_id,
+            registration_amount: data.total_amount,
+          });
+          
+          console.log(`✅ Comissão criada para líder ${leaderId} na inscrição ${registration.id}`);
+        } catch (commissionError: any) {
+          // If no commission is configured (invitation type only) or amount is 0, just check for bonuses
+          if (commissionError.message.includes('No commission configured') || 
+              commissionError.message.includes('invitation type only')) {
+            console.log(`ℹ️ Tipo de bônus é apenas 'invitation', verificando bônus de convite...`);
+            // Check for invitation bonuses even if no commission was created
+            try {
+              const { checkAllInvitationBonuses } = await import('./leaderBonusService.js');
+              await checkAllInvitationBonuses(leaderId, data.event_id);
+            } catch (bonusError: any) {
+              console.error('❌ Erro ao verificar bônus de convite:', bonusError.message);
+            }
+          } else if (commissionError.message.includes('must be greater than 0')) {
+            console.log(`ℹ️ Valor da comissão é 0, verificando apenas bônus de convite...`);
+            // Check for invitation bonuses even if commission amount is 0
+            try {
+              const { checkAllInvitationBonuses } = await import('./leaderBonusService.js');
+              await checkAllInvitationBonuses(leaderId, data.event_id);
+            } catch (bonusError: any) {
+              console.error('❌ Erro ao verificar bônus de convite:', bonusError.message);
+            }
+          } else {
+            console.error('❌ Erro ao criar comissão:', commissionError.message);
+          }
+        }
+      }
+    } else {
+      // Payment is pending - commission will be created when payment is confirmed
+      console.log(`ℹ️ Pagamento pendente - comissão será criada quando o pagamento for confirmado`);
     }
   } catch (error: any) {
     // Log error but don't fail registration if commission creation fails
-    console.error('❌ Erro ao criar comissão para inscrição:', error.message);
+    console.error('❌ Erro ao verificar referência/cupom para inscrição:', error.message);
   }
 
   return registration;

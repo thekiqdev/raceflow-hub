@@ -86,6 +86,7 @@ export function RegistrationFlow({
   kits,
 }: RegistrationFlowProps) {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { user, login, register } = useAuth();
   const [step, setStep] = useState(1);
   const [selectedModality, setSelectedModality] = useState<Modality | null>(null);
@@ -265,6 +266,23 @@ export function RegistrationFlow({
       loadSettings();
       loadUserProfile();
       loadModalities();
+
+      // Check for coupon code in URL and apply automatically
+      const couponFromUrl = searchParams.get('cupom');
+      const refFromUrl = searchParams.get('ref');
+      
+      console.log('🔍 URL Params:', { coupon: couponFromUrl, ref: refFromUrl, searchParams: searchParams.toString() });
+      
+      if (couponFromUrl && !appliedCoupon) {
+        console.log('✅ Cupom encontrado na URL:', couponFromUrl);
+        setCouponCode(couponFromUrl.toUpperCase().trim());
+        // Auto-validate coupon from URL
+        setTimeout(() => {
+          handleValidateCoupon(couponFromUrl.toUpperCase().trim());
+        }, 500);
+      } else if (!couponFromUrl) {
+        console.log('⚠️ Nenhum cupom encontrado na URL');
+      }
     } else {
       // Reset states when modal closes
       setSelectedModality(null);
@@ -273,7 +291,7 @@ export function RegistrationFlow({
       setAvailableCategories([]);
       setStep(1);
     }
-  }, [open, user, event.id]);
+  }, [open, user, event.id, searchParams]);
 
   // Load other person profile when otherPersonId changes
   useEffect(() => {
@@ -786,16 +804,20 @@ export function RegistrationFlow({
     setStep((prev) => prev - 1);
   };
 
-  const handleValidateCoupon = async () => {
-    if (!couponCode.trim()) {
+  const handleValidateCoupon = async (code?: string) => {
+    const codeToValidate = code || couponCode.trim();
+    if (!codeToValidate) {
       return;
     }
 
     setValidatingCoupon(true);
     setCouponError(null);
+    if (code) {
+      setCouponCode(code);
+    }
 
     try {
-      const response = await validateCoupon(couponCode.trim(), event.id);
+      const response = await validateCoupon(codeToValidate, event.id);
       
       if (response.success && response.data) {
         const coupon = response.data;
@@ -2468,7 +2490,7 @@ export function RegistrationFlow({
                         <Button
                           type="button"
                           variant="outline"
-                          onClick={handleValidateCoupon}
+                          onClick={() => handleValidateCoupon()}
                           disabled={!couponCode.trim() || validatingCoupon}
                         >
                           {validatingCoupon ? "Validando..." : "Aplicar"}

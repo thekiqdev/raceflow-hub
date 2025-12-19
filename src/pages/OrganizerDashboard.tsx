@@ -11,6 +11,7 @@ import OrganizerRegistrations from "@/components/organizer/OrganizerRegistration
 import OrganizerFinancial from "@/components/organizer/OrganizerFinancial";
 import OrganizerSettings from "@/components/organizer/OrganizerSettings";
 import OrganizerReports from "@/components/organizer/OrganizerReports";
+import { OrganizerGroupLeaders } from "@/components/organizer/OrganizerGroupLeaders";
 import { getOrganizerSettings } from "@/lib/api/organizerSettings";
 
 const OrganizerDashboard = () => {
@@ -76,6 +77,8 @@ const OrganizerDashboard = () => {
         return <OrganizerRegistrations />;
       case "financial":
         return <OrganizerFinancial />;
+      case "group-leaders":
+        return <OrganizerGroupLeaders />;
       case "reports":
         return <OrganizerReports />;
       case "results":

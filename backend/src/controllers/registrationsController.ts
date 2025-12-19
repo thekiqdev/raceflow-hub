@@ -491,6 +491,14 @@ export const getPaymentStatusController = asyncHandler(async (req: AuthRequest, 
       if (asaasStatus.status === 'CONFIRMED' || asaasStatus.status === 'RECEIVED') {
         console.log(`✅ Pagamento confirmado no Asaas! Atualizando inscrição ${id}`);
         
+        // Get registration data before updating
+        const registrationData = await query(
+          'SELECT runner_id, event_id, total_amount, payment_status FROM registrations WHERE id = $1',
+          [id]
+        );
+        
+        const wasAlreadyPaid = registrationData.rows[0]?.payment_status === 'paid';
+        
         // Update registration status
         await query(
           `UPDATE registrations 
@@ -500,6 +508,112 @@ export const getPaymentStatusController = asyncHandler(async (req: AuthRequest, 
            WHERE id = $1`,
           [id]
         );
+        
+        // Only process commission and bonus if payment was just confirmed (not already paid)
+        if (!wasAlreadyPaid && registrationData.rows.length > 0) {
+          const reg = registrationData.rows[0];
+          
+          // Get coupon_code from registration
+          const registrationWithCoupon = await query(
+            'SELECT coupon_code FROM registrations WHERE id = $1',
+            [id]
+          );
+          const couponCode = registrationWithCoupon.rows[0]?.coupon_code;
+          
+          // Create commission if user has a referral OR if coupon belongs to a leader
+          try {
+            const { getUserReferral } = await import('../services/referralsService.js');
+            const { createCommission } = await import('../services/commissionsService.js');
+            
+            let leaderId: string | null = null;
+            let couponLeaderId: string | null = null;
+            
+            // First, check if coupon belongs to a leader (priority - coupon determines commission type)
+            if (couponCode) {
+              try {
+                const { getCouponByCodeOnly } = await import('../services/couponsService.js');
+                const coupon = await getCouponByCodeOnly(couponCode);
+                if (coupon && coupon.leader_id) {
+                  couponLeaderId = coupon.leader_id;
+                  leaderId = coupon.leader_id; // Use coupon leader as priority
+                  console.log(`✅ Cupom ${couponCode} pertence ao líder ${leaderId}`);
+                } else {
+                  console.log(`ℹ️ Cupom ${couponCode} não pertence a nenhum líder`);
+                }
+              } catch (couponError: any) {
+                console.log(`ℹ️ Erro ao buscar cupom ${couponCode}:`, couponError.message);
+              }
+            }
+            
+            // If no coupon leader, check if user has a referral
+            if (!leaderId) {
+              const userReferral = await getUserReferral(reg.runner_id);
+              if (userReferral) {
+                leaderId = userReferral.leader_id;
+                console.log(`✅ Runner tem referência para líder ${leaderId}`);
+              }
+            }
+            
+            if (leaderId) {
+              // Check if commission already exists for this registration
+              const existingCommission = await query(
+                'SELECT id FROM leader_commissions WHERE registration_id = $1 AND leader_id = $2',
+                [id, leaderId]
+              );
+              
+              if (existingCommission.rows.length === 0) {
+                // Create commission (this will also check for invitation bonuses)
+                try {
+                  await createCommission({
+                    leader_id: leaderId,
+                    registration_id: id,
+                    referred_user_id: reg.runner_id,
+                    event_id: reg.event_id,
+                    registration_amount: parseFloat(reg.total_amount) || 0,
+                  });
+                  console.log(`✅ Comissão criada para líder ${leaderId} na inscrição ${id}`);
+                } catch (commissionError: any) {
+                  // If no commission is configured (invitation type only) or amount is 0, just check for bonuses
+                  if (commissionError.message.includes('No commission configured') || 
+                      commissionError.message.includes('invitation type only')) {
+                    console.log(`ℹ️ Tipo de bônus é apenas 'invitation', verificando bônus de convite...`);
+                    const { checkAllInvitationBonuses } = await import('../services/leaderBonusService.js');
+                    await checkAllInvitationBonuses(leaderId, reg.event_id);
+                  } else if (commissionError.message.includes('must be greater than 0')) {
+                    console.log(`ℹ️ Valor da comissão é 0, verificando apenas bônus de convite...`);
+                    const { checkAllInvitationBonuses } = await import('../services/leaderBonusService.js');
+                    await checkAllInvitationBonuses(leaderId, reg.event_id);
+                  } else {
+                    console.error('❌ Erro ao criar comissão:', commissionError.message);
+                  }
+                }
+              } else {
+                // Commission already exists, check for bonuses only if commission type includes invitations
+                // First, check what commission type is configured for this event
+                const commissionTypeCheck = await query(
+                  `SELECT bonus_type FROM leader_event_commissions 
+                   WHERE leader_id = $1 AND event_id = $2 
+                   AND bonus_type IN ('both', 'invitation')
+                   LIMIT 1`,
+                  [leaderId, reg.event_id]
+                );
+                
+                if (commissionTypeCheck.rows.length > 0) {
+                  const { checkAllInvitationBonuses } = await import('../services/leaderBonusService.js');
+                  await checkAllInvitationBonuses(leaderId, reg.event_id);
+                  console.log(`✅ Verificação de bônus executada para líder ${leaderId}`);
+                } else {
+                  console.log(`ℹ️ Tipo de comissão é apenas 'commission', não verificando bônus de convite`);
+                }
+              }
+            } else {
+              console.log(`ℹ️ Nenhum líder associado (sem referência e cupom não pertence a líder)`);
+            }
+          } catch (commissionError: any) {
+            // Log error but don't fail payment confirmation
+            console.error('❌ Erro ao criar comissão após confirmação de pagamento:', commissionError.message);
+          }
+        }
         
         // Refresh payment data
         const updatedPayment = await getPaymentByRegistrationId(id);

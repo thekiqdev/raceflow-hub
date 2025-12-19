@@ -44,12 +44,13 @@ export interface LeaderCommission {
 
 export interface CreateGroupLeaderData {
   user_id: string;
-  commission_percentage?: number | null;
+  // commission_percentage removed - now using event-specific commissions only
 }
 
 export interface UpdateGroupLeaderData {
   is_active?: boolean;
-  commission_percentage?: number | null;
+  // commission_percentage removed - now using event-specific commissions only
+  referral_code?: string;
 }
 
 export interface ReferralStats {
@@ -137,6 +138,53 @@ export const getCommissionsByLeader = async (id: string, filters?: {
   
   const queryString = queryParams.toString();
   const endpoint = `/admin/group-leaders/${id}/commissions${queryString ? `?${queryString}` : ''}`;
+  
+  return apiClient.get<LeaderCommission[]>(endpoint);
+};
+
+// Organizer endpoints
+export const getOrganizerGroupLeaders = async () => {
+  return apiClient.get<GroupLeader[]>('/organizer/group-leaders');
+};
+
+export const createOrganizerGroupLeader = async (data: CreateGroupLeaderData) => {
+  return apiClient.post<GroupLeader>('/organizer/group-leaders', data);
+};
+
+export const getOrganizerGroupLeaderById = async (id: string) => {
+  return apiClient.get<GroupLeader>(`/organizer/group-leaders/${id}`);
+};
+
+export const updateOrganizerGroupLeader = async (id: string, data: UpdateGroupLeaderData) => {
+  return apiClient.put<GroupLeader>(`/organizer/group-leaders/${id}`, data);
+};
+
+export const activateOrganizerGroupLeader = async (id: string) => {
+  return apiClient.post<GroupLeader>(`/organizer/group-leaders/${id}/activate`, {});
+};
+
+export const deactivateOrganizerGroupLeader = async (id: string) => {
+  return apiClient.delete<GroupLeader>(`/organizer/group-leaders/${id}`);
+};
+
+export const getOrganizerReferralsByLeader = async (id: string) => {
+  return apiClient.get<UserReferral[]>(`/organizer/group-leaders/${id}/referrals`);
+};
+
+export const getOrganizerCommissionsByLeader = async (id: string, filters?: {
+  status?: 'pending' | 'paid' | 'cancelled';
+  start_date?: string;
+  end_date?: string;
+  event_id?: string;
+}) => {
+  const queryParams = new URLSearchParams();
+  if (filters?.status) queryParams.append('status', filters.status);
+  if (filters?.start_date) queryParams.append('start_date', filters.start_date);
+  if (filters?.end_date) queryParams.append('end_date', filters.end_date);
+  if (filters?.event_id) queryParams.append('event_id', filters.event_id);
+  
+  const queryString = queryParams.toString();
+  const endpoint = `/organizer/group-leaders/${id}/commissions${queryString ? `?${queryString}` : ''}`;
   
   return apiClient.get<LeaderCommission[]>(endpoint);
 };
