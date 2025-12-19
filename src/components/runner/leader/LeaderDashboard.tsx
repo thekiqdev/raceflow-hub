@@ -1,8 +1,10 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
   UserCog,
   Copy,
@@ -47,6 +49,8 @@ export function LeaderDashboard() {
   const [eventSearch, setEventSearch] = useState("");
   const [selectedEventId, setSelectedEventId] = useState<string>("all");
   const [paymentStatusFilter, setPaymentStatusFilter] = useState<string>("all");
+  const [commissionEventSearchTerm, setCommissionEventSearchTerm] = useState("");
+  const [commissionUserSearchTerm, setCommissionUserSearchTerm] = useState<Record<string, string>>({});
   const [invitations, setInvitations] = useState<LeaderInvitation[]>([]);
   const [loadingInvitations, setLoadingInvitations] = useState(false);
   const [sendInvitationDialogOpen, setSendInvitationDialogOpen] = useState(false);
@@ -131,6 +135,114 @@ export function LeaderDashboard() {
       day: "2-digit",
       month: "2-digit",
       year: "numeric",
+    });
+  };
+
+  // Group commissions by event
+  const commissionsByEvent = useMemo(() => {
+    const grouped: Record<string, LeaderCommission[]> = {};
+    (commissions || []).forEach((commission) => {
+      const eventId = commission.event_id;
+      if (!grouped[eventId]) {
+        grouped[eventId] = [];
+      }
+      grouped[eventId].push(commission);
+    });
+    return grouped;
+  }, [commissions]);
+
+  // Get unique events with statistics
+  const eventsWithStats = useMemo(() => {
+    const eventMap = new Map<string, {
+      event_id: string;
+      event_title: string;
+      commissions: LeaderCommission[];
+      totalCommissions: number;
+      totalAmount: number;
+      pendingAmount: number;
+      paidAmount: number;
+      pendingCount: number;
+      paidCount: number;
+    }>();
+
+    (commissions || []).forEach((commission) => {
+      const eventId = commission.event_id;
+      const eventTitle = commission.event_title || "N/A";
+
+      if (!eventMap.has(eventId)) {
+        eventMap.set(eventId, {
+          event_id: eventId,
+          event_title: eventTitle,
+          commissions: [],
+          totalCommissions: 0,
+          totalAmount: 0,
+          pendingAmount: 0,
+          paidAmount: 0,
+          pendingCount: 0,
+          paidCount: 0,
+        });
+      }
+
+      const event = eventMap.get(eventId)!;
+      event.commissions.push(commission);
+      event.totalCommissions++;
+      
+      const commissionAmount = typeof commission.commission_amount === 'string' 
+        ? parseFloat(commission.commission_amount) 
+        : (commission.commission_amount || 0);
+      const amount = isNaN(commissionAmount) ? 0 : commissionAmount;
+      
+      event.totalAmount += amount;
+
+      if (commission.status === "pending") {
+        event.pendingAmount += amount;
+        event.pendingCount++;
+      } else if (commission.status === "paid") {
+        event.paidAmount += amount;
+        event.paidCount++;
+      }
+    });
+
+    return Array.from(eventMap.values()).sort((a, b) => {
+      // Sort by most recent commission date
+      const aLatest = a.commissions.sort((c1, c2) => 
+        new Date(c2.created_at).getTime() - new Date(c1.created_at).getTime()
+      )[0];
+      const bLatest = b.commissions.sort((c1, c2) => 
+        new Date(c2.created_at).getTime() - new Date(c1.created_at).getTime()
+      )[0];
+      return new Date(bLatest.created_at).getTime() - new Date(aLatest.created_at).getTime();
+    });
+  }, [commissions || []]);
+
+  // Filter events by search term
+  const filteredCommissionEvents = useMemo(() => {
+    if (!commissionEventSearchTerm.trim()) {
+      return eventsWithStats;
+    }
+    const searchLower = commissionEventSearchTerm.toLowerCase();
+    return eventsWithStats.filter((event) =>
+      event.event_title.toLowerCase().includes(searchLower)
+    );
+  }, [eventsWithStats, commissionEventSearchTerm]);
+
+  // Filter commissions by user search term for a specific event
+  const getFilteredCommissionsForEvent = (eventId: string) => {
+    const eventCommissions = commissionsByEvent[eventId] || [];
+    const searchTerm = commissionUserSearchTerm[eventId] || "";
+    
+    if (!searchTerm.trim()) {
+      return eventCommissions;
+    }
+    
+    const searchLower = searchTerm.toLowerCase();
+    return eventCommissions.filter((commission) => {
+      const userName = commission.referred_user_name || "";
+      const userEmail = commission.referred_user_email || "";
+      return (
+        userName.toLowerCase().includes(searchLower) ||
+        userEmail.toLowerCase().includes(searchLower)
+      );
     });
   };
 
@@ -251,10 +363,16 @@ export function LeaderDashboard() {
   }
 
   const referralLink = `${window.location.origin}/cadastro?ref=${leader.referral_code}`;
-  const pendingCommissions = commissions.filter((c) => c.status === "pending");
-  const paidCommissions = commissions.filter((c) => c.status === "paid");
-  const totalPending = pendingCommissions.reduce((sum, c) => sum + c.commission_amount, 0);
-  const totalPaid = paidCommissions.reduce((sum, c) => sum + c.commission_amount, 0);
+  const pendingCommissions = (commissions || []).filter((c) => c.status === "pending");
+  const paidCommissions = (commissions || []).filter((c) => c.status === "paid");
+  const totalPending = pendingCommissions.reduce((sum, c) => {
+    const amount = typeof c.commission_amount === 'string' ? parseFloat(c.commission_amount) : (c.commission_amount || 0);
+    return sum + (isNaN(amount) ? 0 : amount);
+  }, 0);
+  const totalPaid = paidCommissions.reduce((sum, c) => {
+    const amount = typeof c.commission_amount === 'string' ? parseFloat(c.commission_amount) : (c.commission_amount || 0);
+    return sum + (isNaN(amount) ? 0 : amount);
+  }, 0);
 
   return (
     <div className="pb-20">
@@ -780,62 +898,145 @@ export function LeaderDashboard() {
                 </CardContent>
               </Card>
             ) : (
-              commissions.map((commission) => (
-                <Card key={commission.id}>
-                  <CardContent className="p-4">
-                    <div className="flex items-start justify-between mb-3">
-                      <div className="flex-1">
-                        <div className="font-semibold mb-1">
-                          {commission.event_title || "Evento"}
-                        </div>
-                        <div className="text-sm text-muted-foreground">
-                          {commission.referred_user_name || "Usuário"}
-                        </div>
-                      </div>
-                      <Badge
-                        variant={
-                          commission.status === "paid"
-                            ? "default"
-                            : commission.status === "pending"
-                            ? "secondary"
-                            : "destructive"
-                        }
-                      >
-                        {commission.status === "paid"
-                          ? "Pago"
-                          : commission.status === "pending"
-                          ? "Pendente"
-                          : "Cancelado"}
-                      </Badge>
-                    </div>
+              <div className="space-y-4">
+                {/* Busca de Eventos */}
+                <div className="relative">
+                  <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Buscar por evento..."
+                    value={commissionEventSearchTerm}
+                    onChange={(e) => setCommissionEventSearchTerm(e.target.value)}
+                    className="pl-10"
+                  />
+                </div>
 
-                    <div className="grid grid-cols-2 gap-3 pt-3 border-t">
-                      <div>
-                        <div className="text-xs text-muted-foreground">Valor Inscrição</div>
-                        <div className="text-sm font-semibold">
-                          {formatCurrency(commission.registration_amount)}
-                        </div>
-                      </div>
-                      <div>
-                        <div className="text-xs text-muted-foreground">Sua Comissão</div>
-                        <div className="text-sm font-semibold text-primary">
-                          {formatCurrency(commission.commission_amount)}
-                        </div>
-                      </div>
-                    </div>
+                {/* Lista de Eventos */}
+                {filteredCommissionEvents.length === 0 ? (
+                  <Card>
+                    <CardContent className="py-8 text-center">
+                      <p className="text-muted-foreground">Nenhum evento encontrado</p>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  <Accordion type="single" collapsible className="w-full">
+                    {filteredCommissionEvents.map((event) => {
+                      const filteredCommissions = getFilteredCommissionsForEvent(event.event_id);
+                      return (
+                        <AccordionItem key={event.event_id} value={event.event_id}>
+                          <AccordionTrigger className="hover:no-underline">
+                            <div className="flex items-center justify-between w-full pr-4">
+                              <div className="flex-1 text-left">
+                                <div className="font-semibold">{event.event_title}</div>
+                                <div className="text-sm text-muted-foreground mt-1">
+                                  {event.totalCommissions} comissão(ões) • Total: {formatCurrency(event.totalAmount)}
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-4 text-sm">
+                                <div className="text-right">
+                                  <div className="text-yellow-600 font-semibold">
+                                    {formatCurrency(event.pendingAmount)}
+                                  </div>
+                                  <div className="text-xs text-muted-foreground">
+                                    {event.pendingCount} pendente(s)
+                                  </div>
+                                </div>
+                                <div className="text-right">
+                                  <div className="text-green-600 font-semibold">
+                                    {formatCurrency(event.paidAmount)}
+                                  </div>
+                                  <div className="text-xs text-muted-foreground">
+                                    {event.paidCount} paga(s)
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          </AccordionTrigger>
+                          <AccordionContent>
+                            <div className="space-y-4 pt-4">
+                              {/* Busca de Usuários dentro do evento */}
+                              <div className="relative">
+                                <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                                <Input
+                                  placeholder="Buscar por usuário..."
+                                  value={commissionUserSearchTerm[event.event_id] || ""}
+                                  onChange={(e) => {
+                                    setCommissionUserSearchTerm((prev) => ({
+                                      ...prev,
+                                      [event.event_id]: e.target.value,
+                                    }));
+                                  }}
+                                  className="pl-10"
+                                />
+                              </div>
 
-                    <div className="flex items-center justify-between mt-3 pt-3 border-t">
-                      <div className="text-xs text-muted-foreground">
-                        {commission.commission_percentage}% de comissão
-                      </div>
-                      <div className="text-xs text-muted-foreground flex items-center gap-1">
-                        <Calendar className="h-3 w-3" />
-                        {formatDate(commission.created_at)}
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))
+                              {/* Tabela de Comissões do Evento */}
+                              {filteredCommissions.length === 0 ? (
+                                <Card>
+                                  <CardContent className="py-8 text-center">
+                                    <p className="text-muted-foreground">Nenhuma comissão encontrada</p>
+                                  </CardContent>
+                                </Card>
+                              ) : (
+                                <Table>
+                                  <TableHeader>
+                                    <TableRow>
+                                      <TableHead>Usuário Referenciado</TableHead>
+                                      <TableHead>Valor Inscrição</TableHead>
+                                      <TableHead>Comissão</TableHead>
+                                      <TableHead>Percentual</TableHead>
+                                      <TableHead>Status</TableHead>
+                                      <TableHead>Data</TableHead>
+                                    </TableRow>
+                                  </TableHeader>
+                                  <TableBody>
+                                    {filteredCommissions.map((commission) => (
+                                      <TableRow key={commission.id}>
+                                        <TableCell>
+                                          <div>
+                                            <div className="font-medium">
+                                              {commission.referred_user_name || "N/A"}
+                                            </div>
+                                            <div className="text-sm text-muted-foreground">
+                                              {commission.referred_user_email}
+                                            </div>
+                                          </div>
+                                        </TableCell>
+                                        <TableCell>{formatCurrency(commission.registration_amount)}</TableCell>
+                                        <TableCell className="font-semibold text-primary">
+                                          {formatCurrency(commission.commission_amount)}
+                                        </TableCell>
+                                        <TableCell>{commission.commission_percentage}%</TableCell>
+                                        <TableCell>
+                                          <Badge
+                                            variant={
+                                              commission.status === "paid"
+                                                ? "default"
+                                                : commission.status === "pending"
+                                                ? "secondary"
+                                                : "destructive"
+                                            }
+                                          >
+                                            {commission.status === "paid"
+                                              ? "Pago"
+                                              : commission.status === "pending"
+                                              ? "Pendente"
+                                              : "Cancelado"}
+                                          </Badge>
+                                        </TableCell>
+                                        <TableCell>{formatDate(commission.created_at)}</TableCell>
+                                      </TableRow>
+                                    ))}
+                                  </TableBody>
+                                </Table>
+                              )}
+                            </div>
+                          </AccordionContent>
+                        </AccordionItem>
+                      );
+                    })}
+                  </Accordion>
+                )}
+              </div>
             )}
           </TabsContent>
 

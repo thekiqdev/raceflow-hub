@@ -86,6 +86,18 @@ import {
   getReferralsByLeaderController,
   getCommissionsByLeaderController,
 } from '../controllers/groupLeadersController.js';
+import {
+  getLeaderEventCommissionsController,
+  createLeaderEventCommissionController,
+  updateLeaderEventCommissionController,
+  deleteLeaderEventCommissionController,
+} from '../controllers/leaderEventCommissionsController.js';
+import {
+  getLeaderCouponsController,
+  createLeaderCouponController,
+  updateLeaderCouponController,
+  deleteLeaderCouponController,
+} from '../controllers/leaderCouponsController.js';
 
 const router = Router();
 
@@ -177,6 +189,18 @@ router.delete('/group-leaders/:id/delete', deleteGroupLeaderController);
 router.post('/group-leaders/:id/activate', activateGroupLeaderController);
 router.get('/group-leaders/:id/referrals', getReferralsByLeaderController);
 router.get('/group-leaders/:id/commissions', getCommissionsByLeaderController);
+
+// Leader Event Commissions endpoints (admin)
+router.get('/group-leaders/:id/event-commissions', getLeaderEventCommissionsController);
+router.post('/group-leaders/:id/event-commissions', createLeaderEventCommissionController);
+router.put('/group-leaders/:id/event-commissions/:commissionId', updateLeaderEventCommissionController);
+router.delete('/group-leaders/:id/event-commissions/:commissionId', deleteLeaderEventCommissionController);
+
+// Leader Coupons endpoints (admin)
+router.get('/group-leaders/:id/coupons', getLeaderCouponsController);
+router.post('/group-leaders/:id/coupons', createLeaderCouponController);
+router.put('/group-leaders/:id/coupons/:couponId', updateLeaderCouponController);
+router.delete('/group-leaders/:id/coupons/:couponId', deleteLeaderCouponController);
 
 export default router;
 

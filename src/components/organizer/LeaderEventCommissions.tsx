@@ -15,13 +15,14 @@ import {
 import { EventCommissionDialog } from "./EventCommissionDialog";
 import { getEvents, type Event } from "@/lib/api/events";
 import { useAuth } from "@/contexts/AuthContext";
-import { getOrganizerGroupLeaderById, type GroupLeader } from "@/lib/api/groupLeaders";
+import { getOrganizerGroupLeaderById, getGroupLeaderById, type GroupLeader } from "@/lib/api/groupLeaders";
 
 interface LeaderEventCommissionsProps {
   leaderId: string;
+  isAdmin?: boolean;
 }
 
-export function LeaderEventCommissions({ leaderId }: LeaderEventCommissionsProps) {
+export function LeaderEventCommissions({ leaderId, isAdmin = false }: LeaderEventCommissionsProps) {
   const { user } = useAuth();
   const [commissions, setCommissions] = useState<LeaderEventCommission[]>([]);
   const [events, setEvents] = useState<Event[]>([]);
@@ -31,16 +32,19 @@ export function LeaderEventCommissions({ leaderId }: LeaderEventCommissionsProps
   const [editingCommission, setEditingCommission] = useState<LeaderEventCommission | null>(null);
 
   useEffect(() => {
-    if (leaderId && user) {
+    if (leaderId) {
       loadCommissions();
       loadEvents();
       loadLeader();
     }
-  }, [leaderId, user]);
+  }, [leaderId, isAdmin]);
 
   const loadLeader = async () => {
     try {
-      const response = await getOrganizerGroupLeaderById(leaderId);
+      const { getGroupLeaderById, getOrganizerGroupLeaderById } = await import("@/lib/api/groupLeaders");
+      const response = isAdmin 
+        ? await getGroupLeaderById(leaderId)
+        : await getOrganizerGroupLeaderById(leaderId);
       if (response.success && response.data) {
         setLeader(response.data);
       }
@@ -52,7 +56,7 @@ export function LeaderEventCommissions({ leaderId }: LeaderEventCommissionsProps
   const loadCommissions = async () => {
     setLoading(true);
     try {
-      const response = await getLeaderEventCommissions(leaderId);
+      const response = await getLeaderEventCommissions(leaderId, isAdmin);
       if (response.success && response.data) {
         setCommissions(response.data);
       } else {
@@ -67,10 +71,10 @@ export function LeaderEventCommissions({ leaderId }: LeaderEventCommissionsProps
   };
 
   const loadEvents = async () => {
-    if (!user) return;
-    
     try {
-      const response = await getEvents({ organizer_id: user.id });
+      // Se for admin, carregar todos os eventos. Se for organizador, filtrar por organizer_id
+      const filters = isAdmin ? {} : (user ? { organizer_id: user.id } : {});
+      const response = await getEvents(filters);
       if (response.success && response.data) {
         setEvents(response.data);
       }
@@ -108,7 +112,8 @@ export function LeaderEventCommissions({ leaderId }: LeaderEventCommissionsProps
             required_purchases: data.required_purchases,
             name: data.name,
             coupon_discount: data.coupon_discount, // Include coupon discount
-          }
+          },
+          isAdmin
         );
         if (response.success) {
           toast.success("Comissão atualizada com sucesso!");
@@ -118,7 +123,7 @@ export function LeaderEventCommissions({ leaderId }: LeaderEventCommissionsProps
           toast.error(response.error || "Erro ao atualizar comissão");
         }
       } else {
-        const response = await createLeaderEventCommission(leaderId, data);
+        const response = await createLeaderEventCommission(leaderId, data, isAdmin);
         if (response.success) {
           toast.success("Comissão criada com sucesso!");
           loadCommissions();
@@ -138,7 +143,7 @@ export function LeaderEventCommissions({ leaderId }: LeaderEventCommissionsProps
     }
 
     try {
-      const response = await deleteLeaderEventCommission(leaderId, commissionId);
+      const response = await deleteLeaderEventCommission(leaderId, commissionId, isAdmin);
       if (response.success) {
         toast.success("Comissão removida com sucesso!");
         loadCommissions();

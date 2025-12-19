@@ -72,19 +72,23 @@ export const validateCoupon = async (code: string, eventId: string) => {
 };
 
 // Leader Coupons endpoints
-export const getLeaderCoupons = async (leaderId: string) => {
-  return apiClient.get<Coupon[]>(`/organizer/group-leaders/${leaderId}/coupons`);
+export const getLeaderCoupons = async (leaderId: string, isAdmin: boolean = false) => {
+  const basePath = isAdmin ? '/admin' : '/organizer';
+  return apiClient.get<Coupon[]>(`${basePath}/group-leaders/${leaderId}/coupons`);
 };
 
-export const createLeaderCoupon = async (leaderId: string, data: CreateCouponData) => {
-  return apiClient.post<Coupon>(`/organizer/group-leaders/${leaderId}/coupons`, data);
+export const createLeaderCoupon = async (leaderId: string, data: CreateCouponData, isAdmin: boolean = false) => {
+  const basePath = isAdmin ? '/admin' : '/organizer';
+  return apiClient.post<Coupon>(`${basePath}/group-leaders/${leaderId}/coupons`, data);
 };
 
-export const updateLeaderCoupon = async (leaderId: string, couponId: string, data: UpdateCouponData) => {
-  return apiClient.put<Coupon>(`/organizer/group-leaders/${leaderId}/coupons/${couponId}`, data);
+export const updateLeaderCoupon = async (leaderId: string, couponId: string, data: UpdateCouponData, isAdmin: boolean = false) => {
+  const basePath = isAdmin ? '/admin' : '/organizer';
+  return apiClient.put<Coupon>(`${basePath}/group-leaders/${leaderId}/coupons/${couponId}`, data);
 };
 
-export const deleteLeaderCoupon = async (leaderId: string, couponId: string) => {
-  return apiClient.delete(`/organizer/group-leaders/${leaderId}/coupons/${couponId}`);
+export const deleteLeaderCoupon = async (leaderId: string, couponId: string, isAdmin: boolean = false) => {
+  const basePath = isAdmin ? '/admin' : '/organizer';
+  return apiClient.delete(`${basePath}/group-leaders/${leaderId}/coupons/${couponId}`);
 };
 

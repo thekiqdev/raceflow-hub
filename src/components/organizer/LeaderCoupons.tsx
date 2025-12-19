@@ -17,9 +17,10 @@ import { LeaderCouponDialog } from "./LeaderCouponDialog";
 
 interface LeaderCouponsProps {
   leaderId: string;
+  isAdmin?: boolean;
 }
 
-export function LeaderCoupons({ leaderId }: LeaderCouponsProps) {
+export function LeaderCoupons({ leaderId, isAdmin = false }: LeaderCouponsProps) {
   const [coupons, setCoupons] = useState<Coupon[]>([]);
   const [loading, setLoading] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -34,7 +35,7 @@ export function LeaderCoupons({ leaderId }: LeaderCouponsProps) {
   const loadCoupons = async () => {
     setLoading(true);
     try {
-      const response = await getLeaderCoupons(leaderId);
+      const response = await getLeaderCoupons(leaderId, isAdmin);
       if (response.success && response.data) {
         setCoupons(response.data);
       } else {
@@ -61,7 +62,7 @@ export function LeaderCoupons({ leaderId }: LeaderCouponsProps) {
   const handleSaveCoupon = async (data: CreateCouponData) => {
     try {
       if (editingCoupon) {
-        const response = await updateLeaderCoupon(leaderId, editingCoupon.id, data);
+        const response = await updateLeaderCoupon(leaderId, editingCoupon.id, data, isAdmin);
         if (response.success) {
           toast.success("Cupom atualizado com sucesso!");
           loadCoupons();
@@ -70,7 +71,7 @@ export function LeaderCoupons({ leaderId }: LeaderCouponsProps) {
           toast.error(response.error || "Erro ao atualizar cupom");
         }
       } else {
-        const response = await createLeaderCoupon(leaderId, data);
+        const response = await createLeaderCoupon(leaderId, data, isAdmin);
         if (response.success) {
           toast.success("Cupom criado com sucesso!");
           loadCoupons();
@@ -90,7 +91,7 @@ export function LeaderCoupons({ leaderId }: LeaderCouponsProps) {
     }
 
     try {
-      const response = await deleteLeaderCoupon(leaderId, couponId);
+      const response = await deleteLeaderCoupon(leaderId, couponId, isAdmin);
       if (response.success) {
         toast.success("Cupom removido com sucesso!");
         loadCoupons();

@@ -46,8 +46,9 @@ export interface UpdateLeaderEventCommissionData {
 }
 
 // Get all event commissions for a leader (organizer endpoint)
-export const getLeaderEventCommissions = async (leaderId: string) => {
-  return apiClient.get<LeaderEventCommission[]>(`/organizer/group-leaders/${leaderId}/event-commissions`);
+export const getLeaderEventCommissions = async (leaderId: string, isAdmin: boolean = false) => {
+  const basePath = isAdmin ? '/admin' : '/organizer';
+  return apiClient.get<LeaderEventCommission[]>(`${basePath}/group-leaders/${leaderId}/event-commissions`);
 };
 
 // Get my event commissions (leader endpoint)
@@ -58,25 +59,30 @@ export const getMyEventCommissions = async () => {
 // Create event commission for a leader
 export const createLeaderEventCommission = async (
   leaderId: string,
-  data: CreateLeaderEventCommissionData
+  data: CreateLeaderEventCommissionData,
+  isAdmin: boolean = false
 ) => {
-  return apiClient.post<LeaderEventCommission>(`/organizer/group-leaders/${leaderId}/event-commissions`, data);
+  const basePath = isAdmin ? '/admin' : '/organizer';
+  return apiClient.post<LeaderEventCommission>(`${basePath}/group-leaders/${leaderId}/event-commissions`, data);
 };
 
 // Update event commission
 export const updateLeaderEventCommission = async (
   leaderId: string,
   commissionId: string,
-  data: UpdateLeaderEventCommissionData
+  data: UpdateLeaderEventCommissionData,
+  isAdmin: boolean = false
 ) => {
+  const basePath = isAdmin ? '/admin' : '/organizer';
   return apiClient.put<LeaderEventCommission>(
-    `/organizer/group-leaders/${leaderId}/event-commissions/${commissionId}`,
+    `${basePath}/group-leaders/${leaderId}/event-commissions/${commissionId}`,
     data
   );
 };
 
 // Delete event commission
-export const deleteLeaderEventCommission = async (leaderId: string, commissionId: string) => {
-  return apiClient.delete(`/organizer/group-leaders/${leaderId}/event-commissions/${commissionId}`);
+export const deleteLeaderEventCommission = async (leaderId: string, commissionId: string, isAdmin: boolean = false) => {
+  const basePath = isAdmin ? '/admin' : '/organizer';
+  return apiClient.delete(`${basePath}/group-leaders/${leaderId}/event-commissions/${commissionId}`);
 };
 
