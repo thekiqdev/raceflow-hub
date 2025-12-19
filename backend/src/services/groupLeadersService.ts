@@ -236,6 +236,25 @@ export const activateGroupLeader = async (leaderId: string): Promise<GroupLeader
 };
 
 /**
+ * Delete group leader permanently
+ * Note: This will cascade delete all related records (referrals, commissions, etc.)
+ */
+export const deleteGroupLeader = async (leaderId: string): Promise<void> => {
+  // Check if leader exists
+  const leader = await getGroupLeaderById(leaderId);
+  
+  if (!leader) {
+    throw new Error('Group leader not found');
+  }
+  
+  // Delete the leader (cascade will handle related records)
+  await query(
+    'DELETE FROM group_leaders WHERE id = $1',
+    [leaderId]
+  );
+};
+
+/**
  * Get all group leaders (for admin)
  */
 export const getAllGroupLeaders = async (): Promise<GroupLeader[]> => {

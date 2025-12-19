@@ -9,6 +9,7 @@ import {
   deactivateGroupLeader,
   activateGroupLeader,
   getAllGroupLeaders,
+  deleteGroupLeader,
 } from '../services/groupLeadersService.js';
 import { getReferralsByLeader, getReferralStats } from '../services/referralsService.js';
 import { getCommissionsByLeader } from '../services/commissionsService.js';
@@ -479,6 +480,38 @@ export const getMyStatsController = asyncHandler(
         stats,
       },
     });
+  }
+);
+
+/**
+ * DELETE /api/admin/group-leaders/:id/delete
+ * Permanently delete group leader (admin only)
+ * Note: This will cascade delete all related records (referrals, commissions, event commissions, invitations, coupons)
+ * Note: Admin role is already verified by requireRole('admin') middleware in adminRoutes.ts
+ */
+export const deleteGroupLeaderController = asyncHandler(
+  async (req: AuthRequest, res: Response) => {
+    const { id } = req.params;
+
+    try {
+      await deleteGroupLeader(id);
+
+      res.json({
+        success: true,
+        message: 'Líder de grupo excluído permanentemente',
+      });
+    } catch (error: any) {
+      if (error.message === 'Group leader not found') {
+        res.status(404).json({
+          success: false,
+          error: 'Not found',
+          message: error.message,
+        });
+        return;
+      }
+
+      throw error;
+    }
   }
 );
 

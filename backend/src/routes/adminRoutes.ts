@@ -81,6 +81,7 @@ import {
   getGroupLeaderByIdController,
   updateGroupLeaderController,
   deactivateGroupLeaderController,
+  deleteGroupLeaderController,
   activateGroupLeaderController,
   getReferralsByLeaderController,
   getCommissionsByLeaderController,
@@ -172,6 +173,7 @@ router.get('/group-leaders', getAllGroupLeadersController);
 router.get('/group-leaders/:id', getGroupLeaderByIdController);
 router.put('/group-leaders/:id', updateGroupLeaderController);
 router.delete('/group-leaders/:id', deactivateGroupLeaderController);
+router.delete('/group-leaders/:id/delete', deleteGroupLeaderController);
 router.post('/group-leaders/:id/activate', activateGroupLeaderController);
 router.get('/group-leaders/:id/referrals', getReferralsByLeaderController);
 router.get('/group-leaders/:id/commissions', getCommissionsByLeaderController);

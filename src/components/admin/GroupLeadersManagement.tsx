@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Search, UserPlus, Edit, Eye, Loader2, CheckCircle, XCircle, Copy, ExternalLink } from "lucide-react";
+import { Search, UserPlus, Edit, Eye, Loader2, CheckCircle, XCircle, Copy, ExternalLink, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import {
   getAllGroupLeaders,
@@ -12,11 +12,13 @@ import {
   updateGroupLeader,
   deactivateGroupLeader,
   activateGroupLeader,
+  deleteGroupLeader,
   type GroupLeader,
 } from "@/lib/api/groupLeaders";
 import { GroupLeaderDialog } from "./GroupLeaderDialog";
 import { GroupLeaderDetails } from "./GroupLeaderDetails";
 import { getAthletes, type UserWithStats } from "@/lib/api/userManagement";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 export function GroupLeadersManagement() {
   const [leaders, setLeaders] = useState<GroupLeader[]>([]);
@@ -27,6 +29,9 @@ export function GroupLeadersManagement() {
   const [selectedLeader, setSelectedLeader] = useState<GroupLeader | null>(null);
   const [editingLeader, setEditingLeader] = useState<GroupLeader | null>(null);
   const [availableUsers, setAvailableUsers] = useState<UserWithStats[]>([]);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [leaderToDelete, setLeaderToDelete] = useState<GroupLeader | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     loadLeaders();
@@ -128,6 +133,32 @@ export function GroupLeadersManagement() {
     const link = `${window.location.origin}/cadastro?ref=${code}`;
     navigator.clipboard.writeText(link);
     toast.success("Link copiado para a área de transferência!");
+  };
+
+  const handleDeleteClick = (leader: GroupLeader) => {
+    setLeaderToDelete(leader);
+    setDeleteDialogOpen(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!leaderToDelete) return;
+
+    setDeleting(true);
+    try {
+      const response = await deleteGroupLeader(leaderToDelete.id);
+      if (response.success) {
+        toast.success("Líder excluído permanentemente!");
+        loadLeaders();
+        setDeleteDialogOpen(false);
+        setLeaderToDelete(null);
+      } else {
+        toast.error(response.error || "Erro ao excluir líder");
+      }
+    } catch (error: any) {
+      toast.error(error.message || "Erro ao excluir líder");
+    } finally {
+      setDeleting(false);
+    }
   };
 
   const filteredLeaders = leaders.filter((leader) => {
@@ -325,6 +356,14 @@ export function GroupLeadersManagement() {
                                 <CheckCircle className="h-4 w-4 text-green-600" />
                               )}
                             </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleDeleteClick(leader)}
+                              title="Excluir permanentemente"
+                            >
+                              <Trash2 className="h-4 w-4 text-destructive" />
+                            </Button>
                           </div>
                         </TableCell>
                       </TableRow>
@@ -353,6 +392,57 @@ export function GroupLeadersManagement() {
         onCopyCode={handleCopyCode}
         onCopyLink={handleCopyLink}
       />
+
+      {/* Dialog de confirmação de exclusão */}
+      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Excluir Líder de Grupo</DialogTitle>
+            <DialogDescription>
+              Tem certeza que deseja excluir permanentemente o líder{" "}
+              <strong>{leaderToDelete?.referral_code}</strong>?
+              <br />
+              <br />
+              <span className="text-destructive font-semibold">
+                Esta ação não pode ser desfeita. Todos os dados relacionados serão excluídos permanentemente, incluindo:
+              </span>
+              <ul className="list-disc list-inside mt-2 text-sm text-muted-foreground">
+                <li>Referências de usuários</li>
+                <li>Comissões</li>
+                <li>Comissões por evento</li>
+                <li>Convites</li>
+                <li>Cupons exclusivos</li>
+              </ul>
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setDeleteDialogOpen(false);
+                setLeaderToDelete(null);
+              }}
+              disabled={deleting}
+            >
+              Cancelar
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleConfirmDelete}
+              disabled={deleting}
+            >
+              {deleting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Excluindo...
+                </>
+              ) : (
+                "Excluir Permanentemente"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

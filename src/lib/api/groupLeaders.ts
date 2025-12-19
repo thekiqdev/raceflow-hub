@@ -120,6 +120,10 @@ export const activateGroupLeader = async (id: string) => {
   return apiClient.post<GroupLeader>(`/admin/group-leaders/${id}/activate`, {});
 };
 
+export const deleteGroupLeader = async (id: string) => {
+  return apiClient.delete<{ success: boolean; message: string }>(`/admin/group-leaders/${id}/delete`);
+};
+
 export const getReferralsByLeader = async (id: string) => {
   return apiClient.get<UserReferral[]>(`/admin/group-leaders/${id}/referrals`);
 };
