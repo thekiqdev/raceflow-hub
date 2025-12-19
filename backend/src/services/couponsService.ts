@@ -383,8 +383,7 @@ export const incrementCouponUsage = async (couponId: string): Promise<void> => {
 export const validateCoupon = async (
   code: string, 
   organizerId: string, 
-  eventId?: string,
-  userId?: string
+  eventId?: string
 ): Promise<{ valid: boolean; coupon?: Coupon; error?: string }> => {
   const coupon = await getCouponByCode(code, organizerId);
   

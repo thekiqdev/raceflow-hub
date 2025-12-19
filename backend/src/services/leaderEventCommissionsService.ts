@@ -76,7 +76,6 @@ export const getLeaderEventCommissions = async (
   const { getCouponsByLeader } = await import('./couponsService.js');
   const { getGroupLeaderById } = await import('./groupLeadersService.js');
   const { getRegistrationsByLeaderCoupons } = await import('./leaderRegistrationsService.js');
-  const { getLeaderInvitations } = await import('./leaderInvitationsService.js');
   
   const coupons = await getCouponsByLeader(leaderId);
   const leader = await getGroupLeaderById(leaderId);

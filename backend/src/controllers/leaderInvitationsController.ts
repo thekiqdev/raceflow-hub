@@ -1,4 +1,4 @@
-import { Request, Response } from 'express';
+import { Response } from 'express';
 import { z } from 'zod';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { AuthRequest } from '../middleware/auth.js';
@@ -29,6 +29,14 @@ const sendInvitationSchema = z.object({
 export const getMyAvailableInvitationsController = asyncHandler(
   async (req: AuthRequest, res: Response) => {
     // Get leader ID from user
+    if (!req.user) {
+      res.status(401).json({
+        success: false,
+        error: 'Unauthorized',
+        message: 'Usuário não autenticado',
+      });
+      return;
+    }
     const { getGroupLeaderByUserId } = await import('../services/groupLeadersService.js');
     const leader = await getGroupLeaderByUserId(req.user.id);
 
@@ -56,6 +64,14 @@ export const getMyAvailableInvitationsController = asyncHandler(
 export const getMyInvitationsController = asyncHandler(
   async (req: AuthRequest, res: Response) => {
     // Get leader ID from user
+    if (!req.user) {
+      res.status(401).json({
+        success: false,
+        error: 'Unauthorized',
+        message: 'Usuário não autenticado',
+      });
+      return;
+    }
     const { getGroupLeaderByUserId } = await import('../services/groupLeadersService.js');
     const leader = await getGroupLeaderByUserId(req.user.id);
 
@@ -68,6 +84,14 @@ export const getMyInvitationsController = asyncHandler(
       return;
     }
 
+    if (!req.user) {
+      res.status(401).json({
+        success: false,
+        error: 'Unauthorized',
+        message: 'Usuário não autenticado',
+      });
+      return;
+    }
     console.log(`🔍 [getMyInvitationsController] Buscando convites:`);
     console.log(`   - User ID: ${req.user.id}`);
     console.log(`   - Leader ID: ${leader.id}`);
@@ -102,6 +126,14 @@ export const getMyInvitationsController = asyncHandler(
  */
 export const sendInvitationController = asyncHandler(
   async (req: AuthRequest, res: Response) => {
+    if (!req.user) {
+      res.status(401).json({
+        success: false,
+        error: 'Unauthorized',
+        message: 'Usuário não autenticado',
+      });
+      return;
+    }
     console.log('📤 [sendInvitationController] Recebido:', {
       body: req.body,
       user_id: req.user.id,
@@ -123,6 +155,14 @@ export const sendInvitationController = asyncHandler(
     console.log('✅ [sendInvitationController] Validação OK:', validation.data);
 
     // Get leader ID from user
+    if (!req.user) {
+      res.status(401).json({
+        success: false,
+        error: 'Unauthorized',
+        message: 'Usuário não autenticado',
+      });
+      return;
+    }
     const { getGroupLeaderByUserId } = await import('../services/groupLeadersService.js');
     const leader = await getGroupLeaderByUserId(req.user.id);
 

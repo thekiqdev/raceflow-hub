@@ -281,8 +281,7 @@ export const createRegistration = async (data: CreateRegistrationData) => {
         const validation = await validateCoupon(
           data.coupon_code, 
           event.organizer_id, 
-          data.event_id,
-          data.runner_id
+          data.event_id
         );
         
         if (!validation.valid || !validation.coupon) {

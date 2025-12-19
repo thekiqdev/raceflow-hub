@@ -526,7 +526,6 @@ export const getPaymentStatusController = asyncHandler(async (req: AuthRequest, 
             const { createCommission } = await import('../services/commissionsService.js');
             
             let leaderId: string | null = null;
-            let couponLeaderId: string | null = null;
             
             // First, check if coupon belongs to a leader (priority - coupon determines commission type)
             if (couponCode) {
@@ -534,7 +533,6 @@ export const getPaymentStatusController = asyncHandler(async (req: AuthRequest, 
                 const { getCouponByCodeOnly } = await import('../services/couponsService.js');
                 const coupon = await getCouponByCodeOnly(couponCode);
                 if (coupon && coupon.leader_id) {
-                  couponLeaderId = coupon.leader_id;
                   leaderId = coupon.leader_id; // Use coupon leader as priority
                   console.log(`✅ Cupom ${couponCode} pertence ao líder ${leaderId}`);
                 } else {

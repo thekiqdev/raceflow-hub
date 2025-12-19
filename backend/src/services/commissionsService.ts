@@ -2,7 +2,6 @@ import { query } from '../config/database.js';
 import { LeaderCommission } from '../types/index.js';
 import { getGroupLeaderById } from './groupLeadersService.js';
 import { addToTotalEarnings } from './groupLeadersService.js';
-import { getLeaderEventCommission } from './leaderEventCommissionsService.js';
 
 export interface CreateCommissionData {
   leader_id: string;

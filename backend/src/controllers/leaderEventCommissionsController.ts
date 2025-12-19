@@ -11,7 +11,7 @@ import {
 import { z } from 'zod';
 import { getGroupLeaderById } from '../services/groupLeadersService.js';
 import { getEventById } from '../services/eventsService.js';
-import { createCoupon, getCouponsByLeader } from '../services/couponsService.js';
+import { createCoupon } from '../services/couponsService.js';
 
 // Validation schemas
 const createLeaderEventCommissionSchema = z.object({

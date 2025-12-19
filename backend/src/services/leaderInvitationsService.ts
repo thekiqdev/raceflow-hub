@@ -255,7 +255,7 @@ export const sendInvitationByCpf = async (
   }
 
   // Update invitation to sent status
-  const updateResult = await query(
+  await query(
     `UPDATE leader_invitations 
      SET runner_id = $1, 
          runner_cpf = $2,

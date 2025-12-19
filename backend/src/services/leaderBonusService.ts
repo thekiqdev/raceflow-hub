@@ -1,5 +1,4 @@
 import { query } from '../config/database.js';
-import { getLeaderEventCommission } from './leaderEventCommissionsService.js';
 import { createRegistration } from './registrationsService.js';
 import { getEventById } from './eventsService.js';
 import { getGroupLeaderById } from './groupLeadersService.js';
