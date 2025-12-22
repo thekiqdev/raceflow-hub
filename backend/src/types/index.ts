@@ -160,6 +160,7 @@ export interface Modality {
   event_id: string;
   name: string;
   distance: string;
+  display_order: number;
   created_at: Date;
   updated_at: Date;
 }
@@ -174,6 +175,7 @@ export interface Category {
   min_age: number | null;
   max_participants: number | null;
   is_default: boolean;
+  display_order: number;
   created_at: Date;
   updated_at: Date;
   modality_ids?: string[]; // Para relacionamento (não está no banco, apenas para API)
@@ -190,11 +192,13 @@ export interface CreateModalityData {
   event_id: string;
   name: string;
   distance: string;
+  display_order?: number; // Opcional na criação - será calculado automaticamente se não fornecido
 }
 
 export interface UpdateModalityData {
   name?: string;
   distance?: string;
+  display_order?: number; // Permite atualizar a ordem de exibição
 }
 
 export interface CreateCategoryData {
@@ -206,6 +210,7 @@ export interface CreateCategoryData {
   min_age?: number | null;
   max_participants?: number | null;
   is_default?: boolean;
+  display_order?: number; // Opcional na criação - será calculado automaticamente se não fornecido
   modality_ids?: string[]; // IDs das modalidades associadas
 }
 
@@ -217,6 +222,7 @@ export interface UpdateCategoryData {
   min_age?: number | null;
   max_participants?: number | null;
   is_default?: boolean;
+  display_order?: number; // Permite atualizar a ordem de exibição
   modality_ids?: string[]; // IDs das modalidades associadas
 }
 

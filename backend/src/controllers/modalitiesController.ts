@@ -7,6 +7,7 @@ import {
   getModalityById,
   updateModality,
   deleteModality,
+  reorderModalities,
 } from '../services/modalitiesService.js';
 import { CreateModalityData, UpdateModalityData } from '../types/index.js';
 import { getEventById } from '../services/eventsService.js';
@@ -339,6 +340,99 @@ export const deleteModalityController = asyncHandler(
         res.status(409).json({
           success: false,
           error: 'Conflict',
+          message: error.message,
+        });
+        return;
+      }
+      throw error;
+    }
+  }
+);
+
+/**
+ * PUT /api/modalities/events/:eventId/reorder
+ * Reorder modalities for an event
+ */
+export const reorderModalitiesController = asyncHandler(
+  async (req: AuthRequest, res: Response) => {
+    if (!req.user) {
+      res.status(401).json({
+        success: false,
+        error: 'Not authenticated',
+      });
+      return;
+    }
+
+    const { eventId } = req.params;
+
+    if (!eventId) {
+      res.status(400).json({
+        success: false,
+        error: 'Bad Request',
+        message: 'Event ID is required',
+      });
+      return;
+    }
+
+    // Validation schema
+    const reorderSchema = z.object({
+      modalityOrders: z.array(
+        z.object({
+          id: z.string().uuid('ID da modalidade inválido'),
+          display_order: z.number().int().positive('display_order deve ser um número inteiro positivo'),
+        })
+      ).min(1, 'Deve haver pelo menos uma modalidade para reordenar'),
+    });
+
+    const validation = reorderSchema.safeParse(req.body);
+
+    if (!validation.success) {
+      res.status(400).json({
+        success: false,
+        error: 'Validation Error',
+        message: validation.error.errors[0].message,
+        errors: validation.error.errors,
+      });
+      return;
+    }
+
+    // Verify event ownership
+    const event = await getEventById(eventId);
+    if (!event) {
+      res.status(404).json({
+        success: false,
+        error: 'Event not found',
+        message: 'Evento não encontrado',
+      });
+      return;
+    }
+
+    // Check ownership
+    if (event.organizer_id !== req.user.id) {
+      const { hasRole } = await import('../services/userRolesService.js');
+      const isAdmin = await hasRole(req.user.id, 'admin');
+      if (!isAdmin) {
+        res.status(403).json({
+          success: false,
+          error: 'Forbidden',
+          message: 'Você só pode reordenar modalidades dos seus próprios eventos',
+        });
+        return;
+      }
+    }
+
+    try {
+      await reorderModalities(eventId, validation.data.modalityOrders);
+
+      res.json({
+        success: true,
+        message: 'Modalidades reordenadas com sucesso',
+      });
+    } catch (error: any) {
+      if (error.message.includes('not found') || error.message.includes('different event')) {
+        res.status(400).json({
+          success: false,
+          error: 'Bad Request',
           message: error.message,
         });
         return;

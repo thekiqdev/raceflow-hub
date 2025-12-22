@@ -28,6 +28,7 @@ export interface EventKit {
   name: string;
   description: string | null;
   price: number;
+  display_order: number;
   created_at: Date | null;
   products?: KitProduct[];
 }
@@ -37,7 +38,7 @@ export interface EventKit {
  */
 export const getEventKits = async (eventId: string): Promise<EventKit[]> => {
   const kitsResult = await query(
-    `SELECT * FROM event_kits WHERE event_id = $1 ORDER BY price ASC, name ASC`,
+    `SELECT * FROM event_kits WHERE event_id = $1 ORDER BY display_order ASC`,
     [eventId]
   );
 
@@ -47,6 +48,7 @@ export const getEventKits = async (eventId: string): Promise<EventKit[]> => {
     name: row.name,
     description: row.description,
     price: parseFloat(row.price) || 0,
+    display_order: row.display_order,
     created_at: row.created_at,
   }));
 
@@ -72,7 +74,7 @@ export const getEventKits = async (eventId: string): Promise<EventKit[]> => {
     for (const product of products) {
       if (product.type === 'variable') {
         const variantsResult = await query(
-          `SELECT * FROM product_variants WHERE product_id = $1 ORDER BY name ASC`,
+          `SELECT * FROM product_variants WHERE product_id = $1 ORDER BY created_at ASC`,
           [product.id]
         );
 
@@ -103,16 +105,29 @@ export const createEventKit = async (data: {
   name: string;
   description?: string | null;
   price: number;
+  display_order?: number;
 }): Promise<EventKit> => {
+  // Se display_order não foi fornecido, calcular como próximo valor
+  let displayOrder = data.display_order;
+  if (displayOrder === undefined) {
+    const maxResult = await query(
+      `SELECT COALESCE(MAX(display_order), 0) as max_order 
+       FROM event_kits WHERE event_id = $1`,
+      [data.event_id]
+    );
+    displayOrder = (maxResult.rows[0]?.max_order || 0) + 1;
+  }
+
   const result = await query(
-    `INSERT INTO event_kits (event_id, name, description, price)
-     VALUES ($1, $2, $3, $4)
+    `INSERT INTO event_kits (event_id, name, description, price, display_order)
+     VALUES ($1, $2, $3, $4, $5)
      RETURNING *`,
     [
       data.event_id,
       data.name,
       data.description || null,
       data.price,
+      displayOrder,
     ]
   );
 
@@ -122,6 +137,7 @@ export const createEventKit = async (data: {
     name: result.rows[0].name,
     description: result.rows[0].description,
     price: parseFloat(result.rows[0].price) || 0,
+    display_order: result.rows[0].display_order,
     created_at: result.rows[0].created_at,
   };
 };
@@ -135,6 +151,7 @@ export const updateEventKit = async (
     name?: string;
     description?: string | null;
     price?: number;
+    display_order?: number;
   }
 ): Promise<EventKit | null> => {
   const fields: string[] = [];
@@ -154,6 +171,11 @@ export const updateEventKit = async (
   if (data.price !== undefined) {
     fields.push(`price = $${paramIndex}`);
     values.push(data.price);
+    paramIndex++;
+  }
+  if (data.display_order !== undefined) {
+    fields.push(`display_order = $${paramIndex}`);
+    values.push(data.display_order);
     paramIndex++;
   }
 
@@ -181,6 +203,7 @@ export const updateEventKit = async (
     name: result.rows[0].name,
     description: result.rows[0].description,
     price: parseFloat(result.rows[0].price) || 0,
+    display_order: result.rows[0].display_order,
     created_at: result.rows[0].created_at,
   };
 };
@@ -207,6 +230,7 @@ export const syncEventKits = async (
     name: string;
     description?: string | null;
     price: number;
+    display_order?: number;
     products?: Array<{
       id?: string;
       name: string;
@@ -247,6 +271,7 @@ export const syncEventKits = async (
         name: kitData.name,
         description: kitData.description,
         price: kitData.price,
+        display_order: kitData.display_order,
       });
       if (!updated) continue;
       kit = updated;
@@ -257,6 +282,7 @@ export const syncEventKits = async (
         name: kitData.name,
         description: kitData.description,
         price: kitData.price,
+        display_order: kitData.display_order,
       });
     }
 
@@ -606,5 +632,34 @@ export const deleteProductVariant = async (variantId: string): Promise<boolean> 
   );
 
   return result.rowCount ? result.rowCount > 0 : false;
+};
+
+/**
+ * Reorder event kits for an event
+ * @param eventId Event ID
+ * @param kitOrders Array of { id, display_order } pairs
+ */
+export const reorderEventKits = async (
+  eventId: string,
+  kitOrders: Array<{ id: string; display_order: number }>
+): Promise<void> => {
+  // Validar que todos os IDs pertencem ao evento
+  const ids = kitOrders.map(k => k.id);
+  const checkResult = await query(
+    `SELECT id FROM event_kits WHERE id = ANY($1::UUID[]) AND event_id = $2`,
+    [ids, eventId]
+  );
+  
+  if (checkResult.rows.length !== ids.length) {
+    throw new Error('One or more kits not found or belong to different event');
+  }
+
+  // Atualizar display_order em uma transação
+  for (const { id, display_order } of kitOrders) {
+    await query(
+      `UPDATE event_kits SET display_order = $1 WHERE id = $2`,
+      [display_order, id]
+    );
+  }
 };
 

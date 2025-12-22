@@ -10,7 +10,7 @@ import {
   deleteEventController,
 } from '../controllers/eventsController.js';
 import { getEventCategoriesController, syncEventCategoriesController } from '../controllers/eventCategoriesController.js';
-import { getEventKitsController, syncEventKitsController } from '../controllers/eventKitsController.js';
+import { getEventKitsController, syncEventKitsController, reorderEventKitsController } from '../controllers/eventKitsController.js';
 import { getEventPickupLocationsController } from '../controllers/kitPickupController.js';
 
 const router = Router();
@@ -30,6 +30,7 @@ router.delete('/:id', authenticate, requireEventOwnership('id'), deleteEventCont
 // Categories and kits management
 router.post('/:eventId/categories', authenticate, requireEventOwnership('eventId'), syncEventCategoriesController);
 router.post('/:eventId/kits', authenticate, requireEventOwnership('eventId'), syncEventKitsController);
+router.put('/:eventId/kits/reorder', authenticate, requireEventOwnership('eventId'), reorderEventKitsController);
 
 export default router;
 

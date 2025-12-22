@@ -16,7 +16,7 @@ export const getCategoriesByEvent = async (eventId: string): Promise<Category[]>
      LEFT JOIN category_modalities cm ON c.id = cm.category_id
      WHERE c.event_id = $1
      GROUP BY c.id
-     ORDER BY c.name ASC`,
+     ORDER BY c.display_order ASC`,
     [eventId]
   );
 
@@ -30,6 +30,7 @@ export const getCategoriesByEvent = async (eventId: string): Promise<Category[]>
     min_age: row.min_age ? parseInt(row.min_age) : null,
     max_participants: row.max_participants ? parseInt(row.max_participants) : null,
     is_default: row.is_default === true,
+    display_order: row.display_order,
     created_at: row.created_at,
     updated_at: row.updated_at,
     modality_ids: row.modality_ids || [],
@@ -49,7 +50,7 @@ export const getCategoriesByModality = async (modalityId: string): Promise<Categ
      LEFT JOIN category_modalities cm2 ON c.id = cm2.category_id
      WHERE cm.modality_id = $1
      GROUP BY c.id
-     ORDER BY c.name ASC`,
+     ORDER BY c.display_order ASC`,
     [modalityId]
   );
 
@@ -63,6 +64,7 @@ export const getCategoriesByModality = async (modalityId: string): Promise<Categ
     min_age: row.min_age ? parseInt(row.min_age) : null,
     max_participants: row.max_participants ? parseInt(row.max_participants) : null,
     is_default: row.is_default === true,
+    display_order: row.display_order,
     created_at: row.created_at,
     updated_at: row.updated_at,
     modality_ids: row.modality_ids || [],
@@ -102,6 +104,7 @@ export const getCategoryById = async (categoryId: string): Promise<Category | nu
     min_age: row.min_age ? parseInt(row.min_age) : null,
     max_participants: row.max_participants ? parseInt(row.max_participants) : null,
     is_default: row.is_default === true,
+    display_order: row.display_order,
     created_at: row.created_at,
     updated_at: row.updated_at,
     modality_ids: row.modality_ids || [],
@@ -130,10 +133,21 @@ export const createCategory = async (
     );
   }
   
+  // Se display_order não foi fornecido, calcular como próximo valor
+  let displayOrder = data.display_order;
+  if (displayOrder === undefined) {
+    const maxResult = await query(
+      `SELECT COALESCE(MAX(display_order), 0) as max_order 
+       FROM categories WHERE event_id = $1`,
+      [data.event_id]
+    );
+    displayOrder = (maxResult.rows[0]?.max_order || 0) + 1;
+  }
+
   // Inserir a categoria
   const result = await query(
-    `INSERT INTO categories (event_id, name, price, category_type, gender, min_age, max_participants, is_default)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    `INSERT INTO categories (event_id, name, price, category_type, gender, min_age, max_participants, is_default, display_order)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
      RETURNING *`,
     [
       data.event_id,
@@ -144,6 +158,7 @@ export const createCategory = async (
       data.min_age || null,
       data.max_participants || null,
       shouldBeDefault,
+      displayOrder,
     ]
   );
 
@@ -211,6 +226,12 @@ export const updateCategory = async (
   if (data.max_participants !== undefined) {
     fields.push(`max_participants = $${paramIndex}`);
     values.push(data.max_participants);
+    paramIndex++;
+  }
+
+  if (data.display_order !== undefined) {
+    fields.push(`display_order = $${paramIndex}`);
+    values.push(data.display_order);
     paramIndex++;
   }
 
@@ -360,5 +381,34 @@ export const getCategoryModalityIds = async (categoryId: string): Promise<string
   );
 
   return result.rows.map((row) => row.modality_id);
+};
+
+/**
+ * Reorder categories for an event
+ * @param eventId Event ID
+ * @param categoryOrders Array of { id, display_order } pairs
+ */
+export const reorderCategories = async (
+  eventId: string,
+  categoryOrders: Array<{ id: string; display_order: number }>
+): Promise<void> => {
+  // Validar que todos os IDs pertencem ao evento
+  const ids = categoryOrders.map(c => c.id);
+  const checkResult = await query(
+    `SELECT id FROM categories WHERE id = ANY($1::UUID[]) AND event_id = $2`,
+    [ids, eventId]
+  );
+  
+  if (checkResult.rows.length !== ids.length) {
+    throw new Error('One or more categories not found or belong to different event');
+  }
+
+  // Atualizar display_order em uma transação
+  for (const { id, display_order } of categoryOrders) {
+    await query(
+      `UPDATE categories SET display_order = $1, updated_at = NOW() WHERE id = $2`,
+      [display_order, id]
+    );
+  }
 };
 

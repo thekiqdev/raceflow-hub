@@ -8,6 +8,7 @@ import {
   getCategoryByIdController,
   updateCategoryController,
   deleteCategoryController,
+  reorderCategoriesController,
 } from '../controllers/categoriesController.js';
 
 const router = Router();
@@ -21,6 +22,7 @@ router.get('/:id', optionalAuth, getCategoryByIdController);
 router.post('/', authenticate, requireAnyRole(['organizer', 'admin']), createCategoryController);
 router.put('/:id', authenticate, requireAnyRole(['organizer', 'admin']), updateCategoryController);
 router.delete('/:id', authenticate, requireAnyRole(['organizer', 'admin']), deleteCategoryController);
+router.put('/events/:eventId/reorder', authenticate, requireAnyRole(['organizer', 'admin']), reorderCategoriesController);
 
 export default router;
 

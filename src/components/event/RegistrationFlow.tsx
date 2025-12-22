@@ -2008,6 +2008,10 @@ export function RegistrationFlow({
                                       
                                       {/* Show variants if product is variable */}
                                       {product.type === 'variable' && product.variants && product.variants.length > 0 && (() => {
+                                        // Debug log
+                                        console.log('🔍 Product variants:', product.variants);
+                                        console.log('🔍 Product variant_attributes:', (product as any).variant_attributes);
+                                        
                                         // Use saved variant_attributes if available, otherwise reconstruct from variants
                                         const savedAttributeNames = (product as any).variant_attributes as string[] | undefined;
                                         
@@ -2016,6 +2020,7 @@ export function RegistrationFlow({
                                         if (savedAttributeNames && savedAttributeNames.length > 0) {
                                           // Use saved attribute names
                                           attributeOrder = savedAttributeNames;
+                                          console.log('✅ Usando atributos salvos:', attributeOrder);
                                         } else {
                                           // Fallback: Extract attribute order from variants
                                           // The variant_group_name is the first attribute, and name contains all values separated by " - "
@@ -2077,20 +2082,42 @@ export function RegistrationFlow({
                                         // Get available values for current attribute
                                         const getAvailableValues = (attributeIndex: number): string[] => {
                                           const availableVariants = getAvailableVariants(attributeIndex);
-                                          const values = new Set<string>();
+                                          
+                                          // Debug log
+                                          console.log(`🔍 getAvailableValues - attributeIndex: ${attributeIndex}, availableVariants:`, availableVariants.length);
+                                          
+                                          if (availableVariants.length === 0) {
+                                            console.warn('⚠️ Nenhuma variante disponível para o atributo', attributeIndex);
+                                            return [];
+                                          }
+                                          
+                                          // Preserve order from variants (first occurrence order)
+                                          // Instead of sorting, maintain the order as they appear in variants
+                                          const orderedValues: string[] = [];
+                                          const seen = new Set<string>();
                                           
                                           availableVariants.forEach(variant => {
                                             // Always parse the variant name to get values
                                             const variantValues = variant.name.split(' - ').map(v => v.trim());
                                             
+                                            // Debug log
+                                            console.log(`🔍 Variant: ${variant.name}, parsed values:`, variantValues, `attributeIndex: ${attributeIndex}`);
+                                            
                                             // All attributes use values from the variant name
-                                            if (variantValues[attributeIndex]) {
-                                              values.add(variantValues[attributeIndex]);
+                                            if (variantValues[attributeIndex] && !seen.has(variantValues[attributeIndex])) {
+                                              orderedValues.push(variantValues[attributeIndex]);
+                                              seen.add(variantValues[attributeIndex]);
+                                              console.log(`✅ Adicionado valor: ${variantValues[attributeIndex]}`);
                                             }
                                           });
                                           
-                                          return Array.from(values).sort();
+                                          console.log(`✅ Valores disponíveis para atributo ${attributeIndex}:`, orderedValues);
+                                          
+                                          return orderedValues;
                                         };
+                                        
+                                        console.log('🔍 attributeOrder:', attributeOrder);
+                                        console.log('🔍 selections:', selections);
                                         
                                         return (
                                           <div className="space-y-4 ml-2">
@@ -2098,12 +2125,25 @@ export function RegistrationFlow({
                                               const availableValues = getAvailableValues(attrIndex);
                                               const selectedValue = selections[attrName];
                                               
+                                              console.log(`🔍 Atributo ${attrIndex} (${attrName}):`, {
+                                                availableValues,
+                                                selectedValue,
+                                                count: availableValues.length
+                                              });
+                                              
                                               // Don't show this attribute if previous attribute is not selected
                                               if (attrIndex > 0) {
                                                 const prevAttrName = attributeOrder[attrIndex - 1];
                                                 if (!selections[prevAttrName]) {
+                                                  console.log(`⏭️ Pulando atributo ${attrIndex} porque o anterior não foi selecionado`);
                                                   return null;
                                                 }
+                                              }
+                                              
+                                              // Don't show if no values available
+                                              if (availableValues.length === 0) {
+                                                console.warn(`⚠️ Nenhum valor disponível para atributo ${attrIndex} (${attrName})`);
+                                                return null;
                                               }
                                               
                                               return (

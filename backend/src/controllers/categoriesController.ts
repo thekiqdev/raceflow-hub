@@ -8,6 +8,7 @@ import {
   getCategoryById,
   updateCategory,
   deleteCategory,
+  reorderCategories,
 } from '../services/categoriesService.js';
 import { CreateCategoryData, UpdateCategoryData } from '../types/index.js';
 import { getEventById } from '../services/eventsService.js';
@@ -424,6 +425,99 @@ export const deleteCategoryController = asyncHandler(
         res.status(409).json({
           success: false,
           error: 'Conflict',
+          message: error.message,
+        });
+        return;
+      }
+      throw error;
+    }
+  }
+);
+
+/**
+ * PUT /api/categories/events/:eventId/reorder
+ * Reorder categories for an event
+ */
+export const reorderCategoriesController = asyncHandler(
+  async (req: AuthRequest, res: Response) => {
+    if (!req.user) {
+      res.status(401).json({
+        success: false,
+        error: 'Not authenticated',
+      });
+      return;
+    }
+
+    const { eventId } = req.params;
+
+    if (!eventId) {
+      res.status(400).json({
+        success: false,
+        error: 'Bad Request',
+        message: 'Event ID is required',
+      });
+      return;
+    }
+
+    // Validation schema
+    const reorderSchema = z.object({
+      categoryOrders: z.array(
+        z.object({
+          id: z.string().uuid('ID da categoria inválido'),
+          display_order: z.number().int().positive('display_order deve ser um número inteiro positivo'),
+        })
+      ).min(1, 'Deve haver pelo menos uma categoria para reordenar'),
+    });
+
+    const validation = reorderSchema.safeParse(req.body);
+
+    if (!validation.success) {
+      res.status(400).json({
+        success: false,
+        error: 'Validation Error',
+        message: validation.error.errors[0].message,
+        errors: validation.error.errors,
+      });
+      return;
+    }
+
+    // Verify event ownership
+    const event = await getEventById(eventId);
+    if (!event) {
+      res.status(404).json({
+        success: false,
+        error: 'Event not found',
+        message: 'Evento não encontrado',
+      });
+      return;
+    }
+
+    // Check ownership
+    if (event.organizer_id !== req.user.id) {
+      const { hasRole } = await import('../services/userRolesService.js');
+      const isAdmin = await hasRole(req.user.id, 'admin');
+      if (!isAdmin) {
+        res.status(403).json({
+          success: false,
+          error: 'Forbidden',
+          message: 'Você só pode reordenar categorias dos seus próprios eventos',
+        });
+        return;
+      }
+    }
+
+    try {
+      await reorderCategories(eventId, validation.data.categoryOrders);
+
+      res.json({
+        success: true,
+        message: 'Categorias reordenadas com sucesso',
+      });
+    } catch (error: any) {
+      if (error.message.includes('not found') || error.message.includes('different event')) {
+        res.status(400).json({
+          success: false,
+          error: 'Bad Request',
           message: error.message,
         });
         return;

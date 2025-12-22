@@ -29,6 +29,7 @@ export interface EventKit {
   name: string;
   description: string | null;
   price: number;
+  display_order: number;
   created_at?: string;
   products?: KitProduct[];
 }
@@ -63,10 +64,20 @@ export interface SyncKitData {
   name: string;
   description?: string | null;
   price: number;
+  display_order?: number; // Opcional na criação - será calculado automaticamente se não fornecido
   products?: SyncProductData[];
 }
 
 export const syncEventKits = async (eventId: string, kits: SyncKitData[]) => {
   return apiClient.post<EventKit[]>(`/events/${eventId}/kits`, { kits });
+};
+
+// Reorder event kits for an event
+export interface ReorderEventKitsData {
+  kitOrders: Array<{ id: string; display_order: number }>;
+}
+
+export const reorderEventKits = async (eventId: string, data: ReorderEventKitsData) => {
+  return apiClient.put<void>(`/events/${eventId}/kits/reorder`, data);
 };
 

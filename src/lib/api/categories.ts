@@ -13,6 +13,7 @@ export interface Category {
   min_age: number | null;
   max_participants: number | null;
   is_default: boolean;
+  display_order: number;
   created_at: string;
   updated_at: string;
   modality_ids?: string[]; // IDs das modalidades associadas
@@ -27,6 +28,7 @@ export interface CreateCategoryData {
   min_age?: number | null;
   max_participants?: number | null;
   is_default?: boolean;
+  display_order?: number; // Opcional na criação - será calculado automaticamente se não fornecido
   modality_ids?: string[];
 }
 
@@ -38,6 +40,7 @@ export interface UpdateCategoryData {
   min_age?: number | null;
   max_participants?: number | null;
   is_default?: boolean;
+  display_order?: number; // Permite atualizar a ordem de exibição
   modality_ids?: string[];
 }
 
@@ -69,5 +72,14 @@ export const updateCategory = async (id: string, data: UpdateCategoryData) => {
 // Delete a category
 export const deleteCategory = async (id: string) => {
   return apiClient.delete(`/categories/${id}`);
+};
+
+// Reorder categories for an event
+export interface ReorderCategoriesData {
+  categoryOrders: Array<{ id: string; display_order: number }>;
+}
+
+export const reorderCategories = async (eventId: string, data: ReorderCategoriesData) => {
+  return apiClient.put<void>(`/categories/events/${eventId}/reorder`, data);
 };
 

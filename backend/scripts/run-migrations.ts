@@ -71,6 +71,11 @@ const migrations = [
   '042_add_bonus_system_to_leader_commissions.sql',
   '043_add_both_bonus_type.sql',
   '044_create_leader_invitations.sql',
+  '045_add_free_bonus_payment_method.sql',
+  '046_add_convidado_payment_status.sql',
+  '047_add_display_order_to_modalities.sql',
+  '048_add_display_order_to_categories.sql',
+  '049_add_display_order_to_event_kits.sql',
 ];
 
 // Create migrations tracking table

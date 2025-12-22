@@ -7,6 +7,7 @@ import {
   getModalityByIdController,
   updateModalityController,
   deleteModalityController,
+  reorderModalitiesController,
 } from '../controllers/modalitiesController.js';
 
 const router = Router();
@@ -19,6 +20,7 @@ router.get('/:id', optionalAuth, getModalityByIdController);
 router.post('/', authenticate, requireAnyRole(['organizer', 'admin']), createModalityController);
 router.put('/:id', authenticate, requireAnyRole(['organizer', 'admin']), updateModalityController);
 router.delete('/:id', authenticate, requireAnyRole(['organizer', 'admin']), deleteModalityController);
+router.put('/events/:eventId/reorder', authenticate, requireAnyRole(['organizer', 'admin']), reorderModalitiesController);
 
 export default router;
 

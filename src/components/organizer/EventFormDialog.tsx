@@ -24,7 +24,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { CalendarIcon, Plus, Trash2, Upload, X } from "lucide-react";
+import { CalendarIcon, Plus, Trash2, Upload, X, ChevronUp, ChevronDown } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { cn } from "@/lib/utils";
@@ -36,8 +36,9 @@ import { useAuth } from "@/contexts/AuthContext";
 import { createEvent, updateEvent, getEventById } from "@/lib/api/events";
 import { getEventCategories } from "@/lib/api/eventCategories";
 import { getEventKits } from "@/lib/api/eventKits";
-import { getModalities, createModality, updateModality, deleteModality, type Modality as ModalityType } from "@/lib/api/modalities";
-import { getCategories, createCategory, updateCategory, deleteCategory, type Category as CategoryType, type CategoryType as CategoryTypeEnum, type CategoryGender } from "@/lib/api/categories";
+import { getModalities, createModality, updateModality, deleteModality, reorderModalities, type Modality as ModalityType } from "@/lib/api/modalities";
+import { getCategories, createCategory, updateCategory, deleteCategory, reorderCategories, type Category as CategoryType, type CategoryType as CategoryTypeEnum, type CategoryGender } from "@/lib/api/categories";
+import { reorderEventKits } from "@/lib/api/eventKits";
 import { FileUpload } from "@/components/ui/file-upload";
 import { deleteUploadedFile } from "@/lib/api/upload";
 
@@ -273,8 +274,9 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess }: EventF
                     // Extract attributes from variants
                     const firstAttributeName = savedAttributeNames[0] || variants[0]?.variant_group_name;
                     if (firstAttributeName) {
-                      // Get all unique values for the first attribute
-                      const firstAttributeValues = new Set<string>();
+                      // Get all unique values for the first attribute, preserving order of first occurrence
+                      const firstAttributeValues: string[] = [];
+                      const firstAttributeValuesSet = new Set<string>();
                       const allVariantValues: string[][] = [];
                       
                       variants.forEach(variant => {
@@ -283,8 +285,10 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess }: EventF
                         allVariantValues.push(values);
                         
                         // First value should match variant_group_name or be the first in the name
-                        if (values.length > 0) {
-                          firstAttributeValues.add(values[0]);
+                        // Preserve order of first occurrence
+                        if (values.length > 0 && !firstAttributeValuesSet.has(values[0])) {
+                          firstAttributeValues.push(values[0]);
+                          firstAttributeValuesSet.add(values[0]);
                         }
                       });
                       
@@ -297,24 +301,28 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess }: EventF
                         // First attribute
                         variantAttributes.push({
                           name: firstAttributeName,
-                          values: Array.from(firstAttributeValues).sort()
+                          values: firstAttributeValues // Preserva ordem de primeira ocorrência
                         });
                         
                         // Additional attributes (if any)
                         for (let i = 1; i < maxValues; i++) {
-                          const attributeValues = new Set<string>();
+                          // Preserve order of first occurrence for each attribute
+                          const attributeValues: string[] = [];
+                          const attributeValuesSet = new Set<string>();
+                          
                           allVariantValues.forEach(values => {
-                            if (values[i]) {
-                              attributeValues.add(values[i]);
+                            if (values[i] && !attributeValuesSet.has(values[i])) {
+                              attributeValues.push(values[i]);
+                              attributeValuesSet.add(values[i]);
                             }
                           });
                           
-                          if (attributeValues.size > 0) {
+                          if (attributeValues.length > 0) {
                             // Use saved name if available, otherwise generic name
                             const attributeName = savedAttributeNames[i] || `Atributo ${i + 1}`;
                             variantAttributes.push({
                               name: attributeName,
-                              values: Array.from(attributeValues).sort()
+                              values: attributeValues // Preserva ordem de primeira ocorrência
                             });
                           }
                         }
@@ -420,6 +428,20 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess }: EventF
     setModalities(updated);
   };
 
+  const moveModalityUp = (index: number) => {
+    if (index === 0) return;
+    const updated = [...modalities];
+    [updated[index], updated[index - 1]] = [updated[index - 1], updated[index]];
+    setModalities(updated);
+  };
+
+  const moveModalityDown = (index: number) => {
+    if (index === modalities.length - 1) return;
+    const updated = [...modalities];
+    [updated[index], updated[index + 1]] = [updated[index + 1], updated[index]];
+    setModalities(updated);
+  };
+
   const addCategory = () => {
     setCategories([
       ...categories,
@@ -462,6 +484,20 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess }: EventF
     updateCategoryLocal(categoryIndex, "modality_ids", newIds);
   };
 
+  const moveCategoryUp = (index: number) => {
+    if (index === 0) return;
+    const updated = [...categories];
+    [updated[index], updated[index - 1]] = [updated[index - 1], updated[index]];
+    setCategories(updated);
+  };
+
+  const moveCategoryDown = (index: number) => {
+    if (index === categories.length - 1) return;
+    const updated = [...categories];
+    [updated[index], updated[index + 1]] = [updated[index + 1], updated[index]];
+    setCategories(updated);
+  };
+
   const addKit = () => {
     setKits([...kits, { name: "", description: "", price: 0, products: [] }]);
   };
@@ -473,6 +509,20 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess }: EventF
   const updateKit = (index: number, field: keyof Kit, value: any) => {
     const updated = [...kits];
     updated[index] = { ...updated[index], [field]: value };
+    setKits(updated);
+  };
+
+  const moveKitUp = (index: number) => {
+    if (index === 0) return;
+    const updated = [...kits];
+    [updated[index], updated[index - 1]] = [updated[index - 1], updated[index]];
+    setKits(updated);
+  };
+
+  const moveKitDown = (index: number) => {
+    if (index === kits.length - 1) return;
+    const updated = [...kits];
+    [updated[index], updated[index + 1]] = [updated[index + 1], updated[index]];
     setKits(updated);
   };
 
@@ -627,6 +677,75 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess }: EventF
       // Clear generated variants when attributes change
       updated[kitIndex].products[productIndex].generatedVariants = [];
       updated[kitIndex].products[productIndex].variants = [];
+    }
+    setKits(updated);
+  };
+
+  const moveAttributeValueUp = (kitIndex: number, productIndex: number, attributeIndex: number, valueIndex: number) => {
+    if (valueIndex === 0) return;
+    const updated = [...kits];
+    if (updated[kitIndex].products[productIndex].variantAttributes) {
+      // Create a new array copy to ensure React detects the change
+      const oldValues = updated[kitIndex].products[productIndex].variantAttributes![attributeIndex].values;
+      const newValues = [...oldValues];
+      [newValues[valueIndex], newValues[valueIndex - 1]] = [newValues[valueIndex - 1], newValues[valueIndex]];
+      
+      // Create a new variantAttributes array with the updated values
+      const variantAttributes = [...updated[kitIndex].products[productIndex].variantAttributes!];
+      variantAttributes[attributeIndex] = {
+        ...variantAttributes[attributeIndex],
+        values: newValues
+      };
+      
+      // Create a new products array with the updated variantAttributes
+      const products = [...updated[kitIndex].products];
+      products[productIndex] = {
+        ...products[productIndex],
+        variantAttributes: variantAttributes,
+        generatedVariants: [], // Clear generated variants when order changes
+        variants: [] // Clear variants when order changes
+      };
+      
+      // Update the kit with the new products array
+      updated[kitIndex] = {
+        ...updated[kitIndex],
+        products: products
+      };
+    }
+    setKits(updated);
+  };
+
+  const moveAttributeValueDown = (kitIndex: number, productIndex: number, attributeIndex: number, valueIndex: number) => {
+    const updated = [...kits];
+    if (updated[kitIndex].products[productIndex].variantAttributes) {
+      const oldValues = updated[kitIndex].products[productIndex].variantAttributes![attributeIndex].values;
+      if (valueIndex === oldValues.length - 1) return;
+      
+      // Create a new array copy to ensure React detects the change
+      const newValues = [...oldValues];
+      [newValues[valueIndex], newValues[valueIndex + 1]] = [newValues[valueIndex + 1], newValues[valueIndex]];
+      
+      // Create a new variantAttributes array with the updated values
+      const variantAttributes = [...updated[kitIndex].products[productIndex].variantAttributes!];
+      variantAttributes[attributeIndex] = {
+        ...variantAttributes[attributeIndex],
+        values: newValues
+      };
+      
+      // Create a new products array with the updated variantAttributes
+      const products = [...updated[kitIndex].products];
+      products[productIndex] = {
+        ...products[productIndex],
+        variantAttributes: variantAttributes,
+        generatedVariants: [], // Clear generated variants when order changes
+        variants: [] // Clear variants when order changes
+      };
+      
+      // Update the kit with the new products array
+      updated[kitIndex] = {
+        ...updated[kitIndex],
+        products: products
+      };
     }
     setKits(updated);
   };
@@ -965,6 +1084,34 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess }: EventF
           }
           
           console.log('✅ Modalidades sincronizadas com sucesso');
+          
+          // Reordenar modalidades se houver IDs salvos
+          // Recarregar modalidades do servidor para obter IDs atualizados
+          const reloadModalitiesResponse = await getModalities(eventId);
+          if (reloadModalitiesResponse.success && reloadModalitiesResponse.data) {
+            const savedModalities = reloadModalitiesResponse.data;
+            if (savedModalities.length > 1) {
+              try {
+                // Mapear a ordem atual dos itens locais para os IDs salvos
+                const modalityOrders = modalities
+                  .map((localMod, index) => {
+                    // Encontrar a modalidade salva correspondente pelo nome e distância
+                    const savedMod = savedModalities.find(sm => 
+                      sm.name === localMod.name && 
+                      sm.distance === localMod.distance
+                    );
+                    return savedMod ? { id: savedMod.id, display_order: index + 1 } : null;
+                  })
+                  .filter((order): order is { id: string; display_order: number } => order !== null);
+                
+                if (modalityOrders.length > 1) {
+                  await reorderModalities(eventId, { modalityOrders });
+                }
+              } catch (error) {
+                console.error('Error reordering modalities:', error);
+              }
+            }
+          }
         } catch (error: any) {
           console.error('Error syncing modalities:', error);
           toast({
@@ -1164,6 +1311,31 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess }: EventF
               }));
               console.log("🔄 Categorias recarregadas após salvar:", reloadedCategories.map(c => ({ name: c.name, is_default: c.is_default })));
               setCategories(reloadedCategories);
+              
+              // Reordenar categorias se houver IDs salvos
+              const savedCategories = reloadedCategories;
+              if (savedCategories.length > 1) {
+                try {
+                  // Mapear a ordem atual dos itens locais para os IDs salvos
+                  const categoryOrders = categoriesToProcess
+                    .map((localCat, index) => {
+                      // Encontrar a categoria salva correspondente pelo nome e preço
+                      const savedCat = savedCategories.find(sc => 
+                        sc.name === localCat.name && 
+                        sc.price === localCat.price &&
+                        sc.category_type === localCat.category_type
+                      );
+                      return savedCat ? { id: savedCat.id, display_order: index + 1 } : null;
+                    })
+                    .filter((order): order is { id: string; display_order: number } => order !== null);
+                  
+                  if (categoryOrders.length > 1) {
+                    await reorderCategories(eventId, { categoryOrders });
+                  }
+                } catch (error) {
+                  console.error('Error reordering categories:', error);
+                }
+              }
             }
           }
         } catch (error: any) {
@@ -1236,6 +1408,34 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess }: EventF
               description: "Evento salvo, mas houve erro ao salvar kits",
               variant: "destructive",
             });
+          } else {
+            // Reordenar kits se houver IDs salvos
+            // Recarregar kits do servidor para obter IDs atualizados
+            const reloadKitsResponse = await getEventKits(eventId);
+            if (reloadKitsResponse.success && reloadKitsResponse.data) {
+              const savedKits = reloadKitsResponse.data.filter(k => k.id);
+              if (savedKits.length > 1) {
+                try {
+                  // Mapear a ordem atual dos kits locais para os IDs salvos
+                  const kitOrders = kits
+                    .map((localKit, index) => {
+                      // Encontrar o kit salvo correspondente pelo nome
+                      const savedKit = savedKits.find(sk => 
+                        sk.name === localKit.name && 
+                        sk.price === localKit.price
+                      );
+                      return savedKit ? { id: savedKit.id, display_order: index + 1 } : null;
+                    })
+                    .filter((order): order is { id: string; display_order: number } => order !== null);
+                  
+                  if (kitOrders.length > 1) {
+                    await reorderEventKits(eventId, { kitOrders });
+                  }
+                } catch (error) {
+                  console.error('Error reordering kits:', error);
+                }
+              }
+            }
           }
         } catch (error: any) {
           console.error('Error syncing kits:', error);
@@ -1500,14 +1700,37 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess }: EventF
                             <CardTitle className="text-base">
                               Modalidade {index + 1}
                             </CardTitle>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => removeModality(index)}
-                            >
-                              <Trash2 className="h-4 w-4 text-destructive" />
-                            </Button>
+                            <div className="flex items-center gap-1">
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => moveModalityUp(index)}
+                                disabled={index === 0}
+                                title="Mover para cima"
+                              >
+                                <ChevronUp className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => moveModalityDown(index)}
+                                disabled={index === modalities.length - 1}
+                                title="Mover para baixo"
+                              >
+                                <ChevronDown className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => removeModality(index)}
+                                title="Remover"
+                              >
+                                <Trash2 className="h-4 w-4 text-destructive" />
+                              </Button>
+                            </div>
                           </div>
                         </CardHeader>
                         <CardContent className="space-y-3">
@@ -1574,14 +1797,37 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess }: EventF
                             <CardTitle className="text-base">
                               Categoria {index + 1}
                             </CardTitle>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => removeCategory(index)}
-                            >
-                              <Trash2 className="h-4 w-4 text-destructive" />
-                            </Button>
+                            <div className="flex items-center gap-1">
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => moveCategoryUp(index)}
+                                disabled={index === 0}
+                                title="Mover para cima"
+                              >
+                                <ChevronUp className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => moveCategoryDown(index)}
+                                disabled={index === categories.length - 1}
+                                title="Mover para baixo"
+                              >
+                                <ChevronDown className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => removeCategory(index)}
+                                title="Remover"
+                              >
+                                <Trash2 className="h-4 w-4 text-destructive" />
+                              </Button>
+                            </div>
                           </div>
                         </CardHeader>
                         <CardContent className="space-y-4">
@@ -1806,14 +2052,37 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess }: EventF
                             <CardTitle className="text-base">
                               Kit {index + 1}
                             </CardTitle>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => removeKit(index)}
-                            >
-                              <Trash2 className="h-4 w-4 text-destructive" />
-                            </Button>
+                            <div className="flex items-center gap-1">
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => moveKitUp(index)}
+                                disabled={index === 0}
+                                title="Mover para cima"
+                              >
+                                <ChevronUp className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => moveKitDown(index)}
+                                disabled={index === kits.length - 1}
+                                title="Mover para baixo"
+                              >
+                                <ChevronDown className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => removeKit(index)}
+                                title="Remover"
+                              >
+                                <Trash2 className="h-4 w-4 text-destructive" />
+                              </Button>
+                            </div>
                           </div>
                         </CardHeader>
                          <CardContent className="space-y-4">
@@ -2085,7 +2354,31 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess }: EventF
                                                      </div>
                                                      <div className="space-y-1">
                                                        {attribute.values.map((value, valueIndex) => (
-                                                         <div key={valueIndex} className="flex gap-2">
+                                                         <div key={valueIndex} className="flex gap-1">
+                                                           <div className="flex items-center gap-1">
+                                                             <Button
+                                                               type="button"
+                                                               variant="ghost"
+                                                               size="icon"
+                                                               onClick={() => moveAttributeValueUp(index, pIndex, attrIndex, valueIndex)}
+                                                               disabled={valueIndex === 0}
+                                                               title="Mover para cima"
+                                                               className="h-7 w-7"
+                                                             >
+                                                               <ChevronUp className="h-3 w-3" />
+                                                             </Button>
+                                                             <Button
+                                                               type="button"
+                                                               variant="ghost"
+                                                               size="icon"
+                                                               onClick={() => moveAttributeValueDown(index, pIndex, attrIndex, valueIndex)}
+                                                               disabled={valueIndex === attribute.values.length - 1}
+                                                               title="Mover para baixo"
+                                                               className="h-7 w-7"
+                                                             >
+                                                               <ChevronDown className="h-3 w-3" />
+                                                             </Button>
+                                                           </div>
                                                            <Input
                                                              placeholder={`Valor ${valueIndex + 1} (ex: ${attribute.name === 'Cor' ? 'Amarelo' : attribute.name === 'Tamanho' ? 'G' : 'Valor'})`}
                                                              value={value}
@@ -2097,6 +2390,7 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess }: EventF
                                                              variant="ghost"
                                                              size="icon"
                                                              onClick={() => removeAttributeValue(index, pIndex, attrIndex, valueIndex)}
+                                                             title="Remover"
                                                            >
                                                              <X className="h-4 w-4" />
                                                            </Button>
