@@ -162,13 +162,29 @@ export const createRegistrationController = asyncHandler(async (req: AuthRequest
     return;
   }
 
-  // ETAPA: Validate that user has runner role
+  // ETAPA: Validate that user has runner role OR is organizer/admin
   const isRunner = await hasRole(req.user.id, 'runner');
-  if (!isRunner) {
+  const isOrganizer = await hasRole(req.user.id, 'organizer');
+  const isAdmin = await hasRole(req.user.id, 'admin');
+  
+  // If organizer/admin is registering someone else, allow it
+  const isRegisteringSelf = !req.body.runner_id || req.body.runner_id === req.user.id;
+  
+  if (!isRunner && !isOrganizer && !isAdmin) {
     res.status(403).json({
       success: false,
       error: 'Forbidden',
       message: 'Apenas corredores podem se inscrever em eventos. Por favor, acesse com uma conta de corredor.',
+    });
+    return;
+  }
+  
+  // If user is not a runner and is trying to register themselves, deny
+  if (!isRunner && isRegisteringSelf) {
+    res.status(403).json({
+      success: false,
+      error: 'Forbidden',
+      message: 'Organizadores e administradores não podem se inscrever em eventos. Use a opção de inscrever atleta.',
     });
     return;
   }
@@ -273,10 +289,31 @@ export const createRegistrationController = asyncHandler(async (req: AuthRequest
     }
   }
 
+  // Determine runner_id: if organizer/admin is registering someone else, use provided runner_id
+  // Otherwise, use the logged-in user's id
+  let runnerId = req.body.runner_id || req.user.id;
+  
+  // If organizer/admin is registering someone else, validate the runner_id exists
+  if (runnerId !== req.user.id) {
+    const runnerProfile = await query(
+      'SELECT id FROM profiles WHERE id = $1',
+      [runnerId]
+    );
+    
+    if (runnerProfile.rows.length === 0) {
+      res.status(404).json({
+        success: false,
+        error: 'Runner not found',
+        message: 'Atleta não encontrado',
+      });
+      return;
+    }
+  }
+
   const registrationData = {
     ...req.body,
     registered_by: req.user.id,
-    runner_id: req.body.runner_id || req.user.id,
+    runner_id: runnerId,
   };
 
   console.log('📝 Dados recebidos para criação de inscrição:', {
@@ -1269,5 +1306,66 @@ export const getRegistrationReceiptController = asyncHandler(async (req: AuthReq
     data: registration,
     message: 'Receipt data retrieved successfully',
   });
+});
+
+// Find user by CPF or email (for organizer registration)
+export const findUserByCpfOrEmailController = asyncHandler(async (req: AuthRequest, res: Response) => {
+  if (!req.user) {
+    res.status(401).json({
+      success: false,
+      error: 'Not authenticated',
+    });
+    return;
+  }
+
+  // Only organizers and admins can search for users
+  const isOrganizer = await hasRole(req.user.id, 'organizer');
+  const isAdmin = await hasRole(req.user.id, 'admin');
+  
+  if (!isOrganizer && !isAdmin) {
+    res.status(403).json({
+      success: false,
+      error: 'Forbidden',
+      message: 'Apenas organizadores e administradores podem buscar atletas',
+    });
+    return;
+  }
+
+  const { cpf, email } = req.query;
+
+  if (!cpf && !email) {
+    res.status(400).json({
+      success: false,
+      error: 'Missing required fields',
+      message: 'CPF ou email é obrigatório',
+    });
+    return;
+  }
+
+  try {
+    const user = await findUserByCpfOrEmail(
+      cpf as string | undefined,
+      email as string | undefined
+    );
+
+    if (!user) {
+      res.status(404).json({
+        success: false,
+        error: 'User not found',
+        message: 'Atleta não encontrado',
+      });
+      return;
+    }
+
+    res.json({
+      success: true,
+      data: user,
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Erro ao buscar atleta',
+    });
+  }
 });
 

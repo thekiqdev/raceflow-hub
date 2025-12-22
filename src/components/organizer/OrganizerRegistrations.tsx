@@ -33,6 +33,7 @@ import { getEvents, type Event } from "@/lib/api/events";
 import { toast } from "sonner";
 import { useDebounce } from "@/hooks/useDebounce";
 import { createOrganizerGroupLeader } from "@/lib/api/groupLeaders";
+import { OrganizerRegisterAthleteDialog } from "./OrganizerRegisterAthleteDialog";
 
 const OrganizerRegistrations = () => {
   const { user } = useAuth();
@@ -44,6 +45,7 @@ const OrganizerRegistrations = () => {
   const [paymentStatusFilter, setPaymentStatusFilter] = useState("all");
   const [eventFilter, setEventFilter] = useState("all");
   const [isExporting, setIsExporting] = useState(false);
+  const [registerDialogOpen, setRegisterDialogOpen] = useState(false);
 
   const debouncedSearch = useDebounce(searchQuery, 500);
 
@@ -327,7 +329,7 @@ const OrganizerRegistrations = () => {
             </div>
 
             <div className="flex flex-wrap gap-2">
-              <Button>
+              <Button onClick={() => setRegisterDialogOpen(true)}>
                 <Plus className="mr-2 h-4 w-4" />
                 Inscrever Atleta
               </Button>
@@ -445,6 +447,15 @@ const OrganizerRegistrations = () => {
           )}
         </CardContent>
       </Card>
+
+      {/* Register Athlete Dialog */}
+      <OrganizerRegisterAthleteDialog
+        open={registerDialogOpen}
+        onOpenChange={setRegisterDialogOpen}
+        onSuccess={() => {
+          loadRegistrations();
+        }}
+      />
     </div>
   );
 };

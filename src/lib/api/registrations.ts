@@ -136,6 +136,15 @@ export const getRegistrationReceipt = async (id: string) => {
   return apiClient.get<Registration>(`/registrations/${id}/receipt`);
 };
 
+// Find user by CPF or email (for organizer registration)
+export const findUserByCpfOrEmail = async (cpf?: string, email?: string) => {
+  const params = new URLSearchParams();
+  if (cpf) params.append('cpf', cpf);
+  if (email) params.append('email', email);
+  
+  return apiClient.get<{ id: string; full_name: string; cpf: string }>(`/registrations/find-user?${params.toString()}`);
+};
+
 // Export registrations
 export const exportRegistrations = async (filters?: {
   event_id?: string;
