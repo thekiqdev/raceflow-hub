@@ -18,7 +18,7 @@ import { Calendar, MapPin, QrCode, RefreshCw, X, Loader2, AlertCircle, Download,
 import { format, isFuture } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { useAuth } from "@/contexts/AuthContext";
-import { getRegistrations, transferRegistration, cancelRegistration, getPaymentStatus, type Registration } from "@/lib/api/registrations";
+import { getRegistrations, transferRegistration, cancelRegistration, getPaymentStatus, generatePayment, type Registration } from "@/lib/api/registrations";
 import { getEnabledModules } from "@/lib/api/systemSettings";
 import { createTransferRequest, generateTransferPayment, getTransferRequestById, type TransferRequest } from "@/lib/api/transferRequests";
 import { toast } from "sonner";
@@ -244,16 +244,17 @@ export function MyRegistrations() {
     setIsPixDialogOpen(true);
     
     try {
-      const response = await getPaymentStatus(registration.id);
+      // First, try to get existing payment status
+      let response = await getPaymentStatus(registration.id);
       
       if (response.success && response.data) {
         const paymentData = response.data;
         
+        // If QR Code exists, use it
         if (paymentData.pix_qr_code) {
-          // Use payment due date if available, otherwise calculate (3 days from now)
           let dueDateString: string;
           if (paymentData.due_date) {
-            dueDateString = paymentData.due_date.split('T')[0]; // Get only date part if it includes time
+            dueDateString = paymentData.due_date.split('T')[0];
           } else {
             const dueDate = new Date();
             dueDate.setDate(dueDate.getDate() + 3);
@@ -267,17 +268,46 @@ export function MyRegistrations() {
               : parseFloat(registration.total_amount?.toString() || '0') || 0,
             dueDate: dueDateString,
           });
+          return;
+        }
+      }
+      
+      // If no QR Code found, try to generate payment
+      console.log('QR Code não encontrado, tentando gerar pagamento...');
+      response = await generatePayment(registration.id);
+      
+      if (response.success && response.data) {
+        const paymentData = response.data;
+        
+        if (paymentData.pix_qr_code) {
+          let dueDateString: string;
+          if (paymentData.due_date) {
+            dueDateString = paymentData.due_date.split('T')[0];
+          } else {
+            const dueDate = new Date();
+            dueDate.setDate(dueDate.getDate() + 3);
+            dueDateString = dueDate.toISOString().split('T')[0];
+          }
+          
+          setPixData({
+            qrCode: paymentData.pix_qr_code,
+            value: typeof registration.total_amount === 'number' 
+              ? registration.total_amount 
+              : parseFloat(registration.total_amount?.toString() || '0') || 0,
+            dueDate: dueDateString,
+          });
+          toast.success("QR Code PIX gerado com sucesso!");
         } else {
           toast.error("QR Code PIX ainda não está disponível. Tente novamente em alguns instantes.");
           setIsPixDialogOpen(false);
         }
       } else {
-        toast.error(response.error || "Erro ao buscar QR Code PIX");
+        toast.error(response.error || "Erro ao gerar QR Code PIX");
         setIsPixDialogOpen(false);
       }
     } catch (error: any) {
-      console.error("Error fetching payment status:", error);
-      toast.error(error.message || "Erro ao buscar QR Code PIX");
+      console.error("Error fetching/generating payment:", error);
+      toast.error(error.message || "Erro ao buscar/gerar QR Code PIX");
       setIsPixDialogOpen(false);
     } finally {
       setLoadingPix(false);

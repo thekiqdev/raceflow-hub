@@ -471,6 +471,188 @@ export const createRegistrationController = asyncHandler(async (req: AuthRequest
   });
 });
 
+// Generate payment for registration (creates payment if it doesn't exist)
+export const generatePaymentController = asyncHandler(async (req: AuthRequest, res: Response) => {
+  if (!req.user) {
+    res.status(401).json({
+      success: false,
+      error: 'Not authenticated',
+    });
+    return;
+  }
+
+  const { id } = req.params;
+
+  // Get registration to check ownership
+  const registration = await getRegistrationById(id);
+  if (!registration) {
+    res.status(404).json({
+      success: false,
+      error: 'Registration not found',
+    });
+    return;
+  }
+
+  // Check if user owns this registration or is admin/organizer
+  const isAdmin = await hasRole(req.user.id, 'admin');
+  const isOrganizer = await hasRole(req.user.id, 'organizer');
+  const isOwner = registration.runner_id === req.user.id || registration.registered_by === req.user.id;
+  
+  if (!isAdmin && !isOrganizer && !isOwner) {
+    res.status(403).json({
+      success: false,
+      error: 'Forbidden: You can only generate payment for your own registrations',
+    });
+    return;
+  }
+
+  // Check if payment already exists
+  const existingPayment = await getPaymentByRegistrationId(id);
+  if (existingPayment) {
+    // Payment already exists, return it
+    res.json({
+      success: true,
+      data: {
+        status: existingPayment.status,
+        payment_date: existingPayment.payment_date,
+        pix_qr_code: existingPayment.pix_qr_code,
+        due_date: existingPayment.due_date,
+        asaas_payment_id: existingPayment.asaas_payment_id,
+      },
+    });
+    return;
+  }
+
+  // Check if registration requires payment
+  if (!registration.total_amount || registration.total_amount <= 0) {
+    res.status(400).json({
+      success: false,
+      error: 'Registration does not require payment',
+    });
+    return;
+  }
+
+  // Get event for description
+  const event = await getEventById(registration.event_id);
+  if (!event) {
+    res.status(404).json({
+      success: false,
+      error: 'Event not found',
+    });
+    return;
+  }
+
+  try {
+    const runnerId = registration.runner_id;
+    
+    // Get user profile and email for Asaas customer
+    const profile = await getProfileByUserId(runnerId);
+    if (!profile) {
+      res.status(404).json({
+        success: false,
+        error: 'User profile not found',
+      });
+      return;
+    }
+
+    // Get user email from users table
+    const userResult = await query(
+      'SELECT email FROM users WHERE id = $1',
+      [runnerId]
+    );
+    
+    if (userResult.rows.length === 0) {
+      res.status(404).json({
+        success: false,
+        error: 'User not found',
+      });
+      return;
+    }
+    
+    const userEmail = userResult.rows[0].email;
+
+    // Prepare customer data for Asaas
+    const customerData = {
+      name: profile.full_name || 'Usuário',
+      email: userEmail,
+      cpfCnpj: profile.cpf?.replace(/\D/g, '') || '',
+      phone: profile.phone?.replace(/\D/g, '') || '',
+      mobilePhone: profile.phone?.replace(/\D/g, '') || '',
+    };
+
+    // Validate or recreate Asaas customer
+    const asaasCustomerId = await validateOrRecreateCustomer(runnerId, customerData);
+
+    // Calculate due date (3 days from now)
+    const dueDate = new Date();
+    dueDate.setDate(dueDate.getDate() + 3);
+    const dueDateString = dueDate.toISOString().split('T')[0];
+
+    // Create payment in Asaas
+    let paymentResult;
+    try {
+      paymentResult = await createPayment(
+        registration.id,
+        asaasCustomerId,
+        {
+          value: registration.total_amount,
+          dueDate: dueDateString,
+          description: `Inscrição - ${event.title}`,
+          billingType: 'PIX',
+          externalReference: registration.confirmation_code || `REG-${registration.id}`,
+        }
+      );
+    } catch (paymentError: any) {
+      // If customer is invalid, try to recreate customer and retry payment
+      if (paymentError.isInvalidCustomer) {
+        console.log('⚠️ Customer inválido detectado, recriando customer e tentando novamente...');
+        
+        // Remove invalid customer from database
+        await query(
+          'DELETE FROM asaas_customers WHERE user_id = $1',
+          [runnerId]
+        );
+        
+        // Recreate customer
+        const customerResult = await createCustomer(runnerId, customerData);
+        const newAsaasCustomerId = customerResult.asaas_customer_id;
+        
+        // Retry payment with new customer
+        paymentResult = await createPayment(
+          registration.id,
+          newAsaasCustomerId,
+          {
+            value: registration.total_amount,
+            dueDate: dueDateString,
+            description: `Inscrição - ${event.title}`,
+            billingType: 'PIX',
+            externalReference: registration.confirmation_code || `REG-${registration.id}`,
+          }
+        );
+      } else {
+        throw paymentError;
+      }
+    }
+
+    res.json({
+      success: true,
+      data: {
+        status: paymentResult.status,
+        payment_date: null,
+        pix_qr_code: paymentResult.pix_qr_code,
+        due_date: paymentResult.due_date,
+        asaas_payment_id: paymentResult.asaas_payment_id,
+      },
+    });
+  } catch (error: any) {
+    console.error('❌ Erro ao gerar pagamento:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Erro ao gerar pagamento',
+    });
+  }
+});
+
 // Get payment status by registration ID
 export const getPaymentStatusController = asyncHandler(async (req: AuthRequest, res: Response) => {
   if (!req.user) {

@@ -11,6 +11,7 @@ import {
   cancelRegistrationController,
   getRegistrationReceiptController,
   getPaymentStatusController,
+  generatePaymentController,
 } from '../controllers/registrationsController.js';
 import { createTransferRequestController, generateTransferPaymentController, getTransferRequestByIdController } from '../controllers/transferRequestController.js';
 import { getEnabledModulesController } from '../controllers/systemSettingsController.js';
@@ -29,6 +30,7 @@ router.get('/settings/modules', getEnabledModulesController);
 router.get('/export', exportRegistrationsController);
 router.get('/', getAllRegistrations);
 router.get('/:id/payment-status', getPaymentStatusController);
+router.post('/:id/generate-payment', generatePaymentController);
 router.get('/:id/receipt', getRegistrationReceiptController);
 router.get('/:id', getRegistration);
 router.post('/', createRegistrationController);

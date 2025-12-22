@@ -106,6 +106,11 @@ export const getPaymentStatus = async (registrationId: string) => {
   return apiClient.get<{ status: string; payment_date?: string; pix_qr_code?: string | null; due_date?: string | null }>(`/registrations/${registrationId}/payment-status`);
 };
 
+// Generate payment for registration (creates payment if it doesn't exist)
+export const generatePayment = async (registrationId: string) => {
+  return apiClient.post<{ status: string; payment_date?: string; pix_qr_code?: string | null; due_date?: string | null; asaas_payment_id?: string }>(`/registrations/${registrationId}/generate-payment`);
+};
+
 // Create registration
 export const createRegistration = async (data: CreateRegistrationData) => {
   return apiClient.post<Registration>('/registrations', data);
