@@ -81,6 +81,7 @@ export const getModalityById = async (modalityId: string): Promise<Modality | nu
     event_id: row.event_id,
     name: row.name,
     distance: row.distance,
+    display_order: row.display_order,
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
