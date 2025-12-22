@@ -186,6 +186,56 @@ export const getCustomerByUserId = async (userId: string): Promise<string | null
   return result.rows[0].asaas_customer_id;
 };
 
+// Validate customer exists in Asaas and recreate if invalid
+export const validateOrRecreateCustomer = async (
+  userId: string,
+  customerData: AsaasCustomerRequest
+): Promise<string> => {
+  const asaasClient = createAsaasClient();
+  
+  // Get existing customer ID from database
+  let asaasCustomerId = await getCustomerByUserId(userId);
+  
+  if (!asaasCustomerId) {
+    // No customer in database, create new one
+    console.log('📋 Nenhum customer encontrado no banco, criando novo...');
+    const customerResult = await createCustomer(userId, customerData);
+    return customerResult.asaas_customer_id;
+  }
+  
+  // Validate customer exists in Asaas
+  try {
+    console.log(`🔍 Validando customer no Asaas: ${asaasCustomerId}`);
+    await asaasClient.get(`/customers/${asaasCustomerId}`);
+    console.log(`✅ Customer válido no Asaas: ${asaasCustomerId}`);
+    return asaasCustomerId;
+  } catch (error: any) {
+    // Customer doesn't exist in Asaas (probably from different environment)
+    if (error.response?.status === 404 || 
+        (error.response?.data?.errors && 
+         error.response.data.errors.some((e: any) => 
+           e.description?.toLowerCase().includes('não encontrado') ||
+           e.description?.toLowerCase().includes('not found') ||
+           e.description?.toLowerCase().includes('inválido')
+         ))) {
+      console.log(`⚠️ Customer ${asaasCustomerId} não existe no Asaas (provavelmente de outro ambiente), removendo do banco e criando novo...`);
+      
+      // Remove invalid customer from database
+      await query(
+        'DELETE FROM asaas_customers WHERE user_id = $1',
+        [userId]
+      );
+      
+      // Create new customer
+      const customerResult = await createCustomer(userId, customerData);
+      return customerResult.asaas_customer_id;
+    }
+    
+    // Other error, rethrow
+    throw error;
+  }
+};
+
 // Create payment in Asaas
 export const createPayment = async (
   registrationId: string,
@@ -416,6 +466,21 @@ export const createPayment = async (
       const errorData = error.response.data;
       if (errorData.errors) {
         const errorMessages = errorData.errors.map((e: any) => e.description).join(', ');
+        
+        // Check if error is related to invalid customer
+        const isInvalidCustomer = errorMessages.toLowerCase().includes('customer') && 
+                                  (errorMessages.toLowerCase().includes('inválido') || 
+                                   errorMessages.toLowerCase().includes('não informado') ||
+                                   errorMessages.toLowerCase().includes('not found'));
+        
+        if (isInvalidCustomer) {
+          // Throw a special error that can be caught and handled by the controller
+          const invalidCustomerError: any = new Error(`Customer inválido ou não encontrado no Asaas: ${errorMessages}`);
+          invalidCustomerError.isInvalidCustomer = true;
+          invalidCustomerError.customerId = customerId;
+          throw invalidCustomerError;
+        }
+        
         throw new Error(`Erro ao criar pagamento no Asaas: ${errorMessages}`);
       }
     }

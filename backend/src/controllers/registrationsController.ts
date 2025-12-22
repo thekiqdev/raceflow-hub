@@ -13,7 +13,7 @@ import { asyncHandler } from '../middleware/errorHandler.js';
 import { hasRole } from '../services/userRolesService.js';
 import { getEventById } from '../services/eventsService.js';
 import { getCategoryById } from '../services/categoriesService.js';
-import { createCustomer, createPayment, getCustomerByUserId, getPaymentByRegistrationId } from '../services/asaasService.js';
+import { createCustomer, createPayment, getPaymentByRegistrationId, validateOrRecreateCustomer } from '../services/asaasService.js';
 import { getProfileByUserId } from '../services/profilesService.js';
 import { query } from '../config/database.js';
 
@@ -325,22 +325,17 @@ export const createRegistrationController = asyncHandler(async (req: AuthRequest
       
       const userEmail = userResult.rows[0].email;
 
-      // Get or create Asaas customer
-      let asaasCustomerId = await getCustomerByUserId(runnerId);
-      
-      if (!asaasCustomerId) {
-        // Prepare customer data for Asaas
-        const customerData = {
-          name: profile.full_name || 'Usuário',
-          email: userEmail,
-          cpfCnpj: profile.cpf?.replace(/\D/g, '') || '', // Remove formatting
-          phone: profile.phone?.replace(/\D/g, '') || '',
-          mobilePhone: profile.phone?.replace(/\D/g, '') || '',
-        };
+      // Prepare customer data for Asaas
+      const customerData = {
+        name: profile.full_name || 'Usuário',
+        email: userEmail,
+        cpfCnpj: profile.cpf?.replace(/\D/g, '') || '', // Remove formatting
+        phone: profile.phone?.replace(/\D/g, '') || '',
+        mobilePhone: profile.phone?.replace(/\D/g, '') || '',
+      };
 
-        const customerResult = await createCustomer(runnerId, customerData);
-        asaasCustomerId = customerResult.asaas_customer_id;
-      }
+      // Validate or recreate Asaas customer (handles migration from sandbox to production)
+      const asaasCustomerId = await validateOrRecreateCustomer(runnerId, customerData);
 
       // Calculate due date (3 days from now)
       const dueDate = new Date();
@@ -348,35 +343,85 @@ export const createRegistrationController = asyncHandler(async (req: AuthRequest
       const dueDateString = dueDate.toISOString().split('T')[0]; // YYYY-MM-DD
 
       // Create payment in Asaas
-      const paymentResult = await createPayment(
-        registration.id,
-        asaasCustomerId,
-        {
-          value: registration.total_amount,
-          dueDate: dueDateString,
-          description: `Inscrição - ${event.title}`,
-          billingType: 'PIX', // Default to PIX
-          externalReference: registration.confirmation_code || `REG-${registration.id}`,
+      let paymentResult;
+      try {
+        paymentResult = await createPayment(
+          registration.id,
+          asaasCustomerId,
+          {
+            value: registration.total_amount,
+            dueDate: dueDateString,
+            description: `Inscrição - ${event.title}`,
+            billingType: 'PIX', // Default to PIX
+            externalReference: registration.confirmation_code || `REG-${registration.id}`,
+          }
+        );
+
+        paymentData = {
+          asaas_payment_id: paymentResult.asaas_payment_id,
+          pix_qr_code: paymentResult.pix_qr_code,
+          pix_qr_code_id: paymentResult.pix_qr_code_id,
+          payment_link: paymentResult.payment_link,
+          status: paymentResult.status,
+          due_date: paymentResult.due_date,
+          // Se não temos QR Code mas temos payment_link, podemos usar o link
+          // O frontend pode redirecionar ou mostrar o link como alternativa
+        };
+
+        console.log('✅ Pagamento criado no Asaas:', {
+          asaas_payment_id: paymentData.asaas_payment_id,
+          status: paymentData.status,
+          has_qr_code: !!paymentData.pix_qr_code,
+          qr_code_id: paymentData.pix_qr_code_id
+        });
+      } catch (paymentError: any) {
+        // If customer is invalid, try to recreate customer and retry payment
+        if (paymentError.isInvalidCustomer) {
+          console.log('⚠️ Customer inválido detectado, recriando customer e tentando novamente...');
+          
+          // Remove invalid customer from database
+          await query(
+            'DELETE FROM asaas_customers WHERE user_id = $1',
+            [runnerId]
+          );
+          
+          // Recreate customer
+          const customerResult = await createCustomer(runnerId, customerData);
+          const newAsaasCustomerId = customerResult.asaas_customer_id;
+          
+          // Retry payment with new customer
+          paymentResult = await createPayment(
+            registration.id,
+            newAsaasCustomerId,
+            {
+              value: registration.total_amount,
+              dueDate: dueDateString,
+              description: `Inscrição - ${event.title}`,
+              billingType: 'PIX',
+              externalReference: registration.confirmation_code || `REG-${registration.id}`,
+            }
+          );
+
+          paymentData = {
+            asaas_payment_id: paymentResult.asaas_payment_id,
+            pix_qr_code: paymentResult.pix_qr_code,
+            pix_qr_code_id: paymentResult.pix_qr_code_id,
+            payment_link: paymentResult.payment_link,
+            status: paymentResult.status,
+            due_date: paymentResult.due_date,
+          };
+
+          console.log('✅ Pagamento criado no Asaas após recriar customer:', {
+            asaas_payment_id: paymentData.asaas_payment_id,
+            status: paymentData.status,
+            has_qr_code: !!paymentData.pix_qr_code,
+            qr_code_id: paymentData.pix_qr_code_id
+          });
+        } else {
+          // Re-throw other errors
+          throw paymentError;
         }
-      );
-
-      paymentData = {
-        asaas_payment_id: paymentResult.asaas_payment_id,
-        pix_qr_code: paymentResult.pix_qr_code,
-        pix_qr_code_id: paymentResult.pix_qr_code_id,
-        payment_link: paymentResult.payment_link,
-        status: paymentResult.status,
-        due_date: paymentResult.due_date,
-        // Se não temos QR Code mas temos payment_link, podemos usar o link
-        // O frontend pode redirecionar ou mostrar o link como alternativa
-      };
-
-      console.log('✅ Pagamento criado no Asaas:', {
-        asaas_payment_id: paymentData.asaas_payment_id,
-        status: paymentData.status,
-        has_qr_code: !!paymentData.pix_qr_code,
-        qr_code_id: paymentData.pix_qr_code_id
-      });
+      }
     } catch (error: any) {
       console.error('❌ Erro ao criar pagamento no Asaas:', {
         message: error.message,
