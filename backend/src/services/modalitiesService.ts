@@ -76,6 +76,7 @@ export const getModalityById = async (modalityId: string): Promise<Modality | nu
   }
 
   const row = result.rows[0];
+  // Ensure all required Modality fields are included, including display_order
   return {
     id: row.id,
     event_id: row.event_id,
