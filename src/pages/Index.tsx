@@ -237,9 +237,22 @@ const Index = () => {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredUpcomingEvents.map(event => <Card key={event.id} className="overflow-hidden hover:shadow-xl transition-all hover:-translate-y-1 cursor-pointer" onClick={() => navigate(`/events/${event.id}`)}>
-                    <div className="h-48 bg-gradient-hero flex items-center justify-center">
-                      <Award className="h-16 w-16 text-white opacity-50" />
+            {filteredUpcomingEvents.map(event => {
+              const EventCard = () => {
+                const [imageError, setImageError] = useState(false);
+                return (
+                  <Card key={event.id} className="overflow-hidden hover:shadow-xl transition-all hover:-translate-y-1 cursor-pointer" onClick={() => navigate(`/events/${event.id}`)}>
+                    <div className="h-48 bg-gradient-hero flex items-center justify-center relative overflow-hidden">
+                      {event.banner_url && !imageError ? (
+                        <img 
+                          src={event.banner_url} 
+                          alt={event.title} 
+                          className="w-full h-full object-cover"
+                          onError={() => setImageError(true)}
+                        />
+                      ) : (
+                        <Award className="h-16 w-16 text-white opacity-50" />
+                      )}
                     </div>
                     <CardContent className="pt-4">
                       <h3 className="font-bold text-base mb-2 line-clamp-2">{event.title}</h3>
@@ -296,8 +309,12 @@ const Index = () => {
                         )}
                       </div>
                     </CardContent>
-                  </Card>)}
-              </div>
+                  </Card>
+                );
+              };
+              return <EventCard key={event.id} />;
+            })}
+          </div>
             </section>
 
         {/* Consultoria Section */}
