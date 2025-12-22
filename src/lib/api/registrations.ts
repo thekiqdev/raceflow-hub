@@ -116,6 +116,18 @@ export const createRegistration = async (data: CreateRegistrationData) => {
   return apiClient.post<Registration>('/registrations', data);
 };
 
+// Create registration by organizer for an athlete
+export interface CreateRegistrationByOrganizerData {
+  email: string;
+  event_id: string;
+  category_id: string;
+  kit_id?: string;
+}
+
+export const createRegistrationByOrganizer = async (data: CreateRegistrationByOrganizerData) => {
+  return apiClient.post<Registration>('/registrations/organizer/register-athlete', data);
+};
+
 // Update registration
 export const updateRegistration = async (id: string, data: UpdateRegistrationData) => {
   return apiClient.put<Registration>(`/registrations/${id}`, data);
@@ -134,15 +146,6 @@ export const cancelRegistration = async (id: string) => {
 // Get registration receipt
 export const getRegistrationReceipt = async (id: string) => {
   return apiClient.get<Registration>(`/registrations/${id}/receipt`);
-};
-
-// Find user by CPF or email (for organizer registration)
-export const findUserByCpfOrEmail = async (cpf?: string, email?: string) => {
-  const params = new URLSearchParams();
-  if (cpf) params.append('cpf', cpf);
-  if (email) params.append('email', email);
-  
-  return apiClient.get<{ id: string; full_name: string; cpf: string }>(`/registrations/find-user?${params.toString()}`);
 };
 
 // Export registrations

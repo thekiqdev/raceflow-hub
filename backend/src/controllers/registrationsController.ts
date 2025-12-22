@@ -6,6 +6,7 @@ import {
   createRegistration,
   updateRegistration,
   findUserByCpfOrEmail,
+  findUserByEmail,
   transferRegistration,
   cancelRegistration,
 } from '../services/registrationsService.js';
@@ -162,29 +163,13 @@ export const createRegistrationController = asyncHandler(async (req: AuthRequest
     return;
   }
 
-  // ETAPA: Validate that user has runner role OR is organizer/admin
+  // ETAPA: Validate that user has runner role
   const isRunner = await hasRole(req.user.id, 'runner');
-  const isOrganizer = await hasRole(req.user.id, 'organizer');
-  const isAdmin = await hasRole(req.user.id, 'admin');
-  
-  // If organizer/admin is registering someone else, allow it
-  const isRegisteringSelf = !req.body.runner_id || req.body.runner_id === req.user.id;
-  
-  if (!isRunner && !isOrganizer && !isAdmin) {
+  if (!isRunner) {
     res.status(403).json({
       success: false,
       error: 'Forbidden',
       message: 'Apenas corredores podem se inscrever em eventos. Por favor, acesse com uma conta de corredor.',
-    });
-    return;
-  }
-  
-  // If user is not a runner and is trying to register themselves, deny
-  if (!isRunner && isRegisteringSelf) {
-    res.status(403).json({
-      success: false,
-      error: 'Forbidden',
-      message: 'Organizadores e administradores não podem se inscrever em eventos. Use a opção de inscrever atleta.',
     });
     return;
   }
@@ -289,31 +274,10 @@ export const createRegistrationController = asyncHandler(async (req: AuthRequest
     }
   }
 
-  // Determine runner_id: if organizer/admin is registering someone else, use provided runner_id
-  // Otherwise, use the logged-in user's id
-  let runnerId = req.body.runner_id || req.user.id;
-  
-  // If organizer/admin is registering someone else, validate the runner_id exists
-  if (runnerId !== req.user.id) {
-    const runnerProfile = await query(
-      'SELECT id FROM profiles WHERE id = $1',
-      [runnerId]
-    );
-    
-    if (runnerProfile.rows.length === 0) {
-      res.status(404).json({
-        success: false,
-        error: 'Runner not found',
-        message: 'Atleta não encontrado',
-      });
-      return;
-    }
-  }
-
   const registrationData = {
     ...req.body,
     registered_by: req.user.id,
-    runner_id: runnerId,
+    runner_id: req.body.runner_id || req.user.id,
   };
 
   console.log('📝 Dados recebidos para criação de inscrição:', {
@@ -688,6 +652,291 @@ export const generatePaymentController = asyncHandler(async (req: AuthRequest, r
       error: error.message || 'Erro ao gerar pagamento',
     });
   }
+});
+
+// Create registration by organizer for an athlete
+export const createRegistrationByOrganizerController = asyncHandler(async (req: AuthRequest, res: Response) => {
+  if (!req.user) {
+    res.status(401).json({
+      success: false,
+      error: 'Not authenticated',
+    });
+    return;
+  }
+
+  // Check if user is organizer or admin
+  const isOrganizer = await hasRole(req.user.id, 'organizer');
+  const isAdmin = await hasRole(req.user.id, 'admin');
+  
+  if (!isOrganizer && !isAdmin) {
+    res.status(403).json({
+      success: false,
+      error: 'Forbidden',
+      message: 'Apenas organizadores e administradores podem inscrever atletas',
+    });
+    return;
+  }
+
+  const { email, event_id, category_id, kit_id } = req.body;
+
+  if (!email || !event_id || !category_id) {
+    res.status(400).json({
+      success: false,
+      error: 'Missing required fields',
+      message: 'email, event_id e category_id são obrigatórios',
+    });
+    return;
+  }
+
+  // Find user by email
+  const athlete = await findUserByEmail(email);
+  
+  if (!athlete) {
+    res.status(404).json({
+      success: false,
+      error: 'User not found',
+      message: 'Não foi encontrado um usuário com o email informado',
+    });
+    return;
+  }
+
+  // Validate event
+  const event = await getEventById(event_id);
+  if (!event) {
+    res.status(404).json({
+      success: false,
+      error: 'Event not found',
+      message: 'Evento não encontrado',
+    });
+    return;
+  }
+
+  // Check if organizer owns the event (unless admin)
+  if (!isAdmin && event.organizer_id !== req.user.id) {
+    res.status(403).json({
+      success: false,
+      error: 'Forbidden',
+      message: 'Você só pode inscrever atletas nos seus próprios eventos',
+    });
+    return;
+  }
+
+  // Check event status
+  if (event.status === 'draft') {
+    res.status(400).json({
+      success: false,
+      error: 'Event not open for registrations',
+      message: 'Este evento ainda não está aberto para inscrições',
+    });
+    return;
+  }
+
+  if (event.status === 'finished' || event.status === 'cancelled') {
+    res.status(400).json({
+      success: false,
+      error: 'Event not accepting registrations',
+      message: 'Este evento não está mais aceitando inscrições',
+    });
+    return;
+  }
+
+  // Validate category
+  const selectedCategory = await getCategoryById(category_id);
+  
+  if (!selectedCategory) {
+    res.status(404).json({
+      success: false,
+      error: 'Category not found',
+      message: 'Categoria não encontrada',
+    });
+    return;
+  }
+
+  // Verify category belongs to the event
+  if (selectedCategory.event_id !== event_id) {
+    res.status(400).json({
+      success: false,
+      error: 'Category does not belong to this event',
+      message: 'A categoria não pertence a este evento',
+    });
+    return;
+  }
+
+  // Check available spots
+  if (selectedCategory.max_participants !== null && selectedCategory.max_participants > 0) {
+    const registrationsCount = await query(
+      `SELECT COUNT(*) as count 
+       FROM registrations 
+       WHERE category_id = $1 
+       AND status != 'cancelled' 
+       AND payment_status IN ('pending', 'paid')`,
+      [category_id]
+    );
+    
+    const currentCount = parseInt(registrationsCount.rows[0].count) || 0;
+    const availableSpots = selectedCategory.max_participants - currentCount;
+    
+    if (availableSpots <= 0) {
+      res.status(400).json({
+        success: false,
+        error: 'Category is full',
+        message: 'Esta categoria está esgotada',
+      });
+      return;
+    }
+  }
+
+  // Calculate total amount
+  let totalAmount = parseFloat(selectedCategory.price.toString()) || 0;
+  
+  if (kit_id) {
+    const { getEventKits } = await import('../services/eventKitsService.js');
+    const kits = await getEventKits(event_id);
+    const kit = kits.find(k => k.id === kit_id);
+    if (kit) {
+      totalAmount += parseFloat(kit.price.toString()) || 0;
+    }
+  }
+
+  // Create registration data
+  const registrationData = {
+    event_id,
+    category_id,
+    kit_id: kit_id || undefined,
+    runner_id: athlete.id,
+    registered_by: req.user.id,
+    total_amount: totalAmount,
+    payment_method: 'pix' as const,
+  };
+
+  console.log('📝 Organizador criando inscrição para atleta:', {
+    organizer_id: req.user.id,
+    athlete_id: athlete.id,
+    athlete_email: email,
+    event_id,
+    category_id,
+    kit_id,
+    total_amount: totalAmount,
+  });
+
+  // Create registration
+  const registration = await createRegistration(registrationData);
+
+  console.log('✅ Inscrição criada pelo organizador:', {
+    id: registration.id,
+    total_amount: registration.total_amount,
+  });
+
+  // Create payment if needed
+  let paymentData: any = null;
+  
+  if (registration.total_amount > 0) {
+    try {
+      const runnerId = athlete.id;
+      
+      // Get user profile and email for Asaas customer
+      const profile = await getProfileByUserId(runnerId);
+      if (!profile) {
+        throw new Error('Perfil do usuário não encontrado');
+      }
+
+      // Get user email from users table
+      const userResult = await query(
+        'SELECT email FROM users WHERE id = $1',
+        [runnerId]
+      );
+      
+      if (userResult.rows.length === 0) {
+        throw new Error('Usuário não encontrado');
+      }
+      
+      const userEmail = userResult.rows[0].email;
+
+      // Prepare customer data for Asaas
+      const customerData = {
+        name: profile.full_name || 'Usuário',
+        email: userEmail,
+        cpfCnpj: profile.cpf?.replace(/\D/g, '') || '',
+        phone: profile.phone?.replace(/\D/g, '') || '',
+        mobilePhone: profile.phone?.replace(/\D/g, '') || '',
+      };
+
+      // Validate or recreate Asaas customer
+      const asaasCustomerId = await validateOrRecreateCustomer(runnerId, customerData);
+
+      // Calculate due date (3 days from now)
+      const dueDate = new Date();
+      dueDate.setDate(dueDate.getDate() + 3);
+      const dueDateString = dueDate.toISOString().split('T')[0];
+
+      // Create payment in Asaas
+      let paymentResult;
+      try {
+        paymentResult = await createPayment(
+          registration.id,
+          asaasCustomerId,
+          {
+            value: registration.total_amount,
+            dueDate: dueDateString,
+            description: `Inscrição - ${event.title}`,
+            billingType: 'PIX',
+            externalReference: registration.confirmation_code || `REG-${registration.id}`,
+          }
+        );
+      } catch (paymentError: any) {
+        if (paymentError.isInvalidCustomer) {
+          console.log('⚠️ Customer inválido detectado, recriando customer e tentando novamente...');
+          
+          await query(
+            'DELETE FROM asaas_customers WHERE user_id = $1',
+            [runnerId]
+          );
+          
+          const customerResult = await createCustomer(runnerId, customerData);
+          const newAsaasCustomerId = customerResult.asaas_customer_id;
+          
+          paymentResult = await createPayment(
+            registration.id,
+            newAsaasCustomerId,
+            {
+              value: registration.total_amount,
+              dueDate: dueDateString,
+              description: `Inscrição - ${event.title}`,
+              billingType: 'PIX',
+              externalReference: registration.confirmation_code || `REG-${registration.id}`,
+            }
+          );
+        } else {
+          throw paymentError;
+        }
+      }
+
+      paymentData = {
+        asaas_payment_id: paymentResult.asaas_payment_id,
+        pix_qr_code: paymentResult.pix_qr_code,
+        pix_qr_code_id: paymentResult.pix_qr_code_id,
+        payment_link: paymentResult.payment_link,
+        status: paymentResult.status,
+        due_date: paymentResult.due_date,
+      };
+    } catch (error: any) {
+      console.error('❌ Erro ao criar pagamento:', error);
+      // Don't fail registration if payment fails
+      paymentData = {
+        error: error.message || 'Erro ao criar pagamento',
+        warning: 'Inscrição criada, mas pagamento não foi processado. Entre em contato com o suporte.',
+      };
+    }
+  }
+
+  res.status(201).json({
+    success: true,
+    data: {
+      ...registration,
+      payment: paymentData,
+    },
+    message: 'Atleta inscrito com sucesso',
+  });
 });
 
 // Get payment status by registration ID
@@ -1306,66 +1555,5 @@ export const getRegistrationReceiptController = asyncHandler(async (req: AuthReq
     data: registration,
     message: 'Receipt data retrieved successfully',
   });
-});
-
-// Find user by CPF or email (for organizer registration)
-export const findUserByCpfOrEmailController = asyncHandler(async (req: AuthRequest, res: Response) => {
-  if (!req.user) {
-    res.status(401).json({
-      success: false,
-      error: 'Not authenticated',
-    });
-    return;
-  }
-
-  // Only organizers and admins can search for users
-  const isOrganizer = await hasRole(req.user.id, 'organizer');
-  const isAdmin = await hasRole(req.user.id, 'admin');
-  
-  if (!isOrganizer && !isAdmin) {
-    res.status(403).json({
-      success: false,
-      error: 'Forbidden',
-      message: 'Apenas organizadores e administradores podem buscar atletas',
-    });
-    return;
-  }
-
-  const { cpf, email } = req.query;
-
-  if (!cpf && !email) {
-    res.status(400).json({
-      success: false,
-      error: 'Missing required fields',
-      message: 'CPF ou email é obrigatório',
-    });
-    return;
-  }
-
-  try {
-    const user = await findUserByCpfOrEmail(
-      cpf as string | undefined,
-      email as string | undefined
-    );
-
-    if (!user) {
-      res.status(404).json({
-        success: false,
-        error: 'User not found',
-        message: 'Atleta não encontrado',
-      });
-      return;
-    }
-
-    res.json({
-      success: true,
-      data: user,
-    });
-  } catch (error: any) {
-    res.status(500).json({
-      success: false,
-      error: error.message || 'Erro ao buscar atleta',
-    });
-  }
 });
 

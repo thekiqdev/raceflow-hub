@@ -12,7 +12,7 @@ import {
   getRegistrationReceiptController,
   getPaymentStatusController,
   generatePaymentController,
-  findUserByCpfOrEmailController,
+  createRegistrationByOrganizerController,
 } from '../controllers/registrationsController.js';
 import { createTransferRequestController, generateTransferPaymentController, getTransferRequestByIdController } from '../controllers/transferRequestController.js';
 import { getEnabledModulesController } from '../controllers/systemSettingsController.js';
@@ -29,13 +29,13 @@ router.use(authenticate);
 router.get('/settings/modules', getEnabledModulesController);
 
 router.get('/export', exportRegistrationsController);
-router.get('/find-user', findUserByCpfOrEmailController);
 router.get('/', getAllRegistrations);
 router.get('/:id/payment-status', getPaymentStatusController);
 router.post('/:id/generate-payment', generatePaymentController);
 router.get('/:id/receipt', getRegistrationReceiptController);
 router.get('/:id', getRegistration);
 router.post('/', createRegistrationController);
+router.post('/organizer/register-athlete', createRegistrationByOrganizerController);
 router.put('/:id', updateRegistrationController);
 router.put('/:id/transfer', transferRegistrationController);
 router.put('/:id/cancel', cancelRegistrationController);

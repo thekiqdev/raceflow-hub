@@ -1,5 +1,7 @@
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -24,16 +26,18 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Plus, Search, MoreVertical, Eye, MessageSquare, FileDown, Loader2, UserCog } from "lucide-react";
+import { Plus, Search, MoreVertical, Eye, MessageSquare, FileDown, Loader2, UserCog, Mail } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { useAuth } from "@/contexts/AuthContext";
-import { getRegistrations, exportRegistrations, type Registration } from "@/lib/api/registrations";
+import { getRegistrations, exportRegistrations, createRegistrationByOrganizer, type Registration } from "@/lib/api/registrations";
 import { getEvents, type Event } from "@/lib/api/events";
+import { getModalities, type Modality } from "@/lib/api/modalities";
+import { getCategories, type Category } from "@/lib/api/categories";
+import { getEventKits, type EventKit } from "@/lib/api/eventKits";
 import { toast } from "sonner";
 import { useDebounce } from "@/hooks/useDebounce";
 import { createOrganizerGroupLeader } from "@/lib/api/groupLeaders";
-import { OrganizerRegisterAthleteDialog } from "./OrganizerRegisterAthleteDialog";
 
 const OrganizerRegistrations = () => {
   const { user } = useAuth();
@@ -45,7 +49,21 @@ const OrganizerRegistrations = () => {
   const [paymentStatusFilter, setPaymentStatusFilter] = useState("all");
   const [eventFilter, setEventFilter] = useState("all");
   const [isExporting, setIsExporting] = useState(false);
-  const [registerDialogOpen, setRegisterDialogOpen] = useState(false);
+  
+  // Dialog states
+  const [isRegisterDialogOpen, setIsRegisterDialogOpen] = useState(false);
+  const [registerEmail, setRegisterEmail] = useState("");
+  const [selectedEventId, setSelectedEventId] = useState<string>("");
+  const [selectedModalityId, setSelectedModalityId] = useState<string>("");
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string>("");
+  const [selectedKitId, setSelectedKitId] = useState<string>("");
+  const [modalities, setModalities] = useState<Modality[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [kits, setKits] = useState<EventKit[]>([]);
+  const [loadingModalities, setLoadingModalities] = useState(false);
+  const [loadingCategories, setLoadingCategories] = useState(false);
+  const [loadingKits, setLoadingKits] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const debouncedSearch = useDebounce(searchQuery, 500);
 
@@ -106,6 +124,156 @@ const OrganizerRegistrations = () => {
       toast.error("Erro ao carregar inscrições");
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Load modalities, categories and kits when event is selected
+  useEffect(() => {
+    if (selectedEventId) {
+      loadModalities();
+      loadCategories();
+      loadKits();
+    } else {
+      setModalities([]);
+      setCategories([]);
+      setKits([]);
+      setSelectedModalityId("");
+      setSelectedCategoryId("");
+      setSelectedKitId("");
+    }
+  }, [selectedEventId]);
+
+  // Load categories when modality is selected
+  useEffect(() => {
+    if (selectedModalityId) {
+      loadCategoriesByModality();
+    } else if (selectedEventId) {
+      loadCategories();
+    }
+    setSelectedCategoryId("");
+  }, [selectedModalityId]);
+
+  const loadModalities = async () => {
+    if (!selectedEventId) return;
+    
+    try {
+      setLoadingModalities(true);
+      const response = await getModalities(selectedEventId);
+      if (response.success && response.data) {
+        setModalities(response.data);
+      }
+    } catch (error) {
+      console.error("Error loading modalities:", error);
+      toast.error("Erro ao carregar modalidades");
+    } finally {
+      setLoadingModalities(false);
+    }
+  };
+
+  const loadCategories = async () => {
+    if (!selectedEventId) return;
+    
+    try {
+      setLoadingCategories(true);
+      const response = await getCategories(selectedEventId);
+      if (response.success && response.data) {
+        setCategories(response.data);
+      }
+    } catch (error) {
+      console.error("Error loading categories:", error);
+      toast.error("Erro ao carregar categorias");
+    } finally {
+      setLoadingCategories(false);
+    }
+  };
+
+  const loadCategoriesByModality = async () => {
+    if (!selectedModalityId) return;
+    
+    try {
+      setLoadingCategories(true);
+      const { getCategoriesByModality } = await import("@/lib/api/categories");
+      const response = await getCategoriesByModality(selectedModalityId);
+      if (response.success && response.data) {
+        setCategories(response.data);
+      }
+    } catch (error) {
+      console.error("Error loading categories by modality:", error);
+      toast.error("Erro ao carregar categorias");
+    } finally {
+      setLoadingCategories(false);
+    }
+  };
+
+  const loadKits = async () => {
+    if (!selectedEventId) return;
+    
+    try {
+      setLoadingKits(true);
+      const response = await getEventKits(selectedEventId);
+      if (response.success && response.data) {
+        setKits(response.data);
+      }
+    } catch (error) {
+      console.error("Error loading kits:", error);
+      toast.error("Erro ao carregar kits");
+    } finally {
+      setLoadingKits(false);
+    }
+  };
+
+  const handleOpenRegisterDialog = () => {
+    setIsRegisterDialogOpen(true);
+    setRegisterEmail("");
+    setSelectedEventId("");
+    setSelectedModalityId("");
+    setSelectedCategoryId("");
+    setSelectedKitId("");
+  };
+
+  const handleCloseRegisterDialog = () => {
+    setIsRegisterDialogOpen(false);
+    setRegisterEmail("");
+    setSelectedEventId("");
+    setSelectedModalityId("");
+    setSelectedCategoryId("");
+    setSelectedKitId("");
+  };
+
+  const handleRegisterAthlete = async () => {
+    if (!registerEmail || !selectedEventId || !selectedCategoryId) {
+      toast.error("Preencha todos os campos obrigatórios");
+      return;
+    }
+
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(registerEmail)) {
+      toast.error("Email inválido");
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const response = await createRegistrationByOrganizer({
+        email: registerEmail,
+        event_id: selectedEventId,
+        category_id: selectedCategoryId,
+        kit_id: selectedKitId || undefined,
+      });
+
+      if (response.success) {
+        toast.success("Atleta inscrito com sucesso!");
+        handleCloseRegisterDialog();
+        loadRegistrations();
+      } else {
+        toast.error(response.error || "Erro ao inscrever atleta");
+      }
+    } catch (error: any) {
+      console.error("Error registering athlete:", error);
+      toast.error(error.message || "Erro ao inscrever atleta");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -329,7 +497,7 @@ const OrganizerRegistrations = () => {
             </div>
 
             <div className="flex flex-wrap gap-2">
-              <Button onClick={() => setRegisterDialogOpen(true)}>
+              <Button onClick={handleOpenRegisterDialog}>
                 <Plus className="mr-2 h-4 w-4" />
                 Inscrever Atleta
               </Button>
@@ -449,13 +617,154 @@ const OrganizerRegistrations = () => {
       </Card>
 
       {/* Register Athlete Dialog */}
-      <OrganizerRegisterAthleteDialog
-        open={registerDialogOpen}
-        onOpenChange={setRegisterDialogOpen}
-        onSuccess={() => {
-          loadRegistrations();
-        }}
-      />
+      <Dialog open={isRegisterDialogOpen} onOpenChange={setIsRegisterDialogOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Inscrever Atleta</DialogTitle>
+            <DialogDescription>
+              Inscreva um atleta no evento informando apenas o email. O atleta não precisa ter perfil público.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            {/* Email */}
+            <div className="space-y-2">
+              <Label htmlFor="email">Email do Atleta *</Label>
+              <Input
+                id="email"
+                type="email"
+                placeholder="atleta@email.com"
+                value={registerEmail}
+                onChange={(e) => setRegisterEmail(e.target.value)}
+              />
+            </div>
+
+            {/* Event */}
+            <div className="space-y-2">
+              <Label htmlFor="event">Evento *</Label>
+              <Select value={selectedEventId} onValueChange={setSelectedEventId}>
+                <SelectTrigger id="event">
+                  <SelectValue placeholder="Selecione o evento" />
+                </SelectTrigger>
+                <SelectContent>
+                  {events
+                    .filter(e => e.status === 'published' || e.status === 'ongoing')
+                    .map((event) => (
+                      <SelectItem key={event.id} value={event.id}>
+                        {event.title}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Modality (optional) */}
+            {selectedEventId && (
+              <div className="space-y-2">
+                <Label htmlFor="modality">Modalidade</Label>
+                <Select 
+                  value={selectedModalityId} 
+                  onValueChange={setSelectedModalityId}
+                  disabled={loadingModalities}
+                >
+                  <SelectTrigger id="modality">
+                    <SelectValue placeholder={loadingModalities ? "Carregando..." : "Selecione a modalidade (opcional)"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">Todas as modalidades</SelectItem>
+                    {modalities.map((modality) => (
+                      <SelectItem key={modality.id} value={modality.id}>
+                        {modality.name} {modality.distance && `- ${modality.distance}`}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {/* Category */}
+            {selectedEventId && (
+              <div className="space-y-2">
+                <Label htmlFor="category">Categoria *</Label>
+                <Select 
+                  value={selectedCategoryId} 
+                  onValueChange={setSelectedCategoryId}
+                  disabled={loadingCategories}
+                >
+                  <SelectTrigger id="category">
+                    <SelectValue placeholder={loadingCategories ? "Carregando..." : "Selecione a categoria"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {categories.map((category) => (
+                      <SelectItem key={category.id} value={category.id}>
+                        {category.name} - R$ {category.price.toFixed(2).replace('.', ',')}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {/* Kit (optional) */}
+            {selectedEventId && (
+              <div className="space-y-2">
+                <Label htmlFor="kit">Kit</Label>
+                <Select 
+                  value={selectedKitId} 
+                  onValueChange={setSelectedKitId}
+                  disabled={loadingKits}
+                >
+                  <SelectTrigger id="kit">
+                    <SelectValue placeholder={loadingKits ? "Carregando..." : "Selecione o kit (opcional)"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">Sem kit</SelectItem>
+                    {kits.map((kit) => (
+                      <SelectItem key={kit.id} value={kit.id}>
+                        {kit.name} - R$ {kit.price.toFixed(2).replace('.', ',')}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {/* Total amount preview */}
+            {selectedCategoryId && (
+              <div className="p-4 bg-muted rounded-lg">
+                <div className="flex justify-between items-center">
+                  <span className="font-semibold">Total:</span>
+                  <span className="text-lg font-bold">
+                    R$ {(
+                      (categories.find(c => c.id === selectedCategoryId)?.price || 0) +
+                      (selectedKitId ? (kits.find(k => k.id === selectedKitId)?.price || 0) : 0)
+                    ).toFixed(2).replace('.', ',')}
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={handleCloseRegisterDialog} disabled={isSubmitting}>
+              Cancelar
+            </Button>
+            <Button onClick={handleRegisterAthlete} disabled={isSubmitting || !registerEmail || !selectedEventId || !selectedCategoryId}>
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Inscrevendo...
+                </>
+              ) : (
+                <>
+                  <Mail className="mr-2 h-4 w-4" />
+                  Inscrever Atleta
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
