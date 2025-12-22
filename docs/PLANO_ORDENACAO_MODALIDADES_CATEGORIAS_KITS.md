@@ -656,3 +656,4 @@ const saveModalitiesOrder = async () => {
 
 Após aprovação deste plano, começar pela **ETAPA 1** (Migrações do Banco de Dados).
 
+lo

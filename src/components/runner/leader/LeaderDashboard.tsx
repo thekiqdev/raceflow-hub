@@ -33,6 +33,10 @@ import {
 import { getMyEventCommissions, type LeaderEventCommission } from "@/lib/api/leaderEventCommissions";
 import { getMyCouponRegistrations, type LeaderRegistration } from "@/lib/api/leaderRegistrations";
 import { getMyInvitations, sendInvitation, type LeaderInvitation } from "@/lib/api/leaderInvitations";
+import { createRegistrationByLeader } from "@/lib/api/registrations";
+import { getModalities, type Modality } from "@/lib/api/modalities";
+import { getCategories, type Category } from "@/lib/api/categories";
+import { getEventKits, type EventKit } from "@/lib/api/eventKits";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
@@ -65,6 +69,21 @@ export function LeaderDashboard() {
     paid_commissions: number;
   } | null>(null);
   const [activeTab, setActiveTab] = useState("overview");
+  
+  // States for register athlete dialog
+  const [isRegisterDialogOpen, setIsRegisterDialogOpen] = useState(false);
+  const [registerEmail, setRegisterEmail] = useState("");
+  const [selectedEventForRegistration, setSelectedEventForRegistration] = useState<string>("");
+  const [selectedModalityId, setSelectedModalityId] = useState<string>("");
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string>("");
+  const [selectedKitId, setSelectedKitId] = useState<string>("");
+  const [modalities, setModalities] = useState<Modality[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [kits, setKits] = useState<EventKit[]>([]);
+  const [loadingModalities, setLoadingModalities] = useState(false);
+  const [loadingCategories, setLoadingCategories] = useState(false);
+  const [loadingKits, setLoadingKits] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     loadLeaderData();
@@ -128,6 +147,157 @@ export function LeaderDashboard() {
       style: "currency",
       currency: "BRL",
     }).format(value);
+  };
+
+  // Load modalities, categories and kits when event is selected
+  useEffect(() => {
+    if (selectedEventForRegistration) {
+      loadModalities();
+      loadCategories();
+      loadKits();
+    } else {
+      setModalities([]);
+      setCategories([]);
+      setKits([]);
+      setSelectedModalityId("");
+      setSelectedCategoryId("");
+      setSelectedKitId("");
+    }
+  }, [selectedEventForRegistration]);
+
+  // Load categories when modality is selected
+  useEffect(() => {
+    if (selectedModalityId) {
+      loadCategoriesByModality();
+    } else if (selectedEventForRegistration) {
+      loadCategories();
+    }
+    setSelectedCategoryId("");
+  }, [selectedModalityId]);
+
+  const loadModalities = async () => {
+    if (!selectedEventForRegistration) return;
+    
+    try {
+      setLoadingModalities(true);
+      const response = await getModalities(selectedEventForRegistration);
+      if (response.success && response.data) {
+        setModalities(response.data);
+      }
+    } catch (error) {
+      console.error("Error loading modalities:", error);
+      toast.error("Erro ao carregar modalidades");
+    } finally {
+      setLoadingModalities(false);
+    }
+  };
+
+  const loadCategories = async () => {
+    if (!selectedEventForRegistration) return;
+    
+    try {
+      setLoadingCategories(true);
+      const response = await getCategories(selectedEventForRegistration);
+      if (response.success && response.data) {
+        setCategories(response.data);
+      }
+    } catch (error) {
+      console.error("Error loading categories:", error);
+      toast.error("Erro ao carregar categorias");
+    } finally {
+      setLoadingCategories(false);
+    }
+  };
+
+  const loadCategoriesByModality = async () => {
+    if (!selectedModalityId) return;
+    
+    try {
+      setLoadingCategories(true);
+      const { getCategoriesByModality } = await import("@/lib/api/categories");
+      const response = await getCategoriesByModality(selectedModalityId);
+      if (response.success && response.data) {
+        setCategories(response.data);
+      }
+    } catch (error) {
+      console.error("Error loading categories by modality:", error);
+      toast.error("Erro ao carregar categorias");
+    } finally {
+      setLoadingCategories(false);
+    }
+  };
+
+  const loadKits = async () => {
+    if (!selectedEventForRegistration) return;
+    
+    try {
+      setLoadingKits(true);
+      const response = await getEventKits(selectedEventForRegistration);
+      if (response.success && response.data) {
+        setKits(response.data);
+      }
+    } catch (error) {
+      console.error("Error loading kits:", error);
+      toast.error("Erro ao carregar kits");
+    } finally {
+      setLoadingKits(false);
+    }
+  };
+
+  const handleOpenRegisterDialog = (eventId: string) => {
+    setSelectedEventForRegistration(eventId);
+    setIsRegisterDialogOpen(true);
+    setRegisterEmail("");
+    setSelectedModalityId("");
+    setSelectedCategoryId("");
+    setSelectedKitId("");
+  };
+
+  const handleCloseRegisterDialog = () => {
+    setIsRegisterDialogOpen(false);
+    setRegisterEmail("");
+    setSelectedEventForRegistration("");
+    setSelectedModalityId("");
+    setSelectedCategoryId("");
+    setSelectedKitId("");
+  };
+
+  const handleRegisterAthlete = async () => {
+    if (!registerEmail || !selectedEventForRegistration || !selectedCategoryId) {
+      toast.error("Preencha todos os campos obrigatórios");
+      return;
+    }
+
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(registerEmail)) {
+      toast.error("Email inválido");
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const response = await createRegistrationByLeader({
+        email: registerEmail,
+        event_id: selectedEventForRegistration,
+        category_id: selectedCategoryId,
+        kit_id: selectedKitId || undefined,
+      });
+
+      if (response.success) {
+        toast.success("Atleta inscrito com sucesso!");
+        handleCloseRegisterDialog();
+        // Reload leader data to update stats
+        loadLeaderData();
+      } else {
+        toast.error(response.error || "Erro ao inscrever atleta");
+      }
+    } catch (error: any) {
+      console.error("Error registering athlete:", error);
+      toast.error(error.message || "Erro ao inscrever atleta");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const formatDate = (dateString: string) => {
@@ -731,6 +901,18 @@ export function LeaderDashboard() {
                         </p>
                       </div>
                     )}
+                    
+                    {/* Button to register athlete */}
+                    <div className="pt-4 border-t mt-4">
+                      <Button
+                        onClick={() => handleOpenRegisterDialog(commission.event_id)}
+                        className="w-full"
+                        variant="default"
+                      >
+                        <Users className="h-4 w-4 mr-2" />
+                        Inscrever Atleta
+                      </Button>
+                    </div>
                   </CardContent>
                 </Card>
                 );
@@ -1240,6 +1422,169 @@ export function LeaderDashboard() {
                 <>
                   <Send className="mr-2 h-4 w-4" />
                   Enviar Convite
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Register Athlete Dialog */}
+      <Dialog open={isRegisterDialogOpen} onOpenChange={setIsRegisterDialogOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Inscrever Atleta</DialogTitle>
+            <DialogDescription>
+              Inscreva um atleta no evento informando apenas o email. A comissão será gerada automaticamente quando o pagamento for confirmado.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            {/* Email */}
+            <div className="space-y-2">
+              <Label htmlFor="email">Email do Atleta *</Label>
+              <Input
+                id="email"
+                type="email"
+                placeholder="atleta@email.com"
+                value={registerEmail}
+                onChange={(e) => setRegisterEmail(e.target.value)}
+              />
+            </div>
+
+            {/* Event is already selected, show it */}
+            {selectedEventForRegistration && (
+              <div className="space-y-2">
+                <Label htmlFor="event">Evento</Label>
+                <Input
+                  id="event"
+                  value={eventCommissions.find(c => c.event_id === selectedEventForRegistration)?.event_title || "Evento"}
+                  disabled
+                />
+              </div>
+            )}
+
+            {/* Modality (optional) */}
+            {selectedEventForRegistration && (
+              <div className="space-y-2">
+                <Label htmlFor="modality">Modalidade</Label>
+                <Select 
+                  value={selectedModalityId || undefined} 
+                  onValueChange={(value) => setSelectedModalityId(value || "")}
+                  disabled={loadingModalities}
+                >
+                  <SelectTrigger id="modality">
+                    <SelectValue placeholder={loadingModalities ? "Carregando..." : "Selecione a modalidade (opcional)"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {modalities.map((modality) => (
+                      <SelectItem key={modality.id} value={modality.id}>
+                        {modality.name} {modality.distance && `- ${modality.distance}`}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {selectedModalityId && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 text-xs"
+                    onClick={() => setSelectedModalityId("")}
+                  >
+                    Limpar seleção
+                  </Button>
+                )}
+              </div>
+            )}
+
+            {/* Category */}
+            {selectedEventForRegistration && (
+              <div className="space-y-2">
+                <Label htmlFor="category">Categoria *</Label>
+                <Select 
+                  value={selectedCategoryId} 
+                  onValueChange={setSelectedCategoryId}
+                  disabled={loadingCategories}
+                >
+                  <SelectTrigger id="category">
+                    <SelectValue placeholder={loadingCategories ? "Carregando..." : "Selecione a categoria"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {categories.map((category) => (
+                      <SelectItem key={category.id} value={category.id}>
+                        {category.name} - R$ {category.price.toFixed(2).replace('.', ',')}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {/* Kit (optional) */}
+            {selectedEventForRegistration && (
+              <div className="space-y-2">
+                <Label htmlFor="kit">Kit</Label>
+                <Select 
+                  value={selectedKitId || undefined} 
+                  onValueChange={(value) => setSelectedKitId(value || "")}
+                  disabled={loadingKits}
+                >
+                  <SelectTrigger id="kit">
+                    <SelectValue placeholder={loadingKits ? "Carregando..." : "Selecione o kit (opcional)"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {kits.map((kit) => (
+                      <SelectItem key={kit.id} value={kit.id}>
+                        {kit.name} - R$ {kit.price.toFixed(2).replace('.', ',')}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {selectedKitId && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 text-xs"
+                    onClick={() => setSelectedKitId("")}
+                  >
+                    Remover kit
+                  </Button>
+                )}
+              </div>
+            )}
+
+            {/* Total amount preview */}
+            {selectedCategoryId && (
+              <div className="p-4 bg-muted rounded-lg">
+                <div className="flex justify-between items-center">
+                  <span className="font-semibold">Total:</span>
+                  <span className="text-lg font-bold">
+                    R$ {(
+                      (categories.find(c => c.id === selectedCategoryId)?.price || 0) +
+                      (selectedKitId ? (kits.find(k => k.id === selectedKitId)?.price || 0) : 0)
+                    ).toFixed(2).replace('.', ',')}
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={handleCloseRegisterDialog} disabled={isSubmitting}>
+              Cancelar
+            </Button>
+            <Button onClick={handleRegisterAthlete} disabled={isSubmitting || !registerEmail || !selectedEventForRegistration || !selectedCategoryId}>
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Inscrevendo...
+                </>
+              ) : (
+                <>
+                  <Users className="mr-2 h-4 w-4" />
+                  Inscrever Atleta
                 </>
               )}
             </Button>

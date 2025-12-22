@@ -13,6 +13,7 @@ import {
   getPaymentStatusController,
   generatePaymentController,
   createRegistrationByOrganizerController,
+  createRegistrationByLeaderController,
 } from '../controllers/registrationsController.js';
 import { createTransferRequestController, generateTransferPaymentController, getTransferRequestByIdController } from '../controllers/transferRequestController.js';
 import { getEnabledModulesController } from '../controllers/systemSettingsController.js';
@@ -36,6 +37,7 @@ router.get('/:id/receipt', getRegistrationReceiptController);
 router.get('/:id', getRegistration);
 router.post('/', createRegistrationController);
 router.post('/organizer/register-athlete', createRegistrationByOrganizerController);
+router.post('/leader/register-athlete', createRegistrationByLeaderController);
 router.put('/:id', updateRegistrationController);
 router.put('/:id/transfer', transferRegistrationController);
 router.put('/:id/cancel', cancelRegistrationController);

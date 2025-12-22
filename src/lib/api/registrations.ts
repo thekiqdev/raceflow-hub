@@ -128,6 +128,18 @@ export const createRegistrationByOrganizer = async (data: CreateRegistrationByOr
   return apiClient.post<Registration>('/registrations/organizer/register-athlete', data);
 };
 
+// Create registration by group leader
+export interface CreateRegistrationByLeaderData {
+  email: string;
+  event_id: string;
+  category_id: string;
+  kit_id?: string;
+}
+
+export const createRegistrationByLeader = async (data: CreateRegistrationByLeaderData) => {
+  return apiClient.post<Registration>('/registrations/leader/register-athlete', data);
+};
+
 // Update registration
 export const updateRegistration = async (id: string, data: UpdateRegistrationData) => {
   return apiClient.put<Registration>(`/registrations/${id}`, data);

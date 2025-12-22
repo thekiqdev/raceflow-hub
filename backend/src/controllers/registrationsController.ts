@@ -1550,6 +1550,327 @@ export const getRegistrationReceiptController = asyncHandler(async (req: AuthReq
   }
 
   // For now, return JSON data. In the future, can generate PDF
+});
+
+// Create registration by group leader
+export const createRegistrationByLeaderController = asyncHandler(async (req: AuthRequest, res: Response) => {
+  if (!req.user) {
+    res.status(401).json({
+      success: false,
+      error: 'Not authenticated',
+    });
+    return;
+  }
+
+  // Check if user is a group leader
+  const { getGroupLeaderByUserId } = await import('../services/groupLeadersService.js');
+  const leader = await getGroupLeaderByUserId(req.user.id);
+  
+  if (!leader || !leader.is_active) {
+    res.status(403).json({
+      success: false,
+      error: 'Forbidden',
+      message: 'Apenas líderes de grupo ativos podem inscrever atletas',
+    });
+    return;
+  }
+
+  const { email, event_id, category_id, kit_id } = req.body;
+
+  if (!email || !event_id || !category_id) {
+    res.status(400).json({
+      success: false,
+      error: 'Missing required fields',
+      message: 'email, event_id e category_id são obrigatórios',
+    });
+    return;
+  }
+
+  // Verify leader has commission configured for this event
+  const eventCommissionCheck = await query(
+    'SELECT id FROM leader_event_commissions WHERE leader_id = $1 AND event_id = $2',
+    [leader.id, event_id]
+  );
+
+  if (eventCommissionCheck.rows.length === 0) {
+    res.status(403).json({
+      success: false,
+      error: 'Forbidden',
+      message: 'Você não tem comissão configurada para este evento',
+    });
+    return;
+  }
+
+  // Find user by email
+  const athlete = await findUserByEmail(email);
+  
+  if (!athlete) {
+    res.status(404).json({
+      success: false,
+      error: 'User not found',
+      message: 'Não foi encontrado um usuário com o email informado',
+    });
+    return;
+  }
+
+  // Validate event
+  const event = await getEventById(event_id);
+  if (!event) {
+    res.status(404).json({
+      success: false,
+      error: 'Event not found',
+      message: 'Evento não encontrado',
+    });
+    return;
+  }
+
+  // Check event status
+  if (event.status === 'draft') {
+    res.status(400).json({
+      success: false,
+      error: 'Event not open for registrations',
+      message: 'Este evento ainda não está aberto para inscrições',
+    });
+    return;
+  }
+
+  if (event.status === 'finished' || event.status === 'cancelled') {
+    res.status(400).json({
+      success: false,
+      error: 'Event not accepting registrations',
+      message: 'Este evento não está mais aceitando inscrições',
+    });
+    return;
+  }
+
+  // Validate category
+  const selectedCategory = await getCategoryById(category_id);
+  
+  if (!selectedCategory) {
+    res.status(404).json({
+      success: false,
+      error: 'Category not found',
+      message: 'Categoria não encontrada',
+    });
+    return;
+  }
+
+  // Verify category belongs to the event
+  if (selectedCategory.event_id !== event_id) {
+    res.status(400).json({
+      success: false,
+      error: 'Category does not belong to this event',
+      message: 'A categoria não pertence a este evento',
+    });
+    return;
+  }
+
+  // Check available spots
+  if (selectedCategory.max_participants !== null && selectedCategory.max_participants > 0) {
+    const registrationsCount = await query(
+      `SELECT COUNT(*) as count 
+       FROM registrations 
+       WHERE category_id = $1 
+       AND status != 'cancelled' 
+       AND payment_status IN ('pending', 'paid')`,
+      [category_id]
+    );
+    
+    const currentCount = parseInt(registrationsCount.rows[0].count) || 0;
+    const availableSpots = selectedCategory.max_participants - currentCount;
+    
+    if (availableSpots <= 0) {
+      res.status(400).json({
+        success: false,
+        error: 'Category is full',
+        message: 'Esta categoria está esgotada',
+      });
+      return;
+    }
+  }
+
+  // Calculate total amount
+  let totalAmount = parseFloat(selectedCategory.price.toString()) || 0;
+  
+  if (kit_id) {
+    const { getEventKits } = await import('../services/eventKitsService.js');
+    const kits = await getEventKits(event_id);
+    const kit = kits.find(k => k.id === kit_id);
+    if (kit) {
+      totalAmount += parseFloat(kit.price.toString()) || 0;
+    }
+  }
+
+  // Create or ensure user referral exists (so commission will be generated)
+  const { createUserReferral, getUserReferral } = await import('../services/referralsService.js');
+  let userReferral = await getUserReferral(athlete.id);
+  
+  if (!userReferral) {
+    // Create referral for the athlete
+    try {
+      userReferral = await createUserReferral({
+        user_id: athlete.id,
+        referral_code: leader.referral_code,
+        referral_type: 'code',
+      });
+      console.log('✅ Referência criada para atleta:', {
+        athlete_id: athlete.id,
+        leader_id: leader.id,
+        referral_code: leader.referral_code,
+      });
+    } catch (referralError: any) {
+      // If referral already exists or other error, log but continue
+      console.log('ℹ️ Não foi possível criar referência (pode já existir):', referralError.message);
+    }
+  } else if (userReferral.leader_id !== leader.id) {
+    // Athlete already has a referral from another leader
+    console.log('ℹ️ Atleta já possui referência de outro líder:', {
+      athlete_id: athlete.id,
+      current_leader_id: userReferral.leader_id,
+      attempting_leader_id: leader.id,
+    });
+    // Continue anyway - the existing referral will be used for commission
+  }
+
+  // Create registration data
+  const registrationData = {
+    event_id,
+    category_id,
+    kit_id: kit_id || undefined,
+    runner_id: athlete.id,
+    registered_by: req.user.id,
+    total_amount: totalAmount,
+    payment_method: 'pix' as const,
+  };
+
+  console.log('📝 Líder criando inscrição para atleta:', {
+    leader_id: leader.id,
+    athlete_id: athlete.id,
+    athlete_email: email,
+    event_id,
+    category_id,
+    kit_id,
+    total_amount: totalAmount,
+  });
+
+  // Create registration
+  const registration = await createRegistration(registrationData);
+
+  console.log('✅ Inscrição criada pelo líder:', {
+    id: registration.id,
+    total_amount: registration.total_amount,
+  });
+
+  // Create payment if needed
+  let paymentData: any = null;
+  
+  if (registration.total_amount > 0) {
+    try {
+      const runnerId = athlete.id;
+      
+      // Get user profile and email for Asaas customer
+      const profile = await getProfileByUserId(runnerId);
+      if (!profile) {
+        throw new Error('Perfil do usuário não encontrado');
+      }
+
+      // Get user email from users table
+      const userResult = await query(
+        'SELECT email FROM users WHERE id = $1',
+        [runnerId]
+      );
+      
+      if (userResult.rows.length === 0) {
+        throw new Error('Usuário não encontrado');
+      }
+      
+      const userEmail = userResult.rows[0].email;
+
+      // Prepare customer data for Asaas
+      const customerData = {
+        name: profile.full_name || 'Usuário',
+        email: userEmail,
+        cpfCnpj: profile.cpf?.replace(/\D/g, '') || '',
+        phone: profile.phone?.replace(/\D/g, '') || '',
+        mobilePhone: profile.phone?.replace(/\D/g, '') || '',
+      };
+
+      // Validate or recreate Asaas customer
+      const asaasCustomerId = await validateOrRecreateCustomer(runnerId, customerData);
+
+      // Calculate due date (3 days from now)
+      const dueDate = new Date();
+      dueDate.setDate(dueDate.getDate() + 3);
+      const dueDateString = dueDate.toISOString().split('T')[0];
+
+      // Create payment in Asaas
+      let paymentResult;
+      try {
+        paymentResult = await createPayment(
+          registration.id,
+          asaasCustomerId,
+          {
+            value: registration.total_amount,
+            dueDate: dueDateString,
+            description: `Inscrição - ${event.title}`,
+            billingType: 'PIX',
+            externalReference: registration.confirmation_code || `REG-${registration.id}`,
+          }
+        );
+      } catch (paymentError: any) {
+        if (paymentError.isInvalidCustomer) {
+          console.log('⚠️ Customer inválido detectado, recriando customer e tentando novamente...');
+          
+          await query(
+            'DELETE FROM asaas_customers WHERE user_id = $1',
+            [runnerId]
+          );
+          
+          const customerResult = await createCustomer(runnerId, customerData);
+          const newAsaasCustomerId = customerResult.asaas_customer_id;
+          
+          paymentResult = await createPayment(
+            registration.id,
+            newAsaasCustomerId,
+            {
+              value: registration.total_amount,
+              dueDate: dueDateString,
+              description: `Inscrição - ${event.title}`,
+              billingType: 'PIX',
+              externalReference: registration.confirmation_code || `REG-${registration.id}`,
+            }
+          );
+        } else {
+          throw paymentError;
+        }
+      }
+
+      paymentData = {
+        asaas_payment_id: paymentResult.asaas_payment_id,
+        pix_qr_code: paymentResult.pix_qr_code,
+        pix_qr_code_id: paymentResult.pix_qr_code_id,
+        payment_link: paymentResult.payment_link,
+        status: paymentResult.status,
+        due_date: paymentResult.due_date,
+      };
+    } catch (error: any) {
+      console.error('❌ Erro ao criar pagamento:', error);
+      // Don't fail registration if payment fails
+      paymentData = {
+        error: error.message || 'Erro ao criar pagamento',
+        warning: 'Inscrição criada, mas pagamento não foi processado. Entre em contato com o suporte.',
+      };
+    }
+  }
+
+  res.status(201).json({
+    success: true,
+    data: {
+      ...registration,
+      payment: paymentData,
+    },
+    message: 'Atleta inscrito com sucesso',
+  });
   res.json({
     success: true,
     data: registration,
