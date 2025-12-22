@@ -663,15 +663,14 @@ const OrganizerRegistrations = () => {
               <div className="space-y-2">
                 <Label htmlFor="modality">Modalidade</Label>
                 <Select 
-                  value={selectedModalityId} 
-                  onValueChange={setSelectedModalityId}
+                  value={selectedModalityId || undefined} 
+                  onValueChange={(value) => setSelectedModalityId(value || "")}
                   disabled={loadingModalities}
                 >
                   <SelectTrigger id="modality">
                     <SelectValue placeholder={loadingModalities ? "Carregando..." : "Selecione a modalidade (opcional)"} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Todas as modalidades</SelectItem>
                     {modalities.map((modality) => (
                       <SelectItem key={modality.id} value={modality.id}>
                         {modality.name} {modality.distance && `- ${modality.distance}`}
@@ -679,6 +678,17 @@ const OrganizerRegistrations = () => {
                     ))}
                   </SelectContent>
                 </Select>
+                {selectedModalityId && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 text-xs"
+                    onClick={() => setSelectedModalityId("")}
+                  >
+                    Limpar seleção
+                  </Button>
+                )}
               </div>
             )}
 
@@ -710,15 +720,14 @@ const OrganizerRegistrations = () => {
               <div className="space-y-2">
                 <Label htmlFor="kit">Kit</Label>
                 <Select 
-                  value={selectedKitId} 
-                  onValueChange={setSelectedKitId}
+                  value={selectedKitId || undefined} 
+                  onValueChange={(value) => setSelectedKitId(value || "")}
                   disabled={loadingKits}
                 >
                   <SelectTrigger id="kit">
                     <SelectValue placeholder={loadingKits ? "Carregando..." : "Selecione o kit (opcional)"} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Sem kit</SelectItem>
                     {kits.map((kit) => (
                       <SelectItem key={kit.id} value={kit.id}>
                         {kit.name} - R$ {kit.price.toFixed(2).replace('.', ',')}
@@ -726,6 +735,17 @@ const OrganizerRegistrations = () => {
                     ))}
                   </SelectContent>
                 </Select>
+                {selectedKitId && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 text-xs"
+                    onClick={() => setSelectedKitId("")}
+                  >
+                    Remover kit
+                  </Button>
+                )}
               </div>
             )}
 
