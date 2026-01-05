@@ -16,6 +16,7 @@ export interface Quote {
   cronoteam_registration: string;
   event_date: string;
   description: string;
+  additional_fields?: Record<string, any>; // Campos dinâmicos adicionais
   status: 'new' | 'viewed' | 'contacted' | 'closed';
   created_at: string;
   updated_at: string;

@@ -1,11 +1,10 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -22,72 +21,187 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { toast } from "sonner";
-import { Facebook, Instagram, MessageCircle } from "lucide-react";
+import { Facebook, Instagram, MessageCircle, Loader2 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Header } from "@/components/Header";
 import { createQuote } from "@/lib/api/quotes";
+import { getPublicFormConfigurations, type PublicFormFieldConfiguration } from "@/lib/api/formConfigurations";
 
-const quoteFormSchema = z.object({
-  fullName: z.string().min(3, "Nome completo é obrigatório"),
-  phone: z.string().min(10, "Telefone é obrigatório"),
-  email: z.string().email("E-mail inválido"),
-  eventLocation: z.string().min(3, "Local da prova é obrigatório"),
-  athletesCount: z.string().min(1, "Quantidade de atletas é obrigatória"),
-  sameStartFinish: z.string().min(1, "Campo obrigatório"),
-  electricPower: z.string().min(1, "Campo obrigatório"),
-  additionalPoints: z.string(),
-  chestNumbers: z.string().min(1, "Campo obrigatório"),
-  distances: z.string().min(1, "Distâncias são obrigatórias"),
-  timingGate: z.string().min(1, "Campo obrigatório"),
-  cronoteamRegistration: z.string().min(1, "Campo obrigatório"),
-  eventDate: z.string().min(1, "Data da prova é obrigatória"),
-  description: z.string().min(10, "Descrição é obrigatória"),
-});
-
-type QuoteFormValues = z.infer<typeof quoteFormSchema>;
+type QuoteFormValues = Record<string, any>;
 
 export default function Quote() {
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [formFields, setFormFields] = useState<PublicFormFieldConfiguration[]>([]);
+  const [formSchema, setFormSchema] = useState<z.ZodObject<any>>(z.object({}));
+
+  useEffect(() => {
+    loadFormConfigurations();
+  }, []);
+
+  const loadFormConfigurations = async () => {
+    setLoading(true);
+    try {
+      const response = await getPublicFormConfigurations("quote");
+      if (response.success && response.data && response.data.length > 0) {
+        setFormFields(response.data);
+        
+        // Build dynamic Zod schema
+        const schemaFields: Record<string, z.ZodTypeAny> = {};
+        const defaultValues: Record<string, any> = {};
+        
+        response.data.forEach((field) => {
+          let fieldSchema: z.ZodTypeAny;
+          
+          // Special validation for description field (min 10 chars as per backend)
+          if (field.field_key === 'description' || field.field_key === 'message') {
+            if (field.field_required) {
+              fieldSchema = z.string().min(10, `${field.field_label} deve ter pelo menos 10 caracteres`);
+            } else {
+              fieldSchema = z.string().min(10, `${field.field_label} deve ter pelo menos 10 caracteres`).optional().or(z.literal(""));
+            }
+          } else if (field.field_required) {
+            switch (field.field_type) {
+              case 'email':
+                fieldSchema = z.string().email("E-mail inválido").min(1, `${field.field_label} é obrigatório`);
+                break;
+              case 'number':
+                fieldSchema = z.number().min(0, `${field.field_label} deve ser um número válido`);
+                break;
+              case 'date':
+                fieldSchema = z.string().min(1, `${field.field_label} é obrigatório`);
+                break;
+              default:
+                fieldSchema = z.string().min(1, `${field.field_label} é obrigatório`);
+            }
+          } else {
+            switch (field.field_type) {
+              case 'email':
+                fieldSchema = z.string().email("E-mail inválido").optional().or(z.literal(""));
+                break;
+              case 'number':
+                fieldSchema = z.number().optional().or(z.literal(0));
+                break;
+              default:
+                fieldSchema = z.string().optional().or(z.literal(""));
+            }
+          }
+          
+          schemaFields[field.field_key] = fieldSchema;
+          defaultValues[field.field_key] = field.field_type === 'number' ? 0 : "";
+        });
+        
+        setFormSchema(z.object(schemaFields));
+      } else {
+        // Fallback to default fields if no configurations found
+        setFormFields([]);
+        setFormSchema(z.object({}));
+      }
+    } catch (error: any) {
+      console.error("Error loading form configurations:", error);
+      toast.error("Erro ao carregar formulário");
+      setFormFields([]);
+      setFormSchema(z.object({}));
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const form = useForm<QuoteFormValues>({
-    resolver: zodResolver(quoteFormSchema),
-    defaultValues: {
-      fullName: "",
-      phone: "",
-      email: "",
-      eventLocation: "",
-      athletesCount: "",
-      sameStartFinish: "",
-      electricPower: "",
-      additionalPoints: "",
-      chestNumbers: "",
-      distances: "",
-      timingGate: "",
-      cronoteamRegistration: "",
-      eventDate: "",
-      description: "",
-    },
+    resolver: zodResolver(formSchema),
+    defaultValues: {},
   });
+
+  // Update default values when formFields change
+  useEffect(() => {
+    if (formFields.length > 0) {
+      const defaultValues = formFields.reduce((acc, field) => {
+        // Always set a defined value to avoid uncontrolled/controlled warning
+        acc[field.field_key] = field.field_type === 'number' ? 0 : "";
+        return acc;
+      }, {} as Record<string, any>);
+      form.reset(defaultValues);
+    }
+  }, [formFields, form]);
 
   const onSubmit = async (data: QuoteFormValues) => {
     setIsSubmitting(true);
     try {
-      const response = await createQuote({
-        full_name: data.fullName,
-        phone: data.phone,
-        email: data.email,
-        event_location: data.eventLocation,
-        athletes_count: data.athletesCount,
-        same_start_finish: data.sameStartFinish,
-        electric_power: data.electricPower,
-        additional_points: data.additionalPoints || undefined,
-        chest_numbers: data.chestNumbers,
-        distances: data.distances,
-        timing_gate: data.timingGate,
-        cronoteam_registration: data.cronoteamRegistration,
-        event_date: data.eventDate,
-        description: data.description,
+      // Map field_key to backend API field names
+      // This mapping ensures compatibility with the backend schema
+      const fieldMapping: Record<string, string> = {
+        'fullName': 'full_name',
+        'full_name': 'full_name',
+        'phone': 'phone',
+        'email': 'email',
+        'eventLocation': 'event_location',
+        'event_location': 'event_location',
+        'athletesCount': 'athletes_count',
+        'athletes_count': 'athletes_count',
+        'sameStartFinish': 'same_start_finish',
+        'same_start_finish': 'same_start_finish',
+        'electricPower': 'electric_power',
+        'electric_power': 'electric_power',
+        'additionalPoints': 'additional_points',
+        'additional_points': 'additional_points',
+        'chestNumbers': 'chest_numbers',
+        'chest_numbers': 'chest_numbers',
+        'distances': 'distances',
+        'timingGate': 'timing_gate',
+        'timing_gate': 'timing_gate',
+        'cronoteamRegistration': 'cronoteam_registration',
+        'cronoteam_registration': 'cronoteam_registration',
+        'eventDate': 'event_date',
+        'event_date': 'event_date',
+        'description': 'description',
+      };
+
+      const apiData: any = {};
+      const additionalFields: Record<string, any> = {};
+      
+      // Process all fields: mapped fields go to main object, unmapped fields go to additional_fields
+      formFields.forEach((field) => {
+        const apiKey = fieldMapping[field.field_key];
+        const value = data[field.field_key];
+        
+        if (value !== undefined && value !== null && value !== "") {
+          if (apiKey) {
+            // Campo mapeado - vai para o objeto principal
+            apiData[apiKey] = typeof value === 'number' ? String(value) : String(value).trim();
+          } else {
+            // Campo não mapeado - será enviado e o backend salvará em additional_fields
+            additionalFields[field.field_key] = typeof value === 'number' ? String(value) : String(value).trim();
+          }
+        }
       });
+      
+      // Adicionar campos extras ao objeto principal (o backend vai separar)
+      Object.assign(apiData, additionalFields);
+      
+      console.log('📤 Sending quote data:', apiData);
+      console.log('📤 Additional fields being sent:', additionalFields);
+
+      // Ensure required fields are present
+      const requiredFields = ['full_name', 'phone', 'email', 'event_location', 'athletes_count', 
+                             'same_start_finish', 'electric_power', 'chest_numbers', 'distances',
+                             'timing_gate', 'cronoteam_registration', 'event_date', 'description'];
+      
+      const missingFields = requiredFields.filter(field => !apiData[field] || apiData[field].trim() === '');
+      
+      if (missingFields.length > 0) {
+        toast.error(`Por favor, preencha todos os campos obrigatórios`);
+        setIsSubmitting(false);
+        return;
+      }
+      
+      // Validate description length (backend requires min 10 chars)
+      if (apiData.description && apiData.description.trim().length < 10) {
+        toast.error('A descrição deve ter pelo menos 10 caracteres');
+        setIsSubmitting(false);
+        return;
+      }
+
+      const response = await createQuote(apiData);
 
       if (response.success) {
         toast.success("Orçamento enviado com sucesso! Entraremos em contato em breve.");
@@ -106,12 +220,71 @@ export default function Quote() {
     }
   };
 
+  // Group fields by row based on width
+  const groupFieldsByRow = (fields: PublicFormFieldConfiguration[]) => {
+    const rows: PublicFormFieldConfiguration[][] = [];
+    let currentRow: PublicFormFieldConfiguration[] = [];
+    let currentRowWidth = 0;
+
+    fields.forEach((field) => {
+      const width = field.field_width === '50%' ? 50 : 
+                    field.field_width === '33%' ? 33 : 
+                    100;
+
+      if (currentRowWidth + width > 100 || currentRow.length === 0) {
+        if (currentRow.length > 0) {
+          rows.push([...currentRow]);
+        }
+        currentRow = [field];
+        currentRowWidth = width;
+      } else {
+        currentRow.push(field);
+        currentRowWidth += width;
+      }
+    });
+
+    if (currentRow.length > 0) {
+      rows.push(currentRow);
+    }
+
+    return rows;
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-background">
+        <Header />
+        <main className="container mx-auto px-4 py-12 max-w-3xl">
+          <div className="flex justify-center items-center py-12">
+            <Loader2 className="h-8 w-8 animate-spin" />
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  if (formFields.length === 0) {
+    return (
+      <div className="min-h-screen bg-background">
+        <Header />
+        <main className="container mx-auto px-4 py-12 max-w-3xl">
+          <h1 className="text-3xl font-bold text-center mb-8">
+            Formulário de orçamento de provas
+          </h1>
+          <div className="text-center py-8 text-muted-foreground">
+            Formulário não configurado. Entre em contato com o administrador.
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  const fieldRows = groupFieldsByRow(formFields);
+
   return (
     <div className="min-h-screen bg-background">
-      {/* Header */}
       <Header />
 
-      {/* Main Content */}
       <main className="container mx-auto px-4 py-12 max-w-3xl">
         <h1 className="text-3xl font-bold text-center mb-8">
           Formulário de orçamento de provas
@@ -119,322 +292,114 @@ export default function Quote() {
 
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-            {/* Nome completo */}
-            <FormField
-              control={form.control}
-              name="fullName"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Nome completo</FormLabel>
-                  <FormControl>
-                    <Input {...field} className="bg-muted" />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+            {fieldRows.map((row, rowIndex) => (
+              <div key={rowIndex} className="flex flex-wrap gap-4">
+                {row.map((field) => (
+                  <FormField
+                    key={field.field_key}
+                    control={form.control}
+                    name={field.field_key}
+                    render={({ field: formField }) => (
+                      <FormItem className={field.field_width === '50%' ? 'flex-1 min-w-[200px]' : 
+                                          field.field_width === '33%' ? 'flex-1 min-w-[150px]' : 
+                                          'w-full'}>
+                        <FormLabel>
+                          {field.field_label}
+                          {field.field_required && <span className="text-destructive ml-1">*</span>}
+                        </FormLabel>
+                        <FormControl>
+                          {field.field_type === 'textarea' ? (
+                            <Textarea
+                              {...formField}
+                              value={formField.value ?? ""}
+                              placeholder={field.field_placeholder}
+                              className="bg-muted"
+                              required={field.field_required}
+                            />
+                          ) : field.field_type === 'select' ? (
+                            <Select
+                              onValueChange={formField.onChange}
+                              value={formField.value ?? ""}
+                            >
+                              <SelectTrigger className="bg-muted">
+                                <SelectValue placeholder={field.field_placeholder || "Selecione"} />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {Array.isArray(field.field_options) && field.field_options.map((option: string, idx: number) => (
+                                  <SelectItem key={idx} value={option.trim()}>
+                                    {option.trim()}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          ) : (
+                            <Input
+                              {...formField}
+                              value={formField.value ?? ""}
+                              type={field.field_type === 'email' ? 'email' : 
+                                    field.field_type === 'tel' ? 'tel' : 
+                                    field.field_type === 'date' ? 'date' : 
+                                    field.field_type === 'number' ? 'number' : 
+                                    'text'}
+                              placeholder={field.field_placeholder}
+                              className="bg-muted"
+                              required={field.field_required}
+                            />
+                          )}
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                ))}
+              </div>
+            ))}
 
-            {/* Telefone */}
-            <FormField
-              control={form.control}
-              name="phone"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Telefone para contato (whatsapp)</FormLabel>
-                  <FormControl>
-                    <Input 
-                      {...field} 
-                      placeholder="Telefone com DDD somente números"
-                      className="bg-muted"
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            {/* E-mail */}
-            <FormField
-              control={form.control}
-              name="email"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>E-mail</FormLabel>
-                  <FormControl>
-                    <Input 
-                      {...field} 
-                      type="email"
-                      placeholder="Ex: seunome@gmail.com"
-                      className="bg-muted"
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            {/* Local da prova e Quantidade de atletas */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <FormField
-                control={form.control}
-                name="eventLocation"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Local da prova</FormLabel>
-                    <FormControl>
-                      <Input {...field} className="bg-muted" />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
+            <div className="flex justify-end pt-4">
+              <Button type="submit" disabled={isSubmitting} size="lg">
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Enviando...
+                  </>
+                ) : (
+                  "Enviar Orçamento"
                 )}
-              />
-
-              <FormField
-                control={form.control}
-                name="athletesCount"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Quantidade de atletas?</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value}>
-                      <FormControl>
-                        <SelectTrigger className="bg-muted">
-                          <SelectValue placeholder="Quantos atletas" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="50-100">50-100</SelectItem>
-                        <SelectItem value="100-200">100-200</SelectItem>
-                        <SelectItem value="200-500">200-500</SelectItem>
-                        <SelectItem value="500-1000">500-1000</SelectItem>
-                        <SelectItem value="1000+">Mais de 1000</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+              </Button>
             </div>
-
-            {/* Largada e Chegada / Energia elétrica */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <FormField
-                control={form.control}
-                name="sameStartFinish"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Largada e Chegada no mesmo lugar?</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value}>
-                      <FormControl>
-                        <SelectTrigger className="bg-muted">
-                          <SelectValue placeholder="Selecione" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="sim">Sim</SelectItem>
-                        <SelectItem value="nao">Não</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="electricPower"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Energia elétrica na largada?</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value}>
-                      <FormControl>
-                        <SelectTrigger className="bg-muted">
-                          <SelectValue placeholder="Selecione" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="sim">Sim</SelectItem>
-                        <SelectItem value="nao">Não</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
-
-            {/* Pontos eletrônicos adicionais */}
-            <FormField
-              control={form.control}
-              name="additionalPoints"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>
-                    Pontos eletrônicos adicionais no percurso? Caso sim indique quantos.
-                  </FormLabel>
-                  <FormControl>
-                    <Input {...field} className="bg-muted" />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            {/* Números de peito */}
-            <FormField
-              control={form.control}
-              name="chestNumbers"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Precisará de Números de peito?</FormLabel>
-                  <Select onValueChange={field.onChange} value={field.value}>
-                    <FormControl>
-                      <SelectTrigger className="bg-muted">
-                        <SelectValue placeholder="Selecione" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      <SelectItem value="sim">Sim</SelectItem>
-                      <SelectItem value="nao">Não</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            {/* Distâncias */}
-            <FormField
-              control={form.control}
-              name="distances"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Quais as distâncias que a prova terá?</FormLabel>
-                  <FormControl>
-                    <Input {...field} className="bg-muted" />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            {/* Cronômetro de pórtico / Inscrições */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <FormField
-                control={form.control}
-                name="timingGate"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Cronômetro de pórtico na largada / chegada?</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value}>
-                      <FormControl>
-                        <SelectTrigger className="bg-muted">
-                          <SelectValue placeholder="Selecione" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="sim">Sim</SelectItem>
-                        <SelectItem value="nao">Não</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="cronoteamRegistration"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>As inscrições serão no site da Cronoteam?</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value}>
-                      <FormControl>
-                        <SelectTrigger className="bg-muted">
-                          <SelectValue placeholder="Selecione" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="sim">Sim</SelectItem>
-                        <SelectItem value="nao">Não</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
-
-            {/* Data prevista */}
-            <FormField
-              control={form.control}
-              name="eventDate"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Qual a data prevista para sua prova?</FormLabel>
-                  <FormControl>
-                    <Input 
-                      {...field} 
-                      type="date"
-                      className="bg-muted"
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            {/* Descrição */}
-            <FormField
-              control={form.control}
-              name="description"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>
-                    Descreva como será sua prova com o máximo de detalhes.
-                  </FormLabel>
-                  <FormControl>
-                    <Textarea 
-                      {...field}
-                      rows={6}
-                      className="bg-muted resize-none"
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            {/* Submit Button */}
-            <Button 
-              type="submit" 
-              className="bg-green-700 hover:bg-green-800 text-white"
-              disabled={isSubmitting}
-            >
-              {isSubmitting ? "Enviando..." : "Enviar"}
-            </Button>
           </form>
         </Form>
-      </main>
 
-      {/* Footer */}
-      <footer className="bg-black text-white py-8 mt-12">
-        <div className="container mx-auto px-4">
-          <div className="flex justify-center gap-6 mb-4">
-            <a href="#" className="hover:text-primary transition-colors">
+        {/* Social Media Links */}
+        <div className="mt-12 pt-8 border-t">
+          <div className="flex justify-center gap-6">
+            <Link
+              to="https://facebook.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-muted-foreground hover:text-primary transition-colors"
+            >
               <Facebook className="h-6 w-6" />
-            </a>
-            <a href="#" className="hover:text-primary transition-colors">
+            </Link>
+            <Link
+              to="https://instagram.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-muted-foreground hover:text-primary transition-colors"
+            >
               <Instagram className="h-6 w-6" />
-            </a>
-            <a href="#" className="hover:text-primary transition-colors">
+            </Link>
+            <Link
+              to="https://wa.me"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-muted-foreground hover:text-primary transition-colors"
+            >
               <MessageCircle className="h-6 w-6" />
-            </a>
+            </Link>
           </div>
-          <p className="text-center text-sm text-muted-foreground">
-            AI Website Generator
-          </p>
         </div>
-      </footer>
+      </main>
     </div>
   );
 }

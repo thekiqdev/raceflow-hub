@@ -15,6 +15,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Search, Eye, Calendar, Mail, Phone, MapPin, Users, Loader2 } from "lucide-react";
 import { getQuotes, getQuoteById, updateQuote, type Quote } from "@/lib/api/quotes";
+import { getFormConfigurations, type FormFieldConfiguration } from "@/lib/api/formConfigurations";
 import { useToast } from "@/hooks/use-toast";
 
 const QuotesManagement = () => {
@@ -25,11 +26,24 @@ const QuotesManagement = () => {
   const [selectedQuote, setSelectedQuote] = useState<Quote | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [updating, setUpdating] = useState(false);
+  const [formFields, setFormFields] = useState<FormFieldConfiguration[]>([]);
   const { toast } = useToast();
 
   useEffect(() => {
     loadQuotes();
+    loadFormFields();
   }, [statusFilter, searchTerm]);
+
+  const loadFormFields = async () => {
+    try {
+      const response = await getFormConfigurations("quote");
+      if (response.success && response.data) {
+        setFormFields(response.data);
+      }
+    } catch (error) {
+      console.error("Error loading form fields:", error);
+    }
+  };
 
   const loadQuotes = async () => {
     setLoading(true);
@@ -312,6 +326,50 @@ const QuotesManagement = () => {
                 <Label>Descrição</Label>
                 <p className="text-sm mt-1 p-3 bg-muted rounded-md">{selectedQuote.description}</p>
               </div>
+              
+              {/* Campos dinâmicos adicionais */}
+              {(() => {
+                // Garantir que additional_fields seja um objeto
+                const additionalFields = selectedQuote.additional_fields || {};
+                const hasAdditionalFields = typeof additionalFields === 'object' && Object.keys(additionalFields).length > 0;
+                
+                if (hasAdditionalFields) {
+                  return (
+                    <div className="border-t pt-4">
+                      <Label className="text-base font-semibold mb-3 block">Campos Adicionais</Label>
+                      <div className="grid grid-cols-2 gap-4">
+                        {Object.entries(additionalFields).map(([key, value]) => {
+                          // Buscar o label do campo nas configurações
+                          const fieldConfig = formFields.find(f => f.field_key === key);
+                          const fieldLabel = fieldConfig?.field_label || key;
+                          
+                          return (
+                            <div key={key}>
+                              <Label>{fieldLabel}</Label>
+                              <p className="text-sm">{String(value) || "Não informado"}</p>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                }
+                
+                // Debug em desenvolvimento
+                if (process.env.NODE_ENV === 'development') {
+                  return (
+                    <div className="border-t pt-4">
+                      <Label className="text-xs text-muted-foreground mb-2 block">
+                        Debug: additional_fields type = {typeof selectedQuote.additional_fields}, 
+                        value = {JSON.stringify(selectedQuote.additional_fields)}
+                      </Label>
+                    </div>
+                  );
+                }
+                
+                return null;
+              })()}
+              
               <div>
                 <Label>Alterar Status</Label>
                 <Select

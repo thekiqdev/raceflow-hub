@@ -11,6 +11,7 @@ import { Separator } from "@/components/ui/separator";
 import { Building2, Trash2, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { getSystemSettings, updateSystemSettings, type SystemSettings as SystemSettingsType } from "@/lib/api/systemSettings";
+import FormConfigurations from "./FormConfigurations";
 
 const SystemSettings = () => {
   const [settings, setSettings] = useState<SystemSettingsType | null>(null);
@@ -380,6 +381,7 @@ const SystemSettings = () => {
           {modulesForm.platform_fees && (
             <TabsTrigger value="fees">Taxas</TabsTrigger>
           )}
+          <TabsTrigger value="forms">Formulários</TabsTrigger>
         </TabsList>
 
         <TabsContent value="general" className="space-y-4">
@@ -896,6 +898,10 @@ const SystemSettings = () => {
             </Card>
           </TabsContent>
         )}
+
+        <TabsContent value="forms" className="space-y-4">
+          <FormConfigurations />
+        </TabsContent>
       </Tabs>
     </div>
   );

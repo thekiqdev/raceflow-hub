@@ -15,6 +15,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Search, Eye, Calendar, Mail, Phone, MessageSquare, Trophy, Loader2 } from "lucide-react";
 import { getContactMessages, getContactMessageById, updateContactMessage, type ContactMessage } from "@/lib/api/contactMessages";
+import { getFormConfigurations, type FormFieldConfiguration } from "@/lib/api/formConfigurations";
 import { useToast } from "@/hooks/use-toast";
 
 const OrganizerContactMessages = () => {
@@ -25,11 +26,24 @@ const OrganizerContactMessages = () => {
   const [selectedMessage, setSelectedMessage] = useState<ContactMessage | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [updating, setUpdating] = useState(false);
+  const [formFields, setFormFields] = useState<FormFieldConfiguration[]>([]);
   const { toast } = useToast();
 
   useEffect(() => {
     loadMessages();
+    loadFormFields();
   }, [statusFilter, searchTerm]);
+
+  const loadFormFields = async () => {
+    try {
+      const response = await getFormConfigurations("contact");
+      if (response.success && response.data) {
+        setFormFields(response.data);
+      }
+    } catch (error) {
+      console.error("Error loading form fields:", error);
+    }
+  };
 
   const loadMessages = async () => {
     setLoading(true);
@@ -289,6 +303,28 @@ const OrganizerContactMessages = () => {
                 <Label>Mensagem</Label>
                 <p className="text-sm mt-1 p-3 bg-muted rounded-md whitespace-pre-wrap">{selectedMessage.message}</p>
               </div>
+              
+              {/* Campos dinâmicos adicionais */}
+              {selectedMessage.additional_fields && Object.keys(selectedMessage.additional_fields).length > 0 && (
+                <div className="border-t pt-4">
+                  <Label className="text-base font-semibold mb-3 block">Campos Adicionais</Label>
+                  <div className="grid grid-cols-2 gap-4">
+                    {Object.entries(selectedMessage.additional_fields).map(([key, value]) => {
+                      // Buscar o label do campo nas configurações
+                      const fieldConfig = formFields.find(f => f.field_key === key);
+                      const fieldLabel = fieldConfig?.field_label || key;
+                      
+                      return (
+                        <div key={key}>
+                          <Label>{fieldLabel}</Label>
+                          <p className="text-sm">{String(value) || "Não informado"}</p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+              
               <div>
                 <Label>Alterar Status</Label>
                 <Select
