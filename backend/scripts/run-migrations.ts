@@ -78,6 +78,7 @@ const migrations = [
   '049_add_display_order_to_event_kits.sql',
   '050_add_commission_id_to_leader_invitations.sql',
   '051_create_quotes_table.sql',
+  '052_create_contact_messages_table.sql',
 ];
 
 // Create migrations tracking table

@@ -1,4 +1,4 @@
-import { LayoutDashboard, Users, Calendar, DollarSign, FileText, Settings, MessageSquare, Building2, Palette, ArrowRightLeft, UserCog, Calculator } from "lucide-react";
+import { LayoutDashboard, Users, Calendar, DollarSign, FileText, Settings, MessageSquare, Building2, Palette, ArrowRightLeft, UserCog, Calculator, Mail } from "lucide-react";
 import { useState, useEffect } from "react";
 import {
   Sidebar,
@@ -13,6 +13,7 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { getSystemSettings } from "@/lib/api/systemSettings";
 import { getNewQuotesCount } from "@/lib/api/quotes";
+import { getNewContactMessagesCount } from "@/lib/api/contactMessages";
 
 interface AdminSidebarProps {
   activeSection: string;
@@ -24,6 +25,7 @@ const menuItems = [
   { id: "users", title: "Usuários", icon: Users },
   { id: "events", title: "Eventos", icon: Calendar },
   { id: "quotes", title: "Orçamentos", icon: Calculator, badge: true },
+  { id: "contact-messages", title: "Contatos", icon: Mail, badge: true },
   { id: "financial", title: "Financeiro", icon: DollarSign },
   { id: "transfers", title: "Transferências", icon: ArrowRightLeft },
   { id: "group-leaders", title: "Líderes de Grupo", icon: UserCog },
@@ -39,11 +41,13 @@ export function AdminSidebar({ activeSection, onSectionChange }: AdminSidebarPro
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [transfersEnabled, setTransfersEnabled] = useState(false);
   const [newQuotesCount, setNewQuotesCount] = useState(0);
+  const [newContactMessagesCount, setNewContactMessagesCount] = useState(0);
 
   useEffect(() => {
     loadAdminLogo();
     loadSystemSettings();
     loadNewQuotesCount();
+    loadNewContactMessagesCount();
     
     // Listen for logo updates
     const handleLogoUpdate = () => {
@@ -60,17 +64,27 @@ export function AdminSidebar({ activeSection, onSectionChange }: AdminSidebarPro
       loadNewQuotesCount();
     };
     
+    // Listen for contact messages updates
+    const handleContactMessagesUpdate = () => {
+      loadNewContactMessagesCount();
+    };
+    
     window.addEventListener('admin-logo-updated', handleLogoUpdate);
     window.addEventListener('admin-settings-updated', handleSettingsUpdate);
     window.addEventListener('quotes-updated', handleQuotesUpdate);
+    window.addEventListener('contact-messages-updated', handleContactMessagesUpdate);
     
-    // Refresh quotes count every 30 seconds
-    const interval = setInterval(loadNewQuotesCount, 30000);
+    // Refresh counts every 30 seconds
+    const interval = setInterval(() => {
+      loadNewQuotesCount();
+      loadNewContactMessagesCount();
+    }, 30000);
     
     return () => {
       window.removeEventListener('admin-logo-updated', handleLogoUpdate);
       window.removeEventListener('admin-settings-updated', handleSettingsUpdate);
       window.removeEventListener('quotes-updated', handleQuotesUpdate);
+      window.removeEventListener('contact-messages-updated', handleContactMessagesUpdate);
       clearInterval(interval);
     };
   }, []);
@@ -101,6 +115,17 @@ export function AdminSidebar({ activeSection, onSectionChange }: AdminSidebarPro
       }
     } catch (error) {
       console.error("Erro ao carregar contagem de orçamentos:", error);
+    }
+  };
+
+  const loadNewContactMessagesCount = async () => {
+    try {
+      const response = await getNewContactMessagesCount();
+      if (response.success && response.data) {
+        setNewContactMessagesCount(response.data.count);
+      }
+    } catch (error) {
+      console.error("Erro ao carregar contagem de mensagens de contato:", error);
     }
   };
 
@@ -145,21 +170,31 @@ export function AdminSidebar({ activeSection, onSectionChange }: AdminSidebarPro
                       className="hover:bg-muted/50 relative"
                     >
                       <item.icon className="h-4 w-4" />
-                      {open && (
-                        <>
-                          <span>{item.title}</span>
-                          {item.badge && newQuotesCount > 0 && (
-                            <span className="ml-auto bg-primary text-primary-foreground text-xs font-bold rounded-full h-5 w-5 flex items-center justify-center">
-                              {newQuotesCount > 9 ? '9+' : newQuotesCount}
-                            </span>
-                          )}
-                        </>
-                      )}
-                      {!open && item.badge && newQuotesCount > 0 && (
-                        <span className="absolute -top-1 -right-1 bg-primary text-primary-foreground text-xs font-bold rounded-full h-4 w-4 flex items-center justify-center">
-                          {newQuotesCount > 9 ? '9+' : newQuotesCount}
-                        </span>
-                      )}
+                    {open && (
+                      <>
+                        <span>{item.title}</span>
+                        {item.badge && item.id === 'quotes' && newQuotesCount > 0 && (
+                          <span className="ml-auto bg-primary text-primary-foreground text-xs font-bold rounded-full h-5 w-5 flex items-center justify-center">
+                            {newQuotesCount > 9 ? '9+' : newQuotesCount}
+                          </span>
+                        )}
+                        {item.badge && item.id === 'contact-messages' && newContactMessagesCount > 0 && (
+                          <span className="ml-auto bg-primary text-primary-foreground text-xs font-bold rounded-full h-5 w-5 flex items-center justify-center">
+                            {newContactMessagesCount > 9 ? '9+' : newContactMessagesCount}
+                          </span>
+                        )}
+                      </>
+                    )}
+                    {!open && item.badge && item.id === 'quotes' && newQuotesCount > 0 && (
+                      <span className="absolute -top-1 -right-1 bg-primary text-primary-foreground text-xs font-bold rounded-full h-4 w-4 flex items-center justify-center">
+                        {newQuotesCount > 9 ? '9+' : newQuotesCount}
+                      </span>
+                    )}
+                    {!open && item.badge && item.id === 'contact-messages' && newContactMessagesCount > 0 && (
+                      <span className="absolute -top-1 -right-1 bg-primary text-primary-foreground text-xs font-bold rounded-full h-4 w-4 flex items-center justify-center">
+                        {newContactMessagesCount > 9 ? '9+' : newContactMessagesCount}
+                      </span>
+                    )}
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 ))}

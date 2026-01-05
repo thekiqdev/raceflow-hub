@@ -922,6 +922,7 @@ const EventDetails = () => {
         eventTitle={event?.title}
         organizerEmail={event?.organizer_contact_email}
         organizerName={event?.organizer_organization_name || event?.organizer_name}
+        eventId={event?.id}
       />
     </div>
   );

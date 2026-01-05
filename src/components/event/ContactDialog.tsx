@@ -13,6 +13,7 @@ import { MessageSquare, HelpCircle, ArrowLeft } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { getOwnProfile } from "@/lib/api/profiles";
 import { useToast } from "@/hooks/use-toast";
+import { createContactMessage } from "@/lib/api/contactMessages";
 
 interface ContactDialogProps {
   open: boolean;
@@ -20,12 +21,13 @@ interface ContactDialogProps {
   eventTitle?: string;
   organizerEmail?: string;
   organizerName?: string;
+  eventId?: string;
 }
 
 type ContactStep = "select" | "form";
 type ContactType = "event" | "platform" | null;
 
-export const ContactDialog = ({ open, onOpenChange, eventTitle, organizerEmail, organizerName }: ContactDialogProps) => {
+export const ContactDialog = ({ open, onOpenChange, eventTitle, organizerEmail, organizerName, eventId }: ContactDialogProps) => {
   const { user, isAuthenticated } = useAuth();
   const [step, setStep] = useState<ContactStep>("select");
   const [contactType, setContactType] = useState<ContactType>(null);
@@ -114,21 +116,39 @@ export const ContactDialog = ({ open, onOpenChange, eventTitle, organizerEmail, 
     setIsSubmitting(true);
 
     try {
-      // TODO: Implementar envio do contato para o backend
-      // Por enquanto, apenas simulamos o envio
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      toast({
-        title: "Mensagem enviada!",
-        description: "Sua mensagem foi enviada com sucesso. Entraremos em contato em breve.",
+      const response = await createContactMessage({
+        type: contactType || 'platform',
+        name: name.trim(),
+        email: email.trim(),
+        phone: phone.trim() || undefined,
+        subject: subject.trim(),
+        message: message.trim(),
+        event_id: contactType === 'event' && eventId ? eventId : undefined,
       });
-      
-      onOpenChange(false);
-      resetForm();
-    } catch (error) {
+
+      if (response.success) {
+        toast({
+          title: "Mensagem enviada!",
+          description: "Sua mensagem foi enviada com sucesso. Entraremos em contato em breve.",
+        });
+        
+        // Trigger event to update messages count in admin/organizer sidebar
+        window.dispatchEvent(new Event('contact-messages-updated'));
+        
+        onOpenChange(false);
+        resetForm();
+      } else {
+        toast({
+          title: "Erro ao enviar",
+          description: response.error || "Ocorreu um erro ao enviar sua mensagem. Tente novamente.",
+          variant: "destructive",
+        });
+      }
+    } catch (error: any) {
+      console.error("Error submitting contact message:", error);
       toast({
         title: "Erro ao enviar",
-        description: "Ocorreu um erro ao enviar sua mensagem. Tente novamente.",
+        description: error.message || "Ocorreu um erro ao enviar sua mensagem. Tente novamente.",
         variant: "destructive",
       });
     } finally {
