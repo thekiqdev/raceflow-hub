@@ -14,8 +14,8 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Search, Download, Edit, Eye, CheckCircle, XCircle, Ban, ExternalLink, BarChart, Loader2, Award, Filter } from "lucide-react";
-import { getEvents, updateEvent } from "@/lib/api/events";
+import { Search, Download, Edit, Eye, CheckCircle, XCircle, Ban, ExternalLink, BarChart, Loader2, Award, Filter, Trash2 } from "lucide-react";
+import { getEvents, updateEvent, deleteEvent } from "@/lib/api/events";
 import { useToast } from "@/hooks/use-toast";
 import { EventViewEditDialog } from "./EventViewEditDialog";
 import { useNavigate } from "react-router-dom";
@@ -32,6 +32,9 @@ const EventManagement = () => {
   const [isResultDialogOpen, setIsResultDialogOpen] = useState(false);
   const [resultUrl, setResultUrl] = useState("");
   const [eventForResult, setEventForResult] = useState<any>(null);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [eventToDelete, setEventToDelete] = useState<any>(null);
+  const [deleting, setDeleting] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -147,6 +150,40 @@ const EventManagement = () => {
     setSelectedEventId(eventId);
     setDialogMode("edit");
     setDialogOpen(true);
+  };
+
+  const handleDeleteEvent = (event: any) => {
+    setEventToDelete(event);
+    setIsDeleteDialogOpen(true);
+  };
+
+  const confirmDeleteEvent = async () => {
+    if (!eventToDelete) return;
+
+    setDeleting(true);
+    try {
+      const response = await deleteEvent(eventToDelete.id);
+
+      if (response.success) {
+        toast({
+          title: "Evento excluído",
+          description: "O evento foi excluído com sucesso.",
+        });
+        setIsDeleteDialogOpen(false);
+        setEventToDelete(null);
+        loadEvents();
+      } else {
+        throw new Error(response.error || "Erro ao excluir evento");
+      }
+    } catch (error: any) {
+      toast({
+        title: "Erro ao excluir evento",
+        description: error.message || "Erro desconhecido",
+        variant: "destructive",
+      });
+    } finally {
+      setDeleting(false);
+    }
   };
 
   const handleSendResult = async () => {
@@ -367,6 +404,14 @@ const EventManagement = () => {
                               >
                                 <Award className="h-4 w-4 text-yellow-500" />
                               </Button>
+                              <Button 
+                                size="icon" 
+                                variant="ghost" 
+                                title="Excluir Evento"
+                                onClick={() => handleDeleteEvent(event)}
+                              >
+                                <Trash2 className="h-4 w-4 text-red-500" />
+                              </Button>
                             </>
                           )}
                         </div>
@@ -471,6 +516,49 @@ const EventManagement = () => {
             </Button>
             <Button onClick={handleSendResult}>
               Enviar Resultado
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Confirmar Exclusão</DialogTitle>
+            <DialogDescription>
+              Tem certeza que deseja excluir o evento "{eventToDelete?.title}"? Esta ação não pode ser desfeita.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <p className="text-sm text-muted-foreground">
+              Ao excluir este evento, todas as informações relacionadas serão removidas permanentemente, incluindo:
+            </p>
+            <ul className="list-disc list-inside mt-2 text-sm text-muted-foreground space-y-1">
+              <li>Inscrições do evento</li>
+              <li>Categorias e modalidades</li>
+              <li>Kits do evento</li>
+              <li>Comissões de líderes relacionadas</li>
+            </ul>
+          </div>
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                setIsDeleteDialogOpen(false);
+                setEventToDelete(null);
+              }}
+              disabled={deleting}
+            >
+              Cancelar
+            </Button>
+            <Button 
+              variant="destructive" 
+              onClick={confirmDeleteEvent}
+              disabled={deleting}
+            >
+              {deleting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {deleting ? "Excluindo..." : "Excluir Evento"}
             </Button>
           </DialogFooter>
         </DialogContent>

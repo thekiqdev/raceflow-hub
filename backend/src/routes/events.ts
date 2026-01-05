@@ -11,7 +11,12 @@ import {
 } from '../controllers/eventsController.js';
 import { getEventCategoriesController, syncEventCategoriesController } from '../controllers/eventCategoriesController.js';
 import { getEventKitsController, syncEventKitsController, reorderEventKitsController } from '../controllers/eventKitsController.js';
-import { getEventPickupLocationsController } from '../controllers/kitPickupController.js';
+import { 
+  getEventPickupLocationsController,
+  createPickupLocationController,
+  updatePickupLocationController,
+  deletePickupLocationController,
+} from '../controllers/kitPickupController.js';
 
 const router = Router();
 
@@ -20,6 +25,9 @@ router.get('/', optionalAuth, getAllEvents);
 router.get('/:eventId/categories', optionalAuth, getEventCategoriesController);
 router.get('/:eventId/kits', optionalAuth, getEventKitsController);
 router.get('/:eventId/pickup-locations', optionalAuth, getEventPickupLocationsController);
+router.post('/:eventId/pickup-locations', authenticate, requireEventOwnership('eventId'), createPickupLocationController);
+router.put('/:eventId/pickup-locations/:locationId', authenticate, requireEventOwnership('eventId'), updatePickupLocationController);
+router.delete('/:eventId/pickup-locations/:locationId', authenticate, requireEventOwnership('eventId'), deletePickupLocationController);
 router.get('/:id', optionalAuth, getEvent);
 
 // Protected routes - require organizer or admin role
