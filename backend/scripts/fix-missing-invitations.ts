@@ -53,7 +53,8 @@ async function fixMissingInvitations() {
         await createInvitationFromBonus(
           bonus.leader_id,
           bonus.bonus_registration_id,
-          bonus.event_id
+          bonus.event_id,
+          bonus.commission_id
         );
 
         console.log(`    ✅ Convite criado com sucesso!\n`);

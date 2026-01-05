@@ -59,7 +59,7 @@ Data: ${payment.event_date ? format(new Date(payment.event_date), "dd 'de' MMMM 
 DADOS DO PAGAMENTO:
 Valor: R$ ${payment.total_amount.toFixed(2).replace('.', ',')}
 Método: ${getPaymentMethodLabel(payment.payment_method)}
-Status: ${payment.payment_status === 'paid' ? 'Pago' : payment.payment_status === 'refunded' ? 'Reembolsado' : payment.payment_status}
+Status: ${payment.payment_status === 'paid' ? 'Pago' : payment.payment_status === 'convidado' ? 'Convite' : payment.payment_status === 'refunded' ? 'Reembolsado' : payment.payment_status}
 Código de Confirmação: ${payment.confirmation_code || 'N/A'}
       `.trim();
 
@@ -104,6 +104,8 @@ Código de Confirmação: ${payment.confirmation_code || 'N/A'}
     switch (status) {
       case 'paid':
         return <Badge variant="default" className="bg-green-500">Pago</Badge>;
+      case 'convidado':
+        return <Badge variant="default" className="bg-blue-500">Convite</Badge>;
       case 'refunded':
         return <Badge variant="outline">Reembolsado</Badge>;
       default:

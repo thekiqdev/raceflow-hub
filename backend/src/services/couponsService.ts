@@ -247,6 +247,106 @@ export const getCouponsByLeader = async (leaderId: string): Promise<Coupon[]> =>
 };
 
 /**
+ * Get coupon associated with a leader event commission
+ * This function finds the coupon that was created for a specific commission
+ * by matching the commission ID in the coupon code
+ */
+export const getCouponByEventCommission = async (
+  leaderId: string,
+  eventId: string,
+  commissionId?: string // NOVO: ID da comissão específica (opcional)
+): Promise<Coupon | null> => {
+  let commission: any = null;
+  
+  // NOVO: Se commissionId foi fornecido, buscar comissão específica
+  if (commissionId) {
+    const { getLeaderEventCommissionById } = await import('./leaderEventCommissionsService.js');
+    commission = await getLeaderEventCommissionById(commissionId);
+    
+    // Verificar se a comissão pertence ao líder e evento corretos
+    if (commission && (commission.leader_id !== leaderId || commission.event_id !== eventId)) {
+      console.log(`⚠️ [getCouponByEventCommission] Comissão ${commissionId} não pertence ao líder ${leaderId} ou evento ${eventId}`);
+      commission = null;
+    }
+  }
+  
+  // Se não encontrou por ID ou não foi fornecido, buscar pela lógica padrão
+  if (!commission) {
+    const { getLeaderEventCommission } = await import('./leaderEventCommissionsService.js');
+    commission = await getLeaderEventCommission(leaderId, eventId);
+  }
+  
+  if (!commission) {
+    console.log(`ℹ️ [getCouponByEventCommission] Nenhuma comissão encontrada para líder ${leaderId} e evento ${eventId}${commissionId ? ` (procurando comissão ${commissionId})` : ''}`);
+    return null;
+  }
+  
+  // Get all coupons for this leader
+  const coupons = await getCouponsByLeader(leaderId);
+  
+  if (coupons.length === 0) {
+    console.log(`ℹ️ [getCouponByEventCommission] Nenhum cupom encontrado para líder ${leaderId}`);
+    return null;
+  }
+  
+  // Extract commission ID short (first 8 chars without dashes)
+  const commissionIdShort = commission.id.replace(/-/g, '').substring(0, 8).toUpperCase();
+  
+  // Find coupon by matching commission ID in the code
+  let coupon = coupons.find((c) => {
+    // Check if coupon is for this event
+    const matchesEvent = c.event_ids?.includes(eventId) || c.event_id === eventId;
+    if (!matchesEvent) return false;
+    
+    // Check if coupon code contains the commission ID
+    if (c.code && c.code.includes(commissionIdShort)) {
+      return true;
+    }
+    
+    // Fallback: check if coupon name contains commission name
+    if (commission.name && c.name && c.name.includes(commission.name)) {
+      return true;
+    }
+    
+    return false;
+  });
+  
+  // If not found by ID, try to find by event (if only one coupon for this event)
+  if (!coupon) {
+    const eventCoupons = coupons.filter((c) => 
+      c.event_ids?.includes(eventId) || c.event_id === eventId
+    );
+    
+    // If there's only one coupon for this event, use it
+    if (eventCoupons.length === 1) {
+      coupon = eventCoupons[0];
+      console.log(`ℹ️ [getCouponByEventCommission] Usando único cupom encontrado para o evento: ${coupon.code}`);
+    } else if (eventCoupons.length > 1) {
+      // If multiple coupons, try to match by name or use the first one as fallback
+      coupon = eventCoupons.find((c) => 
+        commission.name && c.name && c.name.includes(commission.name)
+      ) || eventCoupons[0];
+      console.log(`⚠️ [getCouponByEventCommission] Múltiplos cupons encontrados, usando: ${coupon.code}`);
+    }
+  }
+  
+  if (coupon) {
+    console.log(`✅ [getCouponByEventCommission] Cupom encontrado: ${coupon.code} para comissão ${commission.id}`);
+    
+    // Validate coupon is active
+    if (!coupon.is_active) {
+      console.log(`⚠️ [getCouponByEventCommission] Cupom ${coupon.code} está inativo`);
+      // Return it anyway, but log warning
+    }
+    
+    return coupon;
+  }
+  
+  console.log(`❌ [getCouponByEventCommission] Nenhum cupom encontrado para comissão ${commission.id}`);
+  return null;
+};
+
+/**
  * Update coupon
  */
 export const updateCoupon = async (couponId: string, data: UpdateCouponData): Promise<Coupon> => {

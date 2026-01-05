@@ -333,6 +333,10 @@ export function MyRegistrations() {
     if (status === "transferred") {
       return <Badge variant="secondary" className="bg-purple-500 hover:bg-purple-600">Transferido</Badge>;
     }
+    // Verificar confirmado e convidado (convite)
+    if (status === "confirmed" && paymentStatus === "convidado") {
+      return <Badge className="bg-blue-500">Convite</Badge>;
+    }
     // Verificar confirmado e pago
     if (status === "confirmed" && paymentStatus === "paid") {
       return <Badge className="bg-accent">Confirmada</Badge>;

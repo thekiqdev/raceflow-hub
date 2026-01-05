@@ -134,6 +134,7 @@ export interface CreateRegistrationByLeaderData {
   event_id: string;
   category_id: string;
   kit_id?: string;
+  commission_id?: string; // NOVO: ID da comissão específica (opcional)
 }
 
 export const createRegistrationByLeader = async (data: CreateRegistrationByLeaderData) => {

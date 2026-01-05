@@ -20,6 +20,7 @@ export interface LeaderEventCommission {
     code: string;
     link: string;
     discount_value?: number;
+    type?: 'percentage' | 'fixed';
   } | null;
   stats?: {
     paid_registrations: number;

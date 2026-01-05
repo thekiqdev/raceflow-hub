@@ -75,7 +75,7 @@ Kit: ${registration?.kit_name || 'Sem kit'}
 Valor: R$ ${registration?.total_amount.toFixed(2).replace('.', ',') || '0,00'}
 Método de Pagamento: ${registration?.payment_method === 'pix' ? 'PIX' : registration?.payment_method === 'credit_card' ? 'Cartão de Crédito' : registration?.payment_method === 'boleto' ? 'Boleto' : 'N/A'}
 Status: ${registration?.status === 'confirmed' ? 'Confirmada' : registration?.status || 'Pendente'}
-Status do Pagamento: ${registration?.payment_status === 'paid' ? 'Pago' : registration?.payment_status || 'Pendente'}
+Status do Pagamento: ${registration?.payment_status === 'paid' ? 'Pago' : registration?.payment_status === 'convidado' ? 'Convite' : registration?.payment_status || 'Pendente'}
       `.trim();
 
       const blob = new Blob([receiptText], { type: 'text/plain' });
@@ -290,10 +290,12 @@ Status do Pagamento: ${registration?.payment_status === 'paid' ? 'Pago' : regist
               <span className="text-muted-foreground">Status:</span>
               <span className={`font-medium ${
                 registration.payment_status === 'paid' ? 'text-green-600' : 
+                registration.payment_status === 'convidado' ? 'text-blue-600' : 
                 registration.payment_status === 'pending' ? 'text-yellow-600' : 
                 'text-red-600'
               }`}>
                 {registration.payment_status === 'paid' ? 'Pago' : 
+                 registration.payment_status === 'convidado' ? 'Convite' : 
                  registration.payment_status === 'pending' ? 'Pendente' : 
                  registration.payment_status === 'refunded' ? 'Reembolsado' : 
                  registration.payment_status === 'failed' ? 'Falhou' : 

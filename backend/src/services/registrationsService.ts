@@ -307,15 +307,16 @@ export const createRegistration = async (data: CreateRegistrationData) => {
     total_amount: data.total_amount,
   });
 
-  // Set payment_status to 'paid' if it's a free bonus registration
-  const paymentStatus = data.payment_method === 'free_bonus' ? 'paid' : 'pending';
+  // Set payment_status and status for free bonus registrations (convites)
+  const paymentStatus = data.payment_method === 'free_bonus' ? 'convidado' : 'pending';
+  const registrationStatus = data.payment_method === 'free_bonus' ? 'confirmed' : 'pending';
 
   const result = await query(
     `INSERT INTO registrations (
       event_id, runner_id, registered_by, category_id, kit_id,
       payment_method, total_amount, confirmation_code, status, payment_status, coupon_code
     )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending', $9, $10)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
     RETURNING *`,
     [
       data.event_id,
@@ -326,6 +327,7 @@ export const createRegistration = async (data: CreateRegistrationData) => {
       data.payment_method || null,
       data.total_amount,
       confirmationCode,
+      registrationStatus,
       paymentStatus,
       data.coupon_code || null,
     ]

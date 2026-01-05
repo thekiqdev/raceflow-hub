@@ -212,12 +212,22 @@ const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
   const getPaymentStatusBadge = (status: string | null) => {
     const variants: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
       paid: "default",
+      convidado: "default",
       pending: "secondary",
       failed: "destructive",
     };
+    const labels: Record<string, string> = {
+      paid: "Pago",
+      convidado: "Convite",
+      pending: "Pendente",
+      failed: "Falhou",
+    };
     return (
-      <Badge variant={variants[status || "pending"] || "outline"}>
-        {status === "paid" ? "Pago" : status === "pending" ? "Pendente" : "Falhou"}
+      <Badge 
+        variant={variants[status || "pending"] || "outline"}
+        className={status === "convidado" ? "bg-blue-500" : ""}
+      >
+        {labels[status || ""] || status || "Pendente"}
       </Badge>
     );
   };

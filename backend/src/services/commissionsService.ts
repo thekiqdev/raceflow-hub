@@ -75,6 +75,7 @@ export const createCommission = async (
   const couponCode = registrationData.rows[0]?.coupon_code;
   
   let commissionConfig: any = null;
+  let foundByCoupon = false;
   
   // If a coupon was used, try to find the specific commission associated with that coupon
   if (couponCode) {
@@ -104,7 +105,8 @@ export const createCommission = async (
             const commissionIdShort = comm.id.replace(/-/g, '').substring(0, 8).toUpperCase();
             if (couponCode.includes(commissionIdShort)) {
               commissionConfig = comm;
-              console.log(`✅ [createCommission] Comissão encontrada pelo cupom: ${comm.id} (tipo: ${comm.bonus_type})`);
+              foundByCoupon = true;
+              console.log(`✅ [createCommission] Comissão encontrada pelo cupom ${couponCode}: ${comm.id} (tipo: ${comm.bonus_type}, percentual: ${comm.commission_percentage}%)`);
               break;
             }
           }
@@ -171,12 +173,21 @@ export const createCommission = async (
     throw new Error('No commission configured for this event (invitation type only)');
   }
 
-  // Calculate commission (now requires event_id)
-  const { amount, percentage } = await calculateCommissionAmount(
-    data.leader_id,
-    data.event_id,
-    data.registration_amount
-  );
+  // Calculate commission using the commission config found (either by coupon or fallback)
+  // This ensures we use the correct commission percentage configured by the organizer
+  const commissionPercentage = commissionConfig.commission_percentage;
+  const commissionAmount = data.registration_amount * (commissionPercentage / 100);
+  const amount = parseFloat(commissionAmount.toFixed(2));
+  const percentage = commissionPercentage;
+  
+  console.log(`💰 [createCommission] Calculando comissão usando configuração encontrada:`, {
+    commission_id: commissionConfig.id,
+    commission_percentage: commissionPercentage,
+    registration_amount: data.registration_amount,
+    commission_amount: amount,
+    found_by_coupon: foundByCoupon,
+    coupon_code: couponCode || null,
+  });
   
   // Only create commission if amount > 0
   if (amount <= 0) {

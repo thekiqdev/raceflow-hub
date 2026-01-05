@@ -357,6 +357,8 @@ const OrganizerRegistrations = () => {
     switch (status) {
       case "paid":
         return <Badge variant="default" className="bg-green-500">Pago</Badge>;
+      case "convidado":
+        return <Badge variant="default" className="bg-blue-500">Convite</Badge>;
       case "pending":
         return <Badge variant="secondary">Pendente</Badge>;
       case "refunded":

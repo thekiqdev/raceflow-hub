@@ -152,12 +152,14 @@ export const getLeaderEventCommissions = async (
       }
       
       // Calculate invitations earned based on this commission's configuration
-      // Each commission tracks its own progress independently
+      // Count only available invitations (not sent or used) for this specific commission
       if (commission.bonus_type === 'invitation' || commission.bonus_type === 'both') {
-        if (commission.required_purchases && commission.required_purchases > 0) {
-          // Calculate how many invitations this commission should have generated
-          invitationsCount = Math.floor(paidCount / commission.required_purchases);
-        }
+        const availableInvitationsResult = await query(
+          `SELECT COUNT(*) as count FROM leader_invitations 
+           WHERE leader_id = $1 AND event_id = $2 AND commission_id = $3 AND status = 'available'`,
+          [leaderId, commission.event_id, commission.id]
+        );
+        invitationsCount = parseInt(availableInvitationsResult.rows[0]?.count || '0') || 0;
       }
     } else {
       // If no coupon, count all registrations for the event (fallback)
@@ -180,11 +182,14 @@ export const getLeaderEventCommissions = async (
         totalCommissionEarned = parseFloat(commissionResult.rows[0]?.total_commission || '0') || 0;
       }
       
-      // For invitations, calculate based on this commission's configuration
+      // For invitations, count only available invitations (not sent or used) for this specific commission
       if (commission.bonus_type === 'invitation' || commission.bonus_type === 'both') {
-        if (commission.required_purchases && commission.required_purchases > 0) {
-          invitationsCount = Math.floor(paidCount / commission.required_purchases);
-        }
+        const availableInvitationsResult = await query(
+          `SELECT COUNT(*) as count FROM leader_invitations 
+           WHERE leader_id = $1 AND event_id = $2 AND commission_id = $3 AND status = 'available'`,
+          [leaderId, commission.event_id, commission.id]
+        );
+        invitationsCount = parseInt(availableInvitationsResult.rows[0]?.count || '0') || 0;
       }
     }
     
@@ -215,6 +220,7 @@ export const getLeaderEventCommissions = async (
         code: coupon.code,
         link: `${baseUrl}/events/${commission.event_id}?ref=${leader.referral_code}&cupom=${coupon.code}`,
         discount_value: coupon.discount_value, // Include discount value
+        type: coupon.type, // Include coupon type (percentage or fixed)
       };
     }
     

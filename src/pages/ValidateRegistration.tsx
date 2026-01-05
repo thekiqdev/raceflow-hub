@@ -296,10 +296,12 @@ export default function ValidateRegistration() {
               <span className="text-muted-foreground">Pagamento:</span>
               <span className={`font-medium ${
                 registration.payment_status === 'paid' ? 'text-green-600' : 
+                registration.payment_status === 'convidado' ? 'text-blue-600' : 
                 registration.payment_status === 'pending' ? 'text-yellow-600' : 
                 'text-red-600'
               }`}>
                 {registration.payment_status === 'paid' ? 'Pago' : 
+                 registration.payment_status === 'convidado' ? 'Convite' : 
                  registration.payment_status === 'pending' ? 'Pendente' : 
                  registration.payment_status === 'refunded' ? 'Reembolsado' : 
                  registration.payment_status === 'failed' ? 'Falhou' : 

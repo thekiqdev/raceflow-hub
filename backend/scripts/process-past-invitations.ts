@@ -15,7 +15,7 @@ async function processPastInvitations() {
     console.log('📋 Passo 1: Verificando bônus já concedidos sem convite...\n');
     const bonusesWithoutInvitation = await query(
       `SELECT 
-        lec.id,
+        lec.id as commission_id,
         lec.leader_id,
         lec.event_id,
         lec.bonus_registration_id,
@@ -33,11 +33,12 @@ async function processPastInvitations() {
     let invitationsCreated = 0;
     for (const bonus of bonusesWithoutInvitation.rows) {
       try {
-        console.log(`🔄 Criando convite para bônus ${bonus.id} (líder ${bonus.leader_id}, evento ${bonus.event_id})...`);
+        console.log(`🔄 Criando convite para bônus ${bonus.commission_id} (líder ${bonus.leader_id}, evento ${bonus.event_id})...`);
         await createInvitationFromBonus(
           bonus.leader_id,
           bonus.bonus_registration_id,
-          bonus.event_id
+          bonus.event_id,
+          bonus.commission_id
         );
         invitationsCreated++;
         console.log(`  ✅ Convite criado`);
@@ -81,7 +82,7 @@ async function processPastInvitations() {
         
         // Verificar se um bônus foi concedido
         const bonusCheck = await query(
-          `SELECT bonus_earned_at, bonus_registration_id FROM leader_event_commissions 
+          `SELECT id as commission_id, bonus_earned_at, bonus_registration_id FROM leader_event_commissions 
            WHERE leader_id = $1 AND event_id = $2 
            AND bonus_type IN ('invitation', 'both')
            AND bonus_earned_at IS NOT NULL
@@ -106,7 +107,8 @@ async function processPastInvitations() {
                 await createInvitationFromBonus(
                   commission.leader_id,
                   bonus.bonus_registration_id,
-                  commission.event_id
+                  commission.event_id,
+                  bonus.commission_id
                 );
                 invitationsCreated++;
                 console.log(`  ✅ Convite criado`);

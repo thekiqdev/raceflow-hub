@@ -1207,7 +1207,124 @@ export const updateRegistrationController = asyncHandler(async (req: AuthRequest
     return;
   }
 
+  // Check if payment status is being updated to 'paid'
+  const wasPaid = registration.payment_status === 'paid';
+  const willBePaid = req.body.payment_status === 'paid';
+  const paymentJustConfirmed = !wasPaid && willBePaid;
+
   const updatedRegistration = await updateRegistration(id, req.body);
+
+  // If payment was just confirmed, process commissions and bonuses
+  if (paymentJustConfirmed) {
+    try {
+      console.log(`💰 [updateRegistrationController] Pagamento confirmado manualmente para inscrição ${id}, processando comissões e bônus...`);
+      
+      // Get registration data with coupon code
+      const regData = await query(
+        'SELECT runner_id, event_id, total_amount, coupon_code FROM registrations WHERE id = $1',
+        [id]
+      );
+      
+      if (regData.rows.length > 0) {
+        const reg = regData.rows[0];
+        
+        // Find leader associated with this registration (by coupon or referral)
+        let leaderId: string | null = null;
+        
+        // Check if registration has a coupon code
+        if (reg.coupon_code) {
+          const couponResult = await query(
+            'SELECT leader_id FROM coupons WHERE code = $1',
+            [reg.coupon_code]
+          );
+          if (couponResult.rows.length > 0) {
+            leaderId = couponResult.rows[0].leader_id;
+            console.log(`🎫 [updateRegistrationController] Líder encontrado pelo cupom: ${leaderId}`);
+          }
+        }
+        
+        // If no leader found by coupon, check referrals
+        if (!leaderId) {
+          const referralResult = await query(
+            'SELECT leader_id FROM user_referrals WHERE user_id = $1',
+            [reg.runner_id]
+          );
+          if (referralResult.rows.length > 0) {
+            leaderId = referralResult.rows[0].leader_id;
+            console.log(`👥 [updateRegistrationController] Líder encontrado por referência: ${leaderId}`);
+          }
+        }
+        
+        if (leaderId) {
+          // NOVO: Se a inscrição tem cupom, verificar se a comissão associada é apenas 'invitation'
+          // Se for, não criar comissão, apenas verificar bônus
+          if (reg.coupon_code) {
+            try {
+              const { getCouponByCodeOnly } = await import('../services/couponsService.js');
+              const coupon = await getCouponByCodeOnly(reg.coupon_code);
+              if (coupon && coupon.leader_id === leaderId) {
+                // Buscar comissão associada a este cupom específico
+                const commissionIdShort = coupon.code.replace(/[^0-9A-Z]/g, '').substring(4, 12); // Extrair ID da comissão do código do cupom
+                const commissionResult = await query(
+                  `SELECT id, bonus_type FROM leader_event_commissions 
+                   WHERE leader_id = $1 AND event_id = $2
+                   AND REPLACE(UPPER(id::text), '-', '') LIKE '%' || $3 || '%'`,
+                  [leaderId, reg.event_id, commissionIdShort]
+                );
+                if (commissionResult.rows.length > 0) {
+                  const bonusType = commissionResult.rows[0].bonus_type;
+                  console.log(`🎯 [updateRegistrationController] Comissão específica encontrada pelo cupom: ${commissionResult.rows[0].id} (tipo: ${bonusType})`);
+                  
+                  // Se for apenas 'invitation', não criar comissão, apenas verificar bônus
+                  if (bonusType === 'invitation') {
+                    console.log(`🎁 [updateRegistrationController] Comissão é apenas 'invitation', verificando bônus de convite...`);
+                    const { checkAllInvitationBonuses } = await import('../services/leaderBonusService.js');
+                    await checkAllInvitationBonuses(leaderId, reg.event_id);
+                    // Não criar comissão para tipo 'invitation'
+                    return; // Exit early, don't create commission
+                  }
+                }
+              }
+            } catch (couponError: any) {
+              console.log(`ℹ️ [updateRegistrationController] Erro ao buscar comissão específica pelo cupom: ${couponError.message}`);
+            }
+          }
+          
+          // Create commission (this will also check for invitation bonuses)
+          try {
+            const { createCommission } = await import('../services/commissionsService.js');
+            await createCommission({
+              leader_id: leaderId,
+              registration_id: id,
+              referred_user_id: reg.runner_id,
+              event_id: reg.event_id,
+              registration_amount: parseFloat(reg.total_amount) || 0,
+            });
+            console.log(`✅ [updateRegistrationController] Comissão criada para líder ${leaderId} na inscrição ${id}`);
+          } catch (commissionError: any) {
+            // If no commission is configured (invitation type only) or amount is 0, just check for bonuses
+            if (commissionError.message.includes('No commission configured') || 
+                commissionError.message.includes('invitation type only')) {
+              console.log(`ℹ️ [updateRegistrationController] Tipo de bônus é apenas 'invitation', verificando bônus de convite...`);
+              const { checkAllInvitationBonuses } = await import('../services/leaderBonusService.js');
+              await checkAllInvitationBonuses(leaderId, reg.event_id);
+            } else if (commissionError.message.includes('must be greater than 0')) {
+              console.log(`ℹ️ [updateRegistrationController] Valor da comissão é 0, verificando apenas bônus de convite...`);
+              const { checkAllInvitationBonuses } = await import('../services/leaderBonusService.js');
+              await checkAllInvitationBonuses(leaderId, reg.event_id);
+            } else {
+              console.error('❌ [updateRegistrationController] Erro ao criar comissão:', commissionError.message);
+            }
+          }
+        } else {
+          console.log(`ℹ️ [updateRegistrationController] Nenhum líder associado (sem referência e cupom não pertence a líder)`);
+        }
+      }
+    } catch (error: any) {
+      // Log error but don't fail registration update
+      console.error('❌ [updateRegistrationController] Erro ao processar comissões/bônus após confirmação manual:', error.message);
+    }
+  }
 
   res.json({
     success: true,
@@ -1575,7 +1692,7 @@ export const createRegistrationByLeaderController = asyncHandler(async (req: Aut
     return;
   }
 
-  const { email, event_id, category_id, kit_id } = req.body;
+  const { email, event_id, category_id, kit_id, commission_id } = req.body;
 
   if (!email || !event_id || !category_id) {
     res.status(400).json({
@@ -1689,7 +1806,7 @@ export const createRegistrationByLeaderController = asyncHandler(async (req: Aut
     }
   }
 
-  // Calculate total amount
+  // Calculate total amount (before coupon discount)
   let totalAmount = parseFloat(selectedCategory.price.toString()) || 0;
   
   if (kit_id) {
@@ -1699,6 +1816,44 @@ export const createRegistrationByLeaderController = asyncHandler(async (req: Aut
     if (kit) {
       totalAmount += parseFloat(kit.price.toString()) || 0;
     }
+  }
+
+  // Get coupon associated with the commission for this event
+  let couponCode: string | undefined = undefined;
+  try {
+    const { getCouponByEventCommission, validateCoupon } = await import('../services/couponsService.js');
+    const coupon = await getCouponByEventCommission(leader.id, event_id, commission_id || undefined); // Pass commission_id if provided
+    
+    if (coupon) {
+      // Validate coupon before using it
+      const validation = await validateCoupon(coupon.code, event.organizer_id, event_id);
+      
+      if (validation.valid && validation.coupon) {
+        couponCode = coupon.code;
+        console.log(`✅ [createRegistrationByLeader] Cupom encontrado e válido: ${coupon.code} para comissão do evento ${event_id}`);
+        
+        // Apply coupon discount to total amount
+        if (coupon.type === 'percentage') {
+          const discountAmount = totalAmount * (coupon.discount_value / 100);
+          totalAmount = totalAmount - discountAmount;
+          console.log(`💰 [createRegistrationByLeader] Desconto de ${coupon.discount_value}% aplicado: R$ ${discountAmount.toFixed(2)}`);
+        } else if (coupon.type === 'fixed') {
+          totalAmount = Math.max(0, totalAmount - coupon.discount_value);
+          console.log(`💰 [createRegistrationByLeader] Desconto fixo de R$ ${coupon.discount_value.toFixed(2)} aplicado`);
+        }
+        
+        // Ensure total amount is not negative
+        totalAmount = Math.max(0, totalAmount);
+        console.log(`💰 [createRegistrationByLeader] Valor total após desconto: R$ ${totalAmount.toFixed(2)}`);
+      } else {
+        console.log(`⚠️ [createRegistrationByLeader] Cupom encontrado mas inválido: ${validation.error || 'Cupom inválido'} - continuando sem cupom`);
+      }
+    } else {
+      console.log(`ℹ️ [createRegistrationByLeader] Nenhum cupom encontrado para comissão do evento ${event_id} - continuando sem cupom`);
+    }
+  } catch (couponError: any) {
+    // Log error but don't fail registration if coupon search fails
+    console.error('⚠️ [createRegistrationByLeader] Erro ao buscar/validar cupom (continuando sem cupom):', couponError.message);
   }
 
   // Create or ensure user referral exists (so commission will be generated)
@@ -1741,15 +1896,17 @@ export const createRegistrationByLeaderController = asyncHandler(async (req: Aut
     registered_by: req.user.id,
     total_amount: totalAmount,
     payment_method: 'pix' as const,
+    coupon_code: couponCode,
   };
 
-  console.log('📝 Líder criando inscrição para atleta:', {
+  console.log('📝 [createRegistrationByLeader] Líder criando inscrição para atleta:', {
     leader_id: leader.id,
     athlete_id: athlete.id,
     athlete_email: email,
     event_id,
     category_id,
     kit_id,
+    coupon_code: couponCode,
     total_amount: totalAmount,
   });
 
