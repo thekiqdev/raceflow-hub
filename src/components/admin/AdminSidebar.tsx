@@ -1,4 +1,4 @@
-import { LayoutDashboard, Users, Calendar, DollarSign, FileText, Settings, MessageSquare, Building2, Palette, ArrowRightLeft, UserCog } from "lucide-react";
+import { LayoutDashboard, Users, Calendar, DollarSign, FileText, Settings, MessageSquare, Building2, Palette, ArrowRightLeft, UserCog, Calculator } from "lucide-react";
 import { useState, useEffect } from "react";
 import {
   Sidebar,
@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
 import { getSystemSettings } from "@/lib/api/systemSettings";
+import { getNewQuotesCount } from "@/lib/api/quotes";
 
 interface AdminSidebarProps {
   activeSection: string;
@@ -22,6 +23,7 @@ const menuItems = [
   { id: "overview", title: "Dashboard", icon: LayoutDashboard },
   { id: "users", title: "Usuários", icon: Users },
   { id: "events", title: "Eventos", icon: Calendar },
+  { id: "quotes", title: "Orçamentos", icon: Calculator, badge: true },
   { id: "financial", title: "Financeiro", icon: DollarSign },
   { id: "transfers", title: "Transferências", icon: ArrowRightLeft },
   { id: "group-leaders", title: "Líderes de Grupo", icon: UserCog },
@@ -36,10 +38,12 @@ export function AdminSidebar({ activeSection, onSectionChange }: AdminSidebarPro
   const { open } = useSidebar();
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [transfersEnabled, setTransfersEnabled] = useState(false);
+  const [newQuotesCount, setNewQuotesCount] = useState(0);
 
   useEffect(() => {
     loadAdminLogo();
     loadSystemSettings();
+    loadNewQuotesCount();
     
     // Listen for logo updates
     const handleLogoUpdate = () => {
@@ -51,11 +55,23 @@ export function AdminSidebar({ activeSection, onSectionChange }: AdminSidebarPro
       loadSystemSettings();
     };
     
+    // Listen for quotes updates
+    const handleQuotesUpdate = () => {
+      loadNewQuotesCount();
+    };
+    
     window.addEventListener('admin-logo-updated', handleLogoUpdate);
     window.addEventListener('admin-settings-updated', handleSettingsUpdate);
+    window.addEventListener('quotes-updated', handleQuotesUpdate);
+    
+    // Refresh quotes count every 30 seconds
+    const interval = setInterval(loadNewQuotesCount, 30000);
+    
     return () => {
       window.removeEventListener('admin-logo-updated', handleLogoUpdate);
       window.removeEventListener('admin-settings-updated', handleSettingsUpdate);
+      window.removeEventListener('quotes-updated', handleQuotesUpdate);
+      clearInterval(interval);
     };
   }, []);
 
@@ -74,6 +90,17 @@ export function AdminSidebar({ activeSection, onSectionChange }: AdminSidebarPro
       }
     } catch (error) {
       console.error("Erro ao carregar configurações:", error);
+    }
+  };
+
+  const loadNewQuotesCount = async () => {
+    try {
+      const response = await getNewQuotesCount();
+      if (response.success && response.data) {
+        setNewQuotesCount(response.data.count);
+      }
+    } catch (error) {
+      console.error("Erro ao carregar contagem de orçamentos:", error);
     }
   };
 
@@ -115,10 +142,24 @@ export function AdminSidebar({ activeSection, onSectionChange }: AdminSidebarPro
                     <SidebarMenuButton
                       onClick={() => onSectionChange(item.id)}
                       isActive={activeSection === item.id}
-                      className="hover:bg-muted/50"
+                      className="hover:bg-muted/50 relative"
                     >
                       <item.icon className="h-4 w-4" />
-                      {open && <span>{item.title}</span>}
+                      {open && (
+                        <>
+                          <span>{item.title}</span>
+                          {item.badge && newQuotesCount > 0 && (
+                            <span className="ml-auto bg-primary text-primary-foreground text-xs font-bold rounded-full h-5 w-5 flex items-center justify-center">
+                              {newQuotesCount > 9 ? '9+' : newQuotesCount}
+                            </span>
+                          )}
+                        </>
+                      )}
+                      {!open && item.badge && newQuotesCount > 0 && (
+                        <span className="absolute -top-1 -right-1 bg-primary text-primary-foreground text-xs font-bold rounded-full h-4 w-4 flex items-center justify-center">
+                          {newQuotesCount > 9 ? '9+' : newQuotesCount}
+                        </span>
+                      )}
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 ))}

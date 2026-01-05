@@ -1,6 +1,6 @@
 import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { User, LogIn, FileText, Trophy, UserCircle, LogOut } from "lucide-react";
+import { User, LogIn, FileText, Trophy, UserCircle, LogOut, Calculator } from "lucide-react";
 import { useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import {
@@ -52,6 +52,13 @@ export function Header() {
           >
             <Trophy className="w-4 h-4" />
             Eventos
+          </Link>
+          <Link
+            to="/orcamento"
+            className="hover:text-gray-300 transition-colors flex items-center gap-2"
+          >
+            <Calculator className="w-4 h-4" />
+            Orçamento
           </Link>
           <Link
             to="/faq"

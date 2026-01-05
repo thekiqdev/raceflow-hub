@@ -25,6 +25,7 @@ import { toast } from "sonner";
 import { Facebook, Instagram, MessageCircle } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Header } from "@/components/Header";
+import { createQuote } from "@/lib/api/quotes";
 
 const quoteFormSchema = z.object({
   fullName: z.string().min(3, "Nome completo é obrigatório"),
@@ -71,12 +72,35 @@ export default function Quote() {
   const onSubmit = async (data: QuoteFormValues) => {
     setIsSubmitting(true);
     try {
-      // Aqui você pode integrar com backend/email service
-      console.log("Quote form data:", data);
-      toast.success("Orçamento enviado com sucesso! Entraremos em contato em breve.");
-      form.reset();
-    } catch (error) {
-      toast.error("Erro ao enviar orçamento. Tente novamente.");
+      const response = await createQuote({
+        full_name: data.fullName,
+        phone: data.phone,
+        email: data.email,
+        event_location: data.eventLocation,
+        athletes_count: data.athletesCount,
+        same_start_finish: data.sameStartFinish,
+        electric_power: data.electricPower,
+        additional_points: data.additionalPoints || undefined,
+        chest_numbers: data.chestNumbers,
+        distances: data.distances,
+        timing_gate: data.timingGate,
+        cronoteam_registration: data.cronoteamRegistration,
+        event_date: data.eventDate,
+        description: data.description,
+      });
+
+      if (response.success) {
+        toast.success("Orçamento enviado com sucesso! Entraremos em contato em breve.");
+        form.reset();
+        
+        // Trigger event to update quotes count in admin sidebar
+        window.dispatchEvent(new Event('quotes-updated'));
+      } else {
+        toast.error(response.error || "Erro ao enviar orçamento. Tente novamente.");
+      }
+    } catch (error: any) {
+      console.error("Error submitting quote:", error);
+      toast.error(error.message || "Erro ao enviar orçamento. Tente novamente.");
     } finally {
       setIsSubmitting(false);
     }

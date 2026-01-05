@@ -16,6 +16,7 @@ import KnowledgeBase from "@/components/admin/KnowledgeBase";
 import HomeCustomization from "@/components/admin/HomeCustomization";
 import TransferManagement from "@/components/admin/TransferManagement";
 import { GroupLeadersManagement } from "@/components/admin/GroupLeadersManagement";
+import QuotesManagement from "@/components/admin/QuotesManagement";
 import { getSystemSettings } from "@/lib/api/systemSettings";
 
 const AdminDashboard = () => {
@@ -93,6 +94,8 @@ const AdminDashboard = () => {
         return <TransferManagement />;
       case "group-leaders":
         return <GroupLeadersManagement />;
+      case "quotes":
+        return <QuotesManagement />;
       default:
         return <DashboardOverview />;
     }

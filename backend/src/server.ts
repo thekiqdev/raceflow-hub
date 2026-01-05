@@ -19,6 +19,7 @@ import groupLeadersRouter from './routes/groupLeaders.js';
 import couponsRouter from './routes/coupons.js';
 import modalitiesRouter from './routes/modalities.js';
 import categoriesRouter from './routes/categories.js';
+import quotesRouter from './routes/quotes.js';
 
 // Load environment variables
 // Try to load from backend/.env explicitly
@@ -165,6 +166,7 @@ app.use((req: Request, _res: Response, next) => {
 app.use('/api/webhooks', webhooksRouter);
 app.use('/api/health', healthRouter);
 app.use('/api/auth', authRouter);
+app.use('/api/quotes', quotesRouter);
 app.use('/api/group-leaders', groupLeadersRouter);
 app.use('/api/events', eventsRouter);
 app.use('/api/profiles', profilesRouter);
