@@ -411,7 +411,16 @@ export const bulkUpdateFormConfigurationsController = asyncHandler(async (req: A
     return;
   }
 
-  const configurations = await bulkUpdateFormConfigurations(formType, validation.data.configurations);
+  // Convert null to undefined for optional fields to match TypeScript types
+  const sanitizedConfigurations = validation.data.configurations.map(config => ({
+    ...config,
+    field_placeholder: config.field_placeholder ?? undefined,
+    field_width: config.field_width ?? undefined,
+    field_options: config.field_options ?? undefined,
+    field_validation: config.field_validation ?? undefined,
+  }));
+  
+  const configurations = await bulkUpdateFormConfigurations(formType, sanitizedConfigurations);
 
   res.json({
     success: true,

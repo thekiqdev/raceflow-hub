@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { authenticate, optionalAuth } from '../middleware/auth.js';
+import { authenticate } from '../middleware/auth.js';
 import {
   getFormConfigurationsController,
   getFormFieldConfigurationByIdController,

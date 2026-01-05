@@ -352,9 +352,10 @@ export const bulkUpdateFormConfigurations = async (
     field_key: string;
     field_label: string;
     field_type: 'text' | 'email' | 'tel' | 'textarea' | 'select' | 'date' | 'number';
-    field_placeholder?: string;
+    field_placeholder?: string | null;
     field_required: boolean;
     field_order: number;
+    field_width?: '100%' | '50%' | '33%' | null;
     field_options?: any;
     field_validation?: any;
     field_enabled: boolean;
