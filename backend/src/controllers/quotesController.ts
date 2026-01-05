@@ -25,8 +25,8 @@ const createQuoteSchema = z.object({
   timing_gate: z.string().min(1, 'Campo obrigatório'),
   cronoteam_registration: z.string().min(1, 'Campo obrigatório'),
   event_date: z.string().min(1, 'Data da prova é obrigatória'),
-  description: z.string().min(10, 'Descrição é obrigatória'),
-});
+  description: z.string().min(10, 'A descrição deve ter pelo menos 10 caracteres'),
+}).passthrough(); // Permite campos extras que não estão no schema
 
 const updateQuoteSchema = z.object({
   status: z.enum(['new', 'viewed', 'contacted', 'closed']).optional(),
@@ -37,8 +37,11 @@ const updateQuoteSchema = z.object({
  * Create a new quote (public endpoint)
  */
 export const createQuoteController = asyncHandler(async (req: AuthRequest, res: Response) => {
+  console.log('📥 Quote submission received:', JSON.stringify(req.body, null, 2));
+  
   const validation = createQuoteSchema.safeParse(req.body);
   if (!validation.success) {
+    console.error('❌ Quote validation failed:', validation.error.errors);
     res.status(400).json({
       success: false,
       error: 'Validation error',
@@ -48,7 +51,9 @@ export const createQuoteController = asyncHandler(async (req: AuthRequest, res: 
     return;
   }
 
+  console.log('✅ Validation passed. Data:', JSON.stringify(validation.data, null, 2));
   const quote = await createQuote(validation.data);
+  console.log('💾 Quote saved. Additional fields:', quote.additional_fields);
 
   res.json({
     success: true,
