@@ -1679,8 +1679,8 @@ export function RegistrationFlow({
         {/* Step 2: Modality Selection */}
         {step === 2 && (
           <div className="space-y-4">
-            {/* Check if user is logged in but doesn't have runner role */}
-            {user && !user.roles?.includes('runner') && (
+            {/* Check if user is logged in but doesn't have runner, organizer or admin role */}
+            {user && !user.roles?.includes('runner') && !user.roles?.includes('organizer') && !user.roles?.includes('admin') && (
               <div className="mb-6 p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
                 <div className="flex items-start gap-3">
                   <div className="flex-shrink-0">
@@ -1690,18 +1690,18 @@ export function RegistrationFlow({
                   </div>
                   <div className="flex-1">
                     <h4 className="text-sm font-semibold text-yellow-800 dark:text-yellow-200 mb-1">
-                      Acesso como Corredor Necessário
+                      Acesso Necessário
                     </h4>
                     <p className="text-sm text-yellow-700 dark:text-yellow-300">
-                      Apenas perfis de corredor podem se inscrever em eventos. Por favor, acesse com uma conta de corredor para continuar.
+                      Apenas perfis de corredor, organizador ou administrador podem se inscrever em eventos.
                     </p>
                   </div>
                 </div>
               </div>
             )}
             
-            {/* Only show modality selection if user is runner or not logged in */}
-            {(!user || user.roles?.includes('runner')) && (
+            {/* Only show modality selection if user is runner, organizer, admin or not logged in */}
+            {(!user || user.roles?.includes('runner') || user.roles?.includes('organizer') || user.roles?.includes('admin')) && (
               <>
                 <h3 className="text-lg font-semibold">Escolha a Modalidade</h3>
                 {loadingModalities ? (

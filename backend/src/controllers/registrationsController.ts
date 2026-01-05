@@ -163,13 +163,16 @@ export const createRegistrationController = asyncHandler(async (req: AuthRequest
     return;
   }
 
-  // ETAPA: Validate that user has runner role
+  // ETAPA: Validate that user has runner, organizer or admin role
   const isRunner = await hasRole(req.user.id, 'runner');
-  if (!isRunner) {
+  const isOrganizer = await hasRole(req.user.id, 'organizer');
+  const isAdmin = await hasRole(req.user.id, 'admin');
+  
+  if (!isRunner && !isOrganizer && !isAdmin) {
     res.status(403).json({
       success: false,
       error: 'Forbidden',
-      message: 'Apenas corredores podem se inscrever em eventos. Por favor, acesse com uma conta de corredor.',
+      message: 'Apenas corredores, organizadores e administradores podem se inscrever em eventos.',
     });
     return;
   }
