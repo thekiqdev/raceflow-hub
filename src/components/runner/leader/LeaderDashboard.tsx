@@ -74,6 +74,7 @@ export function LeaderDashboard() {
   const [isRegisterDialogOpen, setIsRegisterDialogOpen] = useState(false);
   const [registerEmail, setRegisterEmail] = useState("");
   const [selectedEventForRegistration, setSelectedEventForRegistration] = useState<string>("");
+  const [selectedCommissionId, setSelectedCommissionId] = useState<string>(""); // NOVO: ID da comissão específica
   const [selectedModalityId, setSelectedModalityId] = useState<string>("");
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>("");
   const [selectedKitId, setSelectedKitId] = useState<string>("");
@@ -244,8 +245,9 @@ export function LeaderDashboard() {
     }
   };
 
-  const handleOpenRegisterDialog = (eventId: string) => {
+  const handleOpenRegisterDialog = (eventId: string, commissionId?: string) => {
     setSelectedEventForRegistration(eventId);
+    setSelectedCommissionId(commissionId || ""); // NOVO: armazenar ID da comissão
     setIsRegisterDialogOpen(true);
     setRegisterEmail("");
     setSelectedModalityId("");
@@ -257,6 +259,7 @@ export function LeaderDashboard() {
     setIsRegisterDialogOpen(false);
     setRegisterEmail("");
     setSelectedEventForRegistration("");
+    setSelectedCommissionId(""); // NOVO: limpar ID da comissão
     setSelectedModalityId("");
     setSelectedCategoryId("");
     setSelectedKitId("");
@@ -282,6 +285,7 @@ export function LeaderDashboard() {
         event_id: selectedEventForRegistration,
         category_id: selectedCategoryId,
         kit_id: selectedKitId || undefined,
+        commission_id: selectedCommissionId || undefined,
       });
 
       if (response.success) {
@@ -496,7 +500,26 @@ export function LeaderDashboard() {
         setSendInvitationDialogOpen(false);
         setSelectedInvitation(null);
         setRunnerCpf("");
-        loadInvitations();
+        
+        // Atualização otimista: atualizar o status do convite imediatamente
+        if (selectedInvitation && response.data) {
+          setInvitations(prev => prev.map(inv => 
+            inv.id === selectedInvitation.id 
+              ? { 
+                  ...inv, 
+                  status: 'sent' as const, 
+                  runner_id: response.data.runner_id || null, 
+                  runner_cpf: response.data.runner_cpf || runnerCpf.trim().replace(/\D/g, ''),
+                  sent_at: response.data.sent_at || new Date().toISOString(),
+                }
+              : inv
+          ));
+        }
+        
+        // Recarregar convites após um pequeno delay para garantir que o backend processou
+        setTimeout(() => {
+          loadInvitations();
+        }, 500);
       } else {
         toast.error(response.error || "Erro ao enviar convite");
       }
@@ -905,7 +928,7 @@ export function LeaderDashboard() {
                     {/* Button to register athlete */}
                     <div className="pt-4 border-t mt-4">
                       <Button
-                        onClick={() => handleOpenRegisterDialog(commission.event_id)}
+                        onClick={() => handleOpenRegisterDialog(commission.event_id, commission.id)}
                         className="w-full"
                         variant="default"
                       >
@@ -1019,7 +1042,7 @@ export function LeaderDashboard() {
                             </Badge>
                             <Badge
                               variant={
-                                registration.payment_status === "paid"
+                                registration.payment_status === "paid" || registration.payment_status === "convidado"
                                   ? "default"
                                   : registration.payment_status === "pending"
                                   ? "secondary"
@@ -1029,6 +1052,8 @@ export function LeaderDashboard() {
                             >
                               {registration.payment_status === "paid"
                                 ? "Finalizado"
+                                : registration.payment_status === "convidado"
+                                ? "Convite"
                                 : registration.payment_status === "pending"
                                 ? "Pendente"
                                 : "Cancelado"}
@@ -1555,6 +1580,38 @@ export function LeaderDashboard() {
               </div>
             )}
 
+            {/* Coupon info */}
+            {selectedEventForRegistration && (() => {
+              // Buscar comissão específica se commission_id foi fornecido, senão usar a primeira encontrada
+              const eventCommission = selectedCommissionId
+                ? eventCommissions.find(c => c.id === selectedCommissionId && c.event_id === selectedEventForRegistration)
+                : eventCommissions.find(c => c.event_id === selectedEventForRegistration);
+              const coupon = eventCommission?.coupon;
+              
+              if (coupon) {
+                return (
+                  <div className="p-4 bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                    <div className="flex items-start gap-2">
+                      <div className="flex-1">
+                        <div className="text-sm font-semibold text-blue-900 dark:text-blue-100 mb-1">
+                          Cupom que será aplicado:
+                        </div>
+                        <div className="text-lg font-mono font-bold text-blue-700 dark:text-blue-300">
+                          {coupon.code}
+                        </div>
+                        {coupon.discount_value !== undefined && (
+                          <div className="text-xs text-blue-700 dark:text-blue-400 mt-1">
+                            Desconto: {coupon.type === 'fixed' ? `R$ ${coupon.discount_value.toFixed(2).replace('.', ',')}` : `${coupon.discount_value}%`}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              }
+              return null;
+            })()}
+
             {/* Total amount preview */}
             {selectedCategoryId && (
               <div className="p-4 bg-muted rounded-lg">
@@ -1567,6 +1624,43 @@ export function LeaderDashboard() {
                     ).toFixed(2).replace('.', ',')}
                   </span>
                 </div>
+                {(() => {
+                  // Buscar comissão específica se commission_id foi fornecido
+                  const eventCommission = selectedCommissionId
+                    ? eventCommissions.find(c => c.id === selectedCommissionId && c.event_id === selectedEventForRegistration)
+                    : eventCommissions.find(c => c.event_id === selectedEventForRegistration);
+                  const coupon = eventCommission?.coupon;
+                  if (coupon && coupon.discount_value !== undefined) {
+                    const baseAmount = (categories.find(c => c.id === selectedCategoryId)?.price || 0) +
+                      (selectedKitId ? (kits.find(k => k.id === selectedKitId)?.price || 0) : 0);
+                    
+                    // Calculate discount based on coupon type
+                    const discountAmount = coupon.type === 'fixed' 
+                      ? coupon.discount_value 
+                      : baseAmount * (coupon.discount_value / 100);
+                    const finalAmount = Math.max(0, baseAmount - discountAmount);
+                    
+                    return (
+                      <div className="mt-2 pt-2 border-t border-muted-foreground/20">
+                        <div className="flex justify-between text-sm text-muted-foreground">
+                          <span>Subtotal:</span>
+                          <span>R$ {baseAmount.toFixed(2).replace('.', ',')}</span>
+                        </div>
+                        <div className="flex justify-between text-sm text-green-600 dark:text-green-400">
+                          <span>Desconto {coupon.type === 'fixed' ? `(R$ ${coupon.discount_value.toFixed(2).replace('.', ',')})` : `(${coupon.discount_value}%)`}:</span>
+                          <span>- R$ {discountAmount.toFixed(2).replace('.', ',')}</span>
+                        </div>
+                        <div className="flex justify-between items-center mt-2 pt-2 border-t border-muted-foreground/20">
+                          <span className="font-semibold">Total com desconto:</span>
+                          <span className="text-lg font-bold text-green-600 dark:text-green-400">
+                            R$ {finalAmount.toFixed(2).replace('.', ',')}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  }
+                  return null;
+                })()}
               </div>
             )}
           </div>

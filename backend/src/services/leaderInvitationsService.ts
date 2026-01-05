@@ -5,6 +5,7 @@ export interface LeaderInvitation {
   leader_id: string;
   bonus_registration_id: string;
   event_id: string;
+  commission_id: string | null;
   runner_id: string | null;
   runner_cpf: string | null;
   status: 'available' | 'sent' | 'used' | 'expired';
@@ -25,12 +26,14 @@ export interface LeaderInvitation {
 export const createInvitationFromBonus = async (
   leaderId: string,
   bonusRegistrationId: string,
-  eventId: string
+  eventId: string,
+  commissionId?: string
 ): Promise<LeaderInvitation> => {
   console.log(`📝 [createInvitationFromBonus] Criando convite:`);
   console.log(`   - leader_id: ${leaderId} (tipo: ${typeof leaderId})`);
   console.log(`   - bonus_registration_id: ${bonusRegistrationId}`);
   console.log(`   - event_id: ${eventId}`);
+  console.log(`   - commission_id: ${commissionId || 'N/A'}`);
   
   try {
     // Verificar se o convite já existe
@@ -56,14 +59,15 @@ export const createInvitationFromBonus = async (
     
     const result = await query(
       `INSERT INTO leader_invitations (
-        leader_id, bonus_registration_id, event_id, status
-      ) VALUES ($1, $2, $3, 'available')
+        leader_id, bonus_registration_id, event_id, status, commission_id
+      ) VALUES ($1, $2, $3, 'available', $4)
       RETURNING *`,
-      [leaderId, bonusRegistrationId, eventId]
+      [leaderId, bonusRegistrationId, eventId, commissionId || null]
     );
 
     console.log(`✅ [createInvitationFromBonus] Convite criado com sucesso:`, result.rows[0].id);
     console.log(`   - leader_id salvo: ${result.rows[0].leader_id} (tipo: ${typeof result.rows[0].leader_id})`);
+    console.log(`   - commission_id salvo: ${result.rows[0].commission_id || 'N/A'}`);
     return result.rows[0] as LeaderInvitation;
   } catch (error: any) {
     console.error(`❌ Erro ao criar convite:`, error.message);
@@ -106,6 +110,7 @@ export const getAvailableInvitations = async (
     leader_id: row.leader_id,
     bonus_registration_id: row.bonus_registration_id,
     event_id: row.event_id,
+    commission_id: row.commission_id,
     runner_id: row.runner_id,
     runner_cpf: row.runner_cpf,
     status: row.status,
@@ -173,6 +178,7 @@ export const getLeaderInvitations = async (
     leader_id: row.leader_id,
     bonus_registration_id: row.bonus_registration_id,
     event_id: row.event_id,
+    commission_id: row.commission_id,
     runner_id: row.runner_id,
     runner_cpf: row.runner_cpf,
     status: row.status,
@@ -255,17 +261,44 @@ export const sendInvitationByCpf = async (
   }
 
   // Update invitation to sent status
-  await query(
+  // IMPORTANTE: Usar WHERE com verificação de status 'available' para evitar atualizar convites já enviados
+  console.log(`🔄 [sendInvitationByCpf] Atualizando convite ${invitationId} para status 'sent'`);
+  const updateResult = await query(
     `UPDATE leader_invitations 
      SET runner_id = $1, 
          runner_cpf = $2,
          status = 'sent',
          sent_at = NOW(),
          updated_at = NOW()
-     WHERE id = $3
+     WHERE id = $3 
+       AND leader_id = $4
+       AND status = 'available'
      RETURNING *`,
-    [runner.id, cleanCpf, invitationId]
+    [runner.id, cleanCpf, invitationId, leaderId]
   );
+  
+  if (updateResult.rows.length === 0) {
+    // Verificar se o convite existe mas já foi enviado
+    const checkInvitation = await query(
+      `SELECT status FROM leader_invitations WHERE id = $1 AND leader_id = $2`,
+      [invitationId, leaderId]
+    );
+    
+    if (checkInvitation.rows.length > 0) {
+      const currentStatus = checkInvitation.rows[0].status;
+      if (currentStatus !== 'available') {
+        throw new Error(`Convite já foi ${currentStatus === 'sent' ? 'enviado' : 'utilizado'}.`);
+      }
+    }
+    
+    throw new Error('Erro ao atualizar status do convite. Convite não encontrado ou já foi utilizado.');
+  }
+  
+  console.log(`✅ [sendInvitationByCpf] Convite ${invitationId} atualizado para status 'sent':`, {
+    id: updateResult.rows[0].id,
+    status: updateResult.rows[0].status,
+    runner_id: updateResult.rows[0].runner_id,
+  });
 
   // Transfer the bonus registration to the runner and update status
   await query(
