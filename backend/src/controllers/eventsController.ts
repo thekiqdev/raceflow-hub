@@ -130,7 +130,9 @@ export const getEvent = asyncHandler(async (req: AuthRequest, res: Response) => 
   }
 
   // Check permissions
-  if (event.status !== 'published') {
+  // Allow public access to published and finished events
+  // Finished events should be accessible because they appear on the results page
+  if (event.status !== 'published' && event.status !== 'finished') {
     if (!req.user) {
       res.status(403).json({
         success: false,
