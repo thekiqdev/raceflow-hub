@@ -40,6 +40,12 @@ export const createPasswordResetToken = async (userId: string): Promise<Password
  * Find a valid password reset token
  */
 export const findPasswordResetToken = async (token: string): Promise<PasswordResetToken | null> => {
+  console.log('🔍 [findPasswordResetToken] Buscando token:', {
+    tokenLength: token.length,
+    tokenPreview: token.substring(0, 10) + '...',
+    tokenType: typeof token,
+  });
+
   const result = await query(
     `SELECT * FROM password_reset_tokens
      WHERE token = $1
@@ -48,7 +54,34 @@ export const findPasswordResetToken = async (token: string): Promise<PasswordRes
     [token]
   );
 
+  console.log('📋 [findPasswordResetToken] Resultado da query:', {
+    found: result.rows.length > 0,
+    rowCount: result.rows.length,
+    tokenId: result.rows[0]?.id,
+    expiresAt: result.rows[0]?.expires_at,
+    usedAt: result.rows[0]?.used_at,
+    now: new Date().toISOString(),
+  });
+
   if (result.rows.length === 0) {
+    // Check if token exists but is expired or used
+    const checkResult = await query(
+      `SELECT * FROM password_reset_tokens WHERE token = $1`,
+      [token]
+    );
+    
+    if (checkResult.rows.length > 0) {
+      const existingToken = checkResult.rows[0];
+      console.log('⚠️ [findPasswordResetToken] Token encontrado mas inválido:', {
+        expiresAt: existingToken.expires_at,
+        usedAt: existingToken.used_at,
+        isExpired: new Date(existingToken.expires_at) <= new Date(),
+        isUsed: existingToken.used_at !== null,
+      });
+    } else {
+      console.log('❌ [findPasswordResetToken] Token não encontrado no banco');
+    }
+    
     return null;
   }
 

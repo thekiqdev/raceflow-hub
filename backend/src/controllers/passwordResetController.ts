@@ -57,11 +57,20 @@ export const requestPasswordResetController = asyncHandler(async (req: AuthReque
 
   const user = userResult.rows[0];
 
-  // Invalidate previous tokens for security
+  // Invalidate previous tokens for security (but not the one we're about to create)
   await invalidateUserTokens(user.id);
 
   // Create new reset token
   const resetToken = await createPasswordResetToken(user.id);
+  
+  console.log('📝 [requestPasswordResetController] Token criado:', {
+    tokenId: resetToken.id,
+    userId: resetToken.user_id,
+    tokenLength: resetToken.token.length,
+    tokenPreview: resetToken.token.substring(0, 10) + '...',
+    expiresAt: resetToken.expires_at,
+    createdAt: resetToken.created_at,
+  });
 
   // Get user name for email
   const userName = await getUserName(user.id) || 'Usuário';
@@ -175,7 +184,14 @@ export const resetPasswordController = asyncHandler(async (req: AuthRequest, res
  * Validate if a token is still valid (public endpoint)
  */
 export const validateTokenController = asyncHandler(async (req: AuthRequest, res: Response) => {
-  const { token } = req.query;
+  const tokenParam = req.query.token;
+  const token = typeof tokenParam === 'string' ? tokenParam : Array.isArray(tokenParam) ? (typeof tokenParam[0] === 'string' ? tokenParam[0] : null) : null;
+
+  console.log('🔍 [validateTokenController] Validando token:', {
+    token: token ? token.substring(0, 10) + '...' : 'null',
+    tokenLength: token ? token.length : 0,
+    tokenType: typeof token,
+  });
 
   if (!token || typeof token !== 'string') {
     res.status(400).json({
@@ -189,6 +205,7 @@ export const validateTokenController = asyncHandler(async (req: AuthRequest, res
   const resetToken = await findPasswordResetToken(token);
 
   if (!resetToken) {
+    console.log('❌ [validateTokenController] Token inválido ou expirado');
     res.json({
       success: false,
       valid: false,
@@ -197,6 +214,7 @@ export const validateTokenController = asyncHandler(async (req: AuthRequest, res
     return;
   }
 
+  console.log('✅ [validateTokenController] Token válido');
   res.json({
     success: true,
     valid: true,
