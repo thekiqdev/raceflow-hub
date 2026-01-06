@@ -9,6 +9,8 @@ import {
   CreateCustomerResult,
   CreatePaymentResult,
   PaymentStatusResult,
+  AsaasCreditCardData,
+  AsaasCreditCardHolderInfo,
 } from '../types/asaas.js';
 
 // Get Asaas configuration from environment
@@ -486,6 +488,183 @@ export const createPayment = async (
     }
 
     throw new Error(`Erro ao criar pagamento no Asaas: ${error.message}`);
+  }
+};
+
+/**
+ * Create credit card payment in Asaas
+ */
+export const createCreditCardPayment = async (
+  registrationId: string,
+  customerId: string,
+  paymentData: {
+    value: number;
+    dueDate: string; // YYYY-MM-DD
+    description: string;
+    externalReference?: string;
+  },
+  creditCard: AsaasCreditCardData,
+  creditCardHolderInfo: AsaasCreditCardHolderInfo
+): Promise<CreatePaymentResult> => {
+  const asaasClient = createAsaasClient();
+
+  try {
+    // Prepare credit card payment request
+    const paymentRequest: AsaasPaymentRequest = {
+      customer: customerId,
+      billingType: 'CREDIT_CARD',
+      value: paymentData.value,
+      dueDate: paymentData.dueDate,
+      description: paymentData.description,
+      externalReference: paymentData.externalReference || `REG-${registrationId}`,
+      installmentCount: 1,
+      installmentValue: paymentData.value,
+      // Credit card data
+      creditCard: {
+        holderName: creditCard.holderName,
+        number: creditCard.number, // Should be unmasked (numbers only)
+        expiryMonth: creditCard.expiryMonth, // MM format (01-12)
+        expiryYear: creditCard.expiryYear, // YYYY format
+        ccv: creditCard.ccv, // 3 or 4 digits
+      },
+      creditCardHolderInfo: {
+        name: creditCardHolderInfo.name,
+        email: creditCardHolderInfo.email,
+        cpfCnpj: creditCardHolderInfo.cpfCnpj, // Should be unmasked (numbers only)
+        postalCode: creditCardHolderInfo.postalCode, // Should be unmasked (numbers only)
+        addressNumber: creditCardHolderInfo.addressNumber,
+        addressComplement: creditCardHolderInfo.addressComplement,
+        phone: creditCardHolderInfo.phone, // Should be unmasked (numbers only)
+        mobilePhone: creditCardHolderInfo.mobilePhone, // Should be unmasked (numbers only)
+      },
+    };
+
+    console.log('💳 Criando pagamento com cartão de crédito no Asaas...', { 
+      registrationId, 
+      customerId, 
+      value: paymentData.value,
+      dueDate: paymentData.dueDate,
+      cardLast4: creditCard.number.slice(-4),
+      holderName: creditCard.holderName,
+    });
+
+    // Create payment in Asaas
+    const response = await asaasClient.post<AsaasPaymentResponse>('/payments', paymentRequest);
+    const asaasPayment = response.data;
+
+    console.log(`✅ Pagamento com cartão de crédito criado no Asaas:`, {
+      id: asaasPayment.id,
+      status: asaasPayment.status,
+      value: asaasPayment.value,
+      netValue: asaasPayment.netValue,
+      billingType: asaasPayment.billingType,
+      dateCreated: asaasPayment.dateCreated,
+    });
+
+    // Credit card payments can have different statuses:
+    // - CONFIRMED: Payment approved immediately
+    // - PENDING: Payment pending analysis
+    // - AWAITING_RISK_ANALYSIS: Payment awaiting risk analysis
+    // - Other statuses for declined/refunded payments
+
+    let creditCardToken: string | null = null;
+    
+    // Check if Asaas returned a credit card token for future use
+    // (This might be in the response or a separate field)
+    if ((asaasPayment as any).creditCardToken) {
+      creditCardToken = (asaasPayment as any).creditCardToken;
+      console.log('💳 Token de cartão de crédito recebido (para uso futuro)');
+    }
+
+    // Save payment to database
+    await query(
+      `INSERT INTO asaas_payments (
+        registration_id, asaas_payment_id, asaas_customer_id, value, net_value,
+        billing_type, status, due_date, payment_link, invoice_url, bank_slip_url,
+        external_reference, pix_qr_code_id, pix_qr_code
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+      [
+        registrationId,
+        asaasPayment.id,
+        customerId,
+        asaasPayment.value,
+        asaasPayment.netValue || null,
+        asaasPayment.billingType,
+        asaasPayment.status,
+        asaasPayment.dueDate,
+        asaasPayment.paymentLink || null,
+        asaasPayment.invoiceUrl || null,
+        asaasPayment.bankSlipUrl || null,
+        asaasPayment.externalReference || null,
+        null, // No PIX QR Code for credit card
+        null, // No PIX QR Code for credit card
+      ]
+    );
+
+    // Update registration with asaas_payment_id
+    await query(
+      'UPDATE registrations SET asaas_payment_id = $1 WHERE id = $2',
+      [asaasPayment.id, registrationId]
+    );
+
+    // Log payment status for monitoring
+    if (asaasPayment.status === 'CONFIRMED') {
+      console.log('✅ Pagamento com cartão de crédito APROVADO imediatamente');
+    } else if (asaasPayment.status === 'PENDING' || asaasPayment.status === 'AWAITING_RISK_ANALYSIS') {
+      console.log('⏳ Pagamento com cartão de crédito PENDENTE de análise');
+    } else {
+      console.log(`⚠️ Pagamento com cartão de crédito com status: ${asaasPayment.status}`);
+    }
+
+    return {
+      asaas_payment_id: asaasPayment.id,
+      payment_link: asaasPayment.paymentLink,
+      pix_qr_code: null, // No PIX QR Code for credit card
+      pix_qr_code_id: null, // No PIX QR Code for credit card
+      status: asaasPayment.status,
+      value: asaasPayment.value,
+      net_value: asaasPayment.netValue,
+      due_date: asaasPayment.dueDate,
+      credit_card_token: creditCardToken || undefined,
+    };
+  } catch (error: any) {
+    console.error('❌ Erro ao criar pagamento com cartão de crédito no Asaas:', error);
+    
+    if (error.response?.data) {
+      const errorData = error.response.data;
+      if (errorData.errors) {
+        const errorMessages = errorData.errors.map((e: any) => e.description).join(', ');
+        
+        // Check if error is related to invalid customer
+        const isInvalidCustomer = errorMessages.toLowerCase().includes('customer') && 
+                                  (errorMessages.toLowerCase().includes('inválido') || 
+                                   errorMessages.toLowerCase().includes('não informado') ||
+                                   errorMessages.toLowerCase().includes('not found'));
+        
+        if (isInvalidCustomer) {
+          const invalidCustomerError: any = new Error(`Customer inválido ou não encontrado no Asaas: ${errorMessages}`);
+          invalidCustomerError.isInvalidCustomer = true;
+          invalidCustomerError.customerId = customerId;
+          throw invalidCustomerError;
+        }
+
+        // Check for credit card specific errors
+        const isCardError = errorMessages.toLowerCase().includes('cartão') || 
+                           errorMessages.toLowerCase().includes('card') ||
+                           errorMessages.toLowerCase().includes('credit') ||
+                           errorMessages.toLowerCase().includes('inválido') ||
+                           errorMessages.toLowerCase().includes('negado') ||
+                           errorMessages.toLowerCase().includes('declined');
+        
+        if (isCardError) {
+          throw new Error(`Erro no cartão de crédito: ${errorMessages}`);
+        }
+        
+        throw new Error(`Erro ao criar pagamento com cartão de crédito no Asaas: ${errorMessages}`);
+      }
+    }
+
+    throw new Error(`Erro ao criar pagamento com cartão de crédito no Asaas: ${error.message}`);
   }
 };
 

@@ -74,6 +74,26 @@ export interface AsaasCustomerResponse {
   observations?: string | null;
 }
 
+// Credit Card Types (for Asaas Credit Card Payment)
+export interface AsaasCreditCardData {
+  holderName: string;
+  number: string;
+  expiryMonth: string; // MM (01-12)
+  expiryYear: string; // YYYY
+  ccv: string; // 3 or 4 digits
+}
+
+export interface AsaasCreditCardHolderInfo {
+  name: string;
+  email: string;
+  cpfCnpj: string;
+  postalCode: string;
+  addressNumber: string;
+  addressComplement?: string;
+  phone: string;
+  mobilePhone?: string;
+}
+
 // Asaas Payment Types
 export interface AsaasPaymentRequest {
   customer: string; // asaas_customer_id
@@ -84,6 +104,9 @@ export interface AsaasPaymentRequest {
   externalReference?: string;
   installmentCount?: number;
   installmentValue?: number;
+  // For credit card payments
+  creditCard?: AsaasCreditCardData;
+  creditCardHolderInfo?: AsaasCreditCardHolderInfo;
 }
 
 export interface AsaasPaymentResponse {
@@ -180,6 +203,7 @@ export interface CreatePaymentResult {
   value: number;
   net_value?: number;
   due_date: string;
+  credit_card_token?: string | null; // Token for future transactions
 }
 
 export interface PaymentStatusResult {

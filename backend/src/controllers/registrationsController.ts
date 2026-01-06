@@ -14,10 +14,63 @@ import { asyncHandler } from '../middleware/errorHandler.js';
 import { hasRole } from '../services/userRolesService.js';
 import { getEventById } from '../services/eventsService.js';
 import { getCategoryById } from '../services/categoriesService.js';
-import { createCustomer, createPayment, getPaymentByRegistrationId, validateOrRecreateCustomer } from '../services/asaasService.js';
+import { createCustomer, createPayment, createCreditCardPayment, getPaymentByRegistrationId, validateOrRecreateCustomer } from '../services/asaasService.js';
 import { getProfileByUserId } from '../services/profilesService.js';
 import { query } from '../config/database.js';
 import { sendNotificationSafely, getUserEmail, getUserName, getOrganizerEmail } from '../services/notificationService.js';
+import { z } from 'zod';
+
+// Schema for credit card data validation
+const creditCardDataSchema = z.object({
+  holderName: z.string().min(3, 'Nome do titular é obrigatório'),
+  number: z.string().regex(/^\d{13,19}$/, 'Número do cartão inválido (deve ter entre 13 e 19 dígitos)'),
+  expiryMonth: z.string().regex(/^(0[1-9]|1[0-2])$/, 'Mês de validade inválido (01-12)'),
+  expiryYear: z.string().regex(/^\d{4}$/, 'Ano de validade inválido (YYYY)'),
+  ccv: z.string().regex(/^\d{3,4}$/, 'CVV inválido (deve ter 3 ou 4 dígitos)'),
+});
+
+// Schema for credit card holder info validation
+const creditCardHolderInfoSchema = z.object({
+  name: z.string().min(3, 'Nome completo é obrigatório'),
+  email: z.string().email('E-mail inválido'),
+  cpfCnpj: z.string().regex(/^\d{11,14}$/, 'CPF/CNPJ inválido'),
+  postalCode: z.string().regex(/^\d{8}$/, 'CEP inválido (deve ter 8 dígitos)'),
+  addressNumber: z.string().min(1, 'Número do endereço é obrigatório'),
+  addressComplement: z.string().optional(),
+  phone: z.string().min(10, 'Telefone é obrigatório'),
+  mobilePhone: z.string().optional(),
+});
+
+// Schema for create registration request
+const createRegistrationSchema = z.object({
+  event_id: z.string().uuid('ID do evento inválido'),
+  runner_id: z.string().uuid('ID do corredor inválido').optional(),
+  category_id: z.string().uuid('ID da categoria inválido'),
+  kit_id: z.string().uuid('ID do kit inválido').optional(),
+  payment_method: z.enum(['pix', 'credit_card', 'boleto']).optional(),
+  total_amount: z.number().min(0, 'Valor total deve ser maior ou igual a zero'),
+  coupon_code: z.string().optional(),
+  credit_card: creditCardDataSchema.optional(),
+  credit_card_holder_info: creditCardHolderInfoSchema.optional(),
+}).refine((data) => {
+  // If payment_method is 'credit_card', credit_card and credit_card_holder_info are required
+  if (data.payment_method === 'credit_card') {
+    return data.credit_card !== undefined && data.credit_card_holder_info !== undefined;
+  }
+  return true;
+}, {
+  message: 'Dados do cartão de crédito são obrigatórios quando o método de pagamento é cartão de crédito',
+  path: ['credit_card'],
+}).refine((data) => {
+  // If payment_method is not 'credit_card', credit_card and credit_card_holder_info should not be provided
+  if (data.payment_method !== 'credit_card') {
+    return data.credit_card === undefined && data.credit_card_holder_info === undefined;
+  }
+  return true;
+}, {
+  message: 'Dados do cartão de crédito não devem ser fornecidos quando o método de pagamento não é cartão de crédito',
+  path: ['credit_card'],
+});
 
 /**
  * Helper function to send registration notifications
@@ -272,16 +325,19 @@ export const createRegistrationController = asyncHandler(async (req: AuthRequest
     return;
   }
 
-  const { event_id, category_id } = req.body;
-
-  if (!event_id || !category_id) {
+  // Validate request body with Zod
+  const validation = createRegistrationSchema.safeParse(req.body);
+  if (!validation.success) {
     res.status(400).json({
       success: false,
-      error: 'Missing required fields',
-      message: 'event_id and category_id are required',
+      error: 'Validation error',
+      message: validation.error.errors[0].message,
+      details: validation.error.errors,
     });
     return;
   }
+
+  const { event_id, category_id } = validation.data;
 
   // ETAPA 7.1: Validate if event is open for registrations
   const event = await getEventById(event_id);
@@ -373,9 +429,9 @@ export const createRegistrationController = asyncHandler(async (req: AuthRequest
   }
 
   const registrationData = {
-    ...req.body,
+    ...validation.data,
     registered_by: req.user.id,
-    runner_id: req.body.runner_id || req.user.id,
+    runner_id: validation.data.runner_id || req.user.id,
   };
 
   console.log('📝 Dados recebidos para criação de inscrição:', {
@@ -441,35 +497,99 @@ export const createRegistrationController = asyncHandler(async (req: AuthRequest
       dueDate.setDate(dueDate.getDate() + 3);
       const dueDateString = dueDate.toISOString().split('T')[0]; // YYYY-MM-DD
 
+      // Get payment method from registration data (default to 'pix' if not specified)
+      const paymentMethod = registrationData.payment_method || 'pix';
+
       // Create payment in Asaas
       let paymentResult;
       try {
-        paymentResult = await createPayment(
-          registration.id,
-          asaasCustomerId,
-          {
-            value: registration.total_amount,
-            dueDate: dueDateString,
-            description: `Inscrição - ${event.title}`,
-            billingType: 'PIX', // Default to PIX
-            externalReference: registration.confirmation_code || `REG-${registration.id}`,
+        if (paymentMethod === 'credit_card') {
+          // Credit card payment
+          if (!validation.data.credit_card || !validation.data.credit_card_holder_info) {
+            throw new Error('Dados do cartão de crédito são obrigatórios');
           }
-        );
 
-        paymentData = {
-          asaas_payment_id: paymentResult.asaas_payment_id,
-          pix_qr_code: paymentResult.pix_qr_code,
-          pix_qr_code_id: paymentResult.pix_qr_code_id,
-          payment_link: paymentResult.payment_link,
-          status: paymentResult.status,
-          due_date: paymentResult.due_date,
-          // Se não temos QR Code mas temos payment_link, podemos usar o link
-          // O frontend pode redirecionar ou mostrar o link como alternativa
-        };
+          console.log('💳 Criando pagamento com cartão de crédito...');
+          
+          paymentResult = await createCreditCardPayment(
+            registration.id,
+            asaasCustomerId,
+            {
+              value: registration.total_amount,
+              dueDate: dueDateString,
+              description: `Inscrição - ${event.title}`,
+              externalReference: registration.confirmation_code || `REG-${registration.id}`,
+            },
+            validation.data.credit_card,
+            validation.data.credit_card_holder_info
+          );
+
+          // Handle credit card payment status
+          if (paymentResult.status === 'CONFIRMED') {
+            // Payment approved immediately - update registration status
+            console.log('✅ Pagamento com cartão APROVADO imediatamente');
+            await query(
+              'UPDATE registrations SET status = $1, payment_status = $2 WHERE id = $3',
+              ['confirmed', 'paid', registration.id]
+            );
+            registration.status = 'confirmed';
+            registration.payment_status = 'paid';
+          } else if (paymentResult.status === 'PENDING' || paymentResult.status === 'AWAITING_RISK_ANALYSIS') {
+            // Payment pending analysis - keep registration as pending
+            console.log('⏳ Pagamento com cartão PENDENTE de análise');
+            await query(
+              'UPDATE registrations SET payment_status = $1 WHERE id = $2',
+              ['pending', registration.id]
+            );
+            registration.payment_status = 'pending';
+          } else {
+            // Payment declined or other status - keep as pending but log warning
+            console.log(`⚠️ Pagamento com cartão com status: ${paymentResult.status}`);
+            await query(
+              'UPDATE registrations SET payment_status = $1 WHERE id = $2',
+              ['pending', registration.id]
+            );
+            registration.payment_status = 'pending';
+          }
+
+          paymentData = {
+            asaas_payment_id: paymentResult.asaas_payment_id,
+            payment_link: paymentResult.payment_link,
+            status: paymentResult.status,
+            due_date: paymentResult.due_date,
+            payment_method: 'credit_card',
+          };
+        } else {
+          // PIX payment (default)
+          console.log('📱 Criando pagamento PIX...');
+          
+          paymentResult = await createPayment(
+            registration.id,
+            asaasCustomerId,
+            {
+              value: registration.total_amount,
+              dueDate: dueDateString,
+              description: `Inscrição - ${event.title}`,
+              billingType: 'PIX',
+              externalReference: registration.confirmation_code || `REG-${registration.id}`,
+            }
+          );
+
+          paymentData = {
+            asaas_payment_id: paymentResult.asaas_payment_id,
+            pix_qr_code: paymentResult.pix_qr_code,
+            pix_qr_code_id: paymentResult.pix_qr_code_id,
+            payment_link: paymentResult.payment_link,
+            status: paymentResult.status,
+            due_date: paymentResult.due_date,
+            payment_method: 'pix',
+          };
+        }
 
         console.log('✅ Pagamento criado no Asaas:', {
           asaas_payment_id: paymentData.asaas_payment_id,
           status: paymentData.status,
+          payment_method: paymentData.payment_method,
           has_qr_code: !!paymentData.pix_qr_code,
           qr_code_id: paymentData.pix_qr_code_id
         });
@@ -488,31 +608,70 @@ export const createRegistrationController = asyncHandler(async (req: AuthRequest
           const customerResult = await createCustomer(runnerId, customerData);
           const newAsaasCustomerId = customerResult.asaas_customer_id;
           
-          // Retry payment with new customer
-          paymentResult = await createPayment(
-            registration.id,
-            newAsaasCustomerId,
-            {
-              value: registration.total_amount,
-              dueDate: dueDateString,
-              description: `Inscrição - ${event.title}`,
-              billingType: 'PIX',
-              externalReference: registration.confirmation_code || `REG-${registration.id}`,
+          // Retry payment with new customer (same method as before)
+          if (paymentMethod === 'credit_card') {
+            if (!validation.data.credit_card || !validation.data.credit_card_holder_info) {
+              throw new Error('Dados do cartão de crédito são obrigatórios');
             }
-          );
 
-          paymentData = {
-            asaas_payment_id: paymentResult.asaas_payment_id,
-            pix_qr_code: paymentResult.pix_qr_code,
-            pix_qr_code_id: paymentResult.pix_qr_code_id,
-            payment_link: paymentResult.payment_link,
-            status: paymentResult.status,
-            due_date: paymentResult.due_date,
-          };
+            paymentResult = await createCreditCardPayment(
+              registration.id,
+              newAsaasCustomerId,
+              {
+                value: registration.total_amount,
+                dueDate: dueDateString,
+                description: `Inscrição - ${event.title}`,
+                externalReference: registration.confirmation_code || `REG-${registration.id}`,
+              },
+              validation.data.credit_card,
+              validation.data.credit_card_holder_info
+            );
+
+            // Handle credit card payment status
+            if (paymentResult.status === 'CONFIRMED') {
+              await query(
+                'UPDATE registrations SET status = $1, payment_status = $2 WHERE id = $3',
+                ['confirmed', 'paid', registration.id]
+              );
+              registration.status = 'confirmed';
+              registration.payment_status = 'paid';
+            }
+
+            paymentData = {
+              asaas_payment_id: paymentResult.asaas_payment_id,
+              payment_link: paymentResult.payment_link,
+              status: paymentResult.status,
+              due_date: paymentResult.due_date,
+              payment_method: 'credit_card',
+            };
+          } else {
+            paymentResult = await createPayment(
+              registration.id,
+              newAsaasCustomerId,
+              {
+                value: registration.total_amount,
+                dueDate: dueDateString,
+                description: `Inscrição - ${event.title}`,
+                billingType: 'PIX',
+                externalReference: registration.confirmation_code || `REG-${registration.id}`,
+              }
+            );
+
+            paymentData = {
+              asaas_payment_id: paymentResult.asaas_payment_id,
+              pix_qr_code: paymentResult.pix_qr_code,
+              pix_qr_code_id: paymentResult.pix_qr_code_id,
+              payment_link: paymentResult.payment_link,
+              status: paymentResult.status,
+              due_date: paymentResult.due_date,
+              payment_method: 'pix',
+            };
+          }
 
           console.log('✅ Pagamento criado no Asaas após recriar customer:', {
             asaas_payment_id: paymentData.asaas_payment_id,
             status: paymentData.status,
+            payment_method: paymentData.payment_method,
             has_qr_code: !!paymentData.pix_qr_code,
             qr_code_id: paymentData.pix_qr_code_id
           });

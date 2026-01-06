@@ -1,6 +1,26 @@
 import { query } from '../config/database.js';
 import { RegistrationStatus, PaymentStatus, PaymentMethod } from '../types/index.js';
 
+// Credit Card Data Types
+export interface CreditCardData {
+  holderName: string;
+  number: string;
+  expiryMonth: string; // MM (01-12)
+  expiryYear: string; // YYYY
+  ccv: string; // 3 or 4 digits
+}
+
+export interface CreditCardHolderInfo {
+  name: string;
+  email: string;
+  cpfCnpj: string;
+  postalCode: string;
+  addressNumber: string;
+  addressComplement?: string;
+  phone: string;
+  mobilePhone?: string;
+}
+
 export interface CreateRegistrationData {
   event_id: string;
   runner_id: string;
@@ -10,6 +30,9 @@ export interface CreateRegistrationData {
   payment_method?: PaymentMethod;
   total_amount: number;
   coupon_code?: string;
+  // Credit card data (only when payment_method is 'credit_card')
+  credit_card?: CreditCardData;
+  credit_card_holder_info?: CreditCardHolderInfo;
 }
 
 export interface UpdateRegistrationData {

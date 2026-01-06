@@ -53,6 +53,7 @@ export const handleWebhook = asyncHandler(async (req: Request, res: Response) =>
   const asaasPaymentId = payment.id;
 
   // Enhanced logging
+  const isCreditCard = payment.billingType === 'CREDIT_CARD';
   console.log('📥 Webhook recebido do Asaas:', {
     event: event,
     paymentId: asaasPaymentId,
@@ -62,7 +63,22 @@ export const handleWebhook = asyncHandler(async (req: Request, res: Response) =>
     billingType: payment.billingType,
     invoiceNumber: payment.invoiceNumber,
     paymentDate: payment.paymentDate,
+    isCreditCard: isCreditCard,
   });
+
+  // Log specific information for credit card payments
+  if (isCreditCard) {
+    console.log('💳 ============================================');
+    console.log('💳 WEBHOOK DE PAGAMENTO COM CARTÃO DE CRÉDITO');
+    console.log('💳 ============================================');
+    console.log('📋 Detalhes do pagamento:', {
+      paymentId: asaasPaymentId,
+      status: payment.status,
+      event: event,
+      value: payment.value,
+      externalReference: payment.externalReference,
+    });
+  }
 
   // Check if this is a transfer request payment
   const isTransferPayment = payment.externalReference?.startsWith('TRANSFER-');
@@ -431,9 +447,20 @@ export const handleWebhook = asyncHandler(async (req: Request, res: Response) =>
         asaasPaymentId,
       ]
     );
-    console.log(`✅ Tabela asaas_payments atualizada para payment: ${asaasPaymentId}`);
+    if (isCreditCard) {
+      console.log(`✅ Tabela asaas_payments atualizada para pagamento com CARTÃO DE CRÉDITO: ${asaasPaymentId}`);
+      console.log(`💳 Status atualizado: ${payment.status}`);
+      if (payment.paymentDate) {
+        console.log(`💳 Data do pagamento: ${payment.paymentDate}`);
+      }
+    } else {
+      console.log(`✅ Tabela asaas_payments atualizada para payment: ${asaasPaymentId}`);
+    }
   } catch (error: any) {
     console.error('❌ Erro ao atualizar asaas_payments:', error);
+    if (isCreditCard) {
+      console.error('💳 Erro ao atualizar pagamento com cartão de crédito');
+    }
   }
 
   // Process event based on type
@@ -441,12 +468,13 @@ export const handleWebhook = asyncHandler(async (req: Request, res: Response) =>
     console.log(`🔄 ============================================`);
     console.log(`🔄 PROCESSANDO WEBHOOK PARA INSCRIÇÃO ${registrationId}`);
     console.log(`🔄 ============================================`);
-    console.log(`📋 Detalhes:`, {
+      console.log(`📋 Detalhes:`, {
       event,
       paymentStatus: payment.status,
       asaasPaymentId,
       externalReference: payment.externalReference,
       invoiceNumber: payment.invoiceNumber,
+      billingType: payment.billingType,
     });
     
     try {
@@ -457,7 +485,7 @@ export const handleWebhook = asyncHandler(async (req: Request, res: Response) =>
       );
       console.log(`📊 Status ANTES do processamento:`, beforeResult.rows[0]);
       
-      await processWebhookEvent(event, payment.status, registrationId);
+      await processWebhookEvent(event, payment.status, registrationId, payment.billingType);
       
       // Verify if the update was successful
       const verifyResult = await query(
@@ -552,9 +580,37 @@ export const handleWebhook = asyncHandler(async (req: Request, res: Response) =>
 async function processWebhookEvent(
   event: AsaasWebhookEventType,
   paymentStatus: AsaasPaymentStatus,
-  registrationId: string
+  registrationId: string,
+  billingType?: string
 ): Promise<void> {
-  console.log(`🔄 Processando evento: ${event} para inscrição: ${registrationId}`);
+    // Get payment billing type and method for logging
+    const paymentInfo = await query(
+      `SELECT ap.billing_type, r.payment_method 
+       FROM asaas_payments ap
+       JOIN registrations r ON ap.registration_id = r.id
+       WHERE r.id = $1
+       LIMIT 1`,
+      [registrationId]
+    );
+    
+    const paymentBillingType = billingType || paymentInfo.rows[0]?.billing_type || null;
+    const paymentMethod = paymentInfo.rows[0]?.payment_method || null;
+    const isCreditCardPayment = paymentBillingType === 'CREDIT_CARD' || paymentMethod === 'credit_card';
+    
+    console.log(`🔄 Processando evento: ${event} para inscrição: ${registrationId}`, {
+      billingType: paymentBillingType,
+      paymentMethod: paymentMethod,
+      isCreditCard: isCreditCardPayment,
+      paymentStatus: paymentStatus,
+    });
+    
+    if (isCreditCardPayment) {
+      console.log('💳 ============================================');
+      console.log('💳 PROCESSANDO WEBHOOK DE CARTÃO DE CRÉDITO');
+      console.log('💳 ============================================');
+      console.log(`💳 Status do pagamento: ${paymentStatus}`);
+      console.log(`💳 Evento: ${event}`);
+    }
 
   switch (event) {
     case 'PAYMENT_CONFIRMED':
@@ -568,7 +624,13 @@ async function processWebhookEvent(
          WHERE id = $1`,
         [registrationId]
       );
-      console.log(`✅ Inscrição ${registrationId} confirmada após pagamento`);
+      
+      if (isCreditCardPayment) {
+        console.log(`✅ Inscrição ${registrationId} confirmada após pagamento com CARTÃO DE CRÉDITO`);
+        console.log(`💳 Status do pagamento: ${paymentStatus}`);
+      } else {
+        console.log(`✅ Inscrição ${registrationId} confirmada após pagamento`);
+      }
       
       // Send payment confirmation notifications
       try {
@@ -595,8 +657,31 @@ async function processWebhookEvent(
               ? `R$ ${parseFloat(registration.total_amount).toFixed(2).replace('.', ',')}`
               : 'Gratuito';
 
-            // Determine payment method (default to PIX for Asaas)
-            const paymentMethod = 'PIX';
+            // Determine payment method from registration or payment billing type
+            const registrationPaymentMethod = await query(
+              'SELECT payment_method FROM registrations WHERE id = $1',
+              [registrationId]
+            );
+            let paymentMethod = 'PIX'; // Default
+            if (registrationPaymentMethod.rows.length > 0) {
+              const method = registrationPaymentMethod.rows[0].payment_method;
+              if (method === 'credit_card') {
+                paymentMethod = 'Cartão de Crédito';
+              } else if (method === 'pix') {
+                paymentMethod = 'PIX';
+              } else if (method === 'boleto') {
+                paymentMethod = 'Boleto';
+              }
+            } else {
+              // Fallback: check billing type from payment
+              if (payment.billingType === 'CREDIT_CARD') {
+                paymentMethod = 'Cartão de Crédito';
+              }
+            }
+            
+            if (isCreditCard) {
+              console.log('💳 Método de pagamento identificado: Cartão de Crédito');
+            }
 
             if (runnerEmail) {
               // Send payment_received notification
@@ -772,6 +857,11 @@ async function processWebhookEvent(
       if (paymentStatus === 'CONFIRMED' || paymentStatus === 'RECEIVED') {
         newPaymentStatus = 'paid';
         newStatus = 'confirmed'; // ✅ Corrigido: atualizar status da inscrição
+        
+        if (isCreditCardPayment) {
+          console.log(`💳 Pagamento com CARTÃO DE CRÉDITO confirmado - atualizando inscrição ${registrationId}`);
+          console.log(`💳 Status: ${paymentStatus} -> payment_status: ${newPaymentStatus}, status: ${newStatus}`);
+        }
         
         // Check for commission and invitation bonuses after payment confirmation
         try {
