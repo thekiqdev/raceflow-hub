@@ -312,16 +312,20 @@ export const validateTokenController = asyncHandler(async (req: AuthRequest, res
   if (!resetToken) {
     res.json({
       success: false,
-      valid: false,
-      message: 'Token inválido ou expirado',
+      data: {
+        valid: false,
+        message: 'Token inválido ou expirado',
+      },
     });
     return;
   }
 
   res.json({
     success: true,
-    valid: true,
-    message: 'Token válido',
+    data: {
+      valid: true,
+      message: 'Token válido',
+    },
   });
 });
 
