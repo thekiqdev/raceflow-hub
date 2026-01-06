@@ -23,32 +23,25 @@ export const generateResetToken = (): string => {
  */
 export const createPasswordResetToken = async (userId: string): Promise<PasswordResetToken> => {
   const token = generateResetToken();
-  const expiresAt = new Date();
-  expiresAt.setMinutes(expiresAt.getMinutes() + 30); // 30 minutes from now
-
-  console.log('🔑 [createPasswordResetToken] Criando token:', {
-    userId,
-    tokenLength: token.length,
-    tokenPreview: token.substring(0, 10) + '...',
-    expiresAt: expiresAt.toISOString(),
-    now: new Date().toISOString(),
-    minutesUntilExpiry: 30,
-  });
-
+  
+  // Use PostgreSQL NOW() + INTERVAL to ensure timezone consistency
   const result = await query(
     `INSERT INTO password_reset_tokens (user_id, token, expires_at)
-     VALUES ($1, $2, $3)
+     VALUES ($1, $2, NOW() + INTERVAL '30 minutes')
      RETURNING *`,
-    [userId, token, expiresAt]
+    [userId, token]
   );
 
   const createdToken = result.rows[0] as PasswordResetToken;
   
-  console.log('✅ [createPasswordResetToken] Token criado no banco:', {
+  console.log('🔑 [createPasswordResetToken] Token criado:', {
     id: createdToken.id,
-    tokenLength: createdToken.token.length,
+    userId,
+    tokenLength: token.length,
+    tokenPreview: token.substring(0, 10) + '...',
     expiresAt: createdToken.expires_at,
     createdAt: createdToken.created_at,
+    nowInDB: (await query('SELECT NOW() as now', [])).rows[0].now,
   });
 
   return createdToken;
@@ -61,26 +54,36 @@ export const findPasswordResetToken = async (token: string): Promise<PasswordRes
   // Trim and clean token
   const cleanToken = token.trim();
   
-  console.log('🔍 Buscando token:', {
+  // Get current time from database for accurate comparison
+  const nowResult = await query('SELECT NOW() as now', []);
+  const dbNow = nowResult.rows[0].now;
+  
+  console.log('🔍 [findPasswordResetToken] Buscando token:', {
     tokenLength: cleanToken.length,
     tokenPreview: cleanToken.substring(0, 10) + '...',
-    now: new Date().toISOString(),
+    dbNow: dbNow,
   });
   
   const result = await query(
-    `SELECT * FROM password_reset_tokens
+    `SELECT *, 
+            (expires_at > NOW()) as is_not_expired,
+            (NOW() - created_at) as age,
+            (expires_at - NOW()) as time_remaining
+     FROM password_reset_tokens
      WHERE token = $1
-       AND expires_at > NOW()
        AND used_at IS NULL`,
     [cleanToken]
   );
 
-  console.log('🔍 Resultado da busca:', {
+  console.log('🔍 [findPasswordResetToken] Resultado da busca:', {
     found: result.rows.length > 0,
     rowCount: result.rows.length,
     ifFound: result.rows.length > 0 ? {
       id: result.rows[0].id,
       expiresAt: result.rows[0].expires_at,
+      isNotExpired: result.rows[0].is_not_expired,
+      age: result.rows[0].age,
+      timeRemaining: result.rows[0].time_remaining,
       usedAt: result.rows[0].used_at,
     } : null,
   });
@@ -88,7 +91,10 @@ export const findPasswordResetToken = async (token: string): Promise<PasswordRes
   if (result.rows.length === 0) {
     // Debug: check if token exists but is expired or used
     const debugResult = await query(
-      `SELECT id, expires_at, used_at, created_at
+      `SELECT id, expires_at, used_at, created_at,
+              (expires_at > NOW()) as is_not_expired,
+              (NOW() - created_at) as age,
+              (expires_at - NOW()) as time_remaining
        FROM password_reset_tokens
        WHERE token = $1`,
       [cleanToken]
@@ -96,22 +102,48 @@ export const findPasswordResetToken = async (token: string): Promise<PasswordRes
     
     if (debugResult.rows.length > 0) {
       const debugRow = debugResult.rows[0];
-      console.log('⚠️ Token encontrado mas inválido:', {
+      console.log('⚠️ [findPasswordResetToken] Token encontrado mas inválido:', {
         expiresAt: debugRow.expires_at,
-        now: new Date(),
-        isExpired: new Date(debugRow.expires_at) <= new Date(),
+        dbNow: dbNow,
+        isNotExpired: debugRow.is_not_expired,
+        age: debugRow.age,
+        timeRemaining: debugRow.time_remaining,
         usedAt: debugRow.used_at,
         isUsed: debugRow.used_at !== null,
         createdAt: debugRow.created_at,
       });
     } else {
-      console.log('❌ Token não encontrado no banco de dados');
+      console.log('❌ [findPasswordResetToken] Token não encontrado no banco de dados');
     }
     
     return null;
   }
 
-  return result.rows[0] as PasswordResetToken;
+  const tokenRow = result.rows[0];
+  
+  // Check expiration using database comparison
+  if (!tokenRow.is_not_expired) {
+    console.log('❌ [findPasswordResetToken] Token expirado:', {
+      expiresAt: tokenRow.expires_at,
+      dbNow: dbNow,
+      timeRemaining: tokenRow.time_remaining,
+    });
+    return null;
+  }
+
+  console.log('✅ [findPasswordResetToken] Token válido encontrado:', {
+    id: tokenRow.id,
+    timeRemaining: tokenRow.time_remaining,
+  });
+
+  return {
+    id: tokenRow.id,
+    user_id: tokenRow.user_id,
+    token: tokenRow.token,
+    expires_at: tokenRow.expires_at,
+    used_at: tokenRow.used_at,
+    created_at: tokenRow.created_at,
+  } as PasswordResetToken;
 };
 
 /**
