@@ -61,6 +61,7 @@ export const findPasswordResetToken = async (token: string): Promise<PasswordRes
   console.log('🔍 [findPasswordResetToken] Buscando token:', {
     tokenLength: cleanToken.length,
     tokenPreview: cleanToken.substring(0, 10) + '...',
+    fullToken: cleanToken, // Log full token for debugging
     dbNow: dbNow,
   });
   
@@ -76,6 +77,30 @@ export const findPasswordResetToken = async (token: string): Promise<PasswordRes
        AND used_at IS NULL`,
     [cleanToken]
   );
+
+  // Also check all tokens (including used) for debugging
+  const allTokensResult = await query(
+    `SELECT id, used_at, expires_at, created_at,
+            (expires_at > NOW()) as is_not_expired,
+            EXTRACT(EPOCH FROM (expires_at - NOW())) as seconds_remaining
+     FROM password_reset_tokens
+     WHERE token = $1`,
+    [cleanToken]
+  );
+
+  if (allTokensResult.rows.length > 0 && result.rows.length === 0) {
+    console.log('⚠️ [findPasswordResetToken] Token encontrado mas está marcado como usado:', {
+      count: allTokensResult.rows.length,
+      tokens: allTokensResult.rows.map(row => ({
+        id: row.id,
+        usedAt: row.used_at,
+        isUsed: row.used_at !== null,
+        expiresAt: row.expires_at,
+        isNotExpired: row.is_not_expired,
+        secondsRemaining: row.seconds_remaining,
+      })),
+    });
+  }
 
   console.log('🔍 [findPasswordResetToken] Resultado da busca:', {
     found: result.rows.length > 0,

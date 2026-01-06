@@ -60,25 +60,51 @@ export const requestPasswordResetController = asyncHandler(async (req: AuthReque
   // Create new reset token FIRST
   const resetToken = await createPasswordResetToken(user.id);
   
-  console.log('🔑 Token criado:', {
+  console.log('🔑 [requestPasswordResetController] Token criado:', {
     tokenId: resetToken.id,
     tokenLength: resetToken.token.length,
     tokenPreview: resetToken.token.substring(0, 10) + '...',
     expiresAt: resetToken.expires_at,
     userId: user.id,
+    tokenValue: resetToken.token, // Log full token for debugging
   });
 
   // Then invalidate previous tokens (excluding the one we just created)
-  await query(
+  const invalidateResult = await query(
     `UPDATE password_reset_tokens
      SET used_at = NOW()
      WHERE user_id = $1
        AND used_at IS NULL
-       AND id != $2`,
+       AND id != $2
+     RETURNING id`,
     [user.id, resetToken.id]
   );
   
-  console.log('✅ Tokens anteriores invalidados (exceto o novo)');
+  console.log('✅ [requestPasswordResetController] Tokens anteriores invalidados:', {
+    count: invalidateResult.rows.length,
+    invalidatedIds: invalidateResult.rows.map(r => r.id),
+    newTokenId: resetToken.id,
+  });
+
+  // Verify the new token is still valid
+  const verifyResult = await query(
+    `SELECT id, used_at, expires_at, (expires_at > NOW()) as is_valid
+     FROM password_reset_tokens
+     WHERE id = $1`,
+    [resetToken.id]
+  );
+  
+  if (verifyResult.rows.length > 0) {
+    const verified = verifyResult.rows[0];
+    console.log('✅ [requestPasswordResetController] Verificação do novo token:', {
+      id: verified.id,
+      usedAt: verified.used_at,
+      expiresAt: verified.expires_at,
+      isValid: verified.is_valid,
+    });
+  } else {
+    console.error('❌ [requestPasswordResetController] ERRO: Novo token não encontrado após invalidação!');
+  }
 
   // Get user name for email
   const userName = await getUserName(user.id) || 'Usuário';

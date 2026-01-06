@@ -44,14 +44,43 @@ export const resetPassword = async (data: ResetPasswordData) => {
  * Validate reset token
  */
 export const validateResetToken = async (token: string): Promise<ValidateTokenResponse> => {
-  const response = await apiClient.get<ValidateTokenResponse>(`/auth/password-reset/validate-token?token=${encodeURIComponent(token)}`);
-  if (response.success && response.data) {
-    return response.data;
+  // Trim and clean token
+  const cleanToken = token.trim();
+  
+  console.log('🔍 [validateResetToken] Validando token:', {
+    originalLength: token.length,
+    cleanLength: cleanToken.length,
+    originalPreview: token.substring(0, 20) + '...',
+    cleanPreview: cleanToken.substring(0, 20) + '...',
+    encoded: encodeURIComponent(cleanToken).substring(0, 20) + '...',
+  });
+  
+  try {
+    const response = await apiClient.get<ValidateTokenResponse>(`/auth/password-reset/validate-token?token=${encodeURIComponent(cleanToken)}`);
+    
+    console.log('🔍 [validateResetToken] Resposta da API:', {
+      success: response.success,
+      valid: response.data?.valid,
+      message: response.data?.message,
+      error: response.error,
+    });
+    
+    if (response.success && response.data) {
+      return response.data;
+    }
+    
+    return {
+      success: false,
+      valid: false,
+      message: response.error || 'Token inválido',
+    };
+  } catch (error: any) {
+    console.error('❌ [validateResetToken] Erro na validação:', error);
+    return {
+      success: false,
+      valid: false,
+      message: error.message || 'Erro ao validar token',
+    };
   }
-  return {
-    success: false,
-    valid: false,
-    message: response.error || 'Token inválido',
-  };
 };
 
