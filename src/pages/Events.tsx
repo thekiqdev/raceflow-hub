@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Loader2, MapPin, Calendar as CalendarIcon } from "lucide-react";
@@ -7,19 +8,22 @@ import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { EventFilters, EventFiltersState } from "@/components/event/EventFilters";
 import { Header } from "@/components/Header";
+import { getEvents } from "@/lib/api/events";
 
 interface Event {
   id: string;
   title: string;
-  description: string;
+  description?: string;
   event_date: string;
   location: string;
   city: string;
   state: string;
   banner_url: string | null;
+  status?: string;
 }
 
 const Events = () => {
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [events, setEvents] = useState<Event[]>([]);
   const [filters, setFilters] = useState<EventFiltersState>({
@@ -30,62 +34,46 @@ const Events = () => {
   });
 
   useEffect(() => {
-    // Mock events data for testing
-    const mockEvents: Event[] = [
-      {
-        id: "1",
-        title: "Corrida de São Silvestre 2024",
-        description: "A tradicional corrida de São Silvestre que marca o fim do ano na capital paulista. 15km de pura emoção.",
-        event_date: "2024-12-31T07:00:00Z",
-        location: "Av. Paulista",
-        city: "São Paulo",
-        state: "SP",
-        banner_url: null,
-      },
-      {
-        id: "2",
-        title: "Maratona do Rio 2025",
-        description: "Meia maratona pelos principais pontos turísticos do Rio de Janeiro. Vista deslumbrante da cidade maravilhosa.",
-        event_date: "2025-06-15T06:00:00Z",
-        location: "Zona Sul",
-        city: "Rio de Janeiro",
-        state: "RJ",
-        banner_url: null,
-      },
-      {
-        id: "3",
-        title: "Meia Maratona de Florianópolis",
-        description: "Corrida à beira-mar na ilha de Florianópolis. Paisagens incríveis e clima perfeito para correr.",
-        event_date: "2025-09-20T07:30:00Z",
-        location: "Beira-mar Norte",
-        city: "Florianópolis",
-        state: "SC",
-        banner_url: null,
-      },
-      {
-        id: "4",
-        title: "Circuito das Estações - Curitiba",
-        description: "Corrida de 10km pelos parques mais bonitos de Curitiba. Evento para toda a família.",
-        event_date: "2025-03-15T06:30:00Z",
-        location: "Parque Barigui",
-        city: "Curitiba",
-        state: "PR",
-        banner_url: null,
-      },
-      {
-        id: "5",
-        title: "Corrida do Bem - Belo Horizonte",
-        description: "Corrida beneficente de 5km. Toda a arrecadação será destinada a instituições de caridade.",
-        event_date: "2025-05-10T07:00:00Z",
-        location: "Lagoa da Pampulha",
-        city: "Belo Horizonte",
-        state: "MG",
-        banner_url: null,
-      },
-    ];
-    setEvents(mockEvents);
-    setLoading(false);
+    loadEvents();
   }, []);
+
+  const loadEvents = async () => {
+    try {
+      setLoading(true);
+      
+      // Buscar eventos publicados e ongoing (eventos com inscrição aberta)
+      const publishedResponse = await getEvents({ status: 'published' });
+      const ongoingResponse = await getEvents({ status: 'ongoing' });
+      
+      const allEvents: Event[] = [];
+      
+      // Adicionar eventos publicados
+      if (publishedResponse.success && publishedResponse.data) {
+        allEvents.push(...publishedResponse.data);
+      }
+      
+      // Adicionar eventos ongoing
+      if (ongoingResponse.success && ongoingResponse.data) {
+        allEvents.push(...ongoingResponse.data);
+      }
+      
+      // Remover duplicatas e ordenar por data (mais próximo primeiro)
+      const uniqueEvents = Array.from(
+        new Map(allEvents.map(event => [event.id, event])).values()
+      ).sort((a, b) => {
+        const dateA = new Date(a.event_date).getTime();
+        const dateB = new Date(b.event_date).getTime();
+        return dateA - dateB;
+      });
+      
+      setEvents(uniqueEvents);
+    } catch (error) {
+      console.error("Erro ao carregar eventos:", error);
+      toast.error("Erro ao carregar eventos");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const cities = Array.from(new Set(events.map(e => e.city))).sort();
   const categories = ["5K", "10K", "Meia Maratona", "Maratona", "Trail Run"];
@@ -167,7 +155,12 @@ const Events = () => {
                   </div>
                 </CardContent>
                 <CardFooter>
-                  <Button className="w-full">Ver Detalhes</Button>
+                  <Button 
+                    className="w-full"
+                    onClick={() => navigate(`/events/${event.id}`)}
+                  >
+                    Ver Detalhes
+                  </Button>
                 </CardFooter>
               </Card>
             ))}
