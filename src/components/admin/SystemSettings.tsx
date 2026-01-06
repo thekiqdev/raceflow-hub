@@ -10,8 +10,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Separator } from "@/components/ui/separator";
 import { Building2, Trash2, Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import { getSystemSettings, updateSystemSettings, type SystemSettings as SystemSettingsType } from "@/lib/api/systemSettings";
+import { getSystemSettings, updateSystemSettings, testEmail, type SystemSettings as SystemSettingsType } from "@/lib/api/systemSettings";
 import FormConfigurations from "./FormConfigurations";
+import NotificationTemplatesManagement from "./NotificationTemplatesManagement";
 
 const SystemSettings = () => {
   const [settings, setSettings] = useState<SystemSettingsType | null>(null);
@@ -41,6 +42,8 @@ const SystemSettings = () => {
     smtp_from_name: "",
     smtp_secure: true,
   });
+  const [testEmailAddress, setTestEmailAddress] = useState("");
+  const [testingEmail, setTestingEmail] = useState(false);
   
   const [paymentForm, setPaymentForm] = useState({
     payment_gateway: "stripe",
@@ -281,6 +284,28 @@ const SystemSettings = () => {
       setSaving(false);
     }
   };
+
+  const handleTestEmail = async () => {
+    if (!testEmailAddress || !testEmailAddress.includes('@')) {
+      toast.error('Por favor, insira um email válido para teste');
+      return;
+    }
+
+    setTestingEmail(true);
+    try {
+      const response = await testEmail(testEmailAddress);
+      
+      if (response.success) {
+        toast.success(response.message || `Email de teste enviado com sucesso para ${testEmailAddress}`);
+      } else {
+        toast.error(response.error || 'Erro ao enviar email de teste');
+      }
+    } catch (error: any) {
+      toast.error(error.message || 'Erro ao enviar email de teste');
+    } finally {
+      setTestingEmail(false);
+    }
+  };
   
   const handleSavePayment = async () => {
     setSaving(true);
@@ -382,6 +407,7 @@ const SystemSettings = () => {
             <TabsTrigger value="fees">Taxas</TabsTrigger>
           )}
           <TabsTrigger value="forms">Formulários</TabsTrigger>
+          <TabsTrigger value="notification-templates">Templates de Notificação</TabsTrigger>
         </TabsList>
 
         <TabsContent value="general" className="space-y-4">
@@ -564,9 +590,37 @@ const SystemSettings = () => {
                   id="smtp_port"
                   type="number"
                   value={emailForm.smtp_port}
-                  onChange={(e) => setEmailForm({ ...emailForm, smtp_port: e.target.value })}
+                  onChange={(e) => {
+                    const port = e.target.value;
+                    // Auto-adjust secure setting based on port
+                    let secure = emailForm.smtp_secure;
+                    if (port === '465') {
+                      secure = true; // Port 465 always uses SSL
+                    } else if (port === '587') {
+                      secure = false; // Port 587 uses STARTTLS
+                    }
+                    setEmailForm({ ...emailForm, smtp_port: port, smtp_secure: secure });
+                  }}
                   className="mt-2" 
                 />
+                {emailForm.smtp_port === '21' && (
+                  <p className="text-sm text-destructive mt-1">
+                    ⚠️ Porta 21 é FTP, não SMTP! Use 587 (STARTTLS) ou 465 (SSL)
+                  </p>
+                )}
+                {emailForm.smtp_port === '587' && emailForm.smtp_secure && (
+                  <p className="text-sm text-yellow-600 dark:text-yellow-400 mt-1">
+                    💡 Porta 587 usa STARTTLS. Desative "Conexão Segura" para esta porta.
+                  </p>
+                )}
+                {emailForm.smtp_port === '465' && !emailForm.smtp_secure && (
+                  <p className="text-sm text-yellow-600 dark:text-yellow-400 mt-1">
+                    💡 Porta 465 usa SSL direto. Ative "Conexão Segura" para esta porta.
+                  </p>
+                )}
+                <p className="text-sm text-muted-foreground mt-1">
+                  Portas comuns: 587 (STARTTLS), 465 (SSL), 25 (sem criptografia)
+                </p>
               </div>
               <div>
                 <Label htmlFor="smtp_user">Usuário</Label>
@@ -617,6 +671,40 @@ const SystemSettings = () => {
                   onCheckedChange={(checked) => setEmailForm({ ...emailForm, smtp_secure: checked })}
                 />
               </div>
+              
+              <Separator className="my-4" />
+              
+              <div>
+                <Label htmlFor="test_email">Testar Envio de Email</Label>
+                <p className="text-sm text-muted-foreground mb-2">
+                  Envie um email de teste para verificar se as configurações SMTP estão funcionando corretamente
+                </p>
+                <div className="flex gap-2">
+                  <Input 
+                    id="test_email"
+                    type="email"
+                    placeholder="email@exemplo.com"
+                    value={testEmailAddress}
+                    onChange={(e) => setTestEmailAddress(e.target.value)}
+                    className="flex-1"
+                  />
+                  <Button 
+                    onClick={handleTestEmail} 
+                    disabled={testingEmail || !testEmailAddress || !testEmailAddress.includes('@')}
+                    variant="outline"
+                  >
+                    {testingEmail ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Enviando...
+                      </>
+                    ) : (
+                      "Enviar Teste"
+                    )}
+                  </Button>
+                </div>
+              </div>
+              
               <Button onClick={handleSaveEmail} disabled={saving}>
                 {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                 Salvar Configurações
@@ -901,6 +989,10 @@ const SystemSettings = () => {
 
         <TabsContent value="forms" className="space-y-4">
           <FormConfigurations />
+        </TabsContent>
+
+        <TabsContent value="notification-templates" className="space-y-4">
+          <NotificationTemplatesManagement />
         </TabsContent>
       </Tabs>
     </div>

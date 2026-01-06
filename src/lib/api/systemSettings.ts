@@ -132,6 +132,17 @@ export const updateSystemSettings = async (data: UpdateSystemSettingsData): Prom
   return apiClient.put<SystemSettings>('/admin/settings', data);
 };
 
+/**
+ * Test email sending with current SMTP configuration
+ */
+export const testEmail = async (email: string): Promise<{
+  success: boolean;
+  message?: string;
+  error?: string;
+}> => {
+  return apiClient.post<{ message: string }>('/admin/settings/test-email', { email });
+};
+
 
 
 
