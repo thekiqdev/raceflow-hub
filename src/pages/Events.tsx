@@ -131,38 +131,16 @@ const Events = () => {
               const EventCard = () => {
                 const [imageError, setImageError] = useState(false);
                 
-                // Função para construir URL completa da imagem
-                const getImageUrl = (url: string | null | undefined): string | null => {
-                  if (!url) return null;
-                  
-                  // Se já é uma URL completa (http:// ou https://), retornar como está
-                  if (url.startsWith('http://') || url.startsWith('https://')) {
-                    return url;
-                  }
-                  
-                  // Se começa com /, assumir que é relativo ao backend
-                  if (url.startsWith('/')) {
-                    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
-                    const baseUrl = apiUrl.replace('/api', '');
-                    return `${baseUrl}${url}`;
-                  }
-                  
-                  // Caso contrário, retornar como está (pode ser um caminho relativo ou URL completa)
-                  return url;
-                };
-                
-                const imageUrl = getImageUrl(event.banner_url);
-                
                 return (
                   <Card key={event.id} className="hover:shadow-lg transition-shadow overflow-hidden">
                     <div className="h-48 bg-muted overflow-hidden flex items-center justify-center">
-                      {imageUrl && !imageError ? (
+                      {event.banner_url && !imageError ? (
                         <img
-                          src={imageUrl}
+                          src={event.banner_url}
                           alt={event.title}
                           className="w-full h-full object-cover"
                           onError={() => {
-                            console.error('Erro ao carregar imagem do banner:', imageUrl);
+                            console.error('Erro ao carregar imagem do banner:', event.banner_url);
                             setImageError(true);
                           }}
                         />
@@ -170,7 +148,7 @@ const Events = () => {
                         <div className="w-full h-full bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center">
                           <div className="text-center p-4">
                             <CalendarIcon className="h-12 w-12 mx-auto text-muted-foreground mb-2" />
-                            <p className="text-sm text-muted-foreground font-medium">{event.title}</p>
+                            <p className="text-sm text-muted-foreground font-medium line-clamp-2">{event.title}</p>
                           </div>
                         </div>
                       )}
