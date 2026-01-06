@@ -16,6 +16,7 @@ import { getEventKits, syncEventKits } from "@/lib/api/eventKits";
 import { getEventPickupLocations, createPickupLocation, updatePickupLocation, deletePickupLocation } from "@/lib/api/kitPickup";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, MapPin, Calendar, Users, DollarSign, Search, CheckCircle, Package, MapPin as MapPinIcon, Plus, Trash2, ChevronUp, ChevronDown } from "lucide-react";
+import { FileUpload } from "@/components/ui/file-upload";
 
 interface EventViewEditDialogProps {
   eventId: string | null;
@@ -140,7 +141,7 @@ export function EventViewEditDialog({
         if (categoriesResponse.success && categoriesResponse.data) {
           setCategories(categoriesResponse.data);
         } else {
-          setCategories([]);
+      setCategories([]);
         }
       } catch (error) {
         console.error("Error loading categories:", error);
@@ -153,7 +154,7 @@ export function EventViewEditDialog({
         if (kitsResponse.success && kitsResponse.data) {
           setKits(kitsResponse.data);
         } else {
-          setKits([]);
+      setKits([]);
         }
       } catch (error) {
         console.error("Error loading kits:", error);
@@ -915,6 +916,61 @@ export function EventViewEditDialog({
                   <p className="text-sm">{event.organizer_name}</p>
                 </div>
               )}
+
+              <div className="grid gap-2">
+                <Label htmlFor="banner_url">Banner do Evento</Label>
+                {mode === "view" ? (
+                  formData.banner_url ? (
+                    <div className="relative w-full h-48 border rounded-md overflow-hidden bg-muted">
+                      <img
+                        src={formData.banner_url}
+                        alt="Banner do evento"
+                        className="w-full h-full object-cover"
+                        onError={(e) => {
+                          const target = e.target as HTMLImageElement;
+                          target.style.display = 'none';
+                        }}
+                      />
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">Nenhum banner definido</p>
+                  )
+                ) : (
+                  <FileUpload
+                    type="banner"
+                    value={formData.banner_url || null}
+                    onChange={(url) => setFormData({ ...formData, banner_url: url || "" })}
+                    maxSize={5}
+                    description="Imagem de destaque do evento (recomendado: 1200x600px). Você pode fazer upload de uma imagem ou inserir uma URL."
+                  />
+                )}
+              </div>
+
+              <div className="grid gap-2">
+                <Label htmlFor="regulation_url">Regulamento (PDF)</Label>
+                {mode === "view" ? (
+                  formData.regulation_url ? (
+                    <a
+                      href={formData.regulation_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-sm text-primary hover:underline"
+                    >
+                      Ver regulamento
+                    </a>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">Nenhum regulamento definido</p>
+                  )
+                ) : (
+                  <FileUpload
+                    type="regulation"
+                    value={formData.regulation_url || null}
+                    onChange={(url) => setFormData({ ...formData, regulation_url: url || "" })}
+                    maxSize={10}
+                    description="Arquivo PDF do regulamento do evento. Você pode fazer upload de um arquivo PDF ou inserir uma URL."
+                  />
+                )}
+              </div>
             </div>
           </TabsContent>
 
@@ -1042,7 +1098,7 @@ export function EventViewEditDialog({
                 </Button>
               </div>
             )}
-            {categories.length === 0 ? (
+              {categories.length === 0 ? (
               <Card>
                 <CardContent className="pt-6 text-center text-muted-foreground">
                   Nenhuma categoria adicionada ainda
@@ -1273,27 +1329,27 @@ export function EventViewEditDialog({
                             Tipo: {category.category_type} | Gênero: {category.gender}
                             {category.min_age && ` | Idade mínima: ${category.min_age} anos`}
                           </CardDescription>
-                          <div className="flex gap-4">
-                            <div className="flex items-center gap-2">
-                              <DollarSign className="h-4 w-4" />
-                              <span className="text-sm">R$ {Number(category.price).toFixed(2)}</span>
-                            </div>
-                            {category.max_participants && (
-                              <div className="flex items-center gap-2">
-                                <Users className="h-4 w-4" />
-                                <span className="text-sm">Máx: {category.max_participants}</span>
-                              </div>
-                            )}
+                      <div className="flex gap-4">
+                        <div className="flex items-center gap-2">
+                          <DollarSign className="h-4 w-4" />
+                          <span className="text-sm">R$ {Number(category.price).toFixed(2)}</span>
+                        </div>
+                        {category.max_participants && (
+                          <div className="flex items-center gap-2">
+                            <Users className="h-4 w-4" />
+                            <span className="text-sm">Máx: {category.max_participants}</span>
+                          </div>
+                        )}
                             {category.is_default && (
                               <Badge variant="default">Padrão</Badge>
-                            )}
-                          </div>
+                        )}
+                      </div>
                         </div>
                       )}
                     </CardContent>
                   </Card>
                 ))}
-              </div>
+            </div>
             )}
           </TabsContent>
 
@@ -1312,7 +1368,7 @@ export function EventViewEditDialog({
                 </Button>
               </div>
             )}
-            {kits.length === 0 ? (
+              {kits.length === 0 ? (
               <Card>
                 <CardContent className="pt-6 text-center text-muted-foreground">
                   Nenhum kit adicionado ainda
@@ -1658,14 +1714,14 @@ export function EventViewEditDialog({
                         </>
                       ) : (
                         <div className="space-y-2">
-                          {kit.description && (
-                            <CardDescription>{kit.description}</CardDescription>
-                          )}
+                      {kit.description && (
+                        <CardDescription>{kit.description}</CardDescription>
+                      )}
                           <div className="flex items-center gap-4">
-                            <div className="flex items-center gap-2">
-                              <DollarSign className="h-4 w-4" />
+                      <div className="flex items-center gap-2">
+                        <DollarSign className="h-4 w-4" />
                               <span className="text-sm font-medium">R$ {Number(kit.price).toFixed(2)}</span>
-                            </div>
+                      </div>
                             <div className="flex items-center gap-2">
                               <Package className="h-4 w-4 text-muted-foreground" />
                               <span className="text-sm text-muted-foreground">Ordem: {kit.display_order || 0}</span>
@@ -1707,7 +1763,7 @@ export function EventViewEditDialog({
                   <p className="text-sm text-muted-foreground">
                     Configure os locais e horários para retirada (válido para todos os kits do evento)
                   </p>
-                </div>
+            </div>
                 <Button type="button" onClick={addPickupLocation} size="sm">
                   <Plus className="mr-2 h-4 w-4" />
                   Adicionar Local
@@ -1880,18 +1936,18 @@ export function EventViewEditDialog({
                                   CPF: {reg.runner_cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4")}
                                 </p>
                               )}
-                              <p className="text-sm text-muted-foreground">
-                                {new Date(reg.created_at).toLocaleDateString("pt-BR")}
-                              </p>
-                            </div>
+                            <p className="text-sm text-muted-foreground">
+                              {new Date(reg.created_at).toLocaleDateString("pt-BR")}
+                            </p>
+                          </div>
                           </div>
                           <div className="flex items-center gap-4">
-                            <div className="text-right">
+                          <div className="text-right">
                               <p className="font-medium">R$ {Number(reg.total_amount).toFixed(2).replace('.', ',')}</p>
                               <div className="flex items-center gap-2 mt-1">
                                 <Badge variant={reg.payment_status === "paid" || reg.payment_status === "convidado" ? "default" : "secondary"}>
                                   {reg.payment_status === "paid" ? "Pago" : reg.payment_status === "convidado" ? "Convite" : reg.payment_status === "pending" ? "Pendente" : reg.payment_status}
-                                </Badge>
+                            </Badge>
                                 {reg.status && (
                                   <Badge variant={reg.status === "confirmed" ? "default" : "outline"}>
                                     {reg.status === "confirmed" ? "Confirmado" : reg.status === "pending" ? "Pendente" : reg.status}
