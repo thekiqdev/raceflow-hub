@@ -57,27 +57,41 @@ export const requestPasswordResetController = asyncHandler(async (req: AuthReque
 
   const user = userResult.rows[0];
 
-  // Invalidate previous tokens for security (but not the one we're about to create)
-  await invalidateUserTokens(user.id);
-
-  // Create new reset token
+  // Create new reset token FIRST
   const resetToken = await createPasswordResetToken(user.id);
   
-  console.log('📝 [requestPasswordResetController] Token criado:', {
+  console.log('🔑 Token criado:', {
     tokenId: resetToken.id,
-    userId: resetToken.user_id,
     tokenLength: resetToken.token.length,
     tokenPreview: resetToken.token.substring(0, 10) + '...',
     expiresAt: resetToken.expires_at,
-    createdAt: resetToken.created_at,
+    userId: user.id,
   });
+
+  // Then invalidate previous tokens (excluding the one we just created)
+  await query(
+    `UPDATE password_reset_tokens
+     SET used_at = NOW()
+     WHERE user_id = $1
+       AND used_at IS NULL
+       AND id != $2`,
+    [user.id, resetToken.id]
+  );
+  
+  console.log('✅ Tokens anteriores invalidados (exceto o novo)');
 
   // Get user name for email
   const userName = await getUserName(user.id) || 'Usuário';
   const userEmail = user.email;
 
-  // Generate reset URL
-  const resetUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/reset-password?token=${resetToken.token}`;
+  // Generate reset URL - encode token properly
+  const encodedToken = encodeURIComponent(resetToken.token);
+  const resetUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/reset-password?token=${encodedToken}`;
+  
+  console.log('📧 URL de reset gerada:', {
+    url: resetUrl,
+    tokenInUrl: encodedToken.substring(0, 20) + '...',
+  });
 
   // Send email notification
   try {
@@ -124,8 +138,20 @@ export const resetPasswordController = asyncHandler(async (req: AuthRequest, res
 
   const { token, newPassword } = validation.data;
 
+  console.log('🔍 [resetPasswordController] Recebido:', {
+    tokenLength: token.length,
+    tokenPreview: token.substring(0, 20) + '...',
+  });
+
+  // Decode token if it's URL encoded
+  const decodedToken = decodeURIComponent(token.trim());
+  console.log('🔍 [resetPasswordController] Token decodificado:', {
+    decodedLength: decodedToken.length,
+    preview: decodedToken.substring(0, 20) + '...',
+  });
+
   // Find valid token
-  const resetToken = await findPasswordResetToken(token);
+  const resetToken = await findPasswordResetToken(decodedToken);
 
   if (!resetToken) {
     res.status(400).json({
@@ -184,13 +210,12 @@ export const resetPasswordController = asyncHandler(async (req: AuthRequest, res
  * Validate if a token is still valid (public endpoint)
  */
 export const validateTokenController = asyncHandler(async (req: AuthRequest, res: Response) => {
-  const tokenParam = req.query.token;
-  const token = typeof tokenParam === 'string' ? tokenParam : Array.isArray(tokenParam) ? (typeof tokenParam[0] === 'string' ? tokenParam[0] : null) : null;
+  const { token } = req.query;
 
-  console.log('🔍 [validateTokenController] Validando token:', {
-    token: token ? token.substring(0, 10) + '...' : 'null',
-    tokenLength: token ? token.length : 0,
+  console.log('🔍 [validateTokenController] Recebido:', {
+    token: token ? (typeof token === 'string' ? token.substring(0, 20) + '...' : 'not string') : 'missing',
     tokenType: typeof token,
+    queryParams: Object.keys(req.query),
   });
 
   if (!token || typeof token !== 'string') {
@@ -202,10 +227,17 @@ export const validateTokenController = asyncHandler(async (req: AuthRequest, res
     return;
   }
 
-  const resetToken = await findPasswordResetToken(token);
+  // Decode token if it's URL encoded
+  const decodedToken = decodeURIComponent(token);
+  console.log('🔍 [validateTokenController] Token decodificado:', {
+    originalLength: token.length,
+    decodedLength: decodedToken.length,
+    preview: decodedToken.substring(0, 20) + '...',
+  });
+
+  const resetToken = await findPasswordResetToken(decodedToken);
 
   if (!resetToken) {
-    console.log('❌ [validateTokenController] Token inválido ou expirado');
     res.json({
       success: false,
       valid: false,
@@ -214,7 +246,6 @@ export const validateTokenController = asyncHandler(async (req: AuthRequest, res
     return;
   }
 
-  console.log('✅ [validateTokenController] Token válido');
   res.json({
     success: true,
     valid: true,

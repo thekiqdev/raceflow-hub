@@ -130,7 +130,7 @@ export const sendEmail = async (options: SendEmailOptions): Promise<boolean> => 
     
     console.log(`📧 Configurando SMTP: host=${settings.smtp_host}, port=${port}, secure=${secure}, requireTLS=${requireTLS}`);
     
-    // Create transporter with improved settings for deliverability
+    // Create transporter
     const transporter = nodemailer.createTransport({
       host: settings.smtp_host,
       port: port,
@@ -140,23 +140,11 @@ export const sendEmail = async (options: SendEmailOptions): Promise<boolean> => 
         user: settings.smtp_user,
         pass: settings.smtp_password,
       },
-      // Add TLS options for better compatibility and security
+      // Add TLS options for better compatibility
       tls: {
-        rejectUnauthorized: false, // Accept self-signed certificates (for development)
+        rejectUnauthorized: false, // Accept self-signed certificates
         minVersion: 'TLSv1.2', // Minimum TLS version
-        ciphers: 'SSLv3', // Use secure ciphers
       },
-      // Connection pool options for better performance
-      pool: true,
-      maxConnections: 1,
-      maxMessages: 3,
-      // Rate limiting
-      rateDelta: 1000,
-      rateLimit: 5,
-      // Socket timeout
-      socketTimeout: 10000,
-      // Greeting timeout
-      greetingTimeout: 5000,
     });
 
     // Verify connection (skip for test emails to avoid blocking)
@@ -174,40 +162,13 @@ export const sendEmail = async (options: SendEmailOptions): Promise<boolean> => 
     const fromName = options.fromName || settings.smtp_from_name || settings.platform_name || 'Sistema';
     const textContent = options.text || options.html.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
 
-    // Send email with improved headers to avoid spam
+    // Send email
     const info = await transporter.sendMail({
       from: `"${fromName}" <${fromEmail}>`,
       to: options.to,
       subject: options.subject,
       html: options.html,
       text: textContent,
-      // Headers to improve deliverability and avoid spam
-      headers: {
-        // Priority headers (removed - can trigger spam filters)
-        // 'X-Priority': '1',
-        // 'X-MSMail-Priority': 'High',
-        // 'Importance': 'high',
-        // List-Unsubscribe for transactional emails (optional)
-        'List-Unsubscribe': `<mailto:${fromEmail}?subject=unsubscribe>`,
-        'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
-        // Precedence header (removed - 'bulk' can trigger spam filters)
-        // 'Precedence': 'bulk',
-        // Auto-Submitted header to indicate automated email (helps with deliverability)
-        'Auto-Submitted': 'auto-generated',
-        // X-Auto-Response-Suppress header (prevents auto-replies)
-        'X-Auto-Response-Suppress': 'All',
-        // Content-Type header
-        'Content-Type': 'text/html; charset=UTF-8',
-      },
-      // Reply-to header
-      replyTo: fromEmail,
-      // Message ID for better tracking
-      messageId: `<${Date.now()}-${Math.random().toString(36).substring(7)}@${settings.smtp_host || 'system'}>`,
-      // Date header
-      date: new Date(),
-      // In-Reply-To and References (for better threading)
-      inReplyTo: undefined,
-      references: undefined,
     });
 
     console.log('✅ Email enviado com sucesso:', {
