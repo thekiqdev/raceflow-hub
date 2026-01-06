@@ -83,6 +83,7 @@ const migrations = [
   '054_add_field_width_to_form_configurations.sql',
   '055_add_additional_fields_to_quotes.sql',
   '056_create_notification_templates_table.sql',
+  '057_create_password_reset_tokens_table.sql',
 ];
 
 // Create migrations tracking table

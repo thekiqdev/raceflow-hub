@@ -496,6 +496,37 @@ export const initializeDefaultTemplates = async (): Promise<void> => {
       is_active: true,
       is_system: true,
     },
+    // Password reset templates
+    {
+      template_key: 'password_reset_request',
+      template_name: 'Solicitação de Recuperação de Senha',
+      template_type: 'email',
+      target_audience: 'runner',
+      subject: 'Recuperação de Senha - Cronoteam',
+      body_html: '<h1>Recuperação de Senha</h1><p>Olá {{userName}},</p><p>Você solicitou a recuperação de senha da sua conta.</p><p>Clique no link abaixo para redefinir sua senha:</p><p><a href="{{resetUrl}}" style="display: inline-block; padding: 12px 24px; background-color: #007bff; color: #ffffff; text-decoration: none; border-radius: 4px; margin: 16px 0;">Redefinir Senha</a></p><p>Ou copie e cole o link abaixo no seu navegador:</p><p style="word-break: break-all; color: #666;">{{resetUrl}}</p><p><strong>Este link expira em {{expiresIn}}.</strong></p><p>Se você não solicitou esta recuperação de senha, ignore este e-mail.</p>',
+      body_text: 'Recuperação de Senha\n\nOlá {{userName}},\n\nVocê solicitou a recuperação de senha da sua conta.\n\nClique no link abaixo para redefinir sua senha:\n{{resetUrl}}\n\nEste link expira em {{expiresIn}}.\n\nSe você não solicitou esta recuperação de senha, ignore este e-mail.',
+      variables: {
+        userName: 'Nome do usuário',
+        resetUrl: 'URL para redefinir senha',
+        expiresIn: 'Tempo de expiração do link',
+      },
+      is_active: true,
+      is_system: true,
+    },
+    {
+      template_key: 'password_reset_success',
+      template_name: 'Senha Redefinida com Sucesso',
+      template_type: 'email',
+      target_audience: 'runner',
+      subject: 'Senha Redefinida com Sucesso - Cronoteam',
+      body_html: '<h1>Senha Redefinida com Sucesso</h1><p>Olá {{userName}},</p><p>Sua senha foi redefinida com sucesso!</p><p>Você já pode fazer login com sua nova senha.</p><p>Se você não realizou esta alteração, entre em contato conosco imediatamente.</p>',
+      body_text: 'Senha Redefinida com Sucesso\n\nOlá {{userName}},\n\nSua senha foi redefinida com sucesso!\n\nVocê já pode fazer login com sua nova senha.\n\nSe você não realizou esta alteração, entre em contato conosco imediatamente.',
+      variables: {
+        userName: 'Nome do usuário',
+      },
+      is_active: true,
+      is_system: true,
+    },
   ];
 
   // Insert all default templates (only if they don't exist)
