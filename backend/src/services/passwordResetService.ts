@@ -19,7 +19,7 @@ export const generateResetToken = (): string => {
 
 /**
  * Create a password reset token for a user
- * Token expires in 30 minutes
+ * Token expires in 1 day (24 hours)
  */
 export const createPasswordResetToken = async (userId: string): Promise<PasswordResetToken> => {
   const token = generateResetToken();
@@ -27,15 +27,12 @@ export const createPasswordResetToken = async (userId: string): Promise<Password
   // Use PostgreSQL NOW() + INTERVAL to ensure timezone consistency
   const result = await query(
     `INSERT INTO password_reset_tokens (user_id, token, expires_at)
-     VALUES ($1, $2, NOW() + INTERVAL '30 minutes')
-     RETURNING *,
-            NOW() as db_now,
-            EXTRACT(EPOCH FROM (expires_at - NOW())) as seconds_until_expiry`,
+     VALUES ($1, $2, NOW() + INTERVAL '1 day')
+     RETURNING *`,
     [userId, token]
   );
 
   const createdToken = result.rows[0] as PasswordResetToken;
-  const secondsUntilExpiry = parseFloat(result.rows[0].seconds_until_expiry || 0);
   
   console.log('🔑 [createPasswordResetToken] Token criado:', {
     id: createdToken.id,
@@ -44,9 +41,7 @@ export const createPasswordResetToken = async (userId: string): Promise<Password
     tokenPreview: token.substring(0, 10) + '...',
     expiresAt: createdToken.expires_at,
     createdAt: createdToken.created_at,
-    dbNow: result.rows[0].db_now,
-    secondsUntilExpiry: secondsUntilExpiry,
-    minutesUntilExpiry: Math.floor(secondsUntilExpiry / 60),
+    nowInDB: (await query('SELECT NOW() as now', [])).rows[0].now,
   });
 
   return createdToken;
@@ -59,39 +54,49 @@ export const findPasswordResetToken = async (token: string): Promise<PasswordRes
   // Trim and clean token
   const cleanToken = token.trim();
   
+  // Get current time from database for accurate comparison
+  const nowResult = await query('SELECT NOW() as now', []);
+  const dbNow = nowResult.rows[0].now;
+  
   console.log('🔍 [findPasswordResetToken] Buscando token:', {
     tokenLength: cleanToken.length,
     tokenPreview: cleanToken.substring(0, 10) + '...',
+    dbNow: dbNow,
   });
   
-  // First, find the token without expiration check in WHERE clause
-  // We'll check expiration in JavaScript for better debugging
+  // First check if token exists and is not used
   const result = await query(
-    `SELECT *,
-            NOW() as db_now,
+    `SELECT *, 
             (expires_at > NOW()) as is_not_expired,
-            EXTRACT(EPOCH FROM (expires_at - NOW())) as seconds_remaining,
-            EXTRACT(EPOCH FROM (NOW() - created_at)) as age_seconds
+            (NOW() - created_at) as age,
+            (expires_at - NOW()) as time_remaining,
+            EXTRACT(EPOCH FROM (expires_at - NOW())) as seconds_remaining
      FROM password_reset_tokens
      WHERE token = $1
-       AND used_at IS NULL
-       AND expires_at > (NOW() - INTERVAL '1 minute')`,  // Grace period: allow tokens up to 1 minute expired
+       AND used_at IS NULL`,
     [cleanToken]
   );
 
   console.log('🔍 [findPasswordResetToken] Resultado da busca:', {
     found: result.rows.length > 0,
     rowCount: result.rows.length,
+    ifFound: result.rows.length > 0 ? {
+      id: result.rows[0].id,
+      expiresAt: result.rows[0].expires_at,
+      isNotExpired: result.rows[0].is_not_expired,
+      age: result.rows[0].age,
+      timeRemaining: result.rows[0].time_remaining,
+      usedAt: result.rows[0].used_at,
+    } : null,
   });
 
   if (result.rows.length === 0) {
-    // Debug: check if token exists at all (even if expired or used)
+    // Debug: check if token exists but is expired or used
     const debugResult = await query(
-      `SELECT *,
-              NOW() as db_now,
+      `SELECT id, expires_at, used_at, created_at,
               (expires_at > NOW()) as is_not_expired,
-              EXTRACT(EPOCH FROM (expires_at - NOW())) as seconds_remaining,
-              EXTRACT(EPOCH FROM (NOW() - created_at)) as age_seconds
+              (NOW() - created_at) as age,
+              (expires_at - NOW()) as time_remaining
        FROM password_reset_tokens
        WHERE token = $1`,
       [cleanToken]
@@ -99,22 +104,15 @@ export const findPasswordResetToken = async (token: string): Promise<PasswordRes
     
     if (debugResult.rows.length > 0) {
       const debugRow = debugResult.rows[0];
-      const secondsRemaining = parseFloat(debugRow.seconds_remaining || 0);
-      const ageSeconds = parseFloat(debugRow.age_seconds || 0);
-      
       console.log('⚠️ [findPasswordResetToken] Token encontrado mas inválido:', {
-        id: debugRow.id,
         expiresAt: debugRow.expires_at,
-        dbNow: debugRow.db_now,
+        dbNow: dbNow,
         isNotExpired: debugRow.is_not_expired,
-        secondsRemaining: secondsRemaining,
-        minutesRemaining: Math.floor(secondsRemaining / 60),
-        ageSeconds: ageSeconds,
-        ageMinutes: Math.floor(ageSeconds / 60),
+        age: debugRow.age,
+        timeRemaining: debugRow.time_remaining,
         usedAt: debugRow.used_at,
         isUsed: debugRow.used_at !== null,
         createdAt: debugRow.created_at,
-        tokenMatches: debugRow.token === cleanToken,
       });
     } else {
       console.log('❌ [findPasswordResetToken] Token não encontrado no banco de dados');
@@ -124,52 +122,41 @@ export const findPasswordResetToken = async (token: string): Promise<PasswordRes
   }
 
   const tokenRow = result.rows[0];
-  const secondsRemaining = parseFloat(tokenRow.seconds_remaining || 0);
-  const ageSeconds = parseFloat(tokenRow.age_seconds || 0);
-  
-  console.log('📊 [findPasswordResetToken] Token encontrado, verificando validade:', {
-    id: tokenRow.id,
-    expiresAt: tokenRow.expires_at,
-    dbNow: tokenRow.db_now,
-    isNotExpired: tokenRow.is_not_expired,
-    secondsRemaining: secondsRemaining,
-    minutesRemaining: Math.floor(secondsRemaining / 60),
-    ageSeconds: ageSeconds,
-    ageMinutes: Math.floor(ageSeconds / 60),
-    usedAt: tokenRow.used_at,
-  });
   
   // Check expiration using database comparison
-  // Use seconds_remaining for more accurate check
-  // Add a small buffer (5 seconds) to account for any timing differences
-  if (secondsRemaining <= -5) {
-    console.log('❌ [findPasswordResetToken] Token expirado (seconds_remaining <= -5):', {
+  // Get seconds remaining as number for precise check
+  const secondsRemaining = parseFloat(tokenRow.seconds_remaining || 0);
+  const isNotExpired = tokenRow.is_not_expired;
+  
+  console.log('📊 [findPasswordResetToken] Verificando validade do token:', {
+    id: tokenRow.id,
+    expiresAt: tokenRow.expires_at,
+    dbNow: dbNow,
+    isNotExpired: isNotExpired,
+    secondsRemaining: secondsRemaining,
+    timeRemaining: tokenRow.time_remaining,
+    age: tokenRow.age,
+  });
+  
+  // Only reject if clearly expired (more than 5 seconds past expiry)
+  // This gives a small buffer for any timing differences
+  if (!isNotExpired && secondsRemaining < -5) {
+    console.log('❌ [findPasswordResetToken] Token expirado:', {
       expiresAt: tokenRow.expires_at,
-      dbNow: tokenRow.db_now,
+      dbNow: dbNow,
       secondsRemaining: secondsRemaining,
-      minutesRemaining: Math.floor(secondsRemaining / 60),
-    });
-    return null;
-  }
-
-  // Double check with boolean flag (but be more lenient)
-  // Only reject if clearly expired (more than 1 minute past expiry)
-  if (!tokenRow.is_not_expired && secondsRemaining < -60) {
-    console.log('❌ [findPasswordResetToken] Token expirado (is_not_expired = false e seconds_remaining < -60):', {
-      expiresAt: tokenRow.expires_at,
-      dbNow: tokenRow.db_now,
-      secondsRemaining: secondsRemaining,
+      timeRemaining: tokenRow.time_remaining,
     });
     return null;
   }
   
-  // If token is slightly expired but within 1 minute, log warning but allow
-  if (!tokenRow.is_not_expired && secondsRemaining >= -60) {
-    console.log('⚠️ [findPasswordResetToken] Token ligeiramente expirado mas permitindo (grace period):', {
+  // If token is slightly expired but within 5 seconds, log warning but allow
+  if (!isNotExpired && secondsRemaining >= -5) {
+    console.log('⚠️ [findPasswordResetToken] Token ligeiramente expirado mas permitindo (grace period de 5 segundos):', {
       expiresAt: tokenRow.expires_at,
-      dbNow: tokenRow.db_now,
+      dbNow: dbNow,
       secondsRemaining: secondsRemaining,
-      minutesRemaining: Math.floor(secondsRemaining / 60),
+      timeRemaining: tokenRow.time_remaining,
     });
     // Continue - allow token within grace period
   }
@@ -177,7 +164,7 @@ export const findPasswordResetToken = async (token: string): Promise<PasswordRes
   console.log('✅ [findPasswordResetToken] Token válido encontrado:', {
     id: tokenRow.id,
     secondsRemaining: secondsRemaining,
-    minutesRemaining: Math.floor(secondsRemaining / 60),
+    timeRemaining: tokenRow.time_remaining,
   });
 
   return {

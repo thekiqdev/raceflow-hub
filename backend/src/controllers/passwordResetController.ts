@@ -101,11 +101,11 @@ export const requestPasswordResetController = asyncHandler(async (req: AuthReque
         email: userEmail,
         name: userName,
       },
-      variables: {
-        userName: userName,
-        resetUrl: resetUrl,
-        expiresIn: '30 minutos',
-      },
+          variables: {
+            userName: userName,
+            resetUrl: resetUrl,
+            expiresIn: '1 dia (24 horas)',
+          },
     });
     console.log(`✅ Email de recuperação de senha enviado para ${userEmail}`);
   } catch (error: any) {

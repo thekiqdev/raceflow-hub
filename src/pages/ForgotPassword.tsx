@@ -99,7 +99,7 @@ export default function ForgotPassword() {
                 </p>
                 <p className="text-sm text-muted-foreground mb-6">
                   Verifique sua caixa de entrada e clique no link para redefinir sua senha.
-                  O link expira em 30 minutos.
+                  O link expira em 1 dia (24 horas).
                 </p>
               </div>
               <div className="space-y-2">

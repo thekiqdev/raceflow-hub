@@ -508,7 +508,7 @@ export const initializeDefaultTemplates = async (): Promise<void> => {
       variables: {
         userName: 'Nome do usuário',
         resetUrl: 'URL para redefinir senha',
-        expiresIn: 'Tempo de expiração do link',
+        expiresIn: 'Tempo de expiração do link (1 dia)',
       },
       is_active: true,
       is_system: true,

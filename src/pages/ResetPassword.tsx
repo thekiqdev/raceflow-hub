@@ -133,7 +133,7 @@ export default function ResetPassword() {
                   O link de recuperação de senha é inválido ou expirou.
                 </p>
                 <p className="text-sm text-muted-foreground mb-6">
-                  Os links de recuperação expiram em 30 minutos. Solicite um novo link.
+                  Os links de recuperação expiram em 1 dia (24 horas). Solicite um novo link.
                 </p>
               </div>
               <div className="space-y-2">
