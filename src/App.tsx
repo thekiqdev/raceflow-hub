@@ -20,6 +20,7 @@ import ValidateRegistration from "./pages/ValidateRegistration";
 import Cadastro from "./pages/Cadastro";
 import ForgotPassword from "./pages/ForgotPassword";
 import ResetPassword from "./pages/ResetPassword";
+import Results from "./pages/Results";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -39,6 +40,7 @@ const App = () => (
           <Route path="/reset-password" element={<ResetPassword />} />
           <Route path="/events" element={<Events />} />
           <Route path="/events/:id" element={<EventDetails />} />
+          <Route path="/results" element={<Results />} />
           <Route path="/orcamento" element={<Quote />} />
           <Route path="/faq" element={<FAQ />} />
           <Route path="/registration/qrcode/:id" element={<RegistrationQRCode />} />

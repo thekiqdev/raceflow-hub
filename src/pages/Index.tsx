@@ -61,26 +61,43 @@ const Index = () => {
 
   const loadUpcomingEvents = async () => {
     try {
-      // Buscar eventos publicados
+      // Buscar eventos publicados e ongoing
       const publishedResponse = await getEvents({ status: 'published' });
-      
-      // Buscar eventos finalizados com resultados disponíveis
-      const finishedResponse = await getEvents({ status: 'finished' });
+      const ongoingResponse = await getEvents({ status: 'ongoing' });
       
       const allEvents: Event[] = [];
+      const now = new Date();
       
-      // Adicionar eventos publicados
+      // Adicionar eventos publicados com inscrição aberta (data futura)
       if (publishedResponse.success && publishedResponse.data) {
-        allEvents.push(...publishedResponse.data);
+        const openEvents = publishedResponse.data.filter(event => {
+          const eventDate = new Date(event.event_date);
+          // Apenas eventos com data futura e status que permite inscrição
+          return eventDate >= now && (event.status === 'published' || event.status === 'ongoing');
+        });
+        allEvents.push(...openEvents);
       }
       
-      // Adicionar eventos finalizados que têm result_url
-      if (finishedResponse.success && finishedResponse.data) {
-        const eventsWithResults = finishedResponse.data.filter(event => event.result_url);
-        allEvents.push(...eventsWithResults);
+      // Adicionar eventos ongoing com inscrição aberta (data futura)
+      if (ongoingResponse.success && ongoingResponse.data) {
+        const openEvents = ongoingResponse.data.filter(event => {
+          const eventDate = new Date(event.event_date);
+          // Apenas eventos com data futura
+          return eventDate >= now;
+        });
+        allEvents.push(...openEvents);
       }
       
-      setUpcomingEvents(allEvents);
+      // Remover duplicatas e ordenar por data (mais próximo primeiro)
+      const uniqueEvents = Array.from(
+        new Map(allEvents.map(event => [event.id, event])).values()
+      ).sort((a, b) => {
+        const dateA = new Date(a.event_date).getTime();
+        const dateB = new Date(b.event_date).getTime();
+        return dateA - dateB;
+      });
+      
+      setUpcomingEvents(uniqueEvents);
     } catch (error) {
       console.error("Erro ao carregar eventos:", error);
       toast.error("Erro ao carregar eventos");

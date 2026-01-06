@@ -54,6 +54,13 @@ export function Header() {
             Eventos
           </Link>
           <Link
+            to="/results"
+            className="hover:text-gray-300 transition-colors flex items-center gap-2"
+          >
+            <Trophy className="w-4 h-4" />
+            Resultados
+          </Link>
+          <Link
             to="/orcamento"
             className="hover:text-gray-300 transition-colors flex items-center gap-2"
           >
