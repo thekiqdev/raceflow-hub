@@ -33,10 +33,20 @@ export const resetPassword = async (data: ResetPasswordData) => {
  * Validate reset token
  */
 export const validateResetToken = async (token: string): Promise<ValidateTokenResponse> => {
+  console.log('🔍 [validateResetToken] Validando token via API:', {
+    tokenLength: token.length,
+    tokenPreview: token.substring(0, 10) + '...',
+    encodedToken: encodeURIComponent(token).substring(0, 20) + '...',
+  });
+
   const response = await apiClient.get<ValidateTokenResponse>(`/auth/password-reset/validate-token?token=${encodeURIComponent(token)}`);
+  
+  console.log('📋 [validateResetToken] Resposta da API:', response);
+
   if (response.success && response.data) {
     return response.data;
   }
+  
   return {
     success: false,
     valid: false,

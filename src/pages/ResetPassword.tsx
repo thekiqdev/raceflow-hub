@@ -23,16 +23,23 @@ export default function ResetPassword() {
   useEffect(() => {
     const validateToken = async () => {
       if (!token) {
+        console.log('❌ [ResetPassword] Token não encontrado na URL');
         setValidating(false);
         setTokenValid(false);
         return;
       }
 
+      console.log('🔍 [ResetPassword] Validando token:', {
+        tokenLength: token.length,
+        tokenPreview: token.substring(0, 10) + '...',
+      });
+
       try {
         const response = await validateResetToken(token);
+        console.log('📋 [ResetPassword] Resposta da validação:', response);
         setTokenValid(response.valid);
       } catch (error: any) {
-        console.error("Error validating token:", error);
+        console.error("❌ [ResetPassword] Erro ao validar token:", error);
         setTokenValid(false);
       } finally {
         setValidating(false);
