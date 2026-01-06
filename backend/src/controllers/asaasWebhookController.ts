@@ -674,12 +674,12 @@ async function processWebhookEvent(
               }
             } else {
               // Fallback: check billing type from payment
-              if (payment.billingType === 'CREDIT_CARD') {
+              if (paymentBillingType === 'CREDIT_CARD') {
                 paymentMethod = 'Cartão de Crédito';
               }
             }
             
-            if (isCreditCard) {
+            if (isCreditCardPayment) {
               console.log('💳 Método de pagamento identificado: Cartão de Crédito');
             }
 
