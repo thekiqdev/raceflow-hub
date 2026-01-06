@@ -174,7 +174,30 @@ export const resetPasswordController = asyncHandler(async (req: AuthRequest, res
   console.log('🔍 [resetPasswordController] Token decodificado:', {
     decodedLength: decodedToken.length,
     preview: decodedToken.substring(0, 20) + '...',
+    isUUID: decodedToken.length === 36 && decodedToken.includes('-'),
+    isValidFormat: decodedToken.length === 64 && !decodedToken.includes('-'),
   });
+  
+  // Validate token format - reject UUIDs (token IDs) immediately
+  if (decodedToken.length === 36 && decodedToken.includes('-')) {
+    console.error('❌ [resetPasswordController] Token inválido: recebido UUID (ID do token) ao invés do valor do token');
+    res.status(400).json({
+      success: false,
+      error: 'Invalid token',
+      message: 'Token inválido. Por favor, use o link completo do email de recuperação de senha.',
+    });
+    return;
+  }
+  
+  if (decodedToken.length !== 64) {
+    console.error('❌ [resetPasswordController] Token inválido: comprimento incorreto');
+    res.status(400).json({
+      success: false,
+      error: 'Invalid token',
+      message: 'Token inválido. Por favor, use o link completo do email de recuperação de senha.',
+    });
+    return;
+  }
 
   // Find valid token
   const resetToken = await findPasswordResetToken(decodedToken);
@@ -259,7 +282,30 @@ export const validateTokenController = asyncHandler(async (req: AuthRequest, res
     originalLength: token.length,
     decodedLength: decodedToken.length,
     preview: decodedToken.substring(0, 20) + '...',
+    isUUID: decodedToken.length === 36 && decodedToken.includes('-'),
+    isValidFormat: decodedToken.length === 64 && !decodedToken.includes('-'),
   });
+  
+  // Validate token format - reject UUIDs (token IDs) immediately
+  if (decodedToken.length === 36 && decodedToken.includes('-')) {
+    console.error('❌ [validateTokenController] Token inválido: recebido UUID (ID do token) ao invés do valor do token');
+    res.json({
+      success: false,
+      valid: false,
+      message: 'Token inválido. Por favor, use o link completo do email de recuperação de senha.',
+    });
+    return;
+  }
+  
+  if (decodedToken.length !== 64) {
+    console.error('❌ [validateTokenController] Token inválido: comprimento incorreto');
+    res.json({
+      success: false,
+      valid: false,
+      message: 'Token inválido. Por favor, use o link completo do email de recuperação de senha.',
+    });
+    return;
+  }
 
   const resetToken = await findPasswordResetToken(decodedToken);
 

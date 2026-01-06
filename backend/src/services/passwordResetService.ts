@@ -54,6 +54,26 @@ export const findPasswordResetToken = async (token: string): Promise<PasswordRes
   // Trim and clean token
   const cleanToken = token.trim();
   
+  // Validate token format - should be 64 hex characters (32 bytes * 2)
+  // If it's a UUID (36 chars), it's likely the token ID, not the token value
+  if (cleanToken.length === 36 && cleanToken.includes('-')) {
+    console.error('❌ [findPasswordResetToken] Token inválido: parece ser um UUID (ID do token) ao invés do valor do token:', {
+      received: cleanToken,
+      expectedLength: 64,
+      receivedLength: cleanToken.length,
+    });
+    return null;
+  }
+  
+  if (cleanToken.length !== 64) {
+    console.error('❌ [findPasswordResetToken] Token inválido: comprimento incorreto:', {
+      receivedLength: cleanToken.length,
+      expectedLength: 64,
+      preview: cleanToken.substring(0, 20) + '...',
+    });
+    return null;
+  }
+  
   // Get current time from database for accurate comparison
   const nowResult = await query('SELECT NOW() as now', []);
   const dbNow = nowResult.rows[0].now;
