@@ -318,6 +318,9 @@ export const sendInvitationByCpf = async (
       li.*,
       e.title as event_title,
       e.event_date,
+      e.location,
+      e.city,
+      e.state,
       p.full_name as runner_name,
       u.email as runner_email
     FROM leader_invitations li
@@ -328,7 +331,61 @@ export const sendInvitationByCpf = async (
     [invitationId]
   );
 
-  return enrichedResult.rows[0] as LeaderInvitation;
+  const enrichedInvitation = enrichedResult.rows[0] as LeaderInvitation;
+
+  // Send email notification to runner who received the invitation
+  try {
+    const { sendNotificationSafely } = await import('./notificationService.js');
+    
+    if (enrichedInvitation.runner_email && enrichedInvitation.runner_name) {
+      // Format event date
+      const eventDate = enrichedInvitation.event_date 
+        ? new Date(enrichedInvitation.event_date).toLocaleDateString('pt-BR', {
+            day: '2-digit',
+            month: '2-digit',
+            year: 'numeric',
+          })
+        : 'Data não informada';
+
+      // Format event location
+      const event = await query(
+        'SELECT location, city, state FROM events WHERE id = $1',
+        [enrichedInvitation.event_id]
+      );
+      const eventData = event.rows[0];
+      const eventLocation = eventData?.location || 
+        `${eventData?.city || ''}${eventData?.city && eventData?.state ? ' - ' : ''}${eventData?.state || ''}`.trim() || 
+        'Local não informado';
+
+      // Get leader name
+      const leaderResult = await query(
+        'SELECT name FROM group_leaders WHERE id = $1',
+        [enrichedInvitation.leader_id]
+      );
+      const leaderName = leaderResult.rows[0]?.name || 'Líder de Grupo';
+
+      await sendNotificationSafely({
+        templateKey: 'invitation_received',
+        recipient: {
+          email: enrichedInvitation.runner_email,
+          name: enrichedInvitation.runner_name,
+        },
+        variables: {
+          userName: enrichedInvitation.runner_name,
+          leaderName: leaderName,
+          eventTitle: enrichedInvitation.event_title || 'Evento',
+          eventDate: eventDate,
+          eventLocation: eventLocation,
+        },
+      });
+      console.log('✅ Notificação de convite enviada para runner');
+    }
+  } catch (notificationError: any) {
+    // Don't fail the invitation if notification fails
+    console.error('❌ Erro ao enviar notificação de convite:', notificationError);
+  }
+
+  return enrichedInvitation;
 };
 
 /**

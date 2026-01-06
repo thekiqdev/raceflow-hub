@@ -22,6 +22,7 @@ import categoriesRouter from './routes/categories.js';
 import quotesRouter from './routes/quotes.js';
 import contactMessagesRouter from './routes/contactMessages.js';
 import formConfigurationsRouter from './routes/formConfigurations.js';
+import notificationTemplatesRouter from './routes/notificationTemplates.js';
 
 // Load environment variables
 // Try to load from backend/.env explicitly
@@ -171,6 +172,7 @@ app.use('/api/auth', authRouter);
 app.use('/api/quotes', quotesRouter);
 app.use('/api/contact-messages', contactMessagesRouter);
 app.use('/api/form-configurations', formConfigurationsRouter);
+app.use('/api/notification-templates', notificationTemplatesRouter);
 app.use('/api/group-leaders', groupLeadersRouter);
 app.use('/api/events', eventsRouter);
 app.use('/api/profiles', profilesRouter);

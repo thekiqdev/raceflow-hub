@@ -12,6 +12,7 @@ import {
 import { z } from 'zod';
 import { hasRole } from '../services/userRolesService.js';
 import { getEventById } from '../services/eventsService.js';
+import { sendNotificationSafely, getAdminEmail, getOrganizerEmail } from '../services/notificationService.js';
 
 const createContactMessageSchema = z.object({
   type: z.enum(['event', 'platform']),
@@ -47,8 +48,9 @@ export const createContactMessageController = asyncHandler(async (req: AuthReque
   const data = validation.data;
 
   // If type is 'event', validate event_id and get organizer_id
+  let event = null;
   if (data.type === 'event' && data.event_id) {
-    const event = await getEventById(data.event_id);
+    event = await getEventById(data.event_id);
     if (!event) {
       res.status(404).json({
         success: false,
@@ -61,6 +63,57 @@ export const createContactMessageController = asyncHandler(async (req: AuthReque
   }
 
   const message = await createContactMessage(data);
+
+  // Send notifications based on message type
+  try {
+    if (data.type === 'platform') {
+      // Send notification to admin
+      const adminEmail = await getAdminEmail();
+      if (adminEmail) {
+        await sendNotificationSafely({
+          templateKey: 'new_contact_message_platform',
+          recipient: {
+            email: adminEmail,
+          },
+          variables: {
+            senderName: message.name,
+            senderEmail: message.email,
+            senderPhone: message.phone || 'Não informado',
+            subject: message.subject,
+            message: message.message,
+          },
+        });
+        console.log('✅ Notificação de mensagem de contato (plataforma) enviada para admin');
+      } else {
+        console.warn('⚠️ Email do admin não encontrado, notificação não enviada');
+      }
+    } else if (data.type === 'event' && message.organizer_id) {
+      // Send notification to organizer
+      const organizerEmail = await getOrganizerEmail(message.organizer_id);
+      if (organizerEmail) {
+        await sendNotificationSafely({
+          templateKey: 'new_contact_message_event',
+          recipient: {
+            email: organizerEmail,
+          },
+          variables: {
+            eventTitle: event?.title || 'Evento',
+            senderName: message.name,
+            senderEmail: message.email,
+            senderPhone: message.phone || 'Não informado',
+            subject: message.subject,
+            message: message.message,
+          },
+        });
+        console.log('✅ Notificação de mensagem de contato (evento) enviada para organizador');
+      } else {
+        console.warn(`⚠️ Email do organizador ${message.organizer_id} não encontrado, notificação não enviada`);
+      }
+    }
+  } catch (error: any) {
+    // Don't break the flow if notification fails
+    console.error('❌ Erro ao enviar notificação de mensagem de contato:', error);
+  }
 
   res.json({
     success: true,

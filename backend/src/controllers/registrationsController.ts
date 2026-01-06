@@ -17,6 +17,101 @@ import { getCategoryById } from '../services/categoriesService.js';
 import { createCustomer, createPayment, getPaymentByRegistrationId, validateOrRecreateCustomer } from '../services/asaasService.js';
 import { getProfileByUserId } from '../services/profilesService.js';
 import { query } from '../config/database.js';
+import { sendNotificationSafely, getUserEmail, getUserName, getOrganizerEmail } from '../services/notificationService.js';
+
+/**
+ * Helper function to send registration notifications
+ */
+async function sendRegistrationNotifications(
+  registration: any,
+  event: any,
+  runnerId: string
+): Promise<void> {
+  try {
+    const runnerEmail = await getUserEmail(runnerId);
+    const runnerName = await getUserName(runnerId);
+    const organizerId = event.organizer_id;
+    const organizerEmail = await getOrganizerEmail(organizerId);
+    const organizerName = event.organizer_name || 'Organizador';
+
+    // Format event date
+    const eventDate = event.event_date ? new Date(event.event_date).toLocaleDateString('pt-BR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    }) : 'Data não informada';
+
+    // Format event location
+    const eventLocation = event.location || `${event.city || ''}${event.city && event.state ? ' - ' : ''}${event.state || ''}`.trim() || 'Local não informado';
+
+    // Format total amount
+    const totalAmount = registration.total_amount > 0 
+      ? `R$ ${parseFloat(registration.total_amount).toFixed(2).replace('.', ',')}`
+      : 'Gratuito';
+
+    // Send notification to runner
+    if (runnerEmail) {
+      if (registration.status === 'confirmed' || registration.payment_status === 'paid' || registration.payment_status === 'convidado') {
+        // Registration confirmed (free or paid)
+        await sendNotificationSafely({
+          templateKey: 'registration_confirmed',
+          recipient: {
+            email: runnerEmail,
+            name: runnerName || undefined,
+          },
+          variables: {
+            userName: runnerName || 'Atleta',
+            eventTitle: event.title,
+            registrationCode: registration.confirmation_code,
+            eventDate: eventDate,
+            eventLocation: eventLocation,
+          },
+        });
+        console.log('✅ Notificação de inscrição confirmada enviada para runner');
+      } else {
+        // Registration pending payment
+        await sendNotificationSafely({
+          templateKey: 'registration_pending',
+          recipient: {
+            email: runnerEmail,
+            name: runnerName || undefined,
+          },
+          variables: {
+            userName: runnerName || 'Atleta',
+            eventTitle: event.title,
+            totalAmount: totalAmount,
+          },
+        });
+        console.log('✅ Notificação de inscrição pendente enviada para runner');
+      }
+    } else {
+      console.warn(`⚠️ Email do runner ${runnerId} não encontrado, notificação não enviada`);
+    }
+
+    // Send notification to organizer
+    if (organizerEmail) {
+      await sendNotificationSafely({
+        templateKey: 'new_registration',
+        recipient: {
+          email: organizerEmail,
+        },
+        variables: {
+          organizerName: organizerName,
+          eventTitle: event.title,
+          athleteName: runnerName || 'Atleta',
+          registrationCode: registration.confirmation_code,
+          totalAmount: totalAmount,
+        },
+      });
+      console.log('✅ Notificação de nova inscrição enviada para organizer');
+    } else {
+      console.warn(`⚠️ Email do organizador ${organizerId} não encontrado, notificação não enviada`);
+    }
+  } catch (error: any) {
+    // Don't break the flow if notification fails
+    console.error('❌ Erro ao enviar notificações de inscrição:', error);
+  }
+}
 
 // Get registrations
 export const getAllRegistrations = asyncHandler(async (req: AuthRequest, res: Response) => {
@@ -464,6 +559,9 @@ export const createRegistrationController = asyncHandler(async (req: AuthRequest
     registration.status = 'confirmed';
     registration.payment_status = 'paid';
   }
+
+  // Send notifications
+  await sendRegistrationNotifications(registration, event, registration.runner_id);
 
   res.status(201).json({
     success: true,
@@ -932,6 +1030,9 @@ export const createRegistrationByOrganizerController = asyncHandler(async (req: 
     }
   }
 
+  // Send notifications
+  await sendRegistrationNotifications(registration, event, registration.runner_id);
+
   res.status(201).json({
     success: true,
     data: {
@@ -1210,12 +1311,29 @@ export const updateRegistrationController = asyncHandler(async (req: AuthRequest
     return;
   }
 
-  // Check if payment status is being updated to 'paid'
+  // Check if payment status is being updated to 'paid' or status to 'confirmed'
   const wasPaid = registration.payment_status === 'paid';
+  const wasConfirmed = registration.status === 'confirmed';
   const willBePaid = req.body.payment_status === 'paid';
+  const willBeConfirmed = req.body.status === 'confirmed';
   const paymentJustConfirmed = !wasPaid && willBePaid;
+  const statusJustConfirmed = !wasConfirmed && willBeConfirmed;
 
   const updatedRegistration = await updateRegistration(id, req.body);
+
+  // Send notifications if registration was just confirmed (by payment or status)
+  if (paymentJustConfirmed || statusJustConfirmed) {
+    try {
+      const event = await getEventById(registration.event_id);
+      if (event) {
+        await sendRegistrationNotifications(updatedRegistration, event, updatedRegistration.runner_id);
+        console.log('✅ Notificações de confirmação enviadas após atualização manual');
+      }
+    } catch (notificationError: any) {
+      // Don't break the flow if notification fails
+      console.error('❌ Erro ao enviar notificações após atualização manual:', notificationError);
+    }
+  }
 
   // If payment was just confirmed, process commissions and bonuses
   if (paymentJustConfirmed) {
@@ -1283,8 +1401,10 @@ export const updateRegistrationController = asyncHandler(async (req: AuthRequest
                     console.log(`🎁 [updateRegistrationController] Comissão é apenas 'invitation', verificando bônus de convite...`);
                     const { checkAllInvitationBonuses } = await import('../services/leaderBonusService.js');
                     await checkAllInvitationBonuses(leaderId, reg.event_id);
-                    // Não criar comissão para tipo 'invitation'
-                    return; // Exit early, don't create commission
+                    // Não criar comissão para tipo 'invitation', mas continuar o fluxo
+                    // (não usar return aqui, pois ainda precisa processar outras coisas)
+                  } else {
+                    // Se não for apenas 'invitation', criar comissão normalmente abaixo
                   }
                 }
               }
@@ -1294,8 +1414,33 @@ export const updateRegistrationController = asyncHandler(async (req: AuthRequest
           }
           
           // Create commission (this will also check for invitation bonuses)
-          try {
-            const { createCommission } = await import('../services/commissionsService.js');
+          // Skip if bonus type is 'invitation' only (already handled above)
+          let shouldCreateCommission = true;
+          if (reg.coupon_code) {
+            try {
+              const { getCouponByCodeOnly } = await import('../services/couponsService.js');
+              const coupon = await getCouponByCodeOnly(reg.coupon_code);
+              if (coupon && coupon.leader_id === leaderId) {
+                const commissionIdShort = coupon.code.replace(/[^0-9A-Z]/g, '').substring(4, 12);
+                const commissionResult = await query(
+                  `SELECT id, bonus_type FROM leader_event_commissions 
+                   WHERE leader_id = $1 AND event_id = $2
+                   AND REPLACE(UPPER(id::text), '-', '') LIKE '%' || $3 || '%'`,
+                  [leaderId, reg.event_id, commissionIdShort]
+                );
+                if (commissionResult.rows.length > 0 && commissionResult.rows[0].bonus_type === 'invitation') {
+                  // Already handled above, skip commission creation
+                  shouldCreateCommission = false;
+                }
+              }
+            } catch (couponError: any) {
+              // Continue with commission creation if coupon check fails
+            }
+          }
+          
+          if (shouldCreateCommission) {
+            try {
+              const { createCommission } = await import('../services/commissionsService.js');
             await createCommission({
               leader_id: leaderId,
               registration_id: id,
@@ -1318,6 +1463,7 @@ export const updateRegistrationController = asyncHandler(async (req: AuthRequest
             } else {
               console.error('❌ [updateRegistrationController] Erro ao criar comissão:', commissionError.message);
             }
+          }
           }
         } else {
           console.log(`ℹ️ [updateRegistrationController] Nenhum líder associado (sem referência e cupom não pertence a líder)`);
@@ -2023,6 +2169,9 @@ export const createRegistrationByLeaderController = asyncHandler(async (req: Aut
     }
   }
 
+  // Send notifications
+  await sendRegistrationNotifications(registration, event, registration.runner_id);
+
   res.status(201).json({
     success: true,
     data: {
@@ -2030,11 +2179,6 @@ export const createRegistrationByLeaderController = asyncHandler(async (req: Aut
       payment: paymentData,
     },
     message: 'Atleta inscrito com sucesso',
-  });
-  res.json({
-    success: true,
-    data: registration,
-    message: 'Receipt data retrieved successfully',
   });
 });
 

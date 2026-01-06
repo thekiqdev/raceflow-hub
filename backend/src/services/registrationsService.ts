@@ -525,6 +525,9 @@ export const transferRegistration = async (
     throw new Error('Registration not found');
   }
 
+  // Get old runner ID before transfer
+  const oldRunnerId = registration.runner_id;
+
   // Update runner_id and set status to transferred
   const result = await query(
     `UPDATE registrations 
@@ -536,6 +539,74 @@ export const transferRegistration = async (
 
   if (result.rows.length === 0) {
     return null;
+  }
+
+  // Send email notifications for transfer
+  try {
+    const { sendNotificationSafely, getUserEmail, getUserName } = await import('./notificationService.js');
+    const { getEventById } = await import('./eventsService.js');
+    
+    const event = await getEventById(registration.event_id);
+    if (event) {
+      // Get runner names and emails
+      const oldRunnerEmail = await getUserEmail(oldRunnerId);
+      const oldRunnerName = await getUserName(oldRunnerId);
+      const newRunnerEmail = await getUserEmail(newRunnerId);
+      const newRunnerName = await getUserName(newRunnerId);
+
+      // Format event date
+      const eventDate = event.event_date ? new Date(event.event_date).toLocaleDateString('pt-BR', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+      }) : 'Data não informada';
+
+      // Format event location
+      const eventLocation = event.location || `${event.city || ''}${event.city && event.state ? ' - ' : ''}${event.state || ''}`.trim() || 'Local não informado';
+
+      // Notify old runner (who transferred)
+      if (oldRunnerEmail && oldRunnerName) {
+        await sendNotificationSafely({
+          templateKey: 'registration_transferred',
+          recipient: {
+            email: oldRunnerEmail,
+            name: oldRunnerName,
+          },
+          variables: {
+            userName: oldRunnerName,
+            eventTitle: event.title,
+            registrationCode: registration.confirmation_code,
+            newRunnerName: newRunnerName || 'Novo titular',
+            eventDate: eventDate,
+            eventLocation: eventLocation,
+          },
+        });
+        console.log('✅ Notificação de transferência enviada para runner que transferiu');
+      }
+
+      // Notify new runner (who received)
+      if (newRunnerEmail && newRunnerName) {
+        await sendNotificationSafely({
+          templateKey: 'registration_received',
+          recipient: {
+            email: newRunnerEmail,
+            name: newRunnerName,
+          },
+          variables: {
+            userName: newRunnerName,
+            eventTitle: event.title,
+            registrationCode: registration.confirmation_code,
+            oldRunnerName: oldRunnerName || 'Titular anterior',
+            eventDate: eventDate,
+            eventLocation: eventLocation,
+          },
+        });
+        console.log('✅ Notificação de recebimento enviada para runner que recebeu');
+      }
+    }
+  } catch (notificationError: any) {
+    // Don't fail the transfer if notification fails
+    console.error('❌ Erro ao enviar notificações de transferência:', notificationError);
   }
 
   return result.rows[0];

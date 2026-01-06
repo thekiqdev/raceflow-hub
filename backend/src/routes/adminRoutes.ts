@@ -49,6 +49,7 @@ import {
 import {
   getSystemSettingsController,
   updateSystemSettingsController,
+  testEmailController,
 } from '../controllers/systemSettingsController.js';
 import {
   getTransferRequestsController,
@@ -153,6 +154,7 @@ router.post('/knowledge/articles/:id/toggle-status', toggleArticleStatusControll
 // System Settings
 router.get('/settings', getSystemSettingsController);
 router.put('/settings', updateSystemSettingsController);
+router.post('/settings/test-email', testEmailController);
 
 // Transfer Requests
 router.get('/transfer-requests', getTransferRequestsController);

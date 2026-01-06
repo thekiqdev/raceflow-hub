@@ -10,6 +10,7 @@ import {
 } from '../services/quotesService.js';
 import { z } from 'zod';
 import { hasRole } from '../services/userRolesService.js';
+import { sendNotificationSafely, getAdminEmail } from '../services/notificationService.js';
 
 const createQuoteSchema = z.object({
   full_name: z.string().min(3, 'Nome completo é obrigatório'),
@@ -54,6 +55,32 @@ export const createQuoteController = asyncHandler(async (req: AuthRequest, res: 
   console.log('✅ Validation passed. Data:', JSON.stringify(validation.data, null, 2));
   const quote = await createQuote(validation.data);
   console.log('💾 Quote saved. Additional fields:', quote.additional_fields);
+
+  // Send notification to admin
+  try {
+    const adminEmail = await getAdminEmail();
+    if (adminEmail) {
+      await sendNotificationSafely({
+        templateKey: 'new_quote_received',
+        recipient: {
+          email: adminEmail,
+        },
+        variables: {
+          quoteName: quote.full_name,
+          quoteEmail: quote.email,
+          quoteLocation: quote.event_location,
+          quoteDate: quote.event_date,
+          quoteDescription: quote.description,
+        },
+      });
+      console.log('✅ Notificação de novo orçamento enviada para admin');
+    } else {
+      console.warn('⚠️ Email do admin não encontrado, notificação não enviada');
+    }
+  } catch (error: any) {
+    // Don't break the flow if notification fails
+    console.error('❌ Erro ao enviar notificação de novo orçamento:', error);
+  }
 
   res.json({
     success: true,

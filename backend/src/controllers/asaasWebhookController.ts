@@ -7,7 +7,9 @@ import {
   AsaasPaymentStatus,
 } from '../types/asaas.js';
 import { getTransferRequestById, updateTransferRequest } from '../services/transferRequestService.js';
-import { findUserByCpfOrEmail, transferRegistration } from '../services/registrationsService.js';
+import { findUserByCpfOrEmail, transferRegistration, getRegistrationById } from '../services/registrationsService.js';
+import { getEventById } from '../services/eventsService.js';
+import { sendNotificationSafely, getUserEmail, getUserName } from '../services/notificationService.js';
 
 /**
  * Handle Asaas webhook events
@@ -567,6 +569,78 @@ async function processWebhookEvent(
         [registrationId]
       );
       console.log(`✅ Inscrição ${registrationId} confirmada após pagamento`);
+      
+      // Send payment confirmation notifications
+      try {
+        const registration = await getRegistrationById(registrationId);
+        if (registration) {
+          const event = await getEventById(registration.event_id);
+          if (event) {
+            const runnerId = registration.runner_id;
+            const runnerEmail = await getUserEmail(runnerId);
+            const runnerName = await getUserName(runnerId);
+
+            // Format event date
+            const eventDate = event.event_date ? new Date(event.event_date).toLocaleDateString('pt-BR', {
+              day: '2-digit',
+              month: '2-digit',
+              year: 'numeric',
+            }) : 'Data não informada';
+
+            // Format event location
+            const eventLocation = event.location || `${event.city || ''}${event.city && event.state ? ' - ' : ''}${event.state || ''}`.trim() || 'Local não informado';
+
+            // Format amount
+            const amount = registration.total_amount > 0 
+              ? `R$ ${parseFloat(registration.total_amount).toFixed(2).replace('.', ',')}`
+              : 'Gratuito';
+
+            // Determine payment method (default to PIX for Asaas)
+            const paymentMethod = 'PIX';
+
+            if (runnerEmail) {
+              // Send payment_received notification
+              await sendNotificationSafely({
+                templateKey: 'payment_received',
+                recipient: {
+                  email: runnerEmail,
+                  name: runnerName || undefined,
+                },
+                variables: {
+                  userName: runnerName || 'Atleta',
+                  amount: amount,
+                  eventTitle: event.title,
+                  paymentMethod: paymentMethod,
+                  registrationCode: registration.confirmation_code,
+                },
+              });
+
+              // Send registration_confirmed notification
+              await sendNotificationSafely({
+                templateKey: 'registration_confirmed',
+                recipient: {
+                  email: runnerEmail,
+                  name: runnerName || undefined,
+                },
+                variables: {
+                  userName: runnerName || 'Atleta',
+                  eventTitle: event.title,
+                  registrationCode: registration.confirmation_code,
+                  eventDate: eventDate,
+                  eventLocation: eventLocation,
+                },
+              });
+
+              console.log('✅ Notificações de pagamento e confirmação enviadas para runner');
+            } else {
+              console.warn(`⚠️ Email do runner ${runnerId} não encontrado, notificações não enviadas`);
+            }
+          }
+        }
+      } catch (notificationError: any) {
+        // Don't break the flow if notification fails
+        console.error('❌ Erro ao enviar notificações de pagamento:', notificationError);
+      }
       
       // Check for commission and invitation bonuses after payment confirmation
       try {
