@@ -123,8 +123,13 @@ export const getEvents = async (filters?: {
     console.log('📊 First event status:', result.rows[0].status);
   }
   
+  // Import getFileUrl to convert file paths to URLs
+  const { getFileUrl } = await import('../middleware/upload.js');
+  
   return result.rows.map((row) => ({
     ...row,
+    banner_url: row.banner_url ? getFileUrl(row.banner_url) : null,
+    regulation_url: row.regulation_url ? getFileUrl(row.regulation_url) : null,
     registration_count: parseInt(row.registration_count) || 0,
     confirmed_registrations: parseInt(row.confirmed_registrations) || 0,
     revenue: parseFloat(row.revenue) || 0,
@@ -154,7 +159,15 @@ export const getEventById = async (eventId: string) => {
     return null;
   }
 
-  return result.rows[0];
+  // Import getFileUrl to convert file paths to URLs
+  const { getFileUrl } = await import('../middleware/upload.js');
+  
+  const row = result.rows[0];
+  return {
+    ...row,
+    banner_url: row.banner_url ? getFileUrl(row.banner_url) : null,
+    regulation_url: row.regulation_url ? getFileUrl(row.regulation_url) : null,
+  };
 };
 
 // Create event
