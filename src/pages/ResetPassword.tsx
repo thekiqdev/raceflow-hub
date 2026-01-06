@@ -12,6 +12,19 @@ export default function ResetPassword() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const token = searchParams.get("token");
+  
+  // Debug: log token
+  useEffect(() => {
+    if (token) {
+      console.log('🔍 [ResetPassword] Token da URL:', {
+        token: token.substring(0, 20) + '...',
+        tokenLength: token.length,
+        fullToken: token,
+      });
+    } else {
+      console.log('❌ [ResetPassword] Token não encontrado na URL');
+    }
+  }, [token]);
 
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -23,23 +36,16 @@ export default function ResetPassword() {
   useEffect(() => {
     const validateToken = async () => {
       if (!token) {
-        console.log('❌ [ResetPassword] Token não encontrado na URL');
         setValidating(false);
         setTokenValid(false);
         return;
       }
 
-      console.log('🔍 [ResetPassword] Validando token:', {
-        tokenLength: token.length,
-        tokenPreview: token.substring(0, 10) + '...',
-      });
-
       try {
         const response = await validateResetToken(token);
-        console.log('📋 [ResetPassword] Resposta da validação:', response);
         setTokenValid(response.valid);
       } catch (error: any) {
-        console.error("❌ [ResetPassword] Erro ao validar token:", error);
+        console.error("Error validating token:", error);
         setTokenValid(false);
       } finally {
         setValidating(false);
