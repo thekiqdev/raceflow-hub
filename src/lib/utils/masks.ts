@@ -54,6 +54,19 @@ export const maskCep = (value: string): string => {
 };
 
 /**
+ * Apply credit card number mask (0000 0000 0000 0000)
+ */
+export const maskCreditCard = (value: string): string => {
+  const numbers = value.replace(/\D/g, '');
+  
+  // Limit to 16 digits
+  const limitedNumbers = numbers.slice(0, 16);
+  
+  // Add spaces every 4 digits
+  return limitedNumbers.replace(/(\d{4})(?=\d)/g, '$1 ');
+};
+
+/**
  * Remove all masks from a string (keep only numbers)
  */
 export const unmask = (value: string): string => {

@@ -17,6 +17,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import { getOwnProfile, getPublicProfileByCpf } from "@/lib/api/profiles";
 import { createRegistration, getPaymentStatus } from "@/lib/api/registrations";
 import { PixQrCode } from "@/components/payment/PixQrCode";
+import { CreditCardForm } from "@/components/payment/CreditCardForm";
+import { CreditCardData, CreditCardHolderInfo } from "@/lib/api/registrations";
 import { getEventCategories, EventCategory, CategoryBatch } from "@/lib/api/eventCategories";
 import { EventKit, KitProduct, ProductVariant } from "@/lib/api/eventKits";
 import { validateCoupon } from "@/lib/api/coupons";
@@ -115,6 +117,11 @@ export function RegistrationFlow({
   } | null>(null);
   const [paymentStatus, setPaymentStatus] = useState<'pending' | 'paid' | 'confirmed'>('pending');
   const [isPollingPayment, setIsPollingPayment] = useState(false);
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<'pix' | 'credit_card' | null>(null);
+  const [creditCardData, setCreditCardData] = useState<{
+    credit_card: CreditCardData;
+    credit_card_holder_info: CreditCardHolderInfo;
+  } | null>(null);
   const [categories, setCategories] = useState<Category[]>(initialCategories || []);
   const [loadingCategories, setLoadingCategories] = useState(false);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
@@ -794,14 +801,51 @@ export function RegistrationFlow({
 
   const handleNextStep = () => {
     setStep((prev) => {
-      const nextStep = prev + 1;
-      console.log(`🔄 Navegando do step ${prev} para step ${nextStep}`);
+      let nextStep = prev + 1;
+      
+      console.log(`🔄 handleNextStep chamado:`, {
+        prevStep: prev,
+        nextStep: nextStep,
+        totalPrice,
+        categoryPrice,
+        kitPrice,
+        subtotal,
+      });
+      
+      // If moving from step 5 (summary) and totalPrice is 0 (free event),
+      // skip step 6 (payment method selection) and go directly to step 7 (confirmation)
+      if (prev === 5 && totalPrice === 0) {
+        nextStep = 7; // Skip payment method selection for free events
+        // Set default payment method to pix for free events
+        setSelectedPaymentMethod('pix');
+        console.log(`🔄 Navegando do step ${prev} para step ${nextStep} (pulando seleção de método de pagamento - evento gratuito)`);
+      } else {
+        console.log(`🔄 Navegando do step ${prev} para step ${nextStep}`);
+      }
+      
       return nextStep;
     });
   };
 
   const handlePreviousStep = () => {
-    setStep((prev) => prev - 1);
+    setStep((prev) => {
+      let previousStep = prev - 1;
+      
+      // If moving from step 7 (confirmation) and totalPrice is 0 (free event),
+      // skip step 6 (payment method selection) and go directly to step 5 (summary)
+      if (prev === 7 && totalPrice === 0) {
+        previousStep = 5; // Skip payment method selection for free events
+        console.log(`🔄 Voltando do step ${prev} para step ${previousStep} (pulando seleção de método de pagamento - evento gratuito)`);
+      } else if (prev === 6 && totalPrice > 0) {
+        // If moving from step 6 (payment method) back, go to step 5 (summary)
+        previousStep = 5;
+        console.log(`🔄 Voltando do step ${prev} para step ${previousStep}`);
+      } else {
+        console.log(`🔄 Voltando do step ${prev} para step ${previousStep}`);
+      }
+      
+      return previousStep;
+    });
   };
 
   const handleValidateCoupon = async (code?: string) => {
@@ -881,21 +925,33 @@ export function RegistrationFlow({
       return;
     }
 
+    // Validate credit card data if payment method is credit card
+    if (selectedPaymentMethod === 'credit_card' && totalPrice > 0 && !creditCardData) {
+      toast.error("Por favor, preencha os dados do cartão de crédito.");
+      return;
+    }
+
     setIsSubmitting(true);
     try {
       // Create registration
       // Use otherPersonId if registering for someone else, otherwise use logged user id
       const runnerId = otherPersonId || user.id;
       
-      const registrationData = {
+      const registrationData: any = {
         event_id: event.id,
         runner_id: runnerId,
         category_id: selectedCategory.id,
         kit_id: selectedKit?.id,
-        payment_method: "pix" as const, // Default payment method, can be changed later
+        payment_method: selectedPaymentMethod || "pix", // Use selected payment method
         total_amount: totalPrice,
         coupon_code: appliedCoupon?.code || undefined,
       };
+
+      // Add credit card data if payment method is credit card
+      if (selectedPaymentMethod === 'credit_card' && creditCardData) {
+        registrationData.credit_card = creditCardData.credit_card;
+        registrationData.credit_card_holder_info = creditCardData.credit_card_holder_info;
+      }
 
       console.log('📤 Enviando dados de inscrição:', {
         event_id: registrationData.event_id,
@@ -936,11 +992,25 @@ export function RegistrationFlow({
           
           if (payment.error || payment.warning) {
             toast.warning(payment.warning || payment.error || "Inscrição criada, mas houve um problema com o pagamento");
+          } else if (payment.payment_method === 'credit_card') {
+            // Credit card payment
+            if (payment.status === 'CONFIRMED') {
+              toast.success("Pagamento aprovado! Sua inscrição foi confirmada.");
+              setPaymentStatus('paid');
+            } else if (payment.status === 'PENDING' || payment.status === 'AWAITING_RISK_ANALYSIS') {
+              toast.info("Pagamento em análise. Você receberá uma confirmação por email quando o pagamento for aprovado.");
+              setPaymentStatus('pending');
+            } else {
+              toast.warning("Pagamento não foi aprovado. Entre em contato com o suporte.");
+              setPaymentStatus('pending');
+            }
           } else if (payment.pix_qr_code) {
+            // PIX payment with QR Code
             toast.success("Inscrição criada! Escaneie o QR Code para pagar.");
             // Start polling for payment status
             startPaymentStatusPolling(response.data.id);
           } else {
+            // PIX payment without QR Code yet
             toast.success("Inscrição criada! Aguardando geração do QR Code...");
             // Start polling for QR Code
             if (payment.asaas_payment_id) {
@@ -1195,6 +1265,7 @@ export function RegistrationFlow({
     setPaymentData(null);
     setPaymentStatus('pending');
     setIsPollingPayment(false);
+    setSelectedPaymentMethod(null);
     setFormData({ fullName: "", email: "", phone: "", cpf: "" });
     onOpenChange(false);
   };
@@ -1222,7 +1293,7 @@ export function RegistrationFlow({
       <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="text-2xl">
-            {step === 6 
+            {step === 7 
               ? (totalPrice > 0 && paymentStatus === 'pending' 
                   ? "Pagamento Pendente" 
                   : "Confirmação de Inscrição")
@@ -1233,8 +1304,9 @@ export function RegistrationFlow({
             {step === 2 && "Selecione a modalidade desejada"}
             {step === 3 && "Selecione a categoria"}
             {step === 4 && "Escolha o kit e configure os produtos"}
-            {step === 5 && "Revise seus dados e finalize a inscrição"}
-            {step === 6 && (
+            {step === 5 && "Revise seus dados e resumo da compra"}
+            {step === 6 && "Escolha o método de pagamento"}
+            {step === 7 && (
               totalPrice > 0 && paymentStatus === 'pending'
                 ? "Complete o pagamento para confirmar sua inscrição"
                 : "Sua inscrição foi confirmada com sucesso"
@@ -1243,9 +1315,9 @@ export function RegistrationFlow({
         </DialogHeader>
 
         {/* Progress Indicator */}
-        {step <= 5 && (
+        {step <= 6 && (
           <div className="flex items-center justify-between mb-6">
-            {[1, 2, 3, 4, 5].map((s) => (
+            {[1, 2, 3, 4, 5, 6].map((s) => (
               <div key={s} className="flex items-center flex-1">
                 <div
                   className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${
@@ -1256,7 +1328,7 @@ export function RegistrationFlow({
                 >
                   {s}
                 </div>
-                {s < 5 && (
+                {s < 6 && (
                   <div
                     className={`flex-1 h-1 mx-2 ${
                       step > s ? "bg-primary" : "bg-muted"
@@ -2303,7 +2375,7 @@ export function RegistrationFlow({
           </div>
         )}
 
-        {/* Step 5: Checkout */}
+        {/* Step 5: Resumo da Compra */}
         {step === 5 && (
           <div className="space-y-6">
             <div>
@@ -2577,30 +2649,288 @@ export function RegistrationFlow({
               <Button variant="outline" onClick={handlePreviousStep}>
                 Voltar
               </Button>
-              <Button
-                onClick={handleSubmit}
-                disabled={
-                  !user || // User must be logged in
-                  isSubmitting ||
-                  !formData.fullName ||
-                  !formData.email ||
-                  !formData.phone ||
-                  !formData.cpf ||
-                  (isRegisteringOther && !otherPersonId) // If registering other person, must have found profile
-                }
-                className="min-w-32"
-              >
-                {isSubmitting ? "Processando..." : "Finalizar Inscrição"}
-              </Button>
+              {totalPrice > 0 ? (
+                <Button
+                  onClick={handleNextStep}
+                  disabled={
+                    !user || // User must be logged in
+                    !formData.fullName ||
+                    !formData.email ||
+                    !formData.phone ||
+                    !formData.cpf ||
+                    (isRegisteringOther && !otherPersonId) // If registering other person, must have found profile
+                  }
+                  className="min-w-32"
+                >
+                  Ir para Pagamento
+                </Button>
+              ) : (
+                <Button
+                  onClick={handleSubmit}
+                  disabled={
+                    !user || // User must be logged in
+                    isSubmitting ||
+                    !formData.fullName ||
+                    !formData.email ||
+                    !formData.phone ||
+                    !formData.cpf ||
+                    (isRegisteringOther && !otherPersonId) // If registering other person, must have found profile
+                  }
+                  className="min-w-32"
+                >
+                  {isSubmitting ? "Processando..." : "Finalizar Inscrição"}
+                </Button>
+              )}
             </div>
           </div>
         )}
 
-        {/* Step 6: Confirmation Ticket / Payment */}
+        {/* Step 6: Payment Method Selection */}
         {step === 6 && (
+          <div className="space-y-6">
+            {(() => {
+              console.log('🔍 Step 6 - Debug:', {
+                step,
+                totalPrice,
+                shouldShowPaymentSelection: totalPrice > 0,
+                selectedPaymentMethod,
+              });
+              return null;
+            })()}
+            {totalPrice > 0 ? (
+              <>
+                <div>
+                  <h3 className="text-lg font-semibold mb-4">Escolha o Método de Pagamento</h3>
+                  <p className="text-sm text-muted-foreground mb-6">
+                    Selecione como deseja pagar sua inscrição
+                  </p>
+                  
+                  <RadioGroup 
+                    value={selectedPaymentMethod || undefined}
+                    onValueChange={(value) => setSelectedPaymentMethod(value as 'pix' | 'credit_card')}
+                    className="grid gap-4"
+                  >
+                    <Card 
+                      className={`cursor-pointer transition-all hover:border-primary ${
+                        selectedPaymentMethod === 'pix' ? 'border-primary border-2 bg-primary/5' : ''
+                      }`}
+                      onClick={() => setSelectedPaymentMethod('pix')}
+                    >
+                      <CardContent className="p-6">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-4">
+                            <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
+                              <span className="text-2xl">📱</span>
+                            </div>
+                            <div>
+                              <h4 className="font-semibold">PIX</h4>
+                              <p className="text-sm text-muted-foreground">
+                                Aprovação instantânea
+                              </p>
+                            </div>
+                          </div>
+                          <RadioGroupItem 
+                            value="pix" 
+                            className="ml-auto"
+                          />
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    <Card 
+                      className={`cursor-pointer transition-all hover:border-primary ${
+                        selectedPaymentMethod === 'credit_card' ? 'border-primary border-2 bg-primary/5' : ''
+                      }`}
+                      onClick={() => setSelectedPaymentMethod('credit_card')}
+                    >
+                      <CardContent className="p-6">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-4">
+                            <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
+                              <span className="text-2xl">💳</span>
+                            </div>
+                            <div>
+                              <h4 className="font-semibold">Cartão de Crédito</h4>
+                              <p className="text-sm text-muted-foreground">
+                                Pagamento seguro e rápido
+                              </p>
+                            </div>
+                          </div>
+                          <RadioGroupItem 
+                            value="credit_card" 
+                            className="ml-auto"
+                          />
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </RadioGroup>
+                </div>
+
+                {/* Credit Card Form - only show if credit card is selected */}
+                {selectedPaymentMethod === 'credit_card' && (
+                  <div>
+                    <h3 className="text-lg font-semibold mb-4">Dados do Cartão de Crédito</h3>
+                    <CreditCardForm
+                      onSubmit={(data) => {
+                        setCreditCardData(data);
+                        // Call handleSubmit with credit card data
+                        const submitWithCardData = async () => {
+                          if (!user || !selectedModality || !selectedCategory) {
+                            toast.error("Erro: usuário não autenticado ou categoria não selecionada");
+                            return;
+                          }
+
+                          // Validate event status and dates (same as handleSubmit)
+                          if (event.status) {
+                            if (event.status === "draft") {
+                              toast.error("Este evento ainda não está aberto para inscrições.");
+                              return;
+                            }
+                            if (event.status === "finished" || event.status === "cancelled") {
+                              toast.error("Este evento não está mais aceitando inscrições.");
+                              return;
+                            }
+                            if (event.status !== "published" && event.status !== "ongoing") {
+                              toast.error("Este evento não está aberto para inscrições no momento.");
+                              return;
+                            }
+                          }
+
+                          const eventDate = new Date(event.event_date);
+                          const now = new Date();
+                          if (eventDate < now) {
+                            toast.error("Não é possível se inscrever em eventos que já aconteceram.");
+                            return;
+                          }
+
+                          if (selectedCategory.max_participants !== null && 
+                              selectedCategory.available_spots !== null && 
+                              selectedCategory.available_spots <= 0) {
+                            toast.error("Esta categoria está esgotada. Por favor, escolha outra categoria.");
+                            return;
+                          }
+
+                          setIsSubmitting(true);
+                          try {
+                            const runnerId = otherPersonId || user.id;
+                            
+                            const registrationData: any = {
+                              event_id: event.id,
+                              runner_id: runnerId,
+                              category_id: selectedCategory.id,
+                              kit_id: selectedKit?.id,
+                              payment_method: 'credit_card',
+                              total_amount: totalPrice,
+                              coupon_code: appliedCoupon?.code || undefined,
+                              credit_card: data.credit_card,
+                              credit_card_holder_info: data.credit_card_holder_info,
+                            };
+
+                            const response = await createRegistration(registrationData);
+
+                            if (!response.success) {
+                              throw new Error(response.error || "Erro ao criar inscrição");
+                            }
+
+                            const code = response.data?.confirmation_code || 
+                              `CONF-${Math.random().toString(36).substring(2, 10).toUpperCase()}`;
+                            setConfirmationCode(code);
+                            
+                            if (response.data?.id) {
+                              setRegistrationId(response.data.id);
+                            }
+
+                            const requiresPayment = totalPrice > 0;
+                            const payment = (response.data as any)?.payment;
+                            
+                            if (requiresPayment && payment) {
+                              setPaymentData(payment);
+                              
+                              if (payment.error || payment.warning) {
+                                toast.warning(payment.warning || payment.error || "Inscrição criada, mas houve um problema com o pagamento");
+                              } else if (payment.status === 'CONFIRMED') {
+                                toast.success("Pagamento aprovado! Sua inscrição foi confirmada.");
+                                setPaymentStatus('paid');
+                              } else if (payment.status === 'PENDING' || payment.status === 'AWAITING_RISK_ANALYSIS') {
+                                toast.info("Pagamento em análise. Você receberá uma confirmação por email quando o pagamento for aprovado.");
+                                setPaymentStatus('pending');
+                              } else {
+                                toast.warning("Pagamento não foi aprovado. Entre em contato com o suporte.");
+                                setPaymentStatus('pending');
+                              }
+                            } else {
+                              toast.success("Inscrição realizada com sucesso!");
+                              setPaymentStatus('paid');
+                            }
+                            
+                            handleNextStep();
+                          } catch (error: any) {
+                            console.error("Error creating registration:", error);
+                            toast.error(error.message || "Erro ao finalizar inscrição");
+                          } finally {
+                            setIsSubmitting(false);
+                          }
+                        };
+                        
+                        submitWithCardData();
+                      }}
+                      onCancel={() => {
+                        setSelectedPaymentMethod(null);
+                        handlePreviousStep();
+                      }}
+                      isLoading={isSubmitting}
+                    />
+                  </div>
+                )}
+
+                {/* Show submit button for PIX or if credit card form is not shown */}
+                {selectedPaymentMethod !== 'credit_card' && (
+                  <div className="flex justify-between pt-4">
+                    <Button variant="outline" onClick={handlePreviousStep}>
+                      Voltar
+                    </Button>
+                    <Button 
+                      onClick={handleSubmit}
+                      disabled={
+                        !selectedPaymentMethod ||
+                        !user || // User must be logged in
+                        isSubmitting ||
+                        !formData.fullName ||
+                        !formData.email ||
+                        !formData.phone ||
+                        !formData.cpf ||
+                        (isRegisteringOther && !otherPersonId) // If registering other person, must have found profile
+                      }
+                      className="min-w-32"
+                    >
+                      {isSubmitting ? "Processando..." : "Finalizar Inscrição"}
+                    </Button>
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="text-center py-8">
+                <p className="text-muted-foreground mb-4">
+                  Este evento é gratuito. Não é necessário selecionar método de pagamento.
+                </p>
+                <div className="flex justify-between pt-4">
+                  <Button variant="outline" onClick={handlePreviousStep}>
+                    Voltar
+                  </Button>
+                  <Button onClick={handleNextStep}>
+                    Continuar
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Step 7: Confirmation Ticket / Payment */}
+        {step === 7 && (
           <div className="space-y-6 text-center">
             {/* Show QR Code PIX if payment is pending */}
-            {paymentData && paymentData.pix_qr_code && paymentStatus === 'pending' && (
+            {paymentData && paymentData.pix_qr_code && paymentStatus === 'pending' && paymentData.payment_method !== 'credit_card' && (
               <div className="space-y-4">
                 <PixQrCode
                   pixQrCode={paymentData.pix_qr_code}
@@ -2614,6 +2944,71 @@ export function RegistrationFlow({
                   onClick={() => {
                     onOpenChange(false);
                     navigate("/runner/dashboard?tab=registrations&subtab=pending");
+                  }}
+                >
+                  <List className="w-4 h-4 mr-2" />
+                  Visualizar Inscrições
+                </Button>
+              </div>
+            )}
+
+            {/* Show credit card payment status */}
+            {paymentData && paymentData.payment_method === 'credit_card' && (
+              <div className="space-y-4">
+                {paymentStatus === 'paid' ? (
+                  <Card className="border-green-500">
+                    <CardContent className="pt-6">
+                      <div className="flex items-center gap-2 text-green-600 mb-2">
+                        <CheckCircle2 className="w-6 h-6" />
+                        <p className="font-medium text-lg">Pagamento Aprovado!</p>
+                      </div>
+                      <p className="text-sm text-muted-foreground">
+                        Seu pagamento foi aprovado e sua inscrição está confirmada.
+                      </p>
+                    </CardContent>
+                  </Card>
+                ) : paymentData.status === 'PENDING' || paymentData.status === 'AWAITING_RISK_ANALYSIS' ? (
+                  <Card className="border-yellow-500">
+                    <CardContent className="pt-6">
+                      <div className="flex items-center gap-2 text-yellow-600 mb-2">
+                        <span className="text-lg">⏳</span>
+                        <p className="font-medium text-lg">Pagamento em Análise</p>
+                      </div>
+                      <p className="text-sm text-muted-foreground">
+                        Seu pagamento está sendo analisado. Você receberá uma confirmação por email quando o pagamento for aprovado.
+                      </p>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  <Card className="border-red-500">
+                    <CardContent className="pt-6">
+                      <div className="flex items-center gap-2 text-red-600 mb-2">
+                        <span className="text-lg">❌</span>
+                        <p className="font-medium text-lg">Pagamento Não Aprovado</p>
+                      </div>
+                      <p className="text-sm text-muted-foreground mb-4">
+                        Seu pagamento não foi aprovado. Entre em contato com o suporte para mais informações.
+                      </p>
+                      <Button
+                        variant="outline"
+                        className="w-full"
+                        onClick={() => {
+                          setStep(6); // Go back to payment method selection
+                          setSelectedPaymentMethod(null);
+                          setCreditCardData(null);
+                        }}
+                      >
+                        Tentar Outro Método de Pagamento
+                      </Button>
+                    </CardContent>
+                  </Card>
+                )}
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => {
+                    onOpenChange(false);
+                    navigate("/runner/dashboard?tab=registrations");
                   }}
                 >
                   <List className="w-4 h-4 mr-2" />
