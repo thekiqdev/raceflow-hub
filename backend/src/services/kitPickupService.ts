@@ -15,6 +15,7 @@ export interface KitPickupLocation {
   event_id: string;
   name: string | null;
   address: string;
+  additional_info: string | null;
   pickup_date: Date; // Kept for backward compatibility
   pickup_schedule: PickupScheduleItem[]; // New: multiple dates and time slots
   latitude: number | null;
@@ -54,6 +55,7 @@ export const getEventPickupLocations = async (eventId: string): Promise<KitPicku
       event_id: row.event_id,
       name: row.name || null,
       address: row.address,
+      additional_info: row.additional_info || null,
       pickup_date: row.pickup_date,
       pickup_schedule,
       latitude: row.latitude ? parseFloat(row.latitude) : null,
@@ -66,6 +68,7 @@ export const getEventPickupLocations = async (eventId: string): Promise<KitPicku
 export interface CreatePickupLocationData {
   name?: string | null;
   address: string;
+  additional_info?: string | null;
   pickup_date?: string; // Kept for backward compatibility
   pickup_schedule?: PickupScheduleItem[]; // New: multiple dates and time slots
   latitude?: number | null;
@@ -75,6 +78,7 @@ export interface CreatePickupLocationData {
 export interface UpdatePickupLocationData {
   name?: string | null;
   address?: string;
+  additional_info?: string | null;
   pickup_date?: string; // Kept for backward compatibility
   pickup_schedule?: PickupScheduleItem[]; // New: multiple dates and time slots
   latitude?: number | null;
@@ -120,13 +124,14 @@ export const createPickupLocation = async (
 
   try {
     const result = await query(
-      `INSERT INTO kit_pickup_locations (event_id, name, address, pickup_date, pickup_schedule, latitude, longitude)
-       VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7)
+      `INSERT INTO kit_pickup_locations (event_id, name, address, additional_info, pickup_date, pickup_schedule, latitude, longitude)
+       VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8)
        RETURNING *`,
       [
         eventId,
         data.name || null,
         data.address,
+        data.additional_info || null,
         pickup_date,
         JSON.stringify(pickup_schedule),
         data.latitude || null,
@@ -156,6 +161,7 @@ export const createPickupLocation = async (
       event_id: result.rows[0].event_id,
       name: result.rows[0].name || null,
       address: result.rows[0].address,
+      additional_info: result.rows[0].additional_info || null,
       pickup_date: result.rows[0].pickup_date,
       pickup_schedule: parsedPickupSchedule,
       latitude: result.rows[0].latitude ? parseFloat(result.rows[0].latitude) : null,
@@ -192,6 +198,10 @@ export const updatePickupLocation = async (
   if (data.address !== undefined) {
     updates.push(`address = $${paramCount++}`);
     values.push(data.address);
+  }
+  if (data.additional_info !== undefined) {
+    updates.push(`additional_info = $${paramCount++}`);
+    values.push(data.additional_info);
   }
   if (data.pickup_date !== undefined) {
     updates.push(`pickup_date = $${paramCount++}`);
@@ -248,6 +258,7 @@ export const updatePickupLocation = async (
     event_id: result.rows[0].event_id,
     name: result.rows[0].name || null,
     address: result.rows[0].address,
+    additional_info: result.rows[0].additional_info || null,
     pickup_date: result.rows[0].pickup_date,
     pickup_schedule,
     latitude: result.rows[0].latitude ? parseFloat(result.rows[0].latitude) : null,

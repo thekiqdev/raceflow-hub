@@ -387,6 +387,7 @@ export function EventViewEditDialog({
       {
         name: "",
         address: "",
+        additional_info: "",
         pickup_schedule: [
           {
             date: "",
@@ -717,6 +718,7 @@ export function EventViewEditDialog({
           await createPickupLocation(eventId, {
             name: location.name || null,
             address: location.address,
+            additional_info: location.additional_info || null,
             pickup_schedule: location.pickup_schedule || [],
             latitude: location.latitude ? parseFloat(location.latitude) : null,
             longitude: location.longitude ? parseFloat(location.longitude) : null,
@@ -729,6 +731,7 @@ export function EventViewEditDialog({
             await updatePickupLocation(eventId, location.id, {
               name: location.name || null,
               address: location.address,
+              additional_info: location.additional_info || null,
               pickup_schedule: location.pickup_schedule || [],
               latitude: location.latitude ? parseFloat(location.latitude) : null,
               longitude: location.longitude ? parseFloat(location.longitude) : null,
@@ -1915,6 +1918,19 @@ export function EventViewEditDialog({
                             />
                           </div>
 
+                          {/* Informações Adicionais */}
+                          <div>
+                            <label className="text-sm font-medium">Informações Adicionais</label>
+                            <Textarea
+                              placeholder="Ex: Estacionamento disponível, acessibilidade, ponto de referência..."
+                              className="min-h-[80px]"
+                              value={location.additional_info || ""}
+                              onChange={(e) =>
+                                updatePickupLocationLocal(index, "additional_info", e.target.value)
+                              }
+                            />
+                          </div>
+
                           {/* Datas e Horários */}
                           <div>
                             <div className="flex justify-between items-center mb-3">
@@ -2080,6 +2096,12 @@ export function EventViewEditDialog({
                             <Label className="text-xs text-muted-foreground">Endereço</Label>
                             <p className="text-sm">{location.address}</p>
                           </div>
+                          {location.additional_info && (
+                            <div>
+                              <Label className="text-xs text-muted-foreground">Informações Adicionais</Label>
+                              <p className="text-sm">{location.additional_info}</p>
+                            </div>
+                          )}
                           <div>
                             <Label className="text-xs text-muted-foreground">Datas e Horários de Retirada</Label>
                             <div className="space-y-2 mt-1">

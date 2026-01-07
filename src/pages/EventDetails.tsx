@@ -502,7 +502,7 @@ const EventDetails = () => {
                                 </p>
                                 
                                 {hasSchedule ? (
-                                  <div className="space-y-2">
+                                  <div className="space-y-2 mb-3">
                                     {location.pickup_schedule.map((scheduleItem: any, idx: number) => (
                                       <div key={idx} className="space-y-1">
                                         <div className="flex items-center gap-1 text-sm text-muted-foreground">
@@ -525,13 +525,22 @@ const EventDetails = () => {
                                     ))}
                                   </div>
                                 ) : location.pickup_date ? (
-                                  <div className="flex items-center gap-1 text-sm text-muted-foreground">
+                                  <div className="flex items-center gap-1 text-sm text-muted-foreground mb-3">
                                     <Calendar className="h-4 w-4" />
                                     <span>
                                       {format(new Date(location.pickup_date), "dd 'de' MMMM 'de' yyyy 'às' HH:mm", { locale: ptBR })}
                                     </span>
                                   </div>
                                 ) : null}
+                                
+                                {location.additional_info && (
+                                  <div className="mb-3 p-3 bg-muted/50 rounded-md border-l-2 border-primary">
+                                    <p className="text-sm font-medium text-foreground mb-1">ℹ️ Informações Adicionais</p>
+                                    <p className="text-sm text-muted-foreground whitespace-pre-line">
+                                      {location.additional_info}
+                                    </p>
+                                  </div>
+                                )}
                                 
                                 {location.latitude && location.longitude && (
                                   <a

@@ -22,6 +22,7 @@ const pickupScheduleItemSchema = z.object({
 const createPickupLocationSchema = z.object({
   name: z.string().optional().nullable(),
   address: z.string().min(1, 'Endereço é obrigatório'),
+  additional_info: z.string().optional().nullable(),
   pickup_date: z.string().optional(), // Kept for backward compatibility
   pickup_schedule: z.array(pickupScheduleItemSchema).min(1, 'Pelo menos uma data com horários é obrigatória').optional(),
   latitude: z.number().nullable().optional(),
@@ -37,6 +38,7 @@ const createPickupLocationSchema = z.object({
 const updatePickupLocationSchema = z.object({
   name: z.string().optional().nullable(),
   address: z.string().min(1).optional(),
+  additional_info: z.string().optional().nullable(),
   pickup_date: z.string().optional(), // Kept for backward compatibility
   pickup_schedule: z.array(pickupScheduleItemSchema).min(1).optional(),
   latitude: z.number().nullable().optional(),

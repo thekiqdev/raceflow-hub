@@ -15,6 +15,7 @@ export interface KitPickupLocation {
   event_id: string;
   name?: string | null;
   address: string;
+  additional_info?: string | null;
   pickup_date: string; // Kept for backward compatibility
   pickup_schedule?: PickupScheduleItem[]; // New: multiple dates and time slots
   latitude?: number | null;
@@ -30,6 +31,7 @@ export const getEventPickupLocations = async (eventId: string) => {
 export interface CreatePickupLocationData {
   name?: string | null;
   address: string;
+  additional_info?: string | null;
   pickup_date?: string; // Kept for backward compatibility
   pickup_schedule?: PickupScheduleItem[]; // New: multiple dates and time slots
   latitude?: number | null;
@@ -39,6 +41,7 @@ export interface CreatePickupLocationData {
 export interface UpdatePickupLocationData {
   name?: string | null;
   address?: string;
+  additional_info?: string | null;
   pickup_date?: string; // Kept for backward compatibility
   pickup_schedule?: PickupScheduleItem[]; // New: multiple dates and time slots
   latitude?: number | null;

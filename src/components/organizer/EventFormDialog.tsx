@@ -131,6 +131,7 @@ interface PickupLocation {
   id?: string;
   name: string;
   address: string;
+  additional_info?: string;
   pickup_date?: string; // Kept for backward compatibility
   pickup_schedule: PickupScheduleItem[]; // New: multiple dates and time slots
   latitude?: string;
@@ -981,6 +982,7 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
       {
         name: "",
         address: "",
+        additional_info: "",
         pickup_schedule: [
           {
             date: "",
@@ -1636,6 +1638,7 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
             await createPickupLocation(eventId, {
               name: location.name || null,
               address: location.address,
+              additional_info: location.additional_info || null,
               pickup_schedule: location.pickup_schedule || [],
               latitude: location.latitude ? parseFloat(location.latitude) : null,
               longitude: location.longitude ? parseFloat(location.longitude) : null,
@@ -1648,6 +1651,7 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
               await updatePickupLocation(eventId, location.id, {
                 name: location.name || null,
                 address: location.address,
+                additional_info: location.additional_info || null,
                 pickup_schedule: location.pickup_schedule || [],
                 latitude: location.latitude ? parseFloat(location.latitude) : null,
                 longitude: location.longitude ? parseFloat(location.longitude) : null,
@@ -2794,6 +2798,19 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
                               value={location.address}
                               onChange={(e) =>
                                 updatePickupLocation(locationIndex, "address", e.target.value)
+                              }
+                            />
+                          </div>
+
+                          {/* Informações Adicionais */}
+                          <div>
+                            <label className="text-sm font-medium">Informações Adicionais</label>
+                            <Textarea
+                              placeholder="Ex: Estacionamento disponível, acessibilidade, ponto de referência..."
+                              className="min-h-[80px]"
+                              value={location.additional_info || ""}
+                              onChange={(e) =>
+                                updatePickupLocation(locationIndex, "additional_info", e.target.value)
                               }
                             />
                           </div>
