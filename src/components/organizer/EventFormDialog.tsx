@@ -41,6 +41,9 @@ import { getCategories, createCategory, updateCategory, deleteCategory, reorderC
 import { reorderEventKits } from "@/lib/api/eventKits";
 import { FileUpload } from "@/components/ui/file-upload";
 import { deleteUploadedFile } from "@/lib/api/upload";
+import { getOrganizers } from "@/lib/api/userManagement";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
 
 const eventFormSchema = z.object({
   title: z.string().min(3, "Nome deve ter no mínimo 3 caracteres"),
@@ -135,9 +138,10 @@ interface EventFormDialogProps {
   onOpenChange: (open: boolean) => void;
   event?: any;
   onSuccess?: () => void;
+  isAdmin?: boolean; // Se true, permite selecionar o organizador
 }
 
-export function EventFormDialog({ open, onOpenChange, event, onSuccess }: EventFormDialogProps) {
+export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin = false }: EventFormDialogProps) {
   const { toast } = useToast();
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState("info");
@@ -146,6 +150,9 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess }: EventF
   const [kits, setKits] = useState<Kit[]>([]);
   const [pickupLocations, setPickupLocations] = useState<PickupLocation[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [selectedOrganizerId, setSelectedOrganizerId] = useState<string>("");
+  const [organizers, setOrganizers] = useState<any[]>([]);
+  const [loadingOrganizers, setLoadingOrganizers] = useState(false);
 
   const form = useForm<EventFormValues>({
     resolver: zodResolver(eventFormSchema),
@@ -183,6 +190,7 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess }: EventF
         setKits([]);
         setPickupLocations([]);
         setActiveTab("info");
+        setSelectedOrganizerId("");
         return;
       }
 
@@ -410,6 +418,37 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess }: EventF
     loadEventData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, event?.id]);
+
+  // Load organizers for admin when dialog opens
+  useEffect(() => {
+    const loadOrganizers = async () => {
+      if (!isAdmin || !open || event?.id) return;
+      setLoadingOrganizers(true);
+      try {
+        const response = await getOrganizers();
+        if (response.success && response.data) {
+          setOrganizers(response.data);
+          // Se o usuário atual for um organizador, selecionar por padrão
+          if (user && response.data.find((o: any) => o.id === user.id)) {
+            setSelectedOrganizerId(user.id);
+          }
+        }
+      } catch (error: any) {
+        console.error("Erro ao carregar organizadores:", error);
+        toast({
+          title: "Erro",
+          description: "Erro ao carregar lista de organizadores",
+          variant: "destructive",
+        });
+      } finally {
+        setLoadingOrganizers(false);
+      }
+    };
+
+    if (open && isAdmin && !event?.id) {
+      loadOrganizers();
+    }
+  }, [open, isAdmin, event?.id, user, toast]);
 
   const addModality = () => {
     setModalities([
@@ -979,6 +1018,14 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess }: EventF
         return;
       }
 
+      // Determine organizer_id: 
+      // - If admin selected an organizer, use it
+      // - If admin didn't select, use admin's own ID (admin becomes organizer)
+      // - If not admin, use current user's ID
+      const organizerId = isAdmin && selectedOrganizerId 
+        ? selectedOrganizerId 
+        : user.id; // Admin's ID if no selection, or regular user's ID
+
       // Insert or update event
       const eventData = {
         title: values.title,
@@ -990,7 +1037,7 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess }: EventF
         banner_url: values.banner_url || undefined,
         regulation_url: values.regulation_url || undefined,
         status: values.status,
-        organizer_id: user.id,
+        organizer_id: organizerId,
       };
 
       let eventId = event?.id;
@@ -1518,6 +1565,33 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess }: EventF
 
               {/* Tab 1: Informações Gerais */}
               <TabsContent value="info" className="space-y-4">
+                {/* Organizer selection for admin when creating new event */}
+                {isAdmin && !event?.id && (
+                  <div className="space-y-2">
+                    <Label htmlFor="organizer-select">Organizador (Opcional)</Label>
+                    <Select
+                      value={selectedOrganizerId || "self"}
+                      onValueChange={(value) => setSelectedOrganizerId(value === "self" ? "" : value)}
+                      disabled={loadingOrganizers}
+                    >
+                      <SelectTrigger id="organizer-select">
+                        <SelectValue placeholder={loadingOrganizers ? "Carregando organizadores..." : "Selecione um organizador ou deixe em branco para criar no seu nome"} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="self">Criar no meu nome (Admin)</SelectItem>
+                        {organizers.map((organizer) => (
+                          <SelectItem key={organizer.id} value={organizer.id}>
+                            {organizer.name} ({organizer.email})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">
+                      Selecione um organizador responsável ou escolha "Criar no meu nome" para criar o evento no seu nome
+                    </p>
+                  </div>
+                )}
+
                 <FormField
                   control={form.control}
                   name="title"

@@ -14,10 +14,11 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Search, Download, Edit, Eye, CheckCircle, XCircle, Ban, ExternalLink, BarChart, Loader2, Award, Filter, Trash2 } from "lucide-react";
+import { Search, Download, Edit, Eye, CheckCircle, XCircle, Ban, ExternalLink, BarChart, Loader2, Award, Filter, Trash2, Plus } from "lucide-react";
 import { getEvents, updateEvent, deleteEvent } from "@/lib/api/events";
 import { useToast } from "@/hooks/use-toast";
 import { EventViewEditDialog } from "./EventViewEditDialog";
+import { EventFormDialog } from "@/components/organizer/EventFormDialog";
 import { useNavigate } from "react-router-dom";
 
 const EventManagement = () => {
@@ -35,6 +36,7 @@ const EventManagement = () => {
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [eventToDelete, setEventToDelete] = useState<any>(null);
   const [deleting, setDeleting] = useState(false);
+  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -294,6 +296,10 @@ const EventManagement = () => {
             <Button variant="outline">
               <Download className="mr-2 h-4 w-4" />
               Exportar
+            </Button>
+            <Button onClick={() => setIsCreateDialogOpen(true)}>
+              <Plus className="mr-2 h-4 w-4" />
+              Criar Evento
             </Button>
           </div>
         </CardHeader>
@@ -563,6 +569,17 @@ const EventManagement = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Create Event Dialog */}
+      <EventFormDialog
+        open={isCreateDialogOpen}
+        onOpenChange={setIsCreateDialogOpen}
+        onSuccess={() => {
+          setIsCreateDialogOpen(false);
+          loadEvents();
+        }}
+        isAdmin={true}
+      />
     </div>
   );
 };
