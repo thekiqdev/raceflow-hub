@@ -117,10 +117,22 @@ interface Product {
   variant_attributes?: string[] | null; // Array of attribute names in order
 }
 
+interface PickupTimeSlot {
+  start_time: string; // HH:MM format
+  end_time: string; // HH:MM format
+}
+
+interface PickupScheduleItem {
+  date: string; // YYYY-MM-DD format
+  time_slots: PickupTimeSlot[];
+}
+
 interface PickupLocation {
   id?: string;
+  name: string;
   address: string;
-  pickup_date: string;
+  pickup_date?: string; // Kept for backward compatibility
+  pickup_schedule: PickupScheduleItem[]; // New: multiple dates and time slots
   latitude?: string;
   longitude?: string;
 }
@@ -376,6 +388,47 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
             } else {
               console.log("⚠️ Nenhum kit encontrado");
               setKits([]);
+            }
+
+            // Load pickup locations
+            try {
+              const { getEventPickupLocations } = await import('@/lib/api/kitPickup');
+              const pickupResponse = await getEventPickupLocations(event.id);
+              if (pickupResponse.success && pickupResponse.data) {
+                // Format locations with new structure (name, pickup_schedule)
+                const formattedLocations: PickupLocation[] = pickupResponse.data.map((loc: any) => {
+                  // If pickup_schedule exists, use it; otherwise, create from pickup_date for backward compatibility
+                  let pickup_schedule: PickupScheduleItem[] = loc.pickup_schedule || [];
+                  if (pickup_schedule.length === 0 && loc.pickup_date) {
+                    const date = new Date(loc.pickup_date);
+                    const dateStr = date.toISOString().split('T')[0];
+                    const timeStr = date.toTimeString().slice(0, 5);
+                    pickup_schedule = [{
+                      date: dateStr,
+                      time_slots: [{
+                        start_time: timeStr,
+                        end_time: new Date(date.getTime() + 4 * 60 * 60 * 1000).toTimeString().slice(0, 5), // +4 hours
+                      }],
+                    }];
+                  }
+                  return {
+                    id: loc.id,
+                    name: loc.name || "",
+                    address: loc.address,
+                    pickup_schedule: pickup_schedule,
+                    latitude: loc.latitude?.toString() || "",
+                    longitude: loc.longitude?.toString() || "",
+                  };
+                });
+                console.log("✅ Locais de retirada carregados:", formattedLocations.length);
+                setPickupLocations(formattedLocations);
+              } else {
+                console.log("⚠️ Nenhum local de retirada encontrado");
+                setPickupLocations([]);
+              }
+            } catch (error: any) {
+              console.error("❌ Erro ao carregar locais de retirada:", error);
+              setPickupLocations([]);
             }
           } else {
             console.error("❌ Erro ao carregar evento:", eventResponse.error);
@@ -926,8 +979,19 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
     setPickupLocations([
       ...pickupLocations,
       {
+        name: "",
         address: "",
-        pickup_date: "",
+        pickup_schedule: [
+          {
+            date: "",
+            time_slots: [
+              {
+                start_time: "",
+                end_time: "",
+              },
+            ],
+          },
+        ],
         latitude: "",
         longitude: "",
       },
@@ -941,10 +1005,67 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
   const updatePickupLocation = (
     locationIndex: number,
     field: keyof PickupLocation,
-    value: string
+    value: string | PickupScheduleItem[]
   ) => {
     const updated = [...pickupLocations];
     updated[locationIndex][field] = value as never;
+    setPickupLocations(updated);
+  };
+
+  const addPickupDate = (locationIndex: number) => {
+    const updated = [...pickupLocations];
+    updated[locationIndex].pickup_schedule.push({
+      date: "",
+      time_slots: [
+        {
+          start_time: "",
+          end_time: "",
+        },
+      ],
+    });
+    setPickupLocations(updated);
+  };
+
+  const removePickupDate = (locationIndex: number, dateIndex: number) => {
+    const updated = [...pickupLocations];
+    updated[locationIndex].pickup_schedule = updated[locationIndex].pickup_schedule.filter(
+      (_, i) => i !== dateIndex
+    );
+    setPickupLocations(updated);
+  };
+
+  const updatePickupDate = (locationIndex: number, dateIndex: number, date: string) => {
+    const updated = [...pickupLocations];
+    updated[locationIndex].pickup_schedule[dateIndex].date = date;
+    setPickupLocations(updated);
+  };
+
+  const addPickupTimeSlot = (locationIndex: number, dateIndex: number) => {
+    const updated = [...pickupLocations];
+    updated[locationIndex].pickup_schedule[dateIndex].time_slots.push({
+      start_time: "",
+      end_time: "",
+    });
+    setPickupLocations(updated);
+  };
+
+  const removePickupTimeSlot = (locationIndex: number, dateIndex: number, timeSlotIndex: number) => {
+    const updated = [...pickupLocations];
+    updated[locationIndex].pickup_schedule[dateIndex].time_slots = updated[locationIndex].pickup_schedule[dateIndex].time_slots.filter(
+      (_, i) => i !== timeSlotIndex
+    );
+    setPickupLocations(updated);
+  };
+
+  const updatePickupTimeSlot = (
+    locationIndex: number,
+    dateIndex: number,
+    timeSlotIndex: number,
+    field: "start_time" | "end_time",
+    value: string
+  ) => {
+    const updated = [...pickupLocations];
+    updated[locationIndex].pickup_schedule[dateIndex].time_slots[timeSlotIndex][field] = value;
     setPickupLocations(updated);
   };
 
@@ -1494,11 +1615,59 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
         }
       }
 
-      // Insert pickup locations
-      // TODO: Create pickup locations endpoint
-      // if (pickupLocations.length > 0) {
-      //   // TODO: Create pickup locations endpoint
-      // }
+      // Sync pickup locations
+      if (pickupLocations.length > 0 && eventId) {
+        try {
+          const { getEventPickupLocations, createPickupLocation, updatePickupLocation, deletePickupLocation } = await import('@/lib/api/kitPickup');
+          
+          const existingLocationsResponse = await getEventPickupLocations(eventId);
+          const existingLocations = existingLocationsResponse.success && existingLocationsResponse.data 
+            ? existingLocationsResponse.data 
+            : [];
+          
+          const locationsToCreate = pickupLocations.filter(l => (!l.id || l.id.startsWith('temp-')) && l.address && l.pickup_schedule && l.pickup_schedule.length > 0);
+          const locationsToUpdate = pickupLocations.filter(l => l.id && !l.id.startsWith('temp-') && l.address && l.pickup_schedule && l.pickup_schedule.length > 0);
+          const existingLocationIds = existingLocations.map(l => l.id);
+          const currentLocationIds = pickupLocations.filter(l => l.id && !l.id.startsWith('temp-')).map(l => l.id!);
+          const locationsToDelete = existingLocationIds.filter(id => !currentLocationIds.includes(id));
+          
+          // Create new locations
+          for (const location of locationsToCreate) {
+            await createPickupLocation(eventId, {
+              name: location.name || null,
+              address: location.address,
+              pickup_schedule: location.pickup_schedule || [],
+              latitude: location.latitude ? parseFloat(location.latitude) : null,
+              longitude: location.longitude ? parseFloat(location.longitude) : null,
+            });
+          }
+          
+          // Update existing locations
+          for (const location of locationsToUpdate) {
+            if (location.id) {
+              await updatePickupLocation(eventId, location.id, {
+                name: location.name || null,
+                address: location.address,
+                pickup_schedule: location.pickup_schedule || [],
+                latitude: location.latitude ? parseFloat(location.latitude) : null,
+                longitude: location.longitude ? parseFloat(location.longitude) : null,
+              });
+            }
+          }
+          
+          // Delete removed locations
+          for (const id of locationsToDelete) {
+            await deletePickupLocation(eventId, id);
+          }
+        } catch (error: any) {
+          console.error('Error syncing pickup locations:', error);
+          toast({
+            title: "Aviso",
+            description: "Evento salvo, mas houve erro ao salvar locais de retirada",
+            variant: "destructive",
+          });
+        }
+      }
 
       toast({
         title: "Sucesso!",
@@ -2569,7 +2738,7 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
                   <div>
                     <h3 className="text-lg font-semibold">Locais de Retirada dos Kits</h3>
                     <p className="text-sm text-muted-foreground">
-                      Configure os locais e horários para retirada (válido para todos os kits do evento)
+                      Configure os locais, datas e horários para retirada (válido para todos os kits do evento)
                     </p>
                   </div>
                   <Button type="button" onClick={addPickupLocation} size="sm">
@@ -2586,72 +2755,184 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
                   </Card>
                 ) : (
                   <div className="space-y-4">
-                    {pickupLocations.map((location, index) => (
-                      <Card key={index}>
+                    {pickupLocations.map((location, locationIndex) => (
+                      <Card key={locationIndex}>
                         <CardHeader className="pb-3">
                           <div className="flex justify-between items-center">
                             <CardTitle className="text-base">
-                              Local {index + 1}
+                              {location.name || `Local ${locationIndex + 1}`}
                             </CardTitle>
                             <Button
                               type="button"
                               variant="ghost"
                               size="icon"
-                              onClick={() => removePickupLocation(index)}
+                              onClick={() => removePickupLocation(locationIndex)}
                             >
                               <Trash2 className="h-4 w-4 text-destructive" />
                             </Button>
                           </div>
                         </CardHeader>
-                        <CardContent className="space-y-3">
+                        <CardContent className="space-y-4">
+                          {/* Nome do Local */}
                           <div>
-                            <label className="text-sm font-medium">Endereço</label>
+                            <label className="text-sm font-medium">Nome do Local *</label>
+                            <Input
+                              placeholder="Ex: Loja Central, Estádio, Shopping..."
+                              value={location.name}
+                              onChange={(e) =>
+                                updatePickupLocation(locationIndex, "name", e.target.value)
+                              }
+                            />
+                          </div>
+
+                          {/* Endereço */}
+                          <div>
+                            <label className="text-sm font-medium">Endereço *</label>
                             <Textarea
                               placeholder="Endereço completo do local de retirada"
                               className="min-h-[80px]"
                               value={location.address}
                               onChange={(e) =>
-                                updatePickupLocation(index, "address", e.target.value)
+                                updatePickupLocation(locationIndex, "address", e.target.value)
                               }
                             />
                           </div>
 
+                          {/* Datas e Horários */}
                           <div>
-                            <label className="text-sm font-medium">
-                              Data e Hora da Retirada
-                            </label>
-                            <Input
-                              type="datetime-local"
-                              value={location.pickup_date}
-                              onChange={(e) =>
-                                updatePickupLocation(index, "pickup_date", e.target.value)
-                              }
-                            />
+                            <div className="flex justify-between items-center mb-3">
+                              <label className="text-sm font-medium">Datas e Horários de Retirada *</label>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => addPickupDate(locationIndex)}
+                              >
+                                <Plus className="mr-2 h-3 w-3" />
+                                Adicionar Data
+                              </Button>
+                            </div>
+
+                            <div className="space-y-4">
+                              {location.pickup_schedule.map((scheduleItem, dateIndex) => (
+                                <Card key={dateIndex} className="bg-muted/50">
+                                  <CardContent className="pt-4 space-y-3">
+                                    <div className="flex justify-between items-center">
+                                      <label className="text-sm font-medium">Data {dateIndex + 1}</label>
+                                      {location.pickup_schedule.length > 1 && (
+                                        <Button
+                                          type="button"
+                                          variant="ghost"
+                                          size="sm"
+                                          onClick={() => removePickupDate(locationIndex, dateIndex)}
+                                        >
+                                          <X className="h-4 w-4 text-destructive" />
+                                        </Button>
+                                      )}
+                                    </div>
+                                    <Input
+                                      type="date"
+                                      value={scheduleItem.date}
+                                      onChange={(e) =>
+                                        updatePickupDate(locationIndex, dateIndex, e.target.value)
+                                      }
+                                    />
+
+                                    {/* Horários */}
+                                    <div>
+                                      <div className="flex justify-between items-center mb-2">
+                                        <label className="text-xs text-muted-foreground">Horários</label>
+                                        <Button
+                                          type="button"
+                                          variant="ghost"
+                                          size="sm"
+                                          onClick={() => addPickupTimeSlot(locationIndex, dateIndex)}
+                                        >
+                                          <Plus className="mr-1 h-3 w-3" />
+                                          Adicionar Horário
+                                        </Button>
+                                      </div>
+                                      <div className="space-y-2">
+                                        {scheduleItem.time_slots.map((timeSlot, timeSlotIndex) => (
+                                          <div key={timeSlotIndex} className="flex gap-2 items-center">
+                                            <Input
+                                              type="time"
+                                              placeholder="Início"
+                                              value={timeSlot.start_time}
+                                              onChange={(e) =>
+                                                updatePickupTimeSlot(
+                                                  locationIndex,
+                                                  dateIndex,
+                                                  timeSlotIndex,
+                                                  "start_time",
+                                                  e.target.value
+                                                )
+                                              }
+                                              className="flex-1"
+                                            />
+                                            <span className="text-muted-foreground">até</span>
+                                            <Input
+                                              type="time"
+                                              placeholder="Fim"
+                                              value={timeSlot.end_time}
+                                              onChange={(e) =>
+                                                updatePickupTimeSlot(
+                                                  locationIndex,
+                                                  dateIndex,
+                                                  timeSlotIndex,
+                                                  "end_time",
+                                                  e.target.value
+                                                )
+                                              }
+                                              className="flex-1"
+                                            />
+                                            {scheduleItem.time_slots.length > 1 && (
+                                              <Button
+                                                type="button"
+                                                variant="ghost"
+                                                size="icon"
+                                                onClick={() =>
+                                                  removePickupTimeSlot(locationIndex, dateIndex, timeSlotIndex)
+                                                }
+                                              >
+                                                <X className="h-4 w-4 text-destructive" />
+                                              </Button>
+                                            )}
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  </CardContent>
+                                </Card>
+                              ))}
+                            </div>
                           </div>
 
+                          {/* Coordenadas (Opcional) */}
                           <div className="grid grid-cols-2 gap-3">
                             <div>
-                              <label className="text-sm font-medium">Latitude</label>
+                              <label className="text-sm font-medium">Latitude (Opcional)</label>
                               <Input
                                 placeholder="-23.550520"
-                                value={location.latitude}
+                                value={location.latitude || ""}
                                 onChange={(e) =>
-                                  updatePickupLocation(index, "latitude", e.target.value)
+                                  updatePickupLocation(locationIndex, "latitude", e.target.value)
                                 }
                               />
                             </div>
                             <div>
-                              <label className="text-sm font-medium">Longitude</label>
+                              <label className="text-sm font-medium">Longitude (Opcional)</label>
                               <Input
                                 placeholder="-46.633308"
-                                value={location.longitude}
+                                value={location.longitude || ""}
                                 onChange={(e) =>
-                                  updatePickupLocation(index, "longitude", e.target.value)
+                                  updatePickupLocation(locationIndex, "longitude", e.target.value)
                                 }
                               />
                             </div>
                           </div>
 
+                          {/* Visualização no Mapa */}
                           {location.latitude && location.longitude && (
                             <div>
                               <label className="text-sm font-medium mb-2 block">

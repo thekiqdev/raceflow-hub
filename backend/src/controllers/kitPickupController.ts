@@ -9,16 +9,36 @@ import {
 } from '../services/kitPickupService.js';
 import { z } from 'zod';
 
+const pickupTimeSlotSchema = z.object({
+  start_time: z.string().regex(/^([0-1][0-9]|2[0-3]):[0-5][0-9]$/, 'Formato de horário inválido (HH:MM)'),
+  end_time: z.string().regex(/^([0-1][0-9]|2[0-3]):[0-5][0-9]$/, 'Formato de horário inválido (HH:MM)'),
+});
+
+const pickupScheduleItemSchema = z.object({
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Formato de data inválido (YYYY-MM-DD)'),
+  time_slots: z.array(pickupTimeSlotSchema).min(1, 'Pelo menos um horário é obrigatório por data'),
+});
+
 const createPickupLocationSchema = z.object({
+  name: z.string().optional().nullable(),
   address: z.string().min(1, 'Endereço é obrigatório'),
-  pickup_date: z.string().min(1, 'Data de retirada é obrigatória'),
+  pickup_date: z.string().optional(), // Kept for backward compatibility
+  pickup_schedule: z.array(pickupScheduleItemSchema).min(1, 'Pelo menos uma data com horários é obrigatória').optional(),
   latitude: z.number().nullable().optional(),
   longitude: z.number().nullable().optional(),
+}).refine((data) => {
+  // Either pickup_schedule or pickup_date must be provided
+  return data.pickup_schedule && data.pickup_schedule.length > 0 || data.pickup_date;
+}, {
+  message: 'É necessário fornecer pickup_schedule ou pickup_date',
+  path: ['pickup_schedule'],
 });
 
 const updatePickupLocationSchema = z.object({
+  name: z.string().optional().nullable(),
   address: z.string().min(1).optional(),
-  pickup_date: z.string().min(1).optional(),
+  pickup_date: z.string().optional(), // Kept for backward compatibility
+  pickup_schedule: z.array(pickupScheduleItemSchema).min(1).optional(),
   latitude: z.number().nullable().optional(),
   longitude: z.number().nullable().optional(),
 });
@@ -63,8 +83,11 @@ export const createPickupLocationController = asyncHandler(async (req: AuthReque
     return;
   }
 
+  console.log('📦 [createPickupLocationController] Recebendo dados:', req.body);
+  
   const validation = createPickupLocationSchema.safeParse(req.body);
   if (!validation.success) {
+    console.error('❌ [createPickupLocationController] Erro de validação:', validation.error.errors);
     res.status(400).json({
       success: false,
       error: 'Validation error',
@@ -74,13 +97,21 @@ export const createPickupLocationController = asyncHandler(async (req: AuthReque
     return;
   }
 
-  const location = await createPickupLocation(eventId, validation.data);
+  console.log('✅ [createPickupLocationController] Dados validados:', validation.data);
+  
+  try {
+    const location = await createPickupLocation(eventId, validation.data);
+    console.log('✅ [createPickupLocationController] Local criado com sucesso:', location.id);
 
-  res.json({
-    success: true,
-    data: location,
-    message: 'Local de retirada criado com sucesso',
-  });
+    res.json({
+      success: true,
+      data: location,
+      message: 'Local de retirada criado com sucesso',
+    });
+  } catch (error: any) {
+    console.error('❌ [createPickupLocationController] Erro ao criar local:', error);
+    throw error; // Let asyncHandler handle it
+  }
 });
 
 /**

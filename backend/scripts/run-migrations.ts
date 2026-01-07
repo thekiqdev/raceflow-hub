@@ -84,6 +84,7 @@ const migrations = [
   '055_add_additional_fields_to_quotes.sql',
   '056_create_notification_templates_table.sql',
   '057_create_password_reset_tokens_table.sql',
+  '058_enhance_pickup_locations.sql',
 ];
 
 // Create migrations tracking table

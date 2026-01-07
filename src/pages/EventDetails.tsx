@@ -486,34 +486,69 @@ const EventDetails = () => {
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-4">
-                      {pickupLocations.map((location) => (
-                        <div key={location.id} className="border rounded-lg p-4">
-                          <div className="flex items-start justify-between gap-4">
-                            <div className="flex-1">
-                              <p className="font-semibold mb-2">{location.address}</p>
-                              <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                                <div className="flex items-center gap-1">
-                                  <Calendar className="h-4 w-4" />
-                                  <span>
-                                    {format(new Date(location.pickup_date), "dd 'de' MMMM 'de' yyyy 'às' HH:mm", { locale: ptBR })}
-                                  </span>
-                                </div>
+                      {pickupLocations.map((location) => {
+                        // Use pickup_schedule if available, otherwise fallback to pickup_date
+                        const hasSchedule = location.pickup_schedule && Array.isArray(location.pickup_schedule) && location.pickup_schedule.length > 0;
+                        
+                        return (
+                          <div key={location.id} className="border rounded-lg p-4">
+                            <div className="flex items-start justify-between gap-4">
+                              <div className="flex-1">
+                                {location.name && (
+                                  <p className="font-semibold text-lg mb-1">{location.name}</p>
+                                )}
+                                <p className={`font-semibold mb-2 ${location.name ? 'text-muted-foreground' : ''}`}>
+                                  {location.address}
+                                </p>
+                                
+                                {hasSchedule ? (
+                                  <div className="space-y-2">
+                                    {location.pickup_schedule.map((scheduleItem: any, idx: number) => (
+                                      <div key={idx} className="space-y-1">
+                                        <div className="flex items-center gap-1 text-sm text-muted-foreground">
+                                          <Calendar className="h-4 w-4" />
+                                          <span className="font-medium">
+                                            {format(new Date(scheduleItem.date + 'T00:00:00'), "dd 'de' MMMM 'de' yyyy", { locale: ptBR })}
+                                          </span>
+                                        </div>
+                                        <div className="ml-5 space-y-1">
+                                          {scheduleItem.time_slots && scheduleItem.time_slots.map((slot: any, slotIdx: number) => (
+                                            <div key={slotIdx} className="flex items-center gap-1 text-sm text-muted-foreground">
+                                              <Clock className="h-3 w-3" />
+                                              <span>
+                                                {slot.start_time} às {slot.end_time}
+                                              </span>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                ) : location.pickup_date ? (
+                                  <div className="flex items-center gap-1 text-sm text-muted-foreground">
+                                    <Calendar className="h-4 w-4" />
+                                    <span>
+                                      {format(new Date(location.pickup_date), "dd 'de' MMMM 'de' yyyy 'às' HH:mm", { locale: ptBR })}
+                                    </span>
+                                  </div>
+                                ) : null}
+                                
+                                {location.latitude && location.longitude && (
+                                  <a
+                                    href={`https://www.google.com/maps?q=${location.latitude},${location.longitude}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-primary hover:underline text-sm mt-2 inline-flex items-center gap-1"
+                                  >
+                                    <MapPin className="h-3 w-3" />
+                                    Ver no mapa
+                                  </a>
+                                )}
                               </div>
-                              {location.latitude && location.longitude && (
-                                <a
-                                  href={`https://www.google.com/maps?q=${location.latitude},${location.longitude}`}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="text-primary hover:underline text-sm mt-2 inline-flex items-center gap-1"
-                                >
-                                  <MapPin className="h-3 w-3" />
-                                  Ver no mapa
-                                </a>
-                              )}
                             </div>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </CardContent>
                 </Card>

@@ -1,10 +1,22 @@
 import { apiClient } from './client.js';
 
+export interface PickupTimeSlot {
+  start_time: string; // HH:MM format
+  end_time: string; // HH:MM format
+}
+
+export interface PickupScheduleItem {
+  date: string; // YYYY-MM-DD format
+  time_slots: PickupTimeSlot[];
+}
+
 export interface KitPickupLocation {
   id: string;
   event_id: string;
+  name?: string | null;
   address: string;
-  pickup_date: string;
+  pickup_date: string; // Kept for backward compatibility
+  pickup_schedule?: PickupScheduleItem[]; // New: multiple dates and time slots
   latitude?: number | null;
   longitude?: number | null;
   created_at?: string;
@@ -16,15 +28,19 @@ export const getEventPickupLocations = async (eventId: string) => {
 };
 
 export interface CreatePickupLocationData {
+  name?: string | null;
   address: string;
-  pickup_date: string;
+  pickup_date?: string; // Kept for backward compatibility
+  pickup_schedule?: PickupScheduleItem[]; // New: multiple dates and time slots
   latitude?: number | null;
   longitude?: number | null;
 }
 
 export interface UpdatePickupLocationData {
+  name?: string | null;
   address?: string;
-  pickup_date?: string;
+  pickup_date?: string; // Kept for backward compatibility
+  pickup_schedule?: PickupScheduleItem[]; // New: multiple dates and time slots
   latitude?: number | null;
   longitude?: number | null;
 }
