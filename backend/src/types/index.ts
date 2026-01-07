@@ -173,6 +173,7 @@ export interface Category {
   category_type: CategoryType;
   gender: CategoryGender;
   min_age: number | null;
+  max_age: number | null;
   max_participants: number | null;
   is_default: boolean;
   display_order: number;
