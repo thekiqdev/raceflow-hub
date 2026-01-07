@@ -26,6 +26,7 @@ const createCategorySchema = z.object({
     errorMap: () => ({ message: 'Sexo deve ser: ambos, masculino ou feminino' }),
   }),
   min_age: z.number().int().nonnegative().optional().nullable(),
+  max_age: z.number().int().nonnegative().optional().nullable(),
   max_participants: z.number().int().positive().optional().nullable(),
   is_default: z.boolean().optional(),
   modality_ids: z.array(z.string().uuid('ID da modalidade inválido')).optional(),
@@ -37,6 +38,7 @@ const updateCategorySchema = z.object({
   category_type: z.enum(['visitante', 'local', 'geral', 'PCD', 'militar', 'civil', 'outro']).optional(),
   gender: z.enum(['ambos', 'masculino', 'feminino']).optional(),
   min_age: z.number().int().nonnegative().optional().nullable(),
+  max_age: z.number().int().nonnegative().optional().nullable(),
   max_participants: z.number().int().positive().optional().nullable(),
   is_default: z.boolean().optional(),
   modality_ids: z.array(z.string().uuid('ID da modalidade inválido')).optional(),
@@ -101,6 +103,7 @@ export const createCategoryController = asyncHandler(
         category_type: validation.data.category_type,
         gender: validation.data.gender,
         min_age: validation.data.min_age || null,
+        max_age: validation.data.max_age || null,
         max_participants: validation.data.max_participants || null,
         is_default: validation.data.is_default,
         modality_ids: validation.data.modality_ids || [],
@@ -294,10 +297,16 @@ export const updateCategoryController = asyncHandler(
         category_type: validation.data.category_type,
         gender: validation.data.gender,
         min_age: validation.data.min_age,
+        max_age: validation.data.max_age,
         max_participants: validation.data.max_participants,
         is_default: validation.data.is_default,
         modality_ids: validation.data.modality_ids,
       };
+      
+      console.log(`📥 [BACKEND] Recebendo atualização de categoria ${id} com max_age:`, {
+        max_age: updateData.max_age,
+        min_age: updateData.min_age,
+      });
 
       console.log(`📥 [BACKEND] Recebendo atualização de categoria ${id}:`, {
         name: updateData.name,

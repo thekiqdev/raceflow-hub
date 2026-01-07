@@ -86,6 +86,7 @@ const migrations = [
   '057_create_password_reset_tokens_table.sql',
   '058_enhance_pickup_locations.sql',
   '059_add_additional_info_to_pickup_locations.sql',
+  '060_add_max_age_to_categories.sql',
 ];
 
 // Create migrations tracking table

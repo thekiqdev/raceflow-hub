@@ -28,6 +28,7 @@ export const getCategoriesByEvent = async (eventId: string): Promise<Category[]>
     category_type: row.category_type,
     gender: row.gender,
     min_age: row.min_age ? parseInt(row.min_age) : null,
+    max_age: row.max_age ? parseInt(row.max_age) : null,
     max_participants: row.max_participants ? parseInt(row.max_participants) : null,
     is_default: row.is_default === true,
     display_order: row.display_order,
@@ -62,6 +63,7 @@ export const getCategoriesByModality = async (modalityId: string): Promise<Categ
     category_type: row.category_type,
     gender: row.gender,
     min_age: row.min_age ? parseInt(row.min_age) : null,
+    max_age: row.max_age ? parseInt(row.max_age) : null,
     max_participants: row.max_participants ? parseInt(row.max_participants) : null,
     is_default: row.is_default === true,
     display_order: row.display_order,
@@ -102,6 +104,7 @@ export const getCategoryById = async (categoryId: string): Promise<Category | nu
     category_type: row.category_type,
     gender: row.gender,
     min_age: row.min_age ? parseInt(row.min_age) : null,
+    max_age: row.max_age ? parseInt(row.max_age) : null,
     max_participants: row.max_participants ? parseInt(row.max_participants) : null,
     is_default: row.is_default === true,
     display_order: row.display_order,
@@ -146,20 +149,21 @@ export const createCategory = async (
 
   // Inserir a categoria
   const result = await query(
-    `INSERT INTO categories (event_id, name, price, category_type, gender, min_age, max_participants, is_default, display_order)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+    `INSERT INTO categories (event_id, name, price, category_type, gender, min_age, max_age, max_participants, is_default, display_order)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
      RETURNING *`,
-    [
-      data.event_id,
-      data.name,
-      data.price,
-      data.category_type,
-      data.gender,
-      data.min_age || null,
-      data.max_participants || null,
-      shouldBeDefault,
-      displayOrder,
-    ]
+     [
+       data.event_id,
+       data.name,
+       data.price,
+       data.category_type,
+       data.gender,
+       data.min_age || null,
+       data.max_age || null,
+       data.max_participants || null,
+       shouldBeDefault,
+       displayOrder,
+     ]
   );
 
   if (result.rows.length === 0) {
@@ -217,10 +221,21 @@ export const updateCategory = async (
     paramIndex++;
   }
 
+  // Always update min_age if provided (including null to clear it)
   if (data.min_age !== undefined) {
     fields.push(`min_age = $${paramIndex}`);
-    values.push(data.min_age);
+    values.push(data.min_age ?? null);
     paramIndex++;
+  }
+
+  // Always update max_age if provided (including null to clear it)
+  if (data.max_age !== undefined) {
+    fields.push(`max_age = $${paramIndex}`);
+    values.push(data.max_age ?? null);
+    paramIndex++;
+    console.log(`🔧 [updateCategory] Adicionando max_age ao update:`, data.max_age);
+  } else {
+    console.log(`⚠️ [updateCategory] max_age não está definido no payload`);
   }
 
   if (data.max_participants !== undefined) {

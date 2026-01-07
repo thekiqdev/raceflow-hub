@@ -247,6 +247,7 @@ export function EventViewEditDialog({
         category_type: "geral" as CategoryTypeEnum,
         gender: "ambos" as CategoryGender,
         min_age: null,
+        max_age: null,
         max_participants: null,
         is_default: categories.length === 0,
         modality_ids: [],
@@ -622,6 +623,7 @@ export function EventViewEditDialog({
             category_type: category.category_type,
             gender: category.gender,
             min_age: category.min_age,
+            max_age: category.max_age,
             max_participants: category.max_participants,
             is_default: category.is_default,
             modality_ids: mapModalityIds(category.modality_ids || []),
@@ -631,13 +633,19 @@ export function EventViewEditDialog({
         // Update existing categories
         for (const category of categoriesToUpdate) {
           if (category.id) {
+            console.log('📤 Atualizando categoria com max_age:', {
+              name: category.name,
+              min_age: category.min_age,
+              max_age: category.max_age,
+            });
             await updateCategory(category.id, {
               name: category.name,
               price: category.price,
               category_type: category.category_type,
               gender: category.gender,
-              min_age: category.min_age,
-              max_participants: category.max_participants,
+              min_age: category.min_age ?? null,
+              max_age: category.max_age ?? null,
+              max_participants: category.max_participants ?? null,
               is_default: category.is_default,
               modality_ids: mapModalityIds(category.modality_ids || []),
             });
@@ -1315,28 +1323,53 @@ export function EventViewEditDialog({
                                 <option value="feminino">Feminino</option>
                               </select>
                             </div>
-                            <div>
-                              <label className="text-sm font-medium">
-                                Idade Mínima (opcional)
-                              </label>
-                              <Input
-                                type="number"
-                                min="0"
-                                max="120"
-                                placeholder="Deixe vazio para sem restrição"
-                                value={category.min_age || ""}
-                                onChange={(e) => {
-                                  const value = e.target.value;
-                                  if (value === "") {
-                                    updateCategoryLocal(index, "min_age", null);
-                                  } else {
-                                    const numValue = parseInt(value);
-                                    if (!isNaN(numValue) && numValue >= 0 && numValue <= 120) {
-                                      updateCategoryLocal(index, "min_age", numValue);
+                            <div className="grid grid-cols-2 gap-4">
+                              <div>
+                                <label className="text-sm font-medium">
+                                  Idade Mínima (opcional)
+                                </label>
+                                <Input
+                                  type="number"
+                                  min="0"
+                                  max="120"
+                                  placeholder="Deixe vazio para sem restrição"
+                                  value={category.min_age || ""}
+                                  onChange={(e) => {
+                                    const value = e.target.value;
+                                    if (value === "") {
+                                      updateCategoryLocal(index, "min_age", null);
+                                    } else {
+                                      const numValue = parseInt(value);
+                                      if (!isNaN(numValue) && numValue >= 0 && numValue <= 120) {
+                                        updateCategoryLocal(index, "min_age", numValue);
+                                      }
                                     }
-                                  }
-                                }}
-                              />
+                                  }}
+                                />
+                              </div>
+                              <div>
+                                <label className="text-sm font-medium">
+                                  Idade Máxima (opcional)
+                                </label>
+                                <Input
+                                  type="number"
+                                  min="0"
+                                  max="120"
+                                  placeholder="Deixe vazio para sem restrição"
+                                  value={category.max_age || ""}
+                                  onChange={(e) => {
+                                    const value = e.target.value;
+                                    if (value === "") {
+                                      updateCategoryLocal(index, "max_age", null);
+                                    } else {
+                                      const numValue = parseInt(value);
+                                      if (!isNaN(numValue) && numValue >= 0 && numValue <= 120) {
+                                        updateCategoryLocal(index, "max_age", numValue);
+                                      }
+                                    }
+                                  }}
+                                />
+                              </div>
                             </div>
                           </div>
 
@@ -1419,6 +1452,7 @@ export function EventViewEditDialog({
                           <CardDescription>
                             Tipo: {category.category_type} | Gênero: {category.gender}
                             {category.min_age && ` | Idade mínima: ${category.min_age} anos`}
+                            {category.max_age && ` | Idade máxima: ${category.max_age} anos`}
                           </CardDescription>
                       <div className="flex gap-4">
                         <div className="flex items-center gap-2">

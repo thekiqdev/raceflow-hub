@@ -78,6 +78,7 @@ interface Category {
   category_type: CategoryTypeEnum;
   gender: CategoryGender;
   min_age: number | null;
+  max_age: number | null;
   max_participants: number | null;
   is_default: boolean;
   modality_ids: string[];
@@ -255,6 +256,7 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
                 category_type: cat.category_type,
                 gender: cat.gender,
                 min_age: cat.min_age,
+                max_age: cat.max_age,
                 max_participants: cat.max_participants,
                 is_default: cat.is_default === true, // Garantir boolean explícito
                 modality_ids: cat.modality_ids || [],
@@ -544,6 +546,7 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
         category_type: "geral",
         gender: "ambos",
         min_age: null,
+        max_age: null,
         max_participants: null,
         is_default: categories.length === 0, // Primeira categoria sempre é padrão
         modality_ids: [],
@@ -1396,6 +1399,7 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
               category_type: category.category_type,
               gender: category.gender,
               min_age: category.min_age,
+              max_age: category.max_age,
               max_participants: category.max_participants,
               is_default: shouldBeDefault,
               modality_ids: mappedModalityIds,
@@ -1425,11 +1429,18 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
                   price: category.price,
                   category_type: category.category_type,
                   gender: category.gender,
-                  min_age: category.min_age,
-                  max_participants: category.max_participants,
+                  min_age: category.min_age ?? null,
+                  max_age: category.max_age ?? null,
+                  max_participants: category.max_participants ?? null,
                   is_default: isDefaultValue, // Sempre enviar, mesmo se false
                   modality_ids: mappedModalityIds,
                 };
+                console.log('📤 Atualizando categoria com max_age:', {
+                  name: category.name,
+                  min_age: category.min_age,
+                  max_age: category.max_age,
+                  payload: updatePayload,
+                });
                 console.log(`📦 Payload enviado para API:`, JSON.stringify(updatePayload, null, 2));
                 console.log(`📦 Tipo de is_default no payload:`, typeof updatePayload.is_default);
                 console.log(`📦 Valor de is_default no payload:`, updatePayload.is_default);
@@ -1475,6 +1486,7 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
                 category_type: cat.category_type,
                 gender: cat.gender,
                 min_age: cat.min_age,
+                max_age: cat.max_age,
                 max_participants: cat.max_participants,
                 is_default: cat.is_default === true,
                 modality_ids: cat.modality_ids || [],
@@ -2159,28 +2171,53 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
                                 <option value="feminino">Feminino</option>
                               </select>
                             </div>
-                            <div>
-                              <label className="text-sm font-medium">
-                                Idade Mínima (opcional)
-                              </label>
-                              <Input
-                                type="number"
-                                min="0"
-                                max="120"
-                                placeholder="Deixe vazio para sem restrição"
-                                value={category.min_age || ""}
-                                onChange={(e) => {
-                                  const value = e.target.value;
-                                  if (value === "") {
-                                    updateCategoryLocal(index, "min_age", null);
-                                  } else {
-                                    const numValue = parseInt(value);
-                                    if (!isNaN(numValue) && numValue >= 0 && numValue <= 120) {
-                                      updateCategoryLocal(index, "min_age", numValue);
+                            <div className="grid grid-cols-2 gap-4">
+                              <div>
+                                <label className="text-sm font-medium">
+                                  Idade Mínima (opcional)
+                                </label>
+                                <Input
+                                  type="number"
+                                  min="0"
+                                  max="120"
+                                  placeholder="Deixe vazio para sem restrição"
+                                  value={category.min_age || ""}
+                                  onChange={(e) => {
+                                    const value = e.target.value;
+                                    if (value === "") {
+                                      updateCategoryLocal(index, "min_age", null);
+                                    } else {
+                                      const numValue = parseInt(value);
+                                      if (!isNaN(numValue) && numValue >= 0 && numValue <= 120) {
+                                        updateCategoryLocal(index, "min_age", numValue);
+                                      }
                                     }
-                                  }
-                                }}
-                              />
+                                  }}
+                                />
+                              </div>
+                              <div>
+                                <label className="text-sm font-medium">
+                                  Idade Máxima (opcional)
+                                </label>
+                                <Input
+                                  type="number"
+                                  min="0"
+                                  max="120"
+                                  placeholder="Deixe vazio para sem restrição"
+                                  value={category.max_age || ""}
+                                  onChange={(e) => {
+                                    const value = e.target.value;
+                                    if (value === "") {
+                                      updateCategoryLocal(index, "max_age", null);
+                                    } else {
+                                      const numValue = parseInt(value);
+                                      if (!isNaN(numValue) && numValue >= 0 && numValue <= 120) {
+                                        updateCategoryLocal(index, "max_age", numValue);
+                                      }
+                                    }
+                                  }}
+                                />
+                              </div>
                             </div>
                           </div>
 

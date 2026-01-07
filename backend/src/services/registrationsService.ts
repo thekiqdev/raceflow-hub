@@ -239,18 +239,26 @@ export const createRegistration = async (data: CreateRegistrationData) => {
 
   const runner = runnerProfile.rows[0];
 
-  // Validate age (if category has min_age requirement)
+  // Validate age (if category has min_age or max_age requirement)
+  const birthDate = new Date(runner.birth_date);
+  const today = new Date();
+  const age = today.getFullYear() - birthDate.getFullYear();
+  const monthDiff = today.getMonth() - birthDate.getMonth();
+  const dayDiff = today.getDate() - birthDate.getDate();
+  
+  const actualAge = monthDiff < 0 || (monthDiff === 0 && dayDiff < 0) ? age - 1 : age;
+  
+  // Validate min_age
   if (category.min_age !== null && category.min_age > 0) {
-    const birthDate = new Date(runner.birth_date);
-    const today = new Date();
-    const age = today.getFullYear() - birthDate.getFullYear();
-    const monthDiff = today.getMonth() - birthDate.getMonth();
-    const dayDiff = today.getDate() - birthDate.getDate();
-    
-    const actualAge = monthDiff < 0 || (monthDiff === 0 && dayDiff < 0) ? age - 1 : age;
-    
     if (actualAge < category.min_age) {
       throw new Error(`Idade mínima para esta categoria é ${category.min_age} anos. Você tem ${actualAge} anos.`);
+    }
+  }
+  
+  // Validate max_age
+  if (category.max_age !== null && category.max_age > 0) {
+    if (actualAge > category.max_age) {
+      throw new Error(`Idade máxima para esta categoria é ${category.max_age} anos. Você tem ${actualAge} anos.`);
     }
   }
 

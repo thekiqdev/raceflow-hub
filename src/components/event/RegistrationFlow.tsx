@@ -484,23 +484,37 @@ export function RegistrationFlow({
               });
             }
             
-            // Filter by age
+            // Filter by age (min_age and max_age)
             if (profileToCheck?.birth_date) {
               const age = calculateAge(profileToCheck.birth_date);
               filteredCategories = filteredCategories.filter(cat => {
-                if (cat.min_age === null || cat.min_age === 0) return true;
-                const meetsAgeRequirement = age >= cat.min_age;
-                if (!meetsAgeRequirement) {
-                  console.log(`⚠️ Categoria ${cat.name} requer idade mínima de ${cat.min_age} anos, mas o usuário tem ${age} anos`);
+                // Check min_age
+                if (cat.min_age !== null && cat.min_age > 0) {
+                  if (age < cat.min_age) {
+                    console.log(`⚠️ Categoria ${cat.name} requer idade mínima de ${cat.min_age} anos, mas o usuário tem ${age} anos`);
+                    return false;
+                  }
                 }
-                return meetsAgeRequirement;
+                
+                // Check max_age
+                if (cat.max_age !== null && cat.max_age > 0) {
+                  if (age > cat.max_age) {
+                    console.log(`⚠️ Categoria ${cat.name} requer idade máxima de ${cat.max_age} anos, mas o usuário tem ${age} anos`);
+                    return false;
+                  }
+                }
+                
+                return true;
               });
             } else {
               // If no birth date, filter out categories with age requirements
               filteredCategories = filteredCategories.filter(cat => {
-                if (cat.min_age === null || cat.min_age === 0) return true;
-                console.log(`⚠️ Categoria ${cat.name} requer idade mínima de ${cat.min_age} anos, mas data de nascimento não está disponível`);
-                return false;
+                const hasAgeRequirement = (cat.min_age !== null && cat.min_age > 0) || (cat.max_age !== null && cat.max_age > 0);
+                if (hasAgeRequirement) {
+                  console.log(`⚠️ Categoria ${cat.name} requer restrição de idade, mas data de nascimento não está disponível`);
+                  return false;
+                }
+                return true;
               });
             }
             

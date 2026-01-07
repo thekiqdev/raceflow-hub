@@ -254,13 +254,18 @@ export const validateCategoryType = (categoryType: string): boolean => {
 };
 
 /**
- * Check if user age meets category minimum age requirement
+ * Check if user age meets category age requirements (min_age and max_age)
  * @param birthDate - User's birth date (ISO string)
  * @param minAge - Category minimum age requirement
- * @returns true if user meets age requirement, false otherwise
+ * @param maxAge - Category maximum age requirement
+ * @returns true if user meets age requirements, false otherwise
  */
-export const validateAgeRequirement = (birthDate: string | null | undefined, minAge: number | null | undefined): boolean => {
-  if (!birthDate || !minAge || minAge === 0) return true; // No requirement
+export const validateAgeRequirement = (
+  birthDate: string | null | undefined, 
+  minAge: number | null | undefined,
+  maxAge?: number | null | undefined
+): boolean => {
+  if (!birthDate) return false; // Need birth date to validate age
   
   const today = new Date();
   const birth = new Date(birthDate);
@@ -271,7 +276,17 @@ export const validateAgeRequirement = (birthDate: string | null | undefined, min
     age--;
   }
   
-  return age >= minAge;
+  // Check min_age
+  if (minAge !== null && minAge !== undefined && minAge > 0) {
+    if (age < minAge) return false;
+  }
+  
+  // Check max_age
+  if (maxAge !== null && maxAge !== undefined && maxAge > 0) {
+    if (age > maxAge) return false;
+  }
+  
+  return true;
 };
 
 /**

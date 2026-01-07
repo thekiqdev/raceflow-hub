@@ -208,6 +208,7 @@ export interface CreateCategoryData {
   category_type: CategoryType;
   gender: CategoryGender;
   min_age?: number | null;
+  max_age?: number | null;
   max_participants?: number | null;
   is_default?: boolean;
   display_order?: number; // Opcional na criação - será calculado automaticamente se não fornecido
@@ -220,6 +221,7 @@ export interface UpdateCategoryData {
   category_type?: CategoryType;
   gender?: CategoryGender;
   min_age?: number | null;
+  max_age?: number | null;
   max_participants?: number | null;
   is_default?: boolean;
   display_order?: number; // Permite atualizar a ordem de exibição
