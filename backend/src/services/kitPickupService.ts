@@ -137,17 +137,17 @@ export const createPickupLocation = async (
     console.log('✅ [createPickupLocation] Local criado com sucesso:', result.rows[0].id);
 
     // Parse pickup_schedule if it's a string
-    let pickup_schedule: PickupScheduleItem[] = [];
+    let parsedPickupSchedule: PickupScheduleItem[] = [];
     if (result.rows[0].pickup_schedule) {
       if (typeof result.rows[0].pickup_schedule === 'string') {
         try {
-          pickup_schedule = JSON.parse(result.rows[0].pickup_schedule);
+          parsedPickupSchedule = JSON.parse(result.rows[0].pickup_schedule);
         } catch (e) {
           console.error('Erro ao fazer parse do pickup_schedule:', e);
-          pickup_schedule = [];
+          parsedPickupSchedule = [];
         }
       } else if (Array.isArray(result.rows[0].pickup_schedule)) {
-        pickup_schedule = result.rows[0].pickup_schedule;
+        parsedPickupSchedule = result.rows[0].pickup_schedule;
       }
     }
     
@@ -157,7 +157,7 @@ export const createPickupLocation = async (
       name: result.rows[0].name || null,
       address: result.rows[0].address,
       pickup_date: result.rows[0].pickup_date,
-      pickup_schedule,
+      pickup_schedule: parsedPickupSchedule,
       latitude: result.rows[0].latitude ? parseFloat(result.rows[0].latitude) : null,
       longitude: result.rows[0].longitude ? parseFloat(result.rows[0].longitude) : null,
       created_at: result.rows[0].created_at,
