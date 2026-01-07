@@ -161,7 +161,7 @@ const RunnerProfile = () => {
             className="text-2xl font-bold bg-gradient-hero bg-clip-text text-transparent cursor-pointer"
             onClick={() => navigate("/runner/dashboard")}
           >
-            RunEvents
+            Cronoteam
           </h1>
           <Button variant="outline" size="sm" onClick={handleSignOut}>
             <LogOut className="mr-2 h-4 w-4" />

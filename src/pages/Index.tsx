@@ -44,7 +44,7 @@ const Index = () => {
     whatsapp_number: "85 99108-4183",
     whatsapp_text: "Tire suas dúvidas sobre inscrições e cronometragem",
     consultoria_title: "CONSULTORIA DE CORRIDAS DE RUA",
-    consultoria_description: "A RunEvents mais que uma empresa de cronometragem esportiva. Nós temos experiência e damos suporte a todos os pontos que é preciso para a execução de qualquer evento de corrida de rua.",
+    consultoria_description: "A Cronoteam mais que uma empresa de cronometragem esportiva. Nós temos experiência e damos suporte a todos os pontos que é preciso para a execução de qualquer evento de corrida de rua.",
     stats_events: "290",
     stats_events_label: "Corridas executadas",
     stats_runners: "71500",
@@ -562,7 +562,7 @@ const Index = () => {
                 <Linkedin className="h-5 w-5" />
               </Button>
             </div>
-            <p className="text-sm text-center text-muted-foreground">© 2024 RunEvents. Plataforma de corridas de rua.</p>
+            <p className="text-sm text-center text-muted-foreground">© 2024 Cronoteam. Plataforma de corridas de rua.</p>
             <div className="mt-4 text-center">
               <Button variant="link" className="text-muted-foreground text-sm" onClick={() => navigate("/auth")}>
                 É organizador? Clique aqui

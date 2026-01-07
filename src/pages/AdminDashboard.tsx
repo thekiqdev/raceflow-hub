@@ -115,7 +115,7 @@ const AdminDashboard = () => {
               <div className="flex items-center gap-4">
                 <SidebarTrigger />
                 <h1 className="text-2xl font-bold bg-gradient-hero bg-clip-text text-transparent">
-                  RunEvents Admin
+                  Cronoteam Admin
                 </h1>
               </div>
               <div className="flex items-center gap-4">

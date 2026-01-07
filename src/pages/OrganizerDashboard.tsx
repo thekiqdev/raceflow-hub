@@ -104,7 +104,7 @@ const OrganizerDashboard = () => {
               <div className="flex items-center gap-4">
                 <SidebarTrigger />
                 <h1 className="text-2xl font-bold bg-gradient-hero bg-clip-text text-transparent">
-                  RunEvents Organizador
+                  Cronoteam Organizador
                 </h1>
               </div>
               <div className="flex items-center gap-4">

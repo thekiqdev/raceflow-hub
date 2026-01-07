@@ -6,13 +6,13 @@ import {
   MapPin,
   Calendar,
   Clock,
-  ArrowLeft,
   Users,
   Trophy,
   DollarSign,
   FileText,
   MessageSquare,
 } from "lucide-react";
+import { Header } from "@/components/Header";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { useEffect, useState } from "react";
@@ -219,20 +219,7 @@ const EventDetails = () => {
   return (
     <div className="min-h-screen bg-background">
       {/* Navigation */}
-      <nav className="bg-card border-b sticky top-0 z-50 shadow-sm">
-        <div className="container mx-auto px-4 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <Button variant="ghost" size="icon" onClick={() => navigate("/")}>
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
-            <h1 className="text-2xl font-bold bg-gradient-hero bg-clip-text text-transparent">RunEvents</h1>
-          </div>
-          <Button className="bg-accent hover:bg-accent/90" size="sm">
-            <MessageSquare className="mr-2 h-4 w-4" />
-            (85) 99108-4183
-          </Button>
-        </div>
-      </nav>
+      <Header />
 
       {/* Event Banner */}
       <section className="relative h-[400px] flex items-end overflow-hidden">

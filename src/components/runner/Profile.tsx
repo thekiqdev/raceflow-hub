@@ -304,7 +304,7 @@ export function Profile() {
 
         {/* App Version */}
         <div className="text-center text-xs text-muted-foreground mb-4">
-          RunEvents v1.0.0
+          Cronoteam v1.0.0
         </div>
       </div>
 
