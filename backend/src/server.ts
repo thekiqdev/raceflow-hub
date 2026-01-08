@@ -23,6 +23,7 @@ import quotesRouter from './routes/quotes.js';
 import contactMessagesRouter from './routes/contactMessages.js';
 import formConfigurationsRouter from './routes/formConfigurations.js';
 import notificationTemplatesRouter from './routes/notificationTemplates.js';
+import { updateRegistrationStatuses } from './services/registrationStatusService.js';
 
 // Load environment variables
 // Try to load from backend/.env explicitly
@@ -225,6 +226,27 @@ app.listen(PORT, () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`);
   console.log(`📊 Health check: http://localhost:${PORT}/api/health`);
   console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
+  
+  // Schedule automatic registration status updates
+  // Run every 5 minutes (300000 ms)
+  const UPDATE_INTERVAL_MS = parseInt(process.env.REGISTRATION_STATUS_UPDATE_INTERVAL_MS || '300000', 10);
+  
+  console.log(`⏰ Configurando atualização automática de status de inscrições a cada ${UPDATE_INTERVAL_MS / 1000} segundos...`);
+  
+  // Run immediately on startup
+  updateRegistrationStatuses().catch((error) => {
+    console.error('❌ Erro na atualização inicial de status de inscrições:', error);
+  });
+  
+  // Schedule periodic updates
+  setInterval(() => {
+    console.log('🔄 Executando atualização automática de status de inscrições...');
+    updateRegistrationStatuses().catch((error) => {
+      console.error('❌ Erro na atualização automática de status de inscrições:', error);
+    });
+  }, UPDATE_INTERVAL_MS);
+  
+  console.log(`✅ Atualização automática de status de inscrições configurada`);
 });
 
 export default app;

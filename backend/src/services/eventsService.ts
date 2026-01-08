@@ -1,5 +1,5 @@
 import { query } from '../config/database.js';
-import { EventStatus } from '../types/index.js';
+import { EventStatus, EventRegistrationStatus, Event } from '../types/index.js';
 
 export interface CreateEventData {
   organizer_id: string;
@@ -13,6 +13,10 @@ export interface CreateEventData {
   regulation_url?: string;
   result_url?: string;
   status?: EventStatus;
+  registration_status?: EventRegistrationStatus | null;
+  registration_start_date?: string | null;
+  registration_end_date?: string | null;
+  registration_auto_mode?: boolean;
 }
 
 export interface UpdateEventData {
@@ -26,6 +30,34 @@ export interface UpdateEventData {
   regulation_url?: string;
   result_url?: string;
   status?: EventStatus;
+  registration_status?: EventRegistrationStatus | null;
+  registration_start_date?: string | null;
+  registration_end_date?: string | null;
+  registration_auto_mode?: boolean;
+}
+
+/**
+ * Calcula o status de inscrições baseado nas datas quando modo automático está ativado
+ * @param event Evento com os campos de data e modo automático
+ * @returns Status calculado ou null se não for possível calcular
+ */
+export function calculateRegistrationStatus(event: Partial<Event>): EventRegistrationStatus | null {
+  // Se modo automático não está ativado ou datas não estão definidas, retorna null
+  if (!event.registration_auto_mode || !event.registration_start_date || !event.registration_end_date) {
+    return null;
+  }
+
+  const now = new Date();
+  const startDate = new Date(event.registration_start_date);
+  const endDate = new Date(event.registration_end_date);
+
+  if (now < startDate) {
+    return 'not_open';
+  } else if (now >= startDate && now <= endDate) {
+    return 'open';
+  } else {
+    return 'closed';
+  }
 }
 
 // Get all events (with filters and statistics)
@@ -51,6 +83,10 @@ export const getEvents = async (filters?: {
       e.regulation_url,
       e.result_url,
       e.status,
+      e.registration_status,
+      e.registration_start_date,
+      e.registration_end_date,
+      e.registration_auto_mode,
       e.created_at,
       e.updated_at,
       p.full_name as organizer_name,
@@ -126,15 +162,31 @@ export const getEvents = async (filters?: {
   // Import getFileUrl to convert file paths to URLs
   const { getFileUrl } = await import('../middleware/upload.js');
   
-  return result.rows.map((row) => ({
-    ...row,
-    banner_url: row.banner_url ? getFileUrl(row.banner_url) : null,
-    regulation_url: row.regulation_url ? getFileUrl(row.regulation_url) : null,
-    registration_count: parseInt(row.registration_count) || 0,
-    confirmed_registrations: parseInt(row.confirmed_registrations) || 0,
-    revenue: parseFloat(row.revenue) || 0,
-    avg_ticket: parseFloat(row.avg_ticket) || 0,
-  }));
+  return result.rows.map((row) => {
+    // Calcular status de inscrições se modo automático estiver ativado
+    let effectiveRegistrationStatus = row.registration_status;
+    if (row.registration_auto_mode && row.registration_start_date && row.registration_end_date) {
+      const calculatedStatus = calculateRegistrationStatus({
+        registration_auto_mode: row.registration_auto_mode,
+        registration_start_date: row.registration_start_date,
+        registration_end_date: row.registration_end_date,
+      });
+      if (calculatedStatus) {
+        effectiveRegistrationStatus = calculatedStatus;
+      }
+    }
+
+    return {
+      ...row,
+      banner_url: row.banner_url ? getFileUrl(row.banner_url) : null,
+      regulation_url: row.regulation_url ? getFileUrl(row.regulation_url) : null,
+      registration_status: effectiveRegistrationStatus,
+      registration_count: parseInt(row.registration_count) || 0,
+      confirmed_registrations: parseInt(row.confirmed_registrations) || 0,
+      revenue: parseFloat(row.revenue) || 0,
+      avg_ticket: parseFloat(row.avg_ticket) || 0,
+    };
+  });
 };
 
 // Get event by ID
@@ -163,10 +215,25 @@ export const getEventById = async (eventId: string) => {
   const { getFileUrl } = await import('../middleware/upload.js');
   
   const row = result.rows[0];
+  
+  // Calcular status de inscrições se modo automático estiver ativado
+  let effectiveRegistrationStatus = row.registration_status;
+  if (row.registration_auto_mode && row.registration_start_date && row.registration_end_date) {
+    const calculatedStatus = calculateRegistrationStatus({
+      registration_auto_mode: row.registration_auto_mode,
+      registration_start_date: row.registration_start_date,
+      registration_end_date: row.registration_end_date,
+    });
+    if (calculatedStatus) {
+      effectiveRegistrationStatus = calculatedStatus;
+    }
+  }
+
   return {
     ...row,
     banner_url: row.banner_url ? getFileUrl(row.banner_url) : null,
     regulation_url: row.regulation_url ? getFileUrl(row.regulation_url) : null,
+    registration_status: effectiveRegistrationStatus,
   };
 };
 
@@ -174,12 +241,26 @@ export const getEventById = async (eventId: string) => {
 export const createEvent = async (data: CreateEventData) => {
   console.log('🔧 createEvent called with:', data);
   
+  // Se modo automático está ativado, calcular status automaticamente
+  let registrationStatus = data.registration_status;
+  if (data.registration_auto_mode && data.registration_start_date && data.registration_end_date) {
+    const calculatedStatus = calculateRegistrationStatus({
+      registration_auto_mode: data.registration_auto_mode,
+      registration_start_date: data.registration_start_date ? new Date(data.registration_start_date) : null,
+      registration_end_date: data.registration_end_date ? new Date(data.registration_end_date) : null,
+    });
+    if (calculatedStatus) {
+      registrationStatus = calculatedStatus;
+    }
+  }
+  
   const result = await query(
     `INSERT INTO events (
       organizer_id, title, description, event_date, location, 
-      city, state, banner_url, regulation_url, result_url, status
+      city, state, banner_url, regulation_url, result_url, status,
+      registration_status, registration_start_date, registration_end_date, registration_auto_mode
     )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
     RETURNING *`,
     [
       data.organizer_id,
@@ -193,6 +274,10 @@ export const createEvent = async (data: CreateEventData) => {
       data.regulation_url || null,
       data.result_url || null,
       data.status || 'draft',
+      registrationStatus || null,
+      data.registration_start_date || null,
+      data.registration_end_date || null,
+      data.registration_auto_mode || false,
     ]
   );
 
@@ -207,6 +292,18 @@ export const createEvent = async (data: CreateEventData) => {
 
 // Update event
 export const updateEvent = async (eventId: string, data: UpdateEventData) => {
+  // Se modo automático está ativado e datas foram fornecidas, calcular status automaticamente
+  if (data.registration_auto_mode && data.registration_start_date && data.registration_end_date) {
+    const calculatedStatus = calculateRegistrationStatus({
+      registration_auto_mode: data.registration_auto_mode,
+      registration_start_date: data.registration_start_date ? new Date(data.registration_start_date) : null,
+      registration_end_date: data.registration_end_date ? new Date(data.registration_end_date) : null,
+    });
+    if (calculatedStatus) {
+      data.registration_status = calculatedStatus;
+    }
+  }
+
   const fields: string[] = [];
   const values: any[] = [];
   let paramIndex = 1;

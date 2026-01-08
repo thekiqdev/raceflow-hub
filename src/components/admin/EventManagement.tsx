@@ -14,12 +14,19 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Search, Download, Edit, Eye, CheckCircle, XCircle, Ban, ExternalLink, BarChart, Loader2, Award, Filter, Trash2, Plus } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Search, Download, Edit, Eye, CheckCircle, XCircle, Ban, ExternalLink, BarChart, Loader2, Award, Filter, Trash2, Plus, MoreVertical } from "lucide-react";
 import { getEvents, updateEvent, deleteEvent } from "@/lib/api/events";
 import { useToast } from "@/hooks/use-toast";
 import { EventViewEditDialog } from "./EventViewEditDialog";
 import { EventFormDialog } from "@/components/organizer/EventFormDialog";
 import { useNavigate } from "react-router-dom";
+import { getEffectiveRegistrationStatus, getRegistrationStatusLabel, getRegistrationStatusVariant } from "@/lib/utils/eventRegistration";
 
 const EventManagement = () => {
   const navigate = useNavigate();
@@ -37,6 +44,7 @@ const EventManagement = () => {
   const [eventToDelete, setEventToDelete] = useState<any>(null);
   const [deleting, setDeleting] = useState(false);
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+  const [editingRegistrationStatus, setEditingRegistrationStatus] = useState<string | null>(null);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -70,6 +78,10 @@ const EventManagement = () => {
             city: event.city,
             state: event.state,
             status: event.status,
+            registration_status: event.registration_status,
+            registration_start_date: event.registration_start_date,
+            registration_end_date: event.registration_end_date,
+            registration_auto_mode: event.registration_auto_mode,
             registrations: registrationCount,
             revenue,
             avgTicket,
@@ -317,6 +329,7 @@ const EventManagement = () => {
                   <TableHead>Data</TableHead>
                   <TableHead>Cidade</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead>Status Inscrições</TableHead>
                   <TableHead>Inscrições</TableHead>
                   <TableHead>Faturamento</TableHead>
                   <TableHead>Ticket Médio</TableHead>
@@ -326,13 +339,13 @@ const EventManagement = () => {
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={9} className="text-center py-8">
+                    <TableCell colSpan={10} className="text-center py-8">
                       <Loader2 className="h-6 w-6 animate-spin mx-auto" />
                     </TableCell>
                   </TableRow>
                 ) : events.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
                       Nenhum evento encontrado
                     </TableCell>
                   </TableRow>
@@ -348,79 +361,124 @@ const EventManagement = () => {
                           {getStatusLabel(event.status)}
                         </Badge>
                       </TableCell>
+                      <TableCell>
+                        {(() => {
+                          const effectiveStatus = getEffectiveRegistrationStatus(event);
+                          if (effectiveStatus !== null) {
+                            return editingRegistrationStatus === event.id ? (
+                              <Select
+                                value={effectiveStatus || "default"}
+                                onValueChange={async (value) => {
+                                  try {
+                                    const newStatus = value === "default" ? null : value;
+                                    const response = await updateEvent(event.id, {
+                                      registration_status: newStatus,
+                                      registration_auto_mode: false, // Desativa modo automático ao mudar manualmente
+                                    });
+                                    if (response.success) {
+                                      toast({
+                                        title: "Sucesso",
+                                        description: "Status de inscrições atualizado com sucesso!",
+                                      });
+                                      setEditingRegistrationStatus(null);
+                                      loadEvents();
+                                    } else {
+                                      throw new Error(response.error || "Erro ao atualizar status");
+                                    }
+                                  } catch (error: any) {
+                                    toast({
+                                      title: "Erro",
+                                      description: error.message || "Erro ao atualizar status de inscrições",
+                                      variant: "destructive",
+                                    });
+                                  }
+                                }}
+                                onOpenChange={(open) => {
+                                  if (!open) {
+                                    setEditingRegistrationStatus(null);
+                                  }
+                                }}
+                              >
+                                <SelectTrigger className="w-[200px]">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="not_open">Inscrições em Breve</SelectItem>
+                                  <SelectItem value="open">Inscrições Abertas</SelectItem>
+                                  <SelectItem value="closed">Inscrições Encerradas</SelectItem>
+                                  <SelectItem value="default">Usar Status Padrão</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            ) : (
+                              <Badge
+                                variant={getRegistrationStatusVariant(event)}
+                                className="cursor-pointer hover:opacity-80"
+                                onClick={() => setEditingRegistrationStatus(event.id)}
+                              >
+                                {getRegistrationStatusLabel(event)}
+                              </Badge>
+                            );
+                          }
+                          return <span className="text-muted-foreground text-sm">-</span>;
+                        })()}
+                      </TableCell>
                       <TableCell>{event.registrations}</TableCell>
                       <TableCell>{formatCurrency(event.revenue)}</TableCell>
                       <TableCell>{formatCurrency(event.avgTicket)}</TableCell>
                       <TableCell>
-                        <div className="flex gap-1">
-                          {event.status === "draft" ? (
-                            <>
-                              <Button 
-                                size="icon" 
-                                variant="ghost" 
-                                title="Aprovar"
-                                onClick={() => handleApprove(event.id)}
-                              >
-                                <CheckCircle className="h-4 w-4 text-green-500" />
-                              </Button>
-                              <Button 
-                                size="icon" 
-                                variant="ghost" 
-                                title="Reprovar"
-                                onClick={() => handleReject(event.id)}
-                              >
-                                <XCircle className="h-4 w-4 text-red-500" />
-                              </Button>
-                            </>
-                          ) : (
-                            <>
-                              <Button 
-                                size="icon" 
-                                variant="ghost" 
-                                title="Visualizar Evento (Página Pública)"
-                                onClick={() => navigate(`/events/${event.id}`)}
-                              >
-                                <ExternalLink className="h-4 w-4" />
-                              </Button>
-                              <Button 
-                                size="icon" 
-                                variant="ghost" 
-                                title="Visualizar Detalhes"
-                                onClick={() => handleViewEvent(event.id)}
-                              >
-                                <Eye className="h-4 w-4" />
-                              </Button>
-                              <Button 
-                                size="icon" 
-                                variant="ghost" 
-                                title="Editar"
-                                onClick={() => handleEditEvent(event.id)}
-                              >
-                                <Edit className="h-4 w-4" />
-                              </Button>
-                              <Button 
-                                size="icon" 
-                                variant="ghost" 
-                                title="Enviar Resultado"
-                                onClick={() => {
-                                  setEventForResult(event);
-                                  setResultUrl("");
-                                  setIsResultDialogOpen(true);
-                                }}
-                              >
-                                <Award className="h-4 w-4 text-yellow-500" />
-                              </Button>
-                              <Button 
-                                size="icon" 
-                                variant="ghost" 
-                                title="Excluir Evento"
-                                onClick={() => handleDeleteEvent(event)}
-                              >
-                                <Trash2 className="h-4 w-4 text-red-500" />
-                              </Button>
-                            </>
-                          )}
-                        </div>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon">
+                              <MoreVertical className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            {event.status === "draft" ? (
+                              <>
+                                <DropdownMenuItem onClick={() => handleApprove(event.id)}>
+                                  <CheckCircle className="mr-2 h-4 w-4 text-green-500" />
+                                  Aprovar
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => handleReject(event.id)}>
+                                  <XCircle className="mr-2 h-4 w-4 text-red-500" />
+                                  Reprovar
+                                </DropdownMenuItem>
+                              </>
+                            ) : (
+                              <>
+                                <DropdownMenuItem onClick={() => navigate(`/events/${event.id}`)}>
+                                  <ExternalLink className="mr-2 h-4 w-4" />
+                                  Visualizar Evento (Página Pública)
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => handleViewEvent(event.id)}>
+                                  <Eye className="mr-2 h-4 w-4" />
+                                  Visualizar Detalhes
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => handleEditEvent(event.id)}>
+                                  <Edit className="mr-2 h-4 w-4" />
+                                  Editar
+                                </DropdownMenuItem>
+                                <DropdownMenuItem 
+                                  onClick={() => {
+                                    setEventForResult(event);
+                                    setResultUrl("");
+                                    setIsResultDialogOpen(true);
+                                  }}
+                                >
+                                  <Award className="mr-2 h-4 w-4 text-yellow-500" />
+                                  Enviar Resultado
+                                </DropdownMenuItem>
+                                <DropdownMenuItem 
+                                  className="text-destructive"
+                                  onClick={() => handleDeleteEvent(event)}
+                                >
+                                  <Trash2 className="mr-2 h-4 w-4" />
+                                  Excluir Evento
+                                </DropdownMenuItem>
+                              </>
+                            )}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </TableCell>
                     </TableRow>
                   ))

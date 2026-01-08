@@ -89,6 +89,8 @@ const migrations = [
   '060_add_max_age_to_categories.sql',
   '061_add_profession_cbat_to_profiles.sql',
   '062_add_team_to_profiles.sql',
+  '063_add_registration_status_to_events.sql',
+  '064_migrate_existing_events_registration_status.sql',
 ];
 
 // Create migrations tracking table

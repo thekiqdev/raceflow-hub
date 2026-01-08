@@ -99,6 +99,10 @@ import {
   updateLeaderCouponController,
   deleteLeaderCouponController,
 } from '../controllers/leaderCouponsController.js';
+import {
+  updateAllRegistrationStatusesController,
+  updateEventRegistrationStatusController,
+} from '../controllers/registrationStatusController.js';
 
 const router = Router();
 
@@ -203,6 +207,10 @@ router.get('/group-leaders/:id/coupons', getLeaderCouponsController);
 router.post('/group-leaders/:id/coupons', createLeaderCouponController);
 router.put('/group-leaders/:id/coupons/:couponId', updateLeaderCouponController);
 router.delete('/group-leaders/:id/coupons/:couponId', deleteLeaderCouponController);
+
+// Registration Status Management endpoints (admin)
+router.post('/update-registration-statuses', updateAllRegistrationStatusesController);
+router.post('/events/:eventId/update-registration-status', updateEventRegistrationStatusController);
 
 export default router;
 

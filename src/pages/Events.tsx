@@ -3,12 +3,14 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Loader2, MapPin, Calendar as CalendarIcon } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { EventFilters, EventFiltersState } from "@/components/event/EventFilters";
 import { Header } from "@/components/Header";
 import { getEvents } from "@/lib/api/events";
+import { getEffectiveRegistrationStatus, getRegistrationStatusLabel, getRegistrationStatusVariant } from "@/lib/utils/eventRegistration";
 
 interface Event {
   id: string;
@@ -20,6 +22,10 @@ interface Event {
   state: string;
   banner_url: string | null;
   status?: string;
+  registration_status?: 'not_open' | 'open' | 'closed' | null;
+  registration_start_date?: string | null;
+  registration_end_date?: string | null;
+  registration_auto_mode?: boolean;
 }
 
 const Events = () => {
@@ -154,10 +160,25 @@ const Events = () => {
                       )}
                     </div>
                 <CardHeader>
-                  <CardTitle className="line-clamp-1">{event.title}</CardTitle>
-                  <CardDescription className="line-clamp-2">
-                    {event.description || "Corrida de rua"}
-                  </CardDescription>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex-1">
+                      <CardTitle className="line-clamp-1">{event.title}</CardTitle>
+                      <CardDescription className="line-clamp-2">
+                        {event.description || "Corrida de rua"}
+                      </CardDescription>
+                    </div>
+                    {(() => {
+                      const effectiveStatus = getEffectiveRegistrationStatus(event);
+                      if (effectiveStatus !== null) {
+                        return (
+                          <Badge variant={getRegistrationStatusVariant(event)} className="text-xs shrink-0">
+                            {getRegistrationStatusLabel(event)}
+                          </Badge>
+                        );
+                      }
+                      return null;
+                    })()}
+                  </div>
                 </CardHeader>
                 <CardContent className="space-y-2">
                   <div className="flex items-center text-sm text-muted-foreground">

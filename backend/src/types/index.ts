@@ -2,6 +2,7 @@
 export type AppRole = 'admin' | 'organizer' | 'runner';
 export type EventStatus = 'draft' | 'published' | 'ongoing' | 'finished' | 'cancelled';
 export type RegistrationStatus = 'pending' | 'confirmed' | 'cancelled' | 'refund_requested' | 'refunded' | 'transferred';
+export type EventRegistrationStatus = 'not_open' | 'open' | 'closed'; // Status das inscrições do evento
 export type PaymentStatus = 'pending' | 'paid' | 'refunded' | 'failed';
 export type PaymentMethod = 'pix' | 'credit_card' | 'boleto' | 'free_bonus';
 
@@ -139,6 +140,10 @@ export interface Event {
   regulation_url: string | null;
   result_url: string | null;
   status: EventStatus | null;
+  registration_status: EventRegistrationStatus | null;
+  registration_start_date: Date | null;
+  registration_end_date: Date | null;
+  registration_auto_mode: boolean | null;
   created_at: Date | null;
   updated_at: Date | null;
 }

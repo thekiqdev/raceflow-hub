@@ -26,6 +26,8 @@ import { getCategories } from "@/lib/api/categories";
 import { getEventKits } from "@/lib/api/eventKits";
 import { getEventPickupLocations } from "@/lib/api/kitPickup";
 import { toast } from "sonner";
+import { getEffectiveRegistrationStatus, getRegistrationStatusMessage, getRegistrationStatusLabel, getRegistrationStatusVariant } from "@/lib/utils/eventRegistration";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 interface EventDetail {
   id: string;
@@ -39,6 +41,10 @@ interface EventDetail {
   regulation_url: string | null;
   result_url: string | null;
   status: string;
+  registration_status?: 'not_open' | 'open' | 'closed' | null;
+  registration_start_date?: string | null;
+  registration_end_date?: string | null;
+  registration_auto_mode?: boolean;
   organizer_name?: string;
   organizer_logo_url?: string;
   organizer_organization_name?: string;
@@ -135,6 +141,10 @@ const EventDetails = () => {
             regulation_url: eventResponse.data.regulation_url || null,
             result_url: eventResponse.data.result_url || null,
             status: eventResponse.data.status || "published",
+            registration_status: eventResponse.data.registration_status || null,
+            registration_start_date: eventResponse.data.registration_start_date || null,
+            registration_end_date: eventResponse.data.registration_end_date || null,
+            registration_auto_mode: eventResponse.data.registration_auto_mode || false,
             organizer_name: eventResponse.data.organizer_name,
             organizer_logo_url: eventResponse.data.organizer_logo_url,
             organizer_organization_name: eventResponse.data.organizer_organization_name,
@@ -264,7 +274,7 @@ const EventDetails = () => {
       <section className="py-12 pb-28">
         <div className="container mx-auto px-4">
           {/* Event Status Badge */}
-          <div className="mb-6 flex items-center gap-2">
+          <div className="mb-6 flex items-center gap-2 flex-wrap">
             {event.status === "published" && (
               <Badge variant="default" className="text-sm">
                 Evento Publicado
@@ -290,6 +300,39 @@ const EventDetails = () => {
                 Cancelado
               </Badge>
             )}
+            
+            {/* Registration Status Badge */}
+            {(() => {
+              const effectiveStatus = getEffectiveRegistrationStatus(event);
+              const statusLabel = getRegistrationStatusLabel(event);
+              const statusVariant = getRegistrationStatusVariant(event);
+              
+              if (effectiveStatus !== null) {
+                return (
+                  <div className="flex items-center gap-2">
+                    <Badge variant={statusVariant} className="text-sm">
+                      {statusLabel}
+                    </Badge>
+                    {event.registration_auto_mode && effectiveStatus === 'not_open' && event.registration_start_date && (
+                      <span className="text-sm text-muted-foreground">
+                        Abre em {format(new Date(event.registration_start_date), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
+                      </span>
+                    )}
+                    {event.registration_auto_mode && effectiveStatus === 'open' && event.registration_end_date && (
+                      <span className="text-sm text-muted-foreground">
+                        Encerra em {format(new Date(event.registration_end_date), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
+                      </span>
+                    )}
+                    {event.registration_auto_mode && effectiveStatus === 'closed' && event.registration_end_date && (
+                      <span className="text-sm text-muted-foreground">
+                        Encerradas em {format(new Date(event.registration_end_date), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
+                      </span>
+                    )}
+                  </div>
+                );
+              }
+              return null;
+            })()}
           </div>
 
           <div className="grid lg:grid-cols-3 gap-8">
@@ -608,8 +651,24 @@ const EventDetails = () => {
                 const eventDate = new Date(event.event_date);
                 const now = new Date();
                 const isPastEvent = eventDate < now;
-                const canRegister = event.status === "published" || event.status === "ongoing";
-                const isDisabled = event.status === "draft" || event.status === "finished" || event.status === "cancelled" || isPastEvent || !canRegister;
+                
+                // Calculate effective registration status
+                const effectiveStatus = getEffectiveRegistrationStatus(event);
+                const registrationMessage = getRegistrationStatusMessage(event);
+                
+                // Determine if registration is allowed
+                // If effectiveStatus is null, use old logic
+                const canRegisterByStatus = effectiveStatus === null 
+                  ? (event.status === "published" || event.status === "ongoing")
+                  : effectiveStatus === 'open';
+                
+                const isDisabled = event.status === "draft" || 
+                  event.status === "finished" || 
+                  event.status === "cancelled" || 
+                  isPastEvent || 
+                  !canRegisterByStatus ||
+                  effectiveStatus === 'not_open' ||
+                  effectiveStatus === 'closed';
 
                 // ETAPA 7.4: Improved conditional display based on status
                 if (event.status === "cancelled") {
@@ -690,21 +749,36 @@ const EventDetails = () => {
                           );
                         })()}
                       </div>
-                      <Button
-                        className="w-full"
-                        size="lg"
-                        onClick={() => setIsRegistrationOpen(true)}
-                        disabled={isDisabled}
-                      >
-                        {isDisabled ? (
-                          event.status === "draft" ? "Inscrições Indisponíveis" :
-                          event.status === "finished" ? "Inscrições Encerradas" :
-                          isPastEvent ? "Evento Já Realizado" :
-                          "Inscrições Indisponíveis"
-                        ) : (
-                          "Fazer Inscrição"
-                        )}
-                      </Button>
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="w-full">
+                              <Button
+                                className="w-full"
+                                size="lg"
+                                onClick={() => setIsRegistrationOpen(true)}
+                                disabled={isDisabled}
+                              >
+                                {isDisabled ? (
+                                  effectiveStatus === 'not_open' ? "Inscrições em Breve" :
+                                  effectiveStatus === 'closed' ? "Inscrições Encerradas" :
+                                  event.status === "draft" ? "Inscrições Indisponíveis" :
+                                  event.status === "finished" ? "Inscrições Encerradas" :
+                                  isPastEvent ? "Evento Já Realizado" :
+                                  "Inscrições Indisponíveis"
+                                ) : (
+                                  "Fazer Inscrição"
+                                )}
+                              </Button>
+                            </span>
+                          </TooltipTrigger>
+                          {isDisabled && (
+                            <TooltipContent>
+                              <p className="max-w-xs">{registrationMessage}</p>
+                            </TooltipContent>
+                          )}
+                        </Tooltip>
+                      </TooltipProvider>
                       {event.status === "draft" && (
                         <p className="text-xs text-center text-muted-foreground">
                           Este evento ainda está em rascunho. As inscrições serão abertas quando o evento for publicado.
@@ -715,7 +789,17 @@ const EventDetails = () => {
                           Este evento já foi realizado. Não é mais possível se inscrever.
                         </p>
                       )}
-                      {!isDisabled && !isPastEvent && event.status !== "finished" && (
+                      {effectiveStatus === 'not_open' && (
+                        <p className="text-xs text-center text-muted-foreground">
+                          {registrationMessage}
+                        </p>
+                      )}
+                      {effectiveStatus === 'closed' && (
+                        <p className="text-xs text-center text-muted-foreground">
+                          {registrationMessage}
+                        </p>
+                      )}
+                      {!isDisabled && !isPastEvent && event.status !== "finished" && effectiveStatus !== 'not_open' && effectiveStatus !== 'closed' && (
                         <p className="text-xs text-center text-muted-foreground">
                           Você será direcionado para fazer login ou criar uma conta
                         </p>
@@ -889,20 +973,31 @@ const EventDetails = () => {
             city: event.city,
             state: event.state,
             status: event.status,
+            registration_status: event.registration_status,
+            registration_start_date: event.registration_start_date,
+            registration_end_date: event.registration_end_date,
+            registration_auto_mode: event.registration_auto_mode,
           }}
           categories={categories}
           kits={kits}
         />
       )}
 
-      {/* Bottom Bar - Shows on scroll - ETAPA 7.4: Improved conditional display */}
+      {/* Bottom Bar - Shows on scroll - ETAPA 8: Updated with registration status */}
       {(() => {
         const eventDate = new Date(event.event_date);
         const now = new Date();
         const isPastEvent = eventDate < now;
-        const canRegister = (event.status === "published" || event.status === "ongoing") && !isPastEvent;
         
-        if (event.status === "finished" || event.status === "cancelled" || event.status === "draft" || !canRegister) {
+        // Calculate effective registration status
+        const effectiveStatus = getEffectiveRegistrationStatus(event);
+        const canRegisterByStatus = effectiveStatus === null 
+          ? (event.status === "published" || event.status === "ongoing")
+          : effectiveStatus === 'open';
+        
+        const canRegister = canRegisterByStatus && !isPastEvent;
+        
+        if (event.status === "finished" || event.status === "cancelled" || event.status === "draft" || !canRegister || effectiveStatus === 'not_open' || effectiveStatus === 'closed') {
           return null;
         }
 
@@ -933,13 +1028,33 @@ const EventDetails = () => {
                     );
                   })()}
                 </div>
-                <Button
-                  size="lg"
-                  onClick={() => setIsRegistrationOpen(true)}
-                  className="px-8"
-                >
-                  Inscreva-se Agora
-                </Button>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span>
+                        <Button
+                          size="lg"
+                          onClick={() => setIsRegistrationOpen(true)}
+                          className="px-8"
+                          disabled={!canRegister}
+                        >
+                          {!canRegister ? (
+                            effectiveStatus === 'not_open' ? "Inscrições em Breve" :
+                            effectiveStatus === 'closed' ? "Inscrições Encerradas" :
+                            "Inscrições Indisponíveis"
+                          ) : (
+                            "Inscreva-se Agora"
+                          )}
+                        </Button>
+                      </span>
+                    </TooltipTrigger>
+                    {!canRegister && (
+                      <TooltipContent>
+                        <p className="max-w-xs">{getRegistrationStatusMessage(event)}</p>
+                      </TooltipContent>
+                    )}
+                  </Tooltip>
+                </TooltipProvider>
               </div>
             </div>
           </div>

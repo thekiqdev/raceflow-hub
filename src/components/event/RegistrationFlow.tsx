@@ -25,6 +25,8 @@ import { validateCoupon } from "@/lib/api/coupons";
 import { getEnabledModules } from "@/lib/api/systemSettings";
 import { getModalities, type Modality } from "@/lib/api/modalities";
 import { getCategoriesByModality, type Category as CategoryType, type CategoryGender, type CategoryType as CategoryTypeEnum } from "@/lib/api/categories";
+import { getEffectiveRegistrationStatus, getRegistrationStatusMessage, isRegistrationOpen, isRegistrationNotOpen, isRegistrationClosed } from "@/lib/utils/eventRegistration";
+import type { Event } from "@/lib/api/events";
 
 // Re-export ProductVariant type for use in component
 type ProductVariantType = ProductVariant;
@@ -62,6 +64,10 @@ interface EventInfo {
   city: string;
   state: string;
   status?: string;
+  registration_status?: 'not_open' | 'open' | 'closed' | null;
+  registration_start_date?: string | null;
+  registration_end_date?: string | null;
+  registration_auto_mode?: boolean;
 }
 
 interface RegistrationFlowProps {
@@ -904,22 +910,35 @@ export function RegistrationFlow({
       return;
     }
 
-    // ETAPA 7.1: Validate if event is open for registrations
-    if (event.status) {
-      if (event.status === "draft") {
-        toast.error("Este evento ainda não está aberto para inscrições.");
-        return;
-      }
+    // ETAPA 7.1: Validate effective registration status
+    if (effectiveStatus === 'not_open') {
+      toast.error(registrationMessage);
+      return;
+    }
 
-      if (event.status === "finished" || event.status === "cancelled") {
-        toast.error("Este evento não está mais aceitando inscrições.");
-        return;
-      }
+    if (effectiveStatus === 'closed') {
+      toast.error(registrationMessage);
+      return;
+    }
 
-      // Only 'published' and 'ongoing' statuses allow registrations
-      if (event.status !== "published" && event.status !== "ongoing") {
-        toast.error("Este evento não está aberto para inscrições no momento.");
-        return;
+    // If effectiveStatus is null, use old logic based on event.status
+    if (effectiveStatus === null) {
+      if (event.status) {
+        if (event.status === "draft") {
+          toast.error("Este evento ainda não está aberto para inscrições.");
+          return;
+        }
+
+        if (event.status === "finished" || event.status === "cancelled") {
+          toast.error("Este evento não está mais aceitando inscrições.");
+          return;
+        }
+
+        // Only 'published' and 'ongoing' statuses allow registrations
+        if (event.status !== "published" && event.status !== "ongoing") {
+          toast.error("Este evento não está aberto para inscrições no momento.");
+          return;
+        }
       }
     }
 
@@ -1302,6 +1321,17 @@ export function RegistrationFlow({
     }
   }, [open]);
 
+  // Calculate effective registration status and related variables
+  // Convert EventInfo to Event-like object for utility functions
+  const eventForStatus = {
+    ...event,
+    organizer_id: '', // Required by Event type but not used by status functions
+  } as Event;
+  
+  const effectiveStatus = getEffectiveRegistrationStatus(eventForStatus);
+  const registrationMessage = getRegistrationStatusMessage(eventForStatus);
+  const canRegister = isRegistrationOpen(eventForStatus);
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
@@ -1328,8 +1358,27 @@ export function RegistrationFlow({
           </DialogDescription>
         </DialogHeader>
 
+        {/* Registration Status Check */}
+        {!canRegister && (
+          <Card className="mb-6 border-yellow-500 bg-yellow-50 dark:bg-yellow-950">
+            <CardContent className="pt-6">
+              <div className="flex items-start gap-3">
+                <div className="text-yellow-600 dark:text-yellow-400 text-xl">⚠️</div>
+                <div className="flex-1">
+                  <h4 className="font-semibold text-yellow-900 dark:text-yellow-100 mb-1">
+                    {effectiveStatus === 'not_open' ? 'Inscrições em Breve' : 'Inscrições Encerradas'}
+                  </h4>
+                  <p className="text-sm text-yellow-800 dark:text-yellow-200">
+                    {registrationMessage}
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         {/* Progress Indicator */}
-        {step <= 6 && (
+        {step <= 6 && canRegister && (
           <div className="flex items-center justify-between mb-6">
             {[1, 2, 3, 4, 5, 6].map((s) => (
               <div key={s} className="flex items-center flex-1">
@@ -1355,7 +1404,7 @@ export function RegistrationFlow({
         )}
 
         {/* Step 1: Personal Data (Login/Register) */}
-        {step === 1 && (
+        {step === 1 && canRegister && (
           <div className="space-y-6">
             <div>
               <h3 className="text-lg font-semibold mb-4">Dados Pessoais</h3>
@@ -1763,7 +1812,7 @@ export function RegistrationFlow({
         )}
 
         {/* Step 2: Modality Selection */}
-        {step === 2 && (
+        {step === 2 && canRegister && (
           <div className="space-y-4">
             {/* Check if user is logged in but doesn't have runner, organizer or admin role */}
             {user && !user.roles?.includes('runner') && !user.roles?.includes('organizer') && !user.roles?.includes('admin') && (
@@ -1856,7 +1905,7 @@ export function RegistrationFlow({
         )}
 
         {/* Step 3: Category Selection */}
-        {step === 3 && (
+        {step === 3 && canRegister && (
           <div className="space-y-4">
             {selectedModality && (
               <div className="mb-4 p-3 bg-muted rounded-lg">
@@ -1979,7 +2028,7 @@ export function RegistrationFlow({
         )}
 
         {/* Step 4: Kit & Shirt Size Selection */}
-        {step === 4 && (
+        {step === 4 && canRegister && (
           <div className="space-y-6">
             <div>
               <h3 className="text-lg font-semibold mb-4">Escolha o Kit</h3>
@@ -2390,7 +2439,7 @@ export function RegistrationFlow({
         )}
 
         {/* Step 5: Resumo da Compra */}
-        {step === 5 && (
+        {step === 5 && canRegister && (
           <div className="space-y-6">
             <div>
               <h3 className="text-lg font-semibold mb-4">Dados Pessoais</h3>
@@ -2667,6 +2716,7 @@ export function RegistrationFlow({
                 <Button
                   onClick={handleNextStep}
                   disabled={
+                    !canRegister || // Registration must be open
                     !user || // User must be logged in
                     !formData.fullName ||
                     !formData.email ||
@@ -2682,6 +2732,7 @@ export function RegistrationFlow({
                 <Button
                   onClick={handleSubmit}
                   disabled={
+                    !canRegister || // Registration must be open
                     !user || // User must be logged in
                     isSubmitting ||
                     !formData.fullName ||
@@ -2700,7 +2751,7 @@ export function RegistrationFlow({
         )}
 
         {/* Step 6: Payment Method Selection */}
-        {step === 6 && (
+        {step === 6 && canRegister && (
           <div className="space-y-6">
             {(() => {
               console.log('🔍 Step 6 - Debug:', {
@@ -2794,19 +2845,32 @@ export function RegistrationFlow({
                             return;
                           }
 
-                          // Validate event status and dates (same as handleSubmit)
-                          if (event.status) {
-                            if (event.status === "draft") {
-                              toast.error("Este evento ainda não está aberto para inscrições.");
-                              return;
-                            }
-                            if (event.status === "finished" || event.status === "cancelled") {
-                              toast.error("Este evento não está mais aceitando inscrições.");
-                              return;
-                            }
-                            if (event.status !== "published" && event.status !== "ongoing") {
-                              toast.error("Este evento não está aberto para inscrições no momento.");
-                              return;
+                          // Validate effective registration status (same as handleSubmit)
+                          if (effectiveStatus === 'not_open') {
+                            toast.error(registrationMessage);
+                            return;
+                          }
+
+                          if (effectiveStatus === 'closed') {
+                            toast.error(registrationMessage);
+                            return;
+                          }
+
+                          // If effectiveStatus is null, use old logic based on event.status
+                          if (effectiveStatus === null) {
+                            if (event.status) {
+                              if (event.status === "draft") {
+                                toast.error("Este evento ainda não está aberto para inscrições.");
+                                return;
+                              }
+                              if (event.status === "finished" || event.status === "cancelled") {
+                                toast.error("Este evento não está mais aceitando inscrições.");
+                                return;
+                              }
+                              if (event.status !== "published" && event.status !== "ongoing") {
+                                toast.error("Este evento não está aberto para inscrições no momento.");
+                                return;
+                              }
                             }
                           }
 
@@ -2906,6 +2970,7 @@ export function RegistrationFlow({
                     <Button 
                       onClick={handleSubmit}
                       disabled={
+                        !canRegister || // Registration must be open
                         !selectedPaymentMethod ||
                         !user || // User must be logged in
                         isSubmitting ||

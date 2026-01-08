@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
 import { getEventById, updateEvent } from "@/lib/api/events";
 import { getRegistrations, updateRegistration } from "@/lib/api/registrations";
 import { getModalities, createModality, updateModality, deleteModality, reorderModalities } from "@/lib/api/modalities";
@@ -58,7 +59,12 @@ export function EventViewEditDialog({
     status: "draft" as "draft" | "published" | "ongoing" | "finished" | "cancelled",
     banner_url: "",
     regulation_url: "",
+    registration_status: null as "not_open" | "open" | "closed" | null,
+    registration_start_date: null as string | null,
+    registration_end_date: null as string | null,
+    registration_auto_mode: false,
   });
+  const [registrationAutoMode, setRegistrationAutoMode] = useState(false);
 
   useEffect(() => {
     if (open && eventId) {
@@ -84,6 +90,7 @@ export function EventViewEditDialog({
 
       const eventData = eventResponse.data;
       setEvent(eventData);
+      const autoMode = eventData.registration_auto_mode || false;
       setFormData({
         title: eventData.title || "",
         description: eventData.description || "",
@@ -94,7 +101,12 @@ export function EventViewEditDialog({
         status: eventData.status || "draft",
         banner_url: eventData.banner_url || "",
         regulation_url: eventData.regulation_url || "",
+        registration_status: eventData.registration_status || null,
+        registration_start_date: eventData.registration_start_date || null,
+        registration_end_date: eventData.registration_end_date || null,
+        registration_auto_mode: autoMode,
       });
+      setRegistrationAutoMode(autoMode);
 
       // Get registrations
       const registrationsResponse = await getRegistrations({ event_id: eventId });
@@ -885,12 +897,13 @@ export function EventViewEditDialog({
         </DialogHeader>
 
         <Tabs defaultValue="details" className="w-full">
-          <TabsList className="grid w-full grid-cols-6">
+          <TabsList className="grid w-full grid-cols-7">
             <TabsTrigger value="details">Detalhes</TabsTrigger>
             <TabsTrigger value="modalities">Modalidades</TabsTrigger>
             <TabsTrigger value="categories">Categorias</TabsTrigger>
             <TabsTrigger value="kits">Kits</TabsTrigger>
             <TabsTrigger value="pickup">Retirada</TabsTrigger>
+            <TabsTrigger value="publish">Publicação</TabsTrigger>
             <TabsTrigger value="registrations">Inscrições</TabsTrigger>
           </TabsList>
 
@@ -2176,6 +2189,222 @@ export function EventViewEditDialog({
                     </CardContent>
                   </Card>
                 ))}
+              </div>
+            )}
+          </TabsContent>
+
+          <TabsContent value="publish" className="space-y-4">
+            {mode === "view" ? (
+              <div className="space-y-4">
+                <div className="grid gap-2">
+                  <Label>Status do Evento</Label>
+                  <div>{getStatusBadge(formData.status)}</div>
+                </div>
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Controle de Inscrições</CardTitle>
+                    <CardDescription>
+                      Configure quando as inscrições estarão abertas para este evento
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <Label className="font-medium">Modo Automático:</Label>
+                        <Badge variant={formData.registration_auto_mode ? "default" : "secondary"}>
+                          {formData.registration_auto_mode ? "Ativado" : "Desativado"}
+                        </Badge>
+                      </div>
+                      {formData.registration_auto_mode ? (
+                        <>
+                          <div>
+                            <Label className="text-muted-foreground">Data/Hora de Abertura:</Label>
+                            <p className="text-sm">
+                              {formData.registration_start_date
+                                ? new Date(formData.registration_start_date).toLocaleString("pt-BR")
+                                : "Não definida"}
+                            </p>
+                          </div>
+                          <div>
+                            <Label className="text-muted-foreground">Data/Hora de Encerramento:</Label>
+                            <p className="text-sm">
+                              {formData.registration_end_date
+                                ? new Date(formData.registration_end_date).toLocaleString("pt-BR")
+                                : "Não definida"}
+                            </p>
+                          </div>
+                        </>
+                      ) : (
+                        <div>
+                          <Label className="text-muted-foreground">Status Manual:</Label>
+                          <p className="text-sm">
+                            {formData.registration_status === "not_open"
+                              ? "Inscrições em Breve"
+                              : formData.registration_status === "open"
+                              ? "Inscrições Abertas"
+                              : formData.registration_status === "closed"
+                              ? "Inscrições Encerradas"
+                              : "Usar Status Padrão"}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="status">Status do Evento</Label>
+                  <div className="flex gap-2 flex-wrap">
+                    <Button
+                      type="button"
+                      variant={formData.status === "draft" ? "default" : "outline"}
+                      onClick={() => setFormData({ ...formData, status: "draft" })}
+                    >
+                      📝 Rascunho
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={formData.status === "published" ? "default" : "outline"}
+                      onClick={() => setFormData({ ...formData, status: "published" })}
+                    >
+                      ✅ Publicado
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={formData.status === "ongoing" ? "default" : "outline"}
+                      onClick={() => setFormData({ ...formData, status: "ongoing" })}
+                    >
+                      🏃 Em Andamento
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={formData.status === "finished" ? "default" : "outline"}
+                      onClick={() => setFormData({ ...formData, status: "finished" })}
+                    >
+                      🏁 Finalizado
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={formData.status === "cancelled" ? "default" : "outline"}
+                      onClick={() => setFormData({ ...formData, status: "cancelled" })}
+                    >
+                      ❌ Cancelado
+                    </Button>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    {formData.status === "draft" &&
+                      "O evento estará visível apenas para você"}
+                    {formData.status === "published" &&
+                      "O evento será público e aceita inscrições"}
+                    {formData.status === "ongoing" &&
+                      "O evento está em andamento"}
+                    {formData.status === "finished" &&
+                      "O evento está encerrado e não aceita mais inscrições"}
+                    {formData.status === "cancelled" &&
+                      "O evento foi cancelado"}
+                  </p>
+                </div>
+
+                {/* Controle de Inscrições */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Controle de Inscrições</CardTitle>
+                    <CardDescription>
+                      Configure quando as inscrições estarão abertas para este evento
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="flex items-center space-x-2">
+                      <Checkbox
+                        id="registration_auto_mode"
+                        checked={registrationAutoMode}
+                        onCheckedChange={(checked) => {
+                          setRegistrationAutoMode(checked as boolean);
+                          setFormData({ ...formData, registration_auto_mode: checked as boolean });
+                          // Se desativar modo automático, limpar datas
+                          if (!checked) {
+                            setFormData({
+                              ...formData,
+                              registration_auto_mode: false,
+                              registration_start_date: null,
+                              registration_end_date: null,
+                            });
+                          }
+                        }}
+                      />
+                      <Label htmlFor="registration_auto_mode" className="cursor-pointer font-normal">
+                        Modo Automático (baseado em datas)
+                      </Label>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {registrationAutoMode
+                        ? "O status será atualizado automaticamente baseado nas datas definidas abaixo."
+                        : "Controle manual do status de inscrições."}
+                    </p>
+
+                    {registrationAutoMode ? (
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="grid gap-2">
+                          <Label htmlFor="registration_start_date">Data/Hora de Abertura</Label>
+                          <Input
+                            id="registration_start_date"
+                            type="datetime-local"
+                            value={
+                              formData.registration_start_date
+                                ? new Date(formData.registration_start_date).toISOString().slice(0, 16)
+                                : ""
+                            }
+                            onChange={(e) => {
+                              const value = e.target.value ? new Date(e.target.value).toISOString() : null;
+                              setFormData({ ...formData, registration_start_date: value });
+                            }}
+                          />
+                        </div>
+                        <div className="grid gap-2">
+                          <Label htmlFor="registration_end_date">Data/Hora de Encerramento</Label>
+                          <Input
+                            id="registration_end_date"
+                            type="datetime-local"
+                            value={
+                              formData.registration_end_date
+                                ? new Date(formData.registration_end_date).toISOString().slice(0, 16)
+                                : ""
+                            }
+                            onChange={(e) => {
+                              const value = e.target.value ? new Date(e.target.value).toISOString() : null;
+                              setFormData({ ...formData, registration_end_date: value });
+                            }}
+                          />
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="grid gap-2">
+                        <Label htmlFor="registration_status">Status das Inscrições</Label>
+                        <Select
+                          value={formData.registration_status || "default"}
+                          onValueChange={(value) =>
+                            setFormData({ ...formData, registration_status: value === "default" ? null : value })
+                          }
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Selecione o status" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="not_open">Inscrições em Breve</SelectItem>
+                            <SelectItem value="open">Inscrições Abertas</SelectItem>
+                            <SelectItem value="closed">Inscrições Encerradas</SelectItem>
+                            <SelectItem value="default">Usar Status Padrão</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <p className="text-xs text-muted-foreground">
+                          Deixe em branco para usar a lógica padrão baseada no status do evento
+                        </p>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
               </div>
             )}
           </TabsContent>

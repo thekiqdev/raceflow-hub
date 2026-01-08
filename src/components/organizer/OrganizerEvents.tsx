@@ -26,14 +26,16 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Plus, Search, MoreVertical, Edit, Eye, Trash2, BarChart3, Calendar, Loader2, ExternalLink } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { EventFormDialog } from "./EventFormDialog";
-import { getEvents, deleteEvent, type Event } from "@/lib/api/events";
+import { getEvents, deleteEvent, updateEvent, type Event } from "@/lib/api/events";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
+import { getEffectiveRegistrationStatus, getRegistrationStatusLabel, getRegistrationStatusVariant } from "@/lib/utils/eventRegistration";
 
 const OrganizerEvents = () => {
   const navigate = useNavigate();
@@ -44,6 +46,7 @@ const OrganizerEvents = () => {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
   const [isDeleting, setIsDeleting] = useState<string | null>(null);
+  const [editingRegistrationStatus, setEditingRegistrationStatus] = useState<string | null>(null);
 
   useEffect(() => {
     loadEvents();
@@ -212,6 +215,7 @@ const OrganizerEvents = () => {
                     <TableHead>Data</TableHead>
                     <TableHead>Localização</TableHead>
                     <TableHead>Status</TableHead>
+                    <TableHead>Status Inscrições</TableHead>
                     <TableHead className="text-right">Inscrições</TableHead>
                     <TableHead className="text-right">Faturamento</TableHead>
                     <TableHead className="text-right">Ações</TableHead>
@@ -231,6 +235,60 @@ const OrganizerEvents = () => {
                         {event.city}, {event.state}
                       </TableCell>
                       <TableCell>{getStatusBadge(event.status || "draft")}</TableCell>
+                      <TableCell>
+                        {(() => {
+                          const effectiveStatus = getEffectiveRegistrationStatus(event);
+                          if (effectiveStatus !== null) {
+                            return editingRegistrationStatus === event.id ? (
+                              <Select
+                                value={effectiveStatus || "default"}
+                                onValueChange={async (value) => {
+                                  try {
+                                    const newStatus = value === "default" ? null : value;
+                                    const response = await updateEvent(event.id, {
+                                      registration_status: newStatus,
+                                      registration_auto_mode: false, // Desativa modo automático ao mudar manualmente
+                                    });
+                                    if (response.success) {
+                                      toast.success("Status de inscrições atualizado com sucesso!");
+                                      setEditingRegistrationStatus(null);
+                                      loadEvents();
+                                    } else {
+                                      throw new Error(response.error || "Erro ao atualizar status");
+                                    }
+                                  } catch (error: any) {
+                                    toast.error(error.message || "Erro ao atualizar status de inscrições");
+                                  }
+                                }}
+                                onOpenChange={(open) => {
+                                  if (!open) {
+                                    setEditingRegistrationStatus(null);
+                                  }
+                                }}
+                              >
+                                <SelectTrigger className="w-[200px]">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="not_open">Inscrições em Breve</SelectItem>
+                                  <SelectItem value="open">Inscrições Abertas</SelectItem>
+                                  <SelectItem value="closed">Inscrições Encerradas</SelectItem>
+                                  <SelectItem value="default">Usar Status Padrão</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            ) : (
+                              <Badge
+                                variant={getRegistrationStatusVariant(event)}
+                                className="cursor-pointer hover:opacity-80"
+                                onClick={() => setEditingRegistrationStatus(event.id)}
+                              >
+                                {getRegistrationStatusLabel(event)}
+                              </Badge>
+                            );
+                          }
+                          return <span className="text-muted-foreground text-sm">-</span>;
+                        })()}
+                      </TableCell>
                       <TableCell className="text-right">
                         <span className="font-medium">{event.confirmed_registrations || event.registration_count || 0}</span>
                       </TableCell>

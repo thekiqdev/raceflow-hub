@@ -19,6 +19,31 @@ import { getProfileByUserId } from '../services/profilesService.js';
 import { query } from '../config/database.js';
 import { sendNotificationSafely, getUserEmail, getUserName, getOrganizerEmail } from '../services/notificationService.js';
 import { z } from 'zod';
+import { EventRegistrationStatus, Event } from '../types/index.js';
+import { calculateRegistrationStatus } from '../services/eventsService.js';
+
+/**
+ * Obtém o status efetivo de inscrições do evento
+ * - Se modo automático está ativado, calcula baseado nas datas
+ * - Se modo automático está desativado, usa o status manual
+ * - Se ambos são NULL, retorna NULL (usa lógica antiga)
+ */
+function getEffectiveRegistrationStatus(event: Event): EventRegistrationStatus | null {
+  // Se modo automático está ativado, calcular baseado nas datas
+  if (event.registration_auto_mode && event.registration_start_date && event.registration_end_date) {
+    const calculatedStatus = calculateRegistrationStatus({
+      registration_auto_mode: event.registration_auto_mode,
+      registration_start_date: event.registration_start_date,
+      registration_end_date: event.registration_end_date,
+    });
+    if (calculatedStatus) {
+      return calculatedStatus;
+    }
+  }
+  
+  // Caso contrário, usar status manual
+  return event.registration_status || null;
+}
 
 // Schema for credit card data validation
 const creditCardDataSchema = z.object({
@@ -350,21 +375,65 @@ export const createRegistrationController = asyncHandler(async (req: AuthRequest
     return;
   }
 
-  // Check event status - only 'published' and 'ongoing' allow registrations
-  if (event.status === 'draft') {
-    res.status(400).json({
-      success: false,
-      error: 'Event not open for registrations',
-      message: 'Este evento ainda não está aberto para inscrições',
-    });
-    return;
+  // Verificar status efetivo de inscrições
+  const effectiveRegistrationStatus = getEffectiveRegistrationStatus(event);
+
+  // Se status efetivo está definido, usar nova lógica
+  if (effectiveRegistrationStatus !== null) {
+    if (effectiveRegistrationStatus === 'not_open') {
+      const message = event.registration_auto_mode && event.registration_start_date
+        ? `As inscrições abrem em ${new Date(event.registration_start_date).toLocaleString('pt-BR')}.`
+        : 'As inscrições ainda não estão abertas. Aguarde o anúncio oficial.';
+      
+      res.status(400).json({
+        success: false,
+        error: 'Registrations not open yet',
+        message,
+      });
+      return;
+    }
+
+    if (effectiveRegistrationStatus === 'closed') {
+      const message = event.registration_auto_mode && event.registration_end_date
+        ? `As inscrições foram encerradas em ${new Date(event.registration_end_date).toLocaleString('pt-BR')}.`
+        : 'As inscrições para este evento foram encerradas.';
+      
+      res.status(400).json({
+        success: false,
+        error: 'Registrations closed',
+        message,
+      });
+      return;
+    }
+
+    // Se effectiveRegistrationStatus === 'open', continuar com validações abaixo
+  } else {
+    // Se effectiveRegistrationStatus é NULL, usar lógica antiga baseada em event.status
+    if (event.status === 'draft') {
+      res.status(400).json({
+        success: false,
+        error: 'Event not open for registrations',
+        message: 'Este evento ainda não está aberto para inscrições',
+      });
+      return;
+    }
+
+    if (event.status === 'finished' || event.status === 'cancelled') {
+      res.status(400).json({
+        success: false,
+        error: 'Event not accepting registrations',
+        message: 'Este evento não está mais aceitando inscrições',
+      });
+      return;
+    }
   }
 
-  if (event.status === 'finished' || event.status === 'cancelled') {
+  // Verificar se evento está publicado (sempre necessário)
+  if (event.status !== 'published' && event.status !== 'ongoing') {
     res.status(400).json({
       success: false,
-      error: 'Event not accepting registrations',
-      message: 'Este evento não está mais aceitando inscrições',
+      error: 'Event not published',
+      message: 'Este evento não está publicado',
     });
     return;
   }
@@ -981,21 +1050,65 @@ export const createRegistrationByOrganizerController = asyncHandler(async (req: 
     return;
   }
 
-  // Check event status
-  if (event.status === 'draft') {
-    res.status(400).json({
-      success: false,
-      error: 'Event not open for registrations',
-      message: 'Este evento ainda não está aberto para inscrições',
-    });
-    return;
+  // Verificar status efetivo de inscrições
+  const effectiveRegistrationStatus = getEffectiveRegistrationStatus(event);
+
+  // Se status efetivo está definido, usar nova lógica
+  if (effectiveRegistrationStatus !== null) {
+    if (effectiveRegistrationStatus === 'not_open') {
+      const message = event.registration_auto_mode && event.registration_start_date
+        ? `As inscrições abrem em ${new Date(event.registration_start_date).toLocaleString('pt-BR')}.`
+        : 'As inscrições ainda não estão abertas. Aguarde o anúncio oficial.';
+      
+      res.status(400).json({
+        success: false,
+        error: 'Registrations not open yet',
+        message,
+      });
+      return;
+    }
+
+    if (effectiveRegistrationStatus === 'closed') {
+      const message = event.registration_auto_mode && event.registration_end_date
+        ? `As inscrições foram encerradas em ${new Date(event.registration_end_date).toLocaleString('pt-BR')}.`
+        : 'As inscrições para este evento foram encerradas.';
+      
+      res.status(400).json({
+        success: false,
+        error: 'Registrations closed',
+        message,
+      });
+      return;
+    }
+
+    // Se effectiveRegistrationStatus === 'open', continuar com validações abaixo
+  } else {
+    // Se effectiveRegistrationStatus é NULL, usar lógica antiga baseada em event.status
+    if (event.status === 'draft') {
+      res.status(400).json({
+        success: false,
+        error: 'Event not open for registrations',
+        message: 'Este evento ainda não está aberto para inscrições',
+      });
+      return;
+    }
+
+    if (event.status === 'finished' || event.status === 'cancelled') {
+      res.status(400).json({
+        success: false,
+        error: 'Event not accepting registrations',
+        message: 'Este evento não está mais aceitando inscrições',
+      });
+      return;
+    }
   }
 
-  if (event.status === 'finished' || event.status === 'cancelled') {
+  // Verificar se evento está publicado (sempre necessário)
+  if (event.status !== 'published' && event.status !== 'ongoing') {
     res.status(400).json({
       success: false,
-      error: 'Event not accepting registrations',
-      message: 'Este evento não está mais aceitando inscrições',
+      error: 'Event not published',
+      message: 'Este evento não está publicado',
     });
     return;
   }
@@ -2049,21 +2162,65 @@ export const createRegistrationByLeaderController = asyncHandler(async (req: Aut
     return;
   }
 
-  // Check event status
-  if (event.status === 'draft') {
-    res.status(400).json({
-      success: false,
-      error: 'Event not open for registrations',
-      message: 'Este evento ainda não está aberto para inscrições',
-    });
-    return;
+  // Verificar status efetivo de inscrições
+  const effectiveRegistrationStatus = getEffectiveRegistrationStatus(event);
+
+  // Se status efetivo está definido, usar nova lógica
+  if (effectiveRegistrationStatus !== null) {
+    if (effectiveRegistrationStatus === 'not_open') {
+      const message = event.registration_auto_mode && event.registration_start_date
+        ? `As inscrições abrem em ${new Date(event.registration_start_date).toLocaleString('pt-BR')}.`
+        : 'As inscrições ainda não estão abertas. Aguarde o anúncio oficial.';
+      
+      res.status(400).json({
+        success: false,
+        error: 'Registrations not open yet',
+        message,
+      });
+      return;
+    }
+
+    if (effectiveRegistrationStatus === 'closed') {
+      const message = event.registration_auto_mode && event.registration_end_date
+        ? `As inscrições foram encerradas em ${new Date(event.registration_end_date).toLocaleString('pt-BR')}.`
+        : 'As inscrições para este evento foram encerradas.';
+      
+      res.status(400).json({
+        success: false,
+        error: 'Registrations closed',
+        message,
+      });
+      return;
+    }
+
+    // Se effectiveRegistrationStatus === 'open', continuar com validações abaixo
+  } else {
+    // Se effectiveRegistrationStatus é NULL, usar lógica antiga baseada em event.status
+    if (event.status === 'draft') {
+      res.status(400).json({
+        success: false,
+        error: 'Event not open for registrations',
+        message: 'Este evento ainda não está aberto para inscrições',
+      });
+      return;
+    }
+
+    if (event.status === 'finished' || event.status === 'cancelled') {
+      res.status(400).json({
+        success: false,
+        error: 'Event not accepting registrations',
+        message: 'Este evento não está mais aceitando inscrições',
+      });
+      return;
+    }
   }
 
-  if (event.status === 'finished' || event.status === 'cancelled') {
+  // Verificar se evento está publicado (sempre necessário)
+  if (event.status !== 'published' && event.status !== 'ongoing') {
     res.status(400).json({
       success: false,
-      error: 'Event not accepting registrations',
-      message: 'Este evento não está mais aceitando inscrições',
+      error: 'Event not published',
+      message: 'Este evento não está publicado',
     });
     return;
   }

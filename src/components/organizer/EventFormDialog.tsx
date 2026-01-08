@@ -44,6 +44,7 @@ import { deleteUploadedFile } from "@/lib/api/upload";
 import { getOrganizers } from "@/lib/api/userManagement";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 
 const eventFormSchema = z.object({
   title: z.string().min(3, "Nome deve ter no mínimo 3 caracteres"),
@@ -55,6 +56,36 @@ const eventFormSchema = z.object({
   banner_url: z.string().optional(),
   regulation_url: z.string().optional(),
   status: z.enum(["draft", "published", "finished"]),
+  registration_status: z.enum(["not_open", "open", "closed"]).nullable().optional(),
+  registration_start_date: z.string().nullable().optional(),
+  registration_end_date: z.string().nullable().optional(),
+  registration_auto_mode: z.boolean().optional(),
+}).refine((data) => {
+  // Se modo automático está ativado, datas são obrigatórias
+  if (data.registration_auto_mode === true) {
+    return data.registration_start_date !== null && 
+           data.registration_start_date !== undefined && 
+           data.registration_start_date !== "" &&
+           data.registration_end_date !== null && 
+           data.registration_end_date !== undefined &&
+           data.registration_end_date !== "";
+  }
+  return true;
+}, {
+  message: 'Data de abertura e encerramento são obrigatórias quando o modo automático está ativado',
+  path: ['registration_start_date'],
+}).refine((data) => {
+  // Validar que data fim >= data início
+  if (data.registration_start_date && data.registration_end_date && 
+      data.registration_start_date !== "" && data.registration_end_date !== "") {
+    const startDate = new Date(data.registration_start_date);
+    const endDate = new Date(data.registration_end_date);
+    return endDate >= startDate;
+  }
+  return true;
+}, {
+  message: 'Data de encerramento deve ser maior ou igual à data de abertura',
+  path: ['registration_end_date'],
 });
 
 type EventFormValues = z.infer<typeof eventFormSchema>;
@@ -167,6 +198,7 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
   const [selectedOrganizerId, setSelectedOrganizerId] = useState<string>("");
   const [organizers, setOrganizers] = useState<any[]>([]);
   const [loadingOrganizers, setLoadingOrganizers] = useState(false);
+  const [registrationAutoMode, setRegistrationAutoMode] = useState(false);
 
   const form = useForm<EventFormValues>({
     resolver: zodResolver(eventFormSchema),
@@ -180,6 +212,10 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
       banner_url: "",
       regulation_url: "",
       status: "draft",
+      registration_status: null,
+      registration_start_date: null,
+      registration_end_date: null,
+      registration_auto_mode: false,
     },
   });
 
@@ -198,7 +234,12 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
           banner_url: "",
           regulation_url: "",
           status: "draft",
+          registration_status: null,
+          registration_start_date: null,
+          registration_end_date: null,
+          registration_auto_mode: false,
         });
+        setRegistrationAutoMode(false);
         setModalities([]);
         setCategories([]);
         setKits([]);
@@ -219,6 +260,7 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
             console.log("✅ Dados do evento carregados:", eventData);
             
             // Update form with event data
+            const autoMode = eventData.registration_auto_mode || false;
             form.reset({
               title: eventData.title || "",
               description: eventData.description || "",
@@ -229,7 +271,12 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
               banner_url: eventData.banner_url || "",
               regulation_url: eventData.regulation_url || "",
               status: eventData.status || "draft",
+              registration_status: eventData.registration_status || null,
+              registration_start_date: eventData.registration_start_date || null,
+              registration_end_date: eventData.registration_end_date || null,
+              registration_auto_mode: autoMode,
             });
+            setRegistrationAutoMode(autoMode);
 
             // Load modalities
             const modalitiesResponse = await getModalities(event.id);
@@ -462,7 +509,12 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
           banner_url: "",
           regulation_url: "",
           status: "draft",
+          registration_status: null,
+          registration_start_date: null,
+          registration_end_date: null,
+          registration_auto_mode: false,
         });
+        setRegistrationAutoMode(false);
         setModalities([]);
         setCategories([]);
         setKits([]);
@@ -1164,6 +1216,10 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
         regulation_url: values.regulation_url || undefined,
         status: values.status,
         organizer_id: organizerId,
+        registration_status: values.registration_status || null,
+        registration_start_date: values.registration_start_date || null,
+        registration_end_date: values.registration_end_date || null,
+        registration_auto_mode: values.registration_auto_mode || false,
       };
 
       let eventId = event?.id;
@@ -3094,6 +3150,116 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
                     </FormItem>
                   )}
                 />
+
+                {/* Controle de Inscrições */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Controle de Inscrições</CardTitle>
+                    <CardDescription>
+                      Configure quando as inscrições estarão abertas para este evento
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="flex items-center space-x-2">
+                      <Checkbox
+                        id="registration_auto_mode"
+                        checked={registrationAutoMode}
+                        onCheckedChange={(checked) => {
+                          setRegistrationAutoMode(checked as boolean);
+                          form.setValue("registration_auto_mode", checked as boolean);
+                          // Se desativar modo automático, limpar datas
+                          if (!checked) {
+                            form.setValue("registration_start_date", null);
+                            form.setValue("registration_end_date", null);
+                          }
+                        }}
+                      />
+                      <Label htmlFor="registration_auto_mode" className="cursor-pointer font-normal">
+                        Modo Automático (baseado em datas)
+                      </Label>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {registrationAutoMode
+                        ? "O status será atualizado automaticamente baseado nas datas definidas abaixo."
+                        : "Controle manual do status de inscrições."}
+                    </p>
+
+                    {registrationAutoMode ? (
+                      <div className="grid grid-cols-2 gap-4">
+                        <FormField
+                          control={form.control}
+                          name="registration_start_date"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Data/Hora de Abertura</FormLabel>
+                              <FormControl>
+                                <Input
+                                  type="datetime-local"
+                                  value={field.value ? new Date(field.value).toISOString().slice(0, 16) : ""}
+                                  onChange={(e) => {
+                                    const value = e.target.value ? new Date(e.target.value).toISOString() : null;
+                                    field.onChange(value);
+                                  }}
+                                />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={form.control}
+                          name="registration_end_date"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Data/Hora de Encerramento</FormLabel>
+                              <FormControl>
+                                <Input
+                                  type="datetime-local"
+                                  value={field.value ? new Date(field.value).toISOString().slice(0, 16) : ""}
+                                  onChange={(e) => {
+                                    const value = e.target.value ? new Date(e.target.value).toISOString() : null;
+                                    field.onChange(value);
+                                  }}
+                                />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+                    ) : (
+                      <FormField
+                        control={form.control}
+                        name="registration_status"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Status das Inscrições</FormLabel>
+                            <Select
+                              value={field.value || "default"}
+                              onValueChange={(value) => field.onChange(value === "default" ? null : value)}
+                            >
+                              <FormControl>
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Selecione o status" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                <SelectItem value="not_open">Inscrições em Breve</SelectItem>
+                                <SelectItem value="open">Inscrições Abertas</SelectItem>
+                                <SelectItem value="closed">Inscrições Encerradas</SelectItem>
+                                <SelectItem value="default">Usar Status Padrão</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <FormDescription>
+                              Deixe em branco para usar a lógica padrão baseada no status do evento
+                            </FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    )}
+                  </CardContent>
+                </Card>
 
                 <Card>
                   <CardHeader>

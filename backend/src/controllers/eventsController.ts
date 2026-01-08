@@ -10,6 +10,88 @@ import {
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { hasRole } from '../services/userRolesService.js';
 import { deleteFile, getFilePath } from '../middleware/upload.js';
+import { z } from 'zod';
+import { EventRegistrationStatus, Event } from '../types/index.js';
+import { calculateRegistrationStatus } from '../services/eventsService.js';
+
+// Schema for create event request
+const createEventSchema = z.object({
+  organizer_id: z.string().uuid('ID do organizador inválido').optional(),
+  title: z.string().min(3, 'Título deve ter no mínimo 3 caracteres'),
+  description: z.string().optional(),
+  event_date: z.string().datetime('Data do evento inválida'),
+  location: z.string().min(5, 'Localização é obrigatória'),
+  city: z.string().min(2, 'Cidade é obrigatória'),
+  state: z.string().length(2, 'Estado deve ter 2 caracteres'),
+  banner_url: z.string().optional(),
+  regulation_url: z.string().optional(),
+  result_url: z.string().optional(),
+  status: z.enum(['draft', 'published', 'ongoing', 'finished', 'cancelled']).optional(),
+  registration_status: z.enum(['not_open', 'open', 'closed']).nullable().optional(),
+  registration_start_date: z.string().datetime('Data de abertura inválida').nullable().optional(),
+  registration_end_date: z.string().datetime('Data de encerramento inválida').nullable().optional(),
+  registration_auto_mode: z.boolean().optional(),
+}).refine((data) => {
+  // Se modo automático está ativado, datas são obrigatórias
+  if (data.registration_auto_mode === true) {
+    return data.registration_start_date !== null && data.registration_start_date !== undefined &&
+           data.registration_end_date !== null && data.registration_end_date !== undefined;
+  }
+  return true;
+}, {
+  message: 'Data de abertura e encerramento são obrigatórias quando o modo automático está ativado',
+  path: ['registration_start_date'],
+}).refine((data) => {
+  // Validar que data fim >= data início
+  if (data.registration_start_date && data.registration_end_date) {
+    const startDate = new Date(data.registration_start_date);
+    const endDate = new Date(data.registration_end_date);
+    return endDate >= startDate;
+  }
+  return true;
+}, {
+  message: 'Data de encerramento deve ser maior ou igual à data de abertura',
+  path: ['registration_end_date'],
+});
+
+// Schema for update event request
+const updateEventSchema = z.object({
+  title: z.string().min(3, 'Título deve ter no mínimo 3 caracteres').optional(),
+  description: z.string().optional(),
+  event_date: z.string().datetime('Data do evento inválida').optional(),
+  location: z.string().min(5, 'Localização é obrigatória').optional(),
+  city: z.string().min(2, 'Cidade é obrigatória').optional(),
+  state: z.string().length(2, 'Estado deve ter 2 caracteres').optional(),
+  banner_url: z.string().optional(),
+  regulation_url: z.string().optional(),
+  result_url: z.string().optional(),
+  status: z.enum(['draft', 'published', 'ongoing', 'finished', 'cancelled']).optional(),
+  registration_status: z.enum(['not_open', 'open', 'closed']).nullable().optional(),
+  registration_start_date: z.string().datetime('Data de abertura inválida').nullable().optional(),
+  registration_end_date: z.string().datetime('Data de encerramento inválida').nullable().optional(),
+  registration_auto_mode: z.boolean().optional(),
+}).refine((data) => {
+  // Se modo automático está ativado, datas são obrigatórias
+  if (data.registration_auto_mode === true) {
+    return data.registration_start_date !== null && data.registration_start_date !== undefined &&
+           data.registration_end_date !== null && data.registration_end_date !== undefined;
+  }
+  return true;
+}, {
+  message: 'Data de abertura e encerramento são obrigatórias quando o modo automático está ativado',
+  path: ['registration_start_date'],
+}).refine((data) => {
+  // Validar que data fim >= data início
+  if (data.registration_start_date && data.registration_end_date) {
+    const startDate = new Date(data.registration_start_date);
+    const endDate = new Date(data.registration_end_date);
+    return endDate >= startDate;
+  }
+  return true;
+}, {
+  message: 'Data de encerramento deve ser maior ou igual à data de abertura',
+  path: ['registration_end_date'],
+});
 
 // Get all events
 export const getAllEvents = asyncHandler(async (req: AuthRequest, res: Response) => {
@@ -183,9 +265,21 @@ export const createEventController = asyncHandler(async (req: AuthRequest, res: 
     return;
   }
 
+  // Validate request body with Zod
+  const validation = createEventSchema.safeParse(req.body);
+  if (!validation.success) {
+    res.status(400).json({
+      success: false,
+      error: 'Validation error',
+      message: validation.error.errors[0].message,
+      details: validation.error.errors,
+    });
+    return;
+  }
+
   const eventData = {
-    ...req.body,
-    organizer_id: req.body.organizer_id || req.user.id,
+    ...validation.data,
+    organizer_id: validation.data.organizer_id || req.user.id,
   };
 
   console.log('📝 Creating event with data:', eventData);
@@ -239,8 +333,20 @@ export const updateEventController = asyncHandler(async (req: AuthRequest, res: 
     return;
   }
 
+  // Validate request body with Zod
+  const validation = updateEventSchema.safeParse(req.body);
+  if (!validation.success) {
+    res.status(400).json({
+      success: false,
+      error: 'Validation error',
+      message: validation.error.errors[0].message,
+      details: validation.error.errors,
+    });
+    return;
+  }
+
   // Delete old files if new ones are being uploaded
-  if (req.body.banner_url && event.banner_url && req.body.banner_url !== event.banner_url) {
+  if (validation.data.banner_url && event.banner_url && validation.data.banner_url !== event.banner_url) {
     // New banner URL is different, delete old file if it's a local file
     const oldFilePath = getFilePath(event.banner_url);
     if (oldFilePath) {
@@ -248,7 +354,7 @@ export const updateEventController = asyncHandler(async (req: AuthRequest, res: 
     }
   }
 
-  if (req.body.regulation_url && event.regulation_url && req.body.regulation_url !== event.regulation_url) {
+  if (validation.data.regulation_url && event.regulation_url && validation.data.regulation_url !== event.regulation_url) {
     // New regulation URL is different, delete old file if it's a local file
     const oldFilePath = getFilePath(event.regulation_url);
     if (oldFilePath) {
@@ -256,7 +362,7 @@ export const updateEventController = asyncHandler(async (req: AuthRequest, res: 
     }
   }
 
-  const updatedEvent = await updateEvent(id, req.body);
+  const updatedEvent = await updateEvent(id, validation.data);
 
   res.json({
     success: true,

@@ -1,5 +1,7 @@
 import { apiClient } from './client.js';
 
+export type EventRegistrationStatus = 'not_open' | 'open' | 'closed';
+
 export interface Event {
   id: string;
   organizer_id: string;
@@ -13,6 +15,10 @@ export interface Event {
   regulation_url?: string;
   result_url?: string;
   status?: 'draft' | 'published' | 'ongoing' | 'finished' | 'cancelled';
+  registration_status?: EventRegistrationStatus | null;
+  registration_start_date?: string | null;
+  registration_end_date?: string | null;
+  registration_auto_mode?: boolean;
   created_at?: string;
   updated_at?: string;
   organizer_name?: string;
@@ -40,6 +46,10 @@ export interface CreateEventData {
   result_url?: string;
   status?: 'draft' | 'published' | 'ongoing' | 'finished' | 'cancelled';
   organizer_id?: string;
+  registration_status?: EventRegistrationStatus | null;
+  registration_start_date?: string | null;
+  registration_end_date?: string | null;
+  registration_auto_mode?: boolean;
 }
 
 export interface UpdateEventData {
@@ -53,6 +63,10 @@ export interface UpdateEventData {
   regulation_url?: string;
   result_url?: string;
   status?: 'draft' | 'published' | 'ongoing' | 'finished' | 'cancelled';
+  registration_status?: EventRegistrationStatus | null;
+  registration_start_date?: string | null;
+  registration_end_date?: string | null;
+  registration_auto_mode?: boolean;
 }
 
 // Get all events
@@ -117,4 +131,29 @@ export const deleteEvent = async (id: string) => {
   return apiClient.delete(`/events/${id}`);
 };
 
+/**
+ * Calcula o status efetivo de inscrições do evento
+ * - Se modo automático está ativado, calcula baseado nas datas
+ * - Se modo automático está desativado, usa o status manual
+ * - Se ambos são NULL, retorna NULL (usa lógica antiga)
+ */
+export function getEffectiveRegistrationStatus(event: Event): EventRegistrationStatus | null {
+  // Se modo automático está ativado, calcular baseado nas datas
+  if (event.registration_auto_mode && event.registration_start_date && event.registration_end_date) {
+    const now = new Date();
+    const startDate = new Date(event.registration_start_date);
+    const endDate = new Date(event.registration_end_date);
+    
+    if (now < startDate) {
+      return 'not_open';
+    } else if (now >= startDate && now <= endDate) {
+      return 'open';
+    } else {
+      return 'closed';
+    }
+  }
+  
+  // Caso contrário, usar status manual
+  return event.registration_status || null;
+}
 
