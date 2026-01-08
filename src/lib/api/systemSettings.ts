@@ -39,6 +39,7 @@ export interface SystemSettings {
   time_format: string;
   currency: string;
   language: string;
+  old_results_url?: string;
   created_at: string;
   updated_at: string;
 }
@@ -80,6 +81,7 @@ export interface UpdateSystemSettingsData {
   time_format?: string;
   currency?: string;
   language?: string;
+  old_results_url?: string | null;
 }
 
 /**

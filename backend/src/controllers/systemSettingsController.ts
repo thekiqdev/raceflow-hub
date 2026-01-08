@@ -42,6 +42,7 @@ const updateSystemSettingsSchema = z.object({
   time_format: z.string().optional(),
   currency: z.string().optional(),
   language: z.string().optional(),
+  old_results_url: z.string().url().optional().nullable(),
 });
 
 /**

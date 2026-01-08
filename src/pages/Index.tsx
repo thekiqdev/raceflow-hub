@@ -11,6 +11,7 @@ import { Header } from "@/components/Header";
 import { useAuth } from "@/contexts/AuthContext";
 import { getHomePageSettings, updateHomePageSettings } from "@/lib/api/homePageSettings";
 import { getEvents } from "@/lib/api/events";
+import { getSystemSettings } from "@/lib/api/systemSettings";
 import { VisualEditorProvider } from "@/contexts/VisualEditorContext";
 import { EditableText } from "@/components/visual-editor/EditableText";
 import { EditableImage } from "@/components/visual-editor/EditableImage";
@@ -37,6 +38,7 @@ const Index = () => {
     category: "",
     search: ""
   });
+  const [oldResultsUrl, setOldResultsUrl] = useState<string | null>(null);
   const [pageSettings, setPageSettings] = useState({
     hero_title: "SOMOS UMA EMPRESA DE CRONOMETRAGEM ESPORTIVA",
     hero_subtitle: "ESPECIALIZADA EM CORRIDA DE RUA, TRABALHANDO COM O SISTEMA DE CHIPS",
@@ -57,7 +59,19 @@ const Index = () => {
   useEffect(() => {
     loadPageSettings();
     loadUpcomingEvents(); // Load events from API instead of mock
+    loadSystemSettings();
   }, []);
+
+  const loadSystemSettings = async () => {
+    try {
+      const response = await getSystemSettings();
+      if (response.success && response.data?.old_results_url) {
+        setOldResultsUrl(response.data.old_results_url);
+      }
+    } catch (error) {
+      console.error("Erro ao carregar configurações do sistema:", error);
+    }
+  };
 
   const loadUpcomingEvents = async () => {
     try {
@@ -547,6 +561,28 @@ const Index = () => {
             </div>
           </div>
         </section>
+
+        {/* Old Results Section */}
+        {oldResultsUrl && (
+          <section className="py-16 bg-card">
+            <div className="container mx-auto px-4">
+              <div className="text-center mb-8">
+                <h2 className="text-3xl font-bold mb-2">RESULTADOS ANTIGOS</h2>
+                <p className="text-sm text-muted-foreground">CONSULTE RESULTADOS DE EVENTOS ANTERIORES</p>
+              </div>
+              <div className="flex justify-center">
+                <Button
+                  size="lg"
+                  onClick={() => window.open(oldResultsUrl, '_blank')}
+                  className="gap-2"
+                >
+                  <BarChart3 className="h-5 w-5" />
+                  Acessar Resultados Antigos
+                </Button>
+              </div>
+            </div>
+          </section>
+        )}
 
         {/* Footer */}
         <footer className="py-8 bg-card border-t">

@@ -31,6 +31,7 @@ const SystemSettings = () => {
     company_state: "",
     company_zip: "",
     company_country: "",
+    old_results_url: "",
   });
   
   const [emailForm, setEmailForm] = useState({
@@ -103,6 +104,7 @@ const SystemSettings = () => {
           company_state: data.company_state || "",
           company_zip: data.company_zip || "",
           company_country: data.company_country || "Brasil",
+          old_results_url: data.old_results_url || "",
         });
         
         setEmailForm({
@@ -240,6 +242,7 @@ const SystemSettings = () => {
         company_state: generalForm.company_state || null,
         company_zip: generalForm.company_zip || null,
         company_country: generalForm.company_country,
+        old_results_url: generalForm.old_results_url || null,
       });
       
       if (response.success) {
@@ -559,6 +562,20 @@ const SystemSettings = () => {
                   onChange={(e) => setGeneralForm({ ...generalForm, company_country: e.target.value })}
                   className="mt-2" 
                 />
+              </div>
+              <div>
+                <Label htmlFor="old_results_url">Resultados Antigos (URL)</Label>
+                <Input 
+                  id="old_results_url"
+                  type="url"
+                  value={generalForm.old_results_url}
+                  onChange={(e) => setGeneralForm({ ...generalForm, old_results_url: e.target.value })}
+                  placeholder="https://exemplo.com/resultados"
+                  className="mt-2" 
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  URL do site antigo para visualização de resultados. Será exibido na página inicial após a seção "Nossos Números".
+                </p>
               </div>
               <Button onClick={handleSaveGeneral} disabled={saving}>
                 {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}

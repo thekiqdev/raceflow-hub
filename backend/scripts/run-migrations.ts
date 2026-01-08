@@ -91,6 +91,7 @@ const migrations = [
   '062_add_team_to_profiles.sql',
   '063_add_registration_status_to_events.sql',
   '064_migrate_existing_events_registration_status.sql',
+  '065_add_old_results_url_to_system_settings.sql',
 ];
 
 // Create migrations tracking table
