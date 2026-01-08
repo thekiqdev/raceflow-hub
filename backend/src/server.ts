@@ -143,8 +143,20 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Serve static files with proper headers for PDFs
-// Use environment variable if set, otherwise default to ../uploads
-const uploadsStaticDir = process.env.UPLOADS_DIR || path.join(__dirname, '../uploads');
+// Use environment variable if set, otherwise default to /app/uploads for production
+const isProductionEnv = process.env.NODE_ENV === 'production';
+const defaultUploadsStaticDir = isProductionEnv ? '/app/uploads' : path.join(__dirname, '../uploads');
+const uploadsStaticDir = process.env.UPLOADS_DIR || defaultUploadsStaticDir;
+
+console.log('📁 Static files configuration:', {
+  UPLOADS_DIR: process.env.UPLOADS_DIR,
+  NODE_ENV: process.env.NODE_ENV,
+  isProductionEnv,
+  defaultUploadsStaticDir,
+  uploadsStaticDir,
+  __dirname,
+});
+
 app.use('/uploads', express.static(uploadsStaticDir, {
   setHeaders: (res, filePath) => {
     // Set proper Content-Type for PDFs

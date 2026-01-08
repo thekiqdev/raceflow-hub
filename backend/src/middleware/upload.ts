@@ -4,15 +4,31 @@ import fs from 'fs';
 import { Request } from 'express';
 
 // Create uploads directory if it doesn't exist
-// Use environment variable if set, otherwise default to /app/uploads
+// Use environment variable if set, otherwise default to /app/uploads for production
 // This allows flexibility for different deployment scenarios
-const uploadsDir = process.env.UPLOADS_DIR || path.join(process.cwd(), 'uploads');
+const isProduction = process.env.NODE_ENV === 'production';
+const defaultUploadsDir = isProduction ? '/app/uploads' : path.join(process.cwd(), 'uploads');
+const uploadsDir = process.env.UPLOADS_DIR || defaultUploadsDir;
 const bannersDir = path.join(uploadsDir, 'banners');
 const regulationsDir = path.join(uploadsDir, 'regulations');
+
+console.log('📁 Uploads configuration:', {
+  UPLOADS_DIR: process.env.UPLOADS_DIR,
+  NODE_ENV: process.env.NODE_ENV,
+  isProduction,
+  defaultUploadsDir,
+  uploadsDir,
+  bannersDir,
+  regulationsDir,
+  processCwd: process.cwd(),
+});
 
 [uploadsDir, bannersDir, regulationsDir].forEach(dir => {
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
+    console.log(`✅ Created directory: ${dir}`);
+  } else {
+    console.log(`✅ Directory exists: ${dir}`);
   }
 });
 

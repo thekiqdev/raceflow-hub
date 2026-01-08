@@ -54,15 +54,19 @@ Se você já tem arquivos no sistema atual:
 3. Reinicie o serviço
 4. Os novos uploads serão salvos no volume persistente
 
-## ⚙️ Variável de Ambiente Opcional
+## ⚙️ Variável de Ambiente (Recomendado)
 
-O código agora suporta uma variável de ambiente `UPLOADS_DIR` para customizar o caminho de uploads (opcional):
+**IMPORTANTE**: Configure a variável de ambiente `UPLOADS_DIR` no Easypanel para garantir que o caminho esteja correto:
 
-```env
-UPLOADS_DIR=/app/uploads
-```
+1. Acesse o serviço do **backend** no Easypanel
+2. Vá na aba **"Environment Variables"** ou **"Variáveis de Ambiente"**
+3. Adicione ou verifique se existe:
+   ```env
+   UPLOADS_DIR=/app/uploads
+   ```
+4. Salve e reinicie o serviço
 
-**Nota**: Se não configurada, o sistema usa o caminho padrão `/app/uploads`, que é o correto para o volume Docker.
+**Nota**: Se não configurada, o sistema usa automaticamente `/app/uploads` em produção, mas é recomendado configurar explicitamente para evitar problemas.
 
 ## 🔄 Alternativa: Migração para Armazenamento em Nuvem
 
@@ -74,9 +78,46 @@ Para uma solução mais robusta e escalável, considere migrar para:
 
 Isso requer alterações no código para usar SDKs de armazenamento em nuvem ao invés de `multer.diskStorage`.
 
+## 🔧 Troubleshooting
+
+### Problema: Arquivos desaparecem após deploy
+
+**Causa**: O volume não está configurado ou montado incorretamente.
+
+**Solução**:
+1. Verifique se o volume está configurado no Easypanel (aba "Volumes")
+2. Verifique se o caminho do volume é `/app/uploads`
+3. Verifique se a variável `UPLOADS_DIR=/app/uploads` está configurada
+4. Reinicie o serviço após configurar o volume
+5. Verifique os logs do backend ao iniciar - deve mostrar:
+   ```
+   📁 Uploads configuration: { uploadsDir: '/app/uploads', ... }
+   📁 Static files configuration: { uploadsStaticDir: '/app/uploads', ... }
+   ```
+
+### Problema: Arquivos não são acessíveis via URL
+
+**Causa**: O servidor de arquivos estáticos não está configurado corretamente.
+
+**Solução**:
+1. Verifique se `UPLOADS_DIR` está definido como `/app/uploads`
+2. Verifique se o volume está montado no caminho correto
+3. Verifique os logs do backend para ver qual caminho está sendo usado
+
+### Verificar se o volume está funcionando
+
+1. Faça upload de uma imagem
+2. Verifique os logs do backend - deve mostrar o caminho completo onde o arquivo foi salvo
+3. Reinicie o container do backend
+4. Verifique se a imagem ainda está acessível
+
 ## ✅ O que foi corrigido no código
 
 1. **docker-compose.prod.yml**: Adicionado volume persistente `uploads_data:/app/uploads`
-2. **backend/src/middleware/upload.ts**: Suporte para variável `UPLOADS_DIR`
-3. **backend/src/server.ts**: Suporte para variável `UPLOADS_DIR` no servidor de arquivos estáticos
+2. **backend/src/middleware/upload.ts**: 
+   - Padronizado para usar `/app/uploads` em produção quando `UPLOADS_DIR` não está definido
+   - Adicionados logs detalhados para debug
+3. **backend/src/server.ts**: 
+   - Padronizado para usar `/app/uploads` em produção quando `UPLOADS_DIR` não está definido
+   - Adicionados logs detalhados para debug
 4. **Documentação**: Criado guia completo em `docs/CONFIGURACAO_VOLUMES_EASYPANEL.md`

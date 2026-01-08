@@ -62,6 +62,8 @@ API_URL=https://raceflow-backend-xxxxx.easypanel.host
 # CORS deve permitir o domínio do frontend
 CORS_ORIGIN=https://raceflow-frontend-xxxxx.easypanel.host
 # OU se tiver domínio: CORS_ORIGIN=https://seudominio.com,https://www.seudominio.com
+# IMPORTANTE: Configure o caminho de uploads para preservar imagens e regulamentos
+UPLOADS_DIR=/app/uploads
 ```
 
 4. **Build Command**: (geralmente automático com Dockerfile)
@@ -184,8 +186,13 @@ npm run migrate
 
 5. **Volumes**: 
    - O PostgreSQL usa volumes persistentes para dados
-   - **IMPORTANTE**: Configure um volume persistente para `/app/uploads` no backend para preservar banners e regulamentos
-   - Veja `docs/CONFIGURACAO_VOLUMES_EASYPANEL.md` para instruções detalhadas
+   - **🔴 CRÍTICO**: Configure um volume persistente para `/app/uploads` no backend para preservar banners e regulamentos
+   - **Passos**:
+     1. Vá na aba "Volumes" do serviço backend
+     2. Adicione um volume com path `/app/uploads`
+     3. Configure a variável `UPLOADS_DIR=/app/uploads` nas Environment Variables
+     4. Reinicie o serviço
+   - Veja `docs/CONFIGURACAO_VOLUMES_EASYPANEL.md` para instruções detalhadas e troubleshooting
 
 ## 🔄 Atualizações
 
