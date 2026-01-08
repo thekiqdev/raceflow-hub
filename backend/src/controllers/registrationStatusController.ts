@@ -7,11 +7,11 @@ import { asyncHandler } from '../middleware/errorHandler.js';
  * POST /api/admin/update-registration-statuses
  */
 export const updateAllRegistrationStatusesController = asyncHandler(
-  async (req: Request, res: Response) => {
+  async (_req: Request, res: Response) => {
     try {
       const updatedCount = await updateRegistrationStatuses();
       
-      res.json({
+      return res.json({
         success: true,
         message: `Status de inscrições atualizado com sucesso`,
         data: {
@@ -20,7 +20,7 @@ export const updateAllRegistrationStatusesController = asyncHandler(
       });
     } catch (error: any) {
       console.error('Erro ao atualizar status de inscrições:', error);
-      res.status(500).json({
+      return res.status(500).json({
         success: false,
         error: 'Erro ao atualizar status de inscrições',
         message: error.message || 'Erro desconhecido',
@@ -54,7 +54,7 @@ export const updateEventRegistrationStatusController = asyncHandler(
         });
       }
       
-      res.json({
+      return res.json({
         success: true,
         message: `Status de inscrições do evento atualizado com sucesso`,
         data: {
@@ -64,7 +64,7 @@ export const updateEventRegistrationStatusController = asyncHandler(
       });
     } catch (error: any) {
       console.error('Erro ao atualizar status de inscrições do evento:', error);
-      res.status(500).json({
+      return res.status(500).json({
         success: false,
         error: 'Erro ao atualizar status de inscrições do evento',
         message: error.message || 'Erro desconhecido',

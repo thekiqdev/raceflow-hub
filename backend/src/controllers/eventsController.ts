@@ -11,8 +11,6 @@ import { asyncHandler } from '../middleware/errorHandler.js';
 import { hasRole } from '../services/userRolesService.js';
 import { deleteFile, getFilePath } from '../middleware/upload.js';
 import { z } from 'zod';
-import { EventRegistrationStatus, Event } from '../types/index.js';
-import { calculateRegistrationStatus } from '../services/eventsService.js';
 
 // Schema for create event request
 const createEventSchema = z.object({
