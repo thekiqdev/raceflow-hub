@@ -1,6 +1,8 @@
 import express, { Express, Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { errorHandler } from './middleware/errorHandler.js';
 import { securityLogger } from './middleware/securityLogger.js';
 import { rateLimiter, writeRateLimiter } from './middleware/rateLimiter.js';
@@ -136,13 +138,14 @@ app.use((req: Request, _res: Response, next: NextFunction) => {
 });
 
 // Serve static files (uploads)
-import path from 'path';
-import { fileURLToPath } from 'url';
+// Get __dirname for ESM
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Serve static files with proper headers for PDFs
-app.use('/uploads', express.static(path.join(__dirname, '../uploads'), {
+// Use environment variable if set, otherwise default to ../uploads
+const uploadsStaticDir = process.env.UPLOADS_DIR || path.join(__dirname, '../uploads');
+app.use('/uploads', express.static(uploadsStaticDir, {
   setHeaders: (res, filePath) => {
     // Set proper Content-Type for PDFs
     if (filePath.endsWith('.pdf')) {

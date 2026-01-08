@@ -4,7 +4,9 @@ import fs from 'fs';
 import { Request } from 'express';
 
 // Create uploads directory if it doesn't exist
-const uploadsDir = path.join(process.cwd(), 'uploads');
+// Use environment variable if set, otherwise default to /app/uploads
+// This allows flexibility for different deployment scenarios
+const uploadsDir = process.env.UPLOADS_DIR || path.join(process.cwd(), 'uploads');
 const bannersDir = path.join(uploadsDir, 'banners');
 const regulationsDir = path.join(uploadsDir, 'regulations');
 

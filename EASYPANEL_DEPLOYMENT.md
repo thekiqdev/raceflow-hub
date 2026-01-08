@@ -182,7 +182,10 @@ npm run migrate
 
 4. **Health Checks**: Os health checks estão configurados nos Dockerfiles para monitoramento automático.
 
-5. **Volumes**: O PostgreSQL usa volumes persistentes para dados.
+5. **Volumes**: 
+   - O PostgreSQL usa volumes persistentes para dados
+   - **IMPORTANTE**: Configure um volume persistente para `/app/uploads` no backend para preservar banners e regulamentos
+   - Veja `docs/CONFIGURACAO_VOLUMES_EASYPANEL.md` para instruções detalhadas
 
 ## 🔄 Atualizações
 
