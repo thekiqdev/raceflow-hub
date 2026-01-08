@@ -27,6 +27,7 @@ export interface Profile {
   preferred_name: string | null;
   profession: string | null;
   cbat: string | null;
+  team: string | null;
   postal_code: string | null;
   street: string | null;
   address_number: string | null;

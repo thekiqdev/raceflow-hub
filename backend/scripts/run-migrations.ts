@@ -88,6 +88,7 @@ const migrations = [
   '059_add_additional_info_to_pickup_locations.sql',
   '060_add_max_age_to_categories.sql',
   '061_add_profession_cbat_to_profiles.sql',
+  '062_add_team_to_profiles.sql',
 ];
 
 // Create migrations tracking table

@@ -30,6 +30,7 @@ interface RegistrationData {
   gender: 'M' | 'F' | '';
   profession: string;
   cbat: string;
+  team: string;
   
   // Etapa 2: Endereço
   postalCode: string;
@@ -75,6 +76,7 @@ export function MultiStepRegistration({ open, onOpenChange }: MultiStepRegistrat
     gender: '',
     profession: '',
     cbat: '',
+    team: '',
     
     // Etapa 2
     postalCode: '',
@@ -331,6 +333,7 @@ export function MultiStepRegistration({ open, onOpenChange }: MultiStepRegistrat
         preferred_name: formData.preferredName || undefined,
         profession: formData.profession || undefined,
         cbat: formData.cbat || undefined,
+        team: formData.team || undefined,
         postal_code: unmask(formData.postalCode) || undefined,
         street: formData.street || undefined,
         address_number: formData.addressNumber || undefined,
@@ -506,6 +509,16 @@ export function MultiStepRegistration({ open, onOpenChange }: MultiStepRegistrat
             placeholder="Número do CBAT"
             value={formData.cbat}
             onChange={(e) => updateField('cbat', e.target.value)}
+          />
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="team">Equipe</Label>
+          <Input
+            id="team"
+            placeholder="Nome da equipe"
+            value={formData.team}
+            onChange={(e) => updateField('team', e.target.value)}
           />
         </div>
       </div>

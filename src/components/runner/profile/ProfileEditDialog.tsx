@@ -25,6 +25,7 @@ export function ProfileEditDialog({ open, onOpenChange, profile }: ProfileEditDi
     gender: profile.gender || "",
     profession: profile.profession || "",
     cbat: profile.cbat || "",
+    team: profile.team || "",
     postal_code: profile.postal_code || "",
     street: profile.street || "",
     address_number: profile.address_number || "",
@@ -50,6 +51,7 @@ export function ProfileEditDialog({ open, onOpenChange, profile }: ProfileEditDi
         gender: profile.gender || "",
         profession: profile.profession || "",
         cbat: profile.cbat || "",
+        team: profile.team || "",
         postal_code: formattedCep,
         street: profile.street || "",
         address_number: profile.address_number || "",
@@ -103,6 +105,7 @@ export function ProfileEditDialog({ open, onOpenChange, profile }: ProfileEditDi
         gender: formData.gender || undefined,
         profession: formData.profession || undefined,
         cbat: formData.cbat || undefined,
+        team: formData.team || undefined,
         postal_code: unmask(formData.postal_code) || undefined,
         street: formData.street || undefined,
         address_number: formData.address_number || undefined,
@@ -246,6 +249,16 @@ export function ProfileEditDialog({ open, onOpenChange, profile }: ProfileEditDi
                 placeholder="Número do CBAT"
                 value={formData.cbat}
                 onChange={(e) => setFormData({ ...formData, cbat: e.target.value })}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="team">Equipe</Label>
+              <Input
+                id="team"
+                placeholder="Nome da equipe"
+                value={formData.team}
+                onChange={(e) => setFormData({ ...formData, team: e.target.value })}
               />
             </div>
           </div>

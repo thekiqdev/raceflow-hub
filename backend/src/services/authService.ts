@@ -14,6 +14,7 @@ export interface RegisterData {
   preferred_name?: string;
   profession?: string;
   cbat?: string;
+  team?: string;
   postal_code?: string;
   street?: string;
   address_number?: string;
@@ -119,10 +120,10 @@ export const register = async (data: RegisterData): Promise<AuthResponse> => {
     const profileResult = await client.query(
       `INSERT INTO profiles (
         id, full_name, cpf, phone, gender, birth_date, lgpd_consent,
-        preferred_name, profession, cbat, postal_code, street, address_number, address_complement,
+        preferred_name, profession, cbat, team, postal_code, street, address_number, address_complement,
         neighborhood, city, state
       )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
        RETURNING id, full_name, cpf, phone`,
       [
         user.id,
@@ -135,6 +136,7 @@ export const register = async (data: RegisterData): Promise<AuthResponse> => {
         data.preferred_name || null,
         data.profession || null,
         data.cbat || null,
+        data.team || null,
         data.postal_code || null,
         data.street || null,
         data.address_number || null,

@@ -13,6 +13,7 @@ export interface Profile {
   preferred_name?: string;
   profession?: string;
   cbat?: string;
+  team?: string;
   postal_code?: string;
   street?: string;
   address_number?: string;
@@ -32,6 +33,7 @@ export interface UpdateProfileData {
   preferred_name?: string;
   profession?: string;
   cbat?: string;
+  team?: string;
   postal_code?: string;
   street?: string;
   address_number?: string;

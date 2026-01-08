@@ -11,6 +11,7 @@ export interface RegisterData {
   preferred_name?: string;
   profession?: string;
   cbat?: string;
+  team?: string;
   postal_code?: string;
   street?: string;
   address_number?: string;
