@@ -20,7 +20,7 @@ import heroImage from "@/assets/hero-running.jpg";
 import { RegistrationFlow } from "@/components/event/RegistrationFlow";
 import { FlipCountdown } from "@/components/event/FlipCountdown";
 import { ContactDialog } from "@/components/event/ContactDialog";
-import { CreditCard, Smartphone, Barcode, Building2, Mail, Phone, Loader2 } from "lucide-react";
+import { CreditCard, Smartphone, Building2, Mail, Phone, Loader2 } from "lucide-react";
 import { getEventById } from "@/lib/api/events";
 import { getCategories } from "@/lib/api/categories";
 import { getEventKits } from "@/lib/api/eventKits";
@@ -843,13 +843,6 @@ const EventDetails = () => {
                     <Smartphone className="h-5 w-5 text-primary" />
                     <span className="text-sm">PIX</span>
                   </div>
-                  <div className="flex items-center gap-3 p-2 rounded-lg hover:bg-muted/50 transition-colors">
-                    <Barcode className="h-5 w-5 text-primary" />
-                    <span className="text-sm">Boleto Bancário</span>
-                  </div>
-                  <p className="text-xs text-muted-foreground mt-4 pt-4 border-t">
-                    Parcele em até 12x no cartão de crédito
-                  </p>
                 </CardContent>
               </Card>
 

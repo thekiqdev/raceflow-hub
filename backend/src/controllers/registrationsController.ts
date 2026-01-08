@@ -409,20 +409,20 @@ export const createRegistrationController = asyncHandler(async (req: AuthRequest
     // Se effectiveRegistrationStatus === 'open', continuar com validações abaixo
   } else {
     // Se effectiveRegistrationStatus é NULL, usar lógica antiga baseada em event.status
-    if (event.status === 'draft') {
-      res.status(400).json({
-        success: false,
-        error: 'Event not open for registrations',
-        message: 'Este evento ainda não está aberto para inscrições',
-      });
-      return;
-    }
+  if (event.status === 'draft') {
+    res.status(400).json({
+      success: false,
+      error: 'Event not open for registrations',
+      message: 'Este evento ainda não está aberto para inscrições',
+    });
+    return;
+  }
 
-    if (event.status === 'finished' || event.status === 'cancelled') {
-      res.status(400).json({
-        success: false,
-        error: 'Event not accepting registrations',
-        message: 'Este evento não está mais aceitando inscrições',
+  if (event.status === 'finished' || event.status === 'cancelled') {
+    res.status(400).json({
+      success: false,
+      error: 'Event not accepting registrations',
+      message: 'Este evento não está mais aceitando inscrições',
       });
       return;
     }
@@ -549,14 +549,14 @@ export const createRegistrationController = asyncHandler(async (req: AuthRequest
       
       const userEmail = userResult.rows[0].email;
 
-      // Prepare customer data for Asaas
-      const customerData = {
-        name: profile.full_name || 'Usuário',
-        email: userEmail,
-        cpfCnpj: profile.cpf?.replace(/\D/g, '') || '', // Remove formatting
-        phone: profile.phone?.replace(/\D/g, '') || '',
-        mobilePhone: profile.phone?.replace(/\D/g, '') || '',
-      };
+        // Prepare customer data for Asaas
+        const customerData = {
+          name: profile.full_name || 'Usuário',
+          email: userEmail,
+          cpfCnpj: profile.cpf?.replace(/\D/g, '') || '', // Remove formatting
+          phone: profile.phone?.replace(/\D/g, '') || '',
+          mobilePhone: profile.phone?.replace(/\D/g, '') || '',
+        };
 
       // Validate or recreate Asaas customer (handles migration from sandbox to production)
       const asaasCustomerId = await validateOrRecreateCustomer(runnerId, customerData);
@@ -581,12 +581,12 @@ export const createRegistrationController = asyncHandler(async (req: AuthRequest
           console.log('💳 Criando pagamento com cartão de crédito...');
           
           paymentResult = await createCreditCardPayment(
-            registration.id,
-            asaasCustomerId,
-            {
-              value: registration.total_amount,
-              dueDate: dueDateString,
-              description: `Inscrição - ${event.title}`,
+        registration.id,
+        asaasCustomerId,
+        {
+          value: registration.total_amount,
+          dueDate: dueDateString,
+          description: `Inscrição - ${event.title}`,
               externalReference: registration.confirmation_code || `REG-${registration.id}`,
             },
             validation.data.credit_card,
@@ -640,28 +640,28 @@ export const createRegistrationController = asyncHandler(async (req: AuthRequest
               dueDate: dueDateString,
               description: `Inscrição - ${event.title}`,
               billingType: 'PIX',
-              externalReference: registration.confirmation_code || `REG-${registration.id}`,
-            }
-          );
+          externalReference: registration.confirmation_code || `REG-${registration.id}`,
+        }
+      );
 
-          paymentData = {
-            asaas_payment_id: paymentResult.asaas_payment_id,
-            pix_qr_code: paymentResult.pix_qr_code,
-            pix_qr_code_id: paymentResult.pix_qr_code_id,
-            payment_link: paymentResult.payment_link,
-            status: paymentResult.status,
-            due_date: paymentResult.due_date,
+      paymentData = {
+        asaas_payment_id: paymentResult.asaas_payment_id,
+        pix_qr_code: paymentResult.pix_qr_code,
+        pix_qr_code_id: paymentResult.pix_qr_code_id,
+        payment_link: paymentResult.payment_link,
+        status: paymentResult.status,
+        due_date: paymentResult.due_date,
             payment_method: 'pix',
-          };
+      };
         }
 
-        console.log('✅ Pagamento criado no Asaas:', {
-          asaas_payment_id: paymentData.asaas_payment_id,
-          status: paymentData.status,
+      console.log('✅ Pagamento criado no Asaas:', {
+        asaas_payment_id: paymentData.asaas_payment_id,
+        status: paymentData.status,
           payment_method: paymentData.payment_method,
-          has_qr_code: !!paymentData.pix_qr_code,
-          qr_code_id: paymentData.pix_qr_code_id
-        });
+        has_qr_code: !!paymentData.pix_qr_code,
+        qr_code_id: paymentData.pix_qr_code_id
+      });
       } catch (paymentError: any) {
         // If customer is invalid, try to recreate customer and retry payment
         if (paymentError.isInvalidCustomer) {

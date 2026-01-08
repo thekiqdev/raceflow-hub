@@ -923,21 +923,21 @@ export function RegistrationFlow({
 
     // If effectiveStatus is null, use old logic based on event.status
     if (effectiveStatus === null) {
-      if (event.status) {
-        if (event.status === "draft") {
-          toast.error("Este evento ainda não está aberto para inscrições.");
-          return;
-        }
+    if (event.status) {
+      if (event.status === "draft") {
+        toast.error("Este evento ainda não está aberto para inscrições.");
+        return;
+      }
 
-        if (event.status === "finished" || event.status === "cancelled") {
-          toast.error("Este evento não está mais aceitando inscrições.");
-          return;
-        }
+      if (event.status === "finished" || event.status === "cancelled") {
+        toast.error("Este evento não está mais aceitando inscrições.");
+        return;
+      }
 
-        // Only 'published' and 'ongoing' statuses allow registrations
-        if (event.status !== "published" && event.status !== "ongoing") {
-          toast.error("Este evento não está aberto para inscrições no momento.");
-          return;
+      // Only 'published' and 'ongoing' statuses allow registrations
+      if (event.status !== "published" && event.status !== "ongoing") {
+        toast.error("Este evento não está aberto para inscrições no momento.");
+        return;
         }
       }
     }
@@ -1840,20 +1840,20 @@ export function RegistrationFlow({
               <>
                 <h3 className="text-lg font-semibold">Escolha a Modalidade</h3>
                 {loadingModalities ? (
-                  <Card>
-                    <CardContent className="py-8 text-center">
+              <Card>
+                <CardContent className="py-8 text-center">
                       <p className="text-muted-foreground">Carregando modalidades...</p>
-                    </CardContent>
-                  </Card>
+                </CardContent>
+              </Card>
                 ) : modalities.length === 0 ? (
-                  <Card>
-                    <CardContent className="py-8 text-center">
-                      <p className="text-muted-foreground mb-2">
+              <Card>
+                <CardContent className="py-8 text-center">
+                  <p className="text-muted-foreground mb-2">
                         Nenhuma modalidade disponível para este evento.
-                      </p>
-                      <p className="text-sm text-muted-foreground">
-                        Entre em contato com o organizador para mais informações.
-                      </p>
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    Entre em contato com o organizador para mais informações.
+                  </p>
                     </CardContent>
                   </Card>
                 ) : (
@@ -1884,12 +1884,12 @@ export function RegistrationFlow({
                       ))}
                     </div>
                     <div className="flex justify-between pt-4">
-                      <Button
-                        variant="outline"
+                  <Button
+                    variant="outline"
                         onClick={handlePreviousStep}
                       >
                         Voltar
-                      </Button>
+                  </Button>
                       <Button
                         onClick={handleNextStep}
                         disabled={!selectedModality}
@@ -1986,7 +1986,7 @@ export function RegistrationFlow({
                         <CardContent className="p-4">
                           <div className="flex justify-between items-start">
                             <div className="flex-1">
-                              <h4 className="font-semibold">{category.name}</h4>
+                          <h4 className="font-semibold">{category.name}</h4>
                               <div className="mt-2 flex flex-wrap gap-2">
                                 <Badge variant="outline">{category.category_type}</Badge>
                                 <Badge variant="outline">
@@ -1995,16 +1995,16 @@ export function RegistrationFlow({
                                 {category.min_age && (
                                   <Badge variant="outline">Idade mínima: {category.min_age} anos</Badge>
                                 )}
-                              </div>
-                            </div>
+                        </div>
+                                  </div>
                             <div className="text-right ml-4">
                               <div className="text-lg font-bold">
-                                {formatPrice(category.price)}
-                              </div>
+                                    {formatPrice(category.price)}
+                                </div>
                             </div>
-                          </div>
-                        </CardContent>
-                      </Card>
+                        </div>
+                      </CardContent>
+                    </Card>
                     );
                   })}
                 </div>
@@ -2540,10 +2540,10 @@ export function RegistrationFlow({
               <Card>
                 <CardContent className="p-4 space-y-3">
                   {selectedModality && (
-                    <div className="flex justify-between">
-                      <span>Modalidade:</span>
+                  <div className="flex justify-between">
+                    <span>Modalidade:</span>
                       <span className="font-medium">{selectedModality.name} ({selectedModality.distance})</span>
-                    </div>
+                  </div>
                   )}
                   {selectedCategory && (
                     <div className="flex justify-between">
@@ -2729,22 +2729,22 @@ export function RegistrationFlow({
                   Ir para Pagamento
                 </Button>
               ) : (
-                <Button
-                  onClick={handleSubmit}
-                  disabled={
+              <Button
+                onClick={handleSubmit}
+                disabled={
                     !canRegister || // Registration must be open
-                    !user || // User must be logged in
-                    isSubmitting ||
-                    !formData.fullName ||
-                    !formData.email ||
-                    !formData.phone ||
-                    !formData.cpf ||
-                    (isRegisteringOther && !otherPersonId) // If registering other person, must have found profile
-                  }
-                  className="min-w-32"
-                >
-                  {isSubmitting ? "Processando..." : "Finalizar Inscrição"}
-                </Button>
+                  !user || // User must be logged in
+                  isSubmitting ||
+                  !formData.fullName ||
+                  !formData.email ||
+                  !formData.phone ||
+                  !formData.cpf ||
+                  (isRegisteringOther && !otherPersonId) // If registering other person, must have found profile
+                }
+                className="min-w-32"
+              >
+                {isSubmitting ? "Processando..." : "Finalizar Inscrição"}
+              </Button>
               )}
             </div>
           </div>
@@ -3047,17 +3047,17 @@ export function RegistrationFlow({
                     </CardContent>
                   </Card>
                 ) : paymentData.status === 'PENDING' || paymentData.status === 'AWAITING_RISK_ANALYSIS' ? (
-                  <Card className="border-yellow-500">
-                    <CardContent className="pt-6">
-                      <div className="flex items-center gap-2 text-yellow-600 mb-2">
+              <Card className="border-yellow-500">
+                <CardContent className="pt-6">
+                  <div className="flex items-center gap-2 text-yellow-600 mb-2">
                         <span className="text-lg">⏳</span>
                         <p className="font-medium text-lg">Pagamento em Análise</p>
-                      </div>
-                      <p className="text-sm text-muted-foreground">
+                  </div>
+                  <p className="text-sm text-muted-foreground">
                         Seu pagamento está sendo analisado. Você receberá uma confirmação por email quando o pagamento for aprovado.
-                      </p>
-                    </CardContent>
-                  </Card>
+                  </p>
+                </CardContent>
+              </Card>
                 ) : (
                   <Card className="border-red-500">
                     <CardContent className="pt-6">
@@ -3181,10 +3181,10 @@ export function RegistrationFlow({
                     <span className="font-medium">{formData.fullName}</span>
                   </div>
                   {selectedModality && (
-                    <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">Modalidade:</span>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Modalidade:</span>
                       <span className="font-medium">{selectedModality.name} ({selectedModality.distance})</span>
-                    </div>
+                  </div>
                   )}
                   {selectedCategory && (
                     <div className="flex justify-between text-sm">

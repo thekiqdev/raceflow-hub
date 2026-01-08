@@ -75,6 +75,19 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization', 'asaas-access-token', 'x-asaas-access-token'],
 }));
 
+// Force HTTPS in production (trust proxy for Easypanel)
+if (isProduction) {
+  app.set('trust proxy', 1); // Trust first proxy (Easypanel load balancer)
+  
+  // Redirect HTTP to HTTPS
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    if (req.header('x-forwarded-proto') !== 'https' && req.header('host')?.includes('cronoteam.com.br')) {
+      return res.redirect(`https://${req.header('host')}${req.url}`);
+    }
+    next();
+  });
+}
+
 // Security middleware
 app.use(securityLogger);
 
