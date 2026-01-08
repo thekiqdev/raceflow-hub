@@ -25,6 +25,8 @@ export interface Profile {
   lgpd_consent: boolean | null;
   is_public: boolean | null;
   preferred_name: string | null;
+  profession: string | null;
+  cbat: string | null;
   postal_code: string | null;
   street: string | null;
   address_number: string | null;

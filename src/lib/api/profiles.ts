@@ -11,6 +11,8 @@ export interface Profile {
   lgpd_consent?: boolean;
   is_public?: boolean;
   preferred_name?: string;
+  profession?: string;
+  cbat?: string;
   postal_code?: string;
   street?: string;
   address_number?: string;
@@ -28,6 +30,8 @@ export interface UpdateProfileData {
   gender?: string;
   birth_date?: string;
   preferred_name?: string;
+  profession?: string;
+  cbat?: string;
   postal_code?: string;
   street?: string;
   address_number?: string;

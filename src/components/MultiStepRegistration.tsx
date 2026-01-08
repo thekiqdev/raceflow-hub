@@ -28,6 +28,8 @@ interface RegistrationData {
   fullName: string;
   preferredName: string;
   gender: 'M' | 'F' | '';
+  profession: string;
+  cbat: string;
   
   // Etapa 2: Endereço
   postalCode: string;
@@ -71,6 +73,8 @@ export function MultiStepRegistration({ open, onOpenChange }: MultiStepRegistrat
     fullName: '',
     preferredName: '',
     gender: '',
+    profession: '',
+    cbat: '',
     
     // Etapa 2
     postalCode: '',
@@ -325,6 +329,8 @@ export function MultiStepRegistration({ open, onOpenChange }: MultiStepRegistrat
         gender: formData.gender as 'M' | 'F',
         birth_date: formData.birthDate,
         preferred_name: formData.preferredName || undefined,
+        profession: formData.profession || undefined,
+        cbat: formData.cbat || undefined,
         postal_code: unmask(formData.postalCode) || undefined,
         street: formData.street || undefined,
         address_number: formData.addressNumber || undefined,
@@ -481,6 +487,26 @@ export function MultiStepRegistration({ open, onOpenChange }: MultiStepRegistrat
             </div>
           </RadioGroup>
           {errors.gender && <p className="text-sm text-destructive">{errors.gender}</p>}
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="profession">Profissão</Label>
+          <Input
+            id="profession"
+            placeholder="Ex: Médico, Engenheiro, Professor..."
+            value={formData.profession}
+            onChange={(e) => updateField('profession', e.target.value)}
+          />
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="cbat">CBAT</Label>
+          <Input
+            id="cbat"
+            placeholder="Número do CBAT"
+            value={formData.cbat}
+            onChange={(e) => updateField('cbat', e.target.value)}
+          />
         </div>
       </div>
     );

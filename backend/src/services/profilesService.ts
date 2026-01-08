@@ -14,6 +14,8 @@ export interface UpdateProfileData {
   website_url?: string;
   is_public?: boolean;
   preferred_name?: string;
+  profession?: string;
+  cbat?: string;
   postal_code?: string;
   street?: string;
   address_number?: string;

@@ -9,6 +9,8 @@ export interface RegisterData {
   gender?: 'M' | 'F';
   birth_date: string;
   preferred_name?: string;
+  profession?: string;
+  cbat?: string;
   postal_code?: string;
   street?: string;
   address_number?: string;

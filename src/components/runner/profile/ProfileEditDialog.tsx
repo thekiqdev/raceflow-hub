@@ -23,6 +23,8 @@ export function ProfileEditDialog({ open, onOpenChange, profile }: ProfileEditDi
     phone: profile.phone || "",
     birth_date: profile.birth_date || "",
     gender: profile.gender || "",
+    profession: profile.profession || "",
+    cbat: profile.cbat || "",
     postal_code: profile.postal_code || "",
     street: profile.street || "",
     address_number: profile.address_number || "",
@@ -46,6 +48,8 @@ export function ProfileEditDialog({ open, onOpenChange, profile }: ProfileEditDi
         phone: formattedPhone,
         birth_date: profile.birth_date ? profile.birth_date.split('T')[0] : "",
         gender: profile.gender || "",
+        profession: profile.profession || "",
+        cbat: profile.cbat || "",
         postal_code: formattedCep,
         street: profile.street || "",
         address_number: profile.address_number || "",
@@ -97,6 +101,8 @@ export function ProfileEditDialog({ open, onOpenChange, profile }: ProfileEditDi
         phone: unmask(formData.phone),
         birth_date: formData.birth_date,
         gender: formData.gender || undefined,
+        profession: formData.profession || undefined,
+        cbat: formData.cbat || undefined,
         postal_code: unmask(formData.postal_code) || undefined,
         street: formData.street || undefined,
         address_number: formData.address_number || undefined,
@@ -221,6 +227,26 @@ export function ProfileEditDialog({ open, onOpenChange, profile }: ProfileEditDi
                   <SelectItem value="F">Feminino</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="profession">Profissão</Label>
+              <Input
+                id="profession"
+                placeholder="Ex: Médico, Engenheiro, Professor..."
+                value={formData.profession}
+                onChange={(e) => setFormData({ ...formData, profession: e.target.value })}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="cbat">CBAT</Label>
+              <Input
+                id="cbat"
+                placeholder="Número do CBAT"
+                value={formData.cbat}
+                onChange={(e) => setFormData({ ...formData, cbat: e.target.value })}
+              />
             </div>
           </div>
 
