@@ -131,15 +131,17 @@ export const getEvents = async (filters?: {
   }
 
   if (filters?.search) {
-    conditions.push(`(
-      e.title ILIKE $${params.length + 1} OR
-      e.description ILIKE $${params.length + 1} OR
-      p.full_name ILIKE $${params.length + 1} OR
-      e.city ILIKE $${params.length + 1} OR
-      e.state ILIKE $${params.length + 1}
-    )`);
     const searchTerm = `%${filters.search}%`;
-    params.push(searchTerm, searchTerm, searchTerm, searchTerm, searchTerm);
+    const searchParamIndex = params.length + 1;
+    // Use the same parameter index for all ILIKE conditions (PostgreSQL allows this)
+    conditions.push(`(
+      COALESCE(e.title, '') ILIKE $${searchParamIndex} OR
+      COALESCE(e.description, '') ILIKE $${searchParamIndex} OR
+      COALESCE(p.full_name, '') ILIKE $${searchParamIndex} OR
+      COALESCE(e.city, '') ILIKE $${searchParamIndex} OR
+      COALESCE(e.state, '') ILIKE $${searchParamIndex}
+    )`);
+    params.push(searchTerm);
   }
 
   if (conditions.length > 0) {
@@ -149,14 +151,21 @@ export const getEvents = async (filters?: {
   queryText += ' ORDER BY e.created_at DESC, e.event_date DESC';
 
   console.log('🔍 Executing query with filters:', JSON.stringify(filters, null, 2));
-  console.log('🔍 Query text:', queryText.substring(0, 200) + '...');
+  console.log('🔍 Query text:', queryText);
   console.log('🔍 Query params:', params);
+  console.log('🔍 Number of conditions:', conditions.length);
   
   const result = await query(queryText, params);
   
   console.log(`📊 getEvents query returned ${result.rows.length} events`);
   if (result.rows.length > 0) {
-    console.log('📊 First event status:', result.rows[0].status);
+    console.log('📊 First event:', {
+      id: result.rows[0].id,
+      title: result.rows[0].title,
+      status: result.rows[0].status,
+    });
+  } else if (filters?.search) {
+    console.log('⚠️ No events found with search term:', filters.search);
   }
   
   // Import getFileUrl to convert file paths to URLs

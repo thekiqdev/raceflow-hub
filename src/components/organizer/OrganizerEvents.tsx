@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -48,9 +48,51 @@ const OrganizerEvents = () => {
   const [isDeleting, setIsDeleting] = useState<string | null>(null);
   const [editingRegistrationStatus, setEditingRegistrationStatus] = useState<string | null>(null);
 
+  const loadEvents = useCallback(async () => {
+    if (!user) {
+      console.log("❌ No user, skipping loadEvents");
+      return;
+    }
+
+    try {
+      setLoading(true);
+      console.log("🔄 Loading events for organizer:", user.id);
+      
+      const filters: any = { organizer_id: user.id };
+      if (searchQuery && searchQuery.trim()) {
+        filters.search = searchQuery.trim();
+      }
+
+      console.log('🔍 OrganizerEvents - Carregando eventos com filtros:', filters);
+      
+      const response = await getEvents(filters);
+
+      if (response.success && response.data) {
+        const eventsArray = Array.isArray(response.data) ? response.data : [];
+        console.log(`✅ OrganizerEvents - ${eventsArray.length} eventos carregados`);
+        setEvents(eventsArray);
+      } else {
+        console.error("❌ Error loading events:", response);
+        toast.error(response.error || "Erro ao carregar eventos");
+        setEvents([]);
+      }
+    } catch (error) {
+      console.error("❌ Exception loading events:", error);
+      toast.error("Erro ao carregar eventos");
+      setEvents([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [user, searchQuery, toast]);
+
+  // Load events on mount and when search query changes (with debounce)
   useEffect(() => {
-    loadEvents();
-  }, []);
+    const timer = setTimeout(() => {
+      loadEvents();
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [loadEvents]);
 
   useEffect(() => {
     // Escutar evento para abrir o dialog de criação
@@ -78,44 +120,6 @@ const OrganizerEvents = () => {
     }
   }, []);
 
-  const loadEvents = async () => {
-    if (!user) {
-      console.log("❌ No user, skipping loadEvents");
-      return;
-    }
-
-    try {
-      setLoading(true);
-      console.log("🔄 Loading events for organizer:", user.id);
-      
-      const response = await getEvents({ organizer_id: user.id });
-
-      console.log("📥 Full response:", response);
-      console.log("📥 Response success:", response.success);
-      console.log("📥 Response data:", response.data);
-      console.log("📥 Response data type:", typeof response.data);
-      console.log("📥 Response data is array:", Array.isArray(response.data));
-      console.log("📥 Response data length:", response.data?.length);
-
-      if (response.success && response.data) {
-        const eventsArray = Array.isArray(response.data) ? response.data : [];
-        console.log("✅ Events loaded:", eventsArray.length, "events");
-        console.log("✅ Events data:", eventsArray);
-        setEvents(eventsArray);
-      } else {
-        console.error("❌ Error loading events:", response);
-        toast.error(response.error || "Erro ao carregar eventos");
-        setEvents([]);
-      }
-    } catch (error) {
-      console.error("❌ Exception loading events:", error);
-      toast.error("Erro ao carregar eventos");
-      setEvents([]);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "published":
@@ -128,12 +132,6 @@ const OrganizerEvents = () => {
         return <Badge variant="secondary">{status}</Badge>;
     }
   };
-
-  const filteredEvents = events.filter(event =>
-    event.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    event.city.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    event.state.toLowerCase().includes(searchQuery.toLowerCase())
-  );
 
   const handleDeleteEvent = async (eventId: string) => {
     if (!confirm("Tem certeza que deseja excluir este evento? Esta ação não pode ser desfeita.")) {
@@ -194,7 +192,7 @@ const OrganizerEvents = () => {
         <CardHeader>
           <CardTitle>Meus Eventos</CardTitle>
           <CardDescription>
-            {loading ? "Carregando..." : `${filteredEvents.length} ${filteredEvents.length === 1 ? "evento encontrado" : "eventos encontrados"}`}
+            {loading ? "Carregando..." : `${events.length} ${events.length === 1 ? "evento encontrado" : "eventos encontrados"}`}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -202,7 +200,7 @@ const OrganizerEvents = () => {
             <div className="flex items-center justify-center h-64">
               <Loader2 className="h-8 w-8 animate-spin text-primary" />
             </div>
-          ) : filteredEvents.length === 0 ? (
+          ) : events.length === 0 ? (
             <div className="text-center py-12 text-muted-foreground">
               {searchQuery ? "Nenhum evento encontrado com essa busca" : "Você ainda não criou nenhum evento"}
             </div>
@@ -222,7 +220,7 @@ const OrganizerEvents = () => {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredEvents.map((event) => (
+                  {events.map((event) => (
                     <TableRow key={event.id}>
                       <TableCell className="font-medium">{event.title}</TableCell>
                       <TableCell>

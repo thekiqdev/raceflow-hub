@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -47,20 +47,18 @@ const EventManagement = () => {
   const [editingRegistrationStatus, setEditingRegistrationStatus] = useState<string | null>(null);
   const { toast } = useToast();
 
-  useEffect(() => {
-    loadEvents();
-  }, []);
-
-  const loadEvents = async () => {
+  const loadEvents = useCallback(async () => {
     setLoading(true);
     try {
       const filters: any = {};
-      if (searchTerm) {
-        filters.search = searchTerm;
+      if (searchTerm && searchTerm.trim()) {
+        filters.search = searchTerm.trim();
       }
-      if (statusFilter) {
-        filters.status = statusFilter;
+      if (statusFilter && statusFilter.trim()) {
+        filters.status = statusFilter.trim();
       }
+
+      console.log('🔍 EventManagement - Carregando eventos com filtros:', filters);
 
       const response = await getEvents(filters);
 
@@ -88,27 +86,33 @@ const EventManagement = () => {
           };
         });
 
+        console.log(`✅ EventManagement - ${eventsWithStats.length} eventos carregados`);
         setEvents(eventsWithStats);
+      } else {
+        console.warn('⚠️ EventManagement - Resposta sem sucesso ou sem dados:', response);
+        setEvents([]);
       }
     } catch (error: any) {
+      console.error('❌ EventManagement - Erro ao carregar eventos:', error);
       toast({
         title: "Erro ao carregar eventos",
         description: error.message || "Erro desconhecido",
         variant: "destructive",
       });
+      setEvents([]);
     } finally {
       setLoading(false);
     }
-  };
+  }, [searchTerm, statusFilter, toast]);
 
-  // Reload events when search term or status filter changes (with debounce)
+  // Load events on mount and when filters change (with debounce)
   useEffect(() => {
     const timer = setTimeout(() => {
       loadEvents();
     }, 500);
 
     return () => clearTimeout(timer);
-  }, [searchTerm, statusFilter]);
+  }, [loadEvents]);
 
   const handleApprove = async (eventId: string) => {
     try {
