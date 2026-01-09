@@ -1852,7 +1852,7 @@ export const exportRegistrationsController = asyncHandler(async (req: AuthReques
   };
 
   // Helper function to get kit variation (if available, otherwise empty)
-  const getKitVariation = (reg: any): string => {
+  const getKitVariation = (_reg: any): string => {
     // If there's a kit variant stored, return it
     // For now, return empty as it's not stored in the current schema
     // TODO: Add variant storage when implementing variant selection in registration
