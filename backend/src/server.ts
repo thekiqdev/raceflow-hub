@@ -178,21 +178,24 @@ if (!fs.existsSync(uploadsStaticDir)) {
   }
 }
 
-app.use('/uploads', express.static(uploadsStaticDir, {
+// Serve static files with error handling middleware
+app.use('/uploads', (req: Request, _res: Response, next: NextFunction) => {
+  // Log requests for debugging
+  const filePath = path.join(uploadsStaticDir, req.path);
+  if (!fs.existsSync(filePath)) {
+    console.error(`❌ File not found: ${filePath}`);
+    console.error('❌ This may indicate the volume is not mounted correctly');
+    console.error('❌ Request path:', req.path);
+    console.error('❌ Uploads directory:', uploadsStaticDir);
+  }
+  next();
+}, express.static(uploadsStaticDir, {
   setHeaders: (res, filePath) => {
     // Set proper Content-Type for PDFs
     if (filePath.endsWith('.pdf')) {
       res.setHeader('Content-Type', 'application/pdf');
       res.setHeader('Content-Disposition', 'inline; filename="' + path.basename(filePath) + '"');
     }
-  },
-  // Add error handler to log when files are not found
-  onError: (err, res, next) => {
-    console.error('❌ Error serving static file:', err.message);
-    if (err.code === 'ENOENT') {
-      console.error('❌ File not found - this may indicate the volume is not mounted correctly');
-    }
-    next(err);
   }
 }));
 
