@@ -203,7 +203,12 @@ interface CategoryBatch {
    - ✅ Adiciona foreign key nova (categories)
    - ✅ Adiciona constraints e índices
    - ✅ Adicionada à lista de migrações
-2. ⏳ **ETAPA 2**: Atualizar services do backend
+2. ✅ **ETAPA 2**: Atualizar services do backend - **CONCLUÍDA**
+   - ✅ Adicionada interface `CategoryBatch` em `types/index.ts` (com `name` e `valid_to`)
+   - ✅ Adicionado campo `batches?: CategoryBatch[]` à interface `Category`
+   - ✅ Criada função auxiliar `loadBatchesForCategories()` para carregar batches em lote
+   - ✅ Adicionadas funções: `getCategoryBatches()`, `getActiveBatches()`, `createCategoryBatch()`, `updateCategoryBatch()`, `deleteCategoryBatch()`
+   - ✅ Atualizadas funções de busca: `getCategoriesByEvent()`, `getCategoriesByModality()`, `getCategoryById()` para incluir batches
 3. ⏳ **ETAPA 3**: Criar controllers e rotas
 4. ⏳ **ETAPA 4**: Atualizar API client do frontend
 5. ⏳ **ETAPA 5**: Atualizar UI do admin

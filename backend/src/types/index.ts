@@ -188,6 +188,17 @@ export interface Category {
   created_at: Date;
   updated_at: Date;
   modality_ids?: string[]; // Para relacionamento (não está no banco, apenas para API)
+  batches?: CategoryBatch[]; // Lotes de preço da categoria
+}
+
+export interface CategoryBatch {
+  id: string;
+  category_id: string;
+  name: string | null; // Nome do lote (ex: "1º Lote", "2º Lote")
+  price: number;
+  valid_from: Date | null; // Data de início do lote
+  valid_to: Date | null; // Data de término do lote
+  created_at: Date;
 }
 
 export interface CategoryModality {

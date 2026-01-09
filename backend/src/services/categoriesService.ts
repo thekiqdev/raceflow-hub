@@ -1,5 +1,5 @@
 import { query } from '../config/database.js';
-import { Category, CreateCategoryData, UpdateCategoryData } from '../types/index.js';
+import { Category, CategoryBatch, CreateCategoryData, UpdateCategoryData } from '../types/index.js';
 
 /**
  * Get all categories for an event
