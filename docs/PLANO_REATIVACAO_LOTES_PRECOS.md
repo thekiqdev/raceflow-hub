@@ -209,7 +209,16 @@ interface CategoryBatch {
    - ✅ Criada função auxiliar `loadBatchesForCategories()` para carregar batches em lote
    - ✅ Adicionadas funções: `getCategoryBatches()`, `getActiveBatches()`, `createCategoryBatch()`, `updateCategoryBatch()`, `deleteCategoryBatch()`
    - ✅ Atualizadas funções de busca: `getCategoriesByEvent()`, `getCategoriesByModality()`, `getCategoryById()` para incluir batches
-3. ⏳ **ETAPA 3**: Criar controllers e rotas
+3. ✅ **ETAPA 3**: Criar controllers e rotas - **CONCLUÍDA**
+   - ✅ Criado `categoryBatchesController.ts` com todos os endpoints
+   - ✅ Adicionadas rotas em `categories.ts`:
+     - `GET /api/categories/:categoryId/batches` - Listar batches
+     - `GET /api/categories/:categoryId/batches/active` - Listar batches ativos
+     - `POST /api/categories/:categoryId/batches` - Criar batch
+     - `PUT /api/categories/:categoryId/batches/:batchId` - Atualizar batch
+     - `DELETE /api/categories/:categoryId/batches/:batchId` - Deletar batch
+   - ✅ Validação com Zod para criação e atualização
+   - ✅ Verificação de permissões (organizador do evento ou admin)
 4. ⏳ **ETAPA 4**: Atualizar API client do frontend
 5. ⏳ **ETAPA 5**: Atualizar UI do admin
 6. ⏳ **ETAPA 6**: Atualizar UI do organizador

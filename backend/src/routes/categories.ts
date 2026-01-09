@@ -10,6 +10,13 @@ import {
   deleteCategoryController,
   reorderCategoriesController,
 } from '../controllers/categoriesController.js';
+import {
+  getCategoryBatchesController,
+  getActiveBatchesController,
+  createCategoryBatchController,
+  updateCategoryBatchController,
+  deleteCategoryBatchController,
+} from '../controllers/categoryBatchesController.js';
 
 const router = Router();
 
@@ -23,6 +30,16 @@ router.post('/', authenticate, requireAnyRole(['organizer', 'admin']), createCat
 router.put('/:id', authenticate, requireAnyRole(['organizer', 'admin']), updateCategoryController);
 router.delete('/:id', authenticate, requireAnyRole(['organizer', 'admin']), deleteCategoryController);
 router.put('/events/:eventId/reorder', authenticate, requireAnyRole(['organizer', 'admin']), reorderCategoriesController);
+
+// Category Batches routes
+// Public routes (GET) - anyone can view batches
+router.get('/:categoryId/batches', optionalAuth, getCategoryBatchesController);
+router.get('/:categoryId/batches/active', optionalAuth, getActiveBatchesController);
+
+// Protected routes - require organizer or admin role
+router.post('/:categoryId/batches', authenticate, requireAnyRole(['organizer', 'admin']), createCategoryBatchController);
+router.put('/:categoryId/batches/:batchId', authenticate, requireAnyRole(['organizer', 'admin']), updateCategoryBatchController);
+router.delete('/:categoryId/batches/:batchId', authenticate, requireAnyRole(['organizer', 'admin']), deleteCategoryBatchController);
 
 export default router;
 

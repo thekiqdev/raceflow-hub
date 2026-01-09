@@ -427,3 +427,174 @@ export const reorderCategories = async (
   }
 };
 
+// ============================================
+// Category Batches Functions
+// ============================================
+
+/**
+ * Get all batches for a category
+ */
+export const getCategoryBatches = async (categoryId: string): Promise<CategoryBatch[]> => {
+  const result = await query(
+    `SELECT * FROM category_batches 
+     WHERE category_id = $1 
+     ORDER BY valid_from ASC NULLS FIRST, created_at ASC`,
+    [categoryId]
+  );
+
+  return result.rows.map((row) => ({
+    id: row.id,
+    category_id: row.category_id,
+    name: row.name,
+    price: parseFloat(row.price) || 0,
+    valid_from: row.valid_from,
+    valid_to: row.valid_to,
+    created_at: row.created_at,
+  }));
+};
+
+/**
+ * Get active batches for a category at a specific date (defaults to now)
+ */
+export const getActiveBatches = async (
+  categoryId: string,
+  atDate: Date = new Date()
+): Promise<CategoryBatch[]> => {
+  const result = await query(
+    `SELECT * FROM category_batches 
+     WHERE category_id = $1
+     AND (valid_from IS NULL OR valid_from <= $2)
+     AND (valid_to IS NULL OR valid_to >= $2)
+     ORDER BY valid_from ASC NULLS FIRST, created_at ASC`,
+    [categoryId, atDate]
+  );
+
+  return result.rows.map((row) => ({
+    id: row.id,
+    category_id: row.category_id,
+    name: row.name,
+    price: parseFloat(row.price) || 0,
+    valid_from: row.valid_from,
+    valid_to: row.valid_to,
+    created_at: row.created_at,
+  }));
+};
+
+/**
+ * Create a category batch
+ */
+export const createCategoryBatch = async (data: {
+  category_id: string;
+  name?: string | null;
+  price: number;
+  valid_from?: Date | null;
+  valid_to?: Date | null;
+}): Promise<CategoryBatch> => {
+  // Verificar se a categoria existe
+  const categoryCheck = await query(
+    `SELECT id FROM categories WHERE id = $1`,
+    [data.category_id]
+  );
+
+  if (categoryCheck.rows.length === 0) {
+    throw new Error('Category not found');
+  }
+
+  const result = await query(
+    `INSERT INTO category_batches (category_id, name, price, valid_from, valid_to)
+     VALUES ($1, $2, $3, $4, $5)
+     RETURNING *`,
+    [data.category_id, data.name || null, data.price, data.valid_from || null, data.valid_to || null]
+  );
+
+  return {
+    id: result.rows[0].id,
+    category_id: result.rows[0].category_id,
+    name: result.rows[0].name,
+    price: parseFloat(result.rows[0].price) || 0,
+    valid_from: result.rows[0].valid_from,
+    valid_to: result.rows[0].valid_to,
+    created_at: result.rows[0].created_at,
+  };
+};
+
+/**
+ * Update a category batch
+ */
+export const updateCategoryBatch = async (
+  batchId: string,
+  data: {
+    name?: string | null;
+    price?: number;
+    valid_from?: Date | null;
+    valid_to?: Date | null;
+  }
+): Promise<CategoryBatch | null> => {
+  const fields: string[] = [];
+  const values: any[] = [];
+  let paramIndex = 1;
+
+  if (data.name !== undefined) {
+    fields.push(`name = $${paramIndex}`);
+    values.push(data.name);
+    paramIndex++;
+  }
+
+  if (data.price !== undefined) {
+    fields.push(`price = $${paramIndex}`);
+    values.push(data.price);
+    paramIndex++;
+  }
+
+  if (data.valid_from !== undefined) {
+    fields.push(`valid_from = $${paramIndex}`);
+    values.push(data.valid_from);
+    paramIndex++;
+  }
+
+  if (data.valid_to !== undefined) {
+    fields.push(`valid_to = $${paramIndex}`);
+    values.push(data.valid_to);
+    paramIndex++;
+  }
+
+  if (fields.length === 0) {
+    throw new Error('No fields to update');
+  }
+
+  values.push(batchId);
+
+  const result = await query(
+    `UPDATE category_batches 
+     SET ${fields.join(', ')}
+     WHERE id = $${paramIndex}
+     RETURNING *`,
+    values
+  );
+
+  if (result.rows.length === 0) {
+    return null;
+  }
+
+  return {
+    id: result.rows[0].id,
+    category_id: result.rows[0].category_id,
+    name: result.rows[0].name,
+    price: parseFloat(result.rows[0].price) || 0,
+    valid_from: result.rows[0].valid_from,
+    valid_to: result.rows[0].valid_to,
+    created_at: result.rows[0].created_at,
+  };
+};
+
+/**
+ * Delete a category batch
+ */
+export const deleteCategoryBatch = async (batchId: string): Promise<boolean> => {
+  const result = await query(
+    'DELETE FROM category_batches WHERE id = $1',
+    [batchId]
+  );
+
+  return result.rowCount !== null && result.rowCount > 0;
+};
