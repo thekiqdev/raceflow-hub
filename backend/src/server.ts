@@ -3,6 +3,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import fs from 'fs';
 import { errorHandler } from './middleware/errorHandler.js';
 import { securityLogger } from './middleware/securityLogger.js';
 import { rateLimiter, writeRateLimiter } from './middleware/rateLimiter.js';
@@ -157,6 +158,26 @@ console.log('📁 Static files configuration:', {
   __dirname,
 });
 
+// Verify uploads directory exists and is accessible
+if (!fs.existsSync(uploadsStaticDir)) {
+  console.error(`❌ CRITICAL: Uploads directory does not exist: ${uploadsStaticDir}`);
+  console.error('❌ This will cause all file uploads to fail!');
+  console.error('❌ Please configure UPLOADS_DIR environment variable or ensure the directory exists.');
+} else {
+  const stats = fs.statSync(uploadsStaticDir);
+  console.log(`✅ Uploads directory exists: ${uploadsStaticDir} (isDirectory: ${stats.isDirectory()})`);
+  
+  // Check if it's writable
+  try {
+    const testFile = path.join(uploadsStaticDir, '.test-write');
+    fs.writeFileSync(testFile, 'test');
+    fs.unlinkSync(testFile);
+    console.log(`✅ Uploads directory is writable`);
+  } catch (error) {
+    console.error(`❌ CRITICAL: Uploads directory is NOT writable: ${uploadsStaticDir}`, error);
+  }
+}
+
 app.use('/uploads', express.static(uploadsStaticDir, {
   setHeaders: (res, filePath) => {
     // Set proper Content-Type for PDFs
@@ -164,6 +185,14 @@ app.use('/uploads', express.static(uploadsStaticDir, {
       res.setHeader('Content-Type', 'application/pdf');
       res.setHeader('Content-Disposition', 'inline; filename="' + path.basename(filePath) + '"');
     }
+  },
+  // Add error handler to log when files are not found
+  onError: (err, res, next) => {
+    console.error('❌ Error serving static file:', err.message);
+    if (err.code === 'ENOENT') {
+      console.error('❌ File not found - this may indicate the volume is not mounted correctly');
+    }
+    next(err);
   }
 }));
 

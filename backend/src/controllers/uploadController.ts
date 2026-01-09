@@ -3,6 +3,7 @@ import { AuthRequest } from '../middleware/auth.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { getFileUrl, deleteFile, getFilePath } from '../middleware/upload.js';
 import path from 'path';
+import fs from 'fs';
 
 /**
  * POST /api/upload/banner
@@ -28,11 +29,22 @@ export const uploadBannerController = asyncHandler(async (req: AuthRequest, res:
 
   const fileUrl = getFileUrl(req.file.path);
   
+  // Verify file actually exists
+  const fileExists = fs.existsSync(req.file.path);
+  
   console.log('📤 Banner upload:', {
     path: req.file.path,
     filename: req.file.filename,
     url: fileUrl,
+    fileExists,
+    fileSize: fileExists ? fs.statSync(req.file.path).size : 0,
+    UPLOADS_DIR: process.env.UPLOADS_DIR,
+    NODE_ENV: process.env.NODE_ENV,
   });
+  
+  if (!fileExists) {
+    console.error('❌ CRITICAL: File was not saved to disk!', req.file.path);
+  }
 
   res.json({
     success: true,
@@ -70,6 +82,23 @@ export const uploadRegulationController = asyncHandler(async (req: AuthRequest, 
   }
 
   const fileUrl = getFileUrl(req.file.path);
+
+  // Verify file actually exists
+  const fileExists = fs.existsSync(req.file.path);
+  
+  console.log('📤 Regulation upload:', {
+    path: req.file.path,
+    filename: req.file.filename,
+    url: fileUrl,
+    fileExists,
+    fileSize: fileExists ? fs.statSync(req.file.path).size : 0,
+    UPLOADS_DIR: process.env.UPLOADS_DIR,
+    NODE_ENV: process.env.NODE_ENV,
+  });
+  
+  if (!fileExists) {
+    console.error('❌ CRITICAL: File was not saved to disk!', req.file.path);
+  }
 
   res.json({
     success: true,
