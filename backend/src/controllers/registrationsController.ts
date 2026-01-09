@@ -1787,48 +1787,110 @@ export const exportRegistrationsController = asyncHandler(async (req: AuthReques
     if (req.query.payment_status) {
       filters.payment_status = req.query.payment_status;
     }
+    if (req.query.search) {
+      filters.search = req.query.search;
+    }
   }
 
   const registrations = await getRegistrations(filters);
 
-  // Generate CSV
+  // Generate CSV in the requested format
   const headers = [
-    'ID',
-    'Nome do Atleta',
-    'CPF',
-    'Evento',
-    'Categoria',
-    'Kit',
-    'Valor',
-    'Status',
-    'Status Pagamento',
-    'Método Pagamento',
-    'Código Confirmação',
-    'Data Inscrição',
+    'NUMERO',
+    'NOME MINUSCULO',
+    'NOME',
+    'SEXO',
+    'NASCIMENTO',
+    'KIT',
+    'VARIAÇÃO',
+    'MODALIDADE',
+    'QRCODE',
   ];
 
-  const rows = registrations.map((reg: any) => [
-    reg.id,
-    reg.runner_name || '',
-    reg.runner_cpf || '',
-    reg.event_title || '',
-    reg.category_name || '',
-    reg.kit_name || 'Sem kit',
-    parseFloat(reg.total_amount || 0).toFixed(2),
-    reg.status || '',
-    reg.payment_status || '',
-    reg.payment_method || '',
-    reg.confirmation_code || '',
-    reg.created_at ? new Date(reg.created_at).toLocaleDateString('pt-BR') : '',
-  ]);
+  // Helper function to format date as DD/MM/YYYY
+  const formatDate = (date: string | Date | null): string => {
+    if (!date) return '';
+    const d = typeof date === 'string' ? new Date(date) : date;
+    if (isNaN(d.getTime())) return '';
+    const day = String(d.getDate()).padStart(2, '0');
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const year = d.getFullYear();
+    return `${day}/${month}/${year}`;
+  };
 
+  // Helper function to get modality distance (first available)
+  const getModalityDistance = (reg: any): string => {
+    if (reg.modality_distances && reg.modality_distances.length > 0) {
+      return reg.modality_distances[0] || '';
+    }
+    return '';
+  };
+
+  // Helper function to generate QR code URL
+  const getQRCodeUrl = (reg: any, sequentialNumber: number): string => {
+    if (!reg.event_title) return '';
+    // Extract year from event date or use current year
+    const eventDate = reg.event_date ? new Date(reg.event_date) : new Date();
+    const year = eventDate.getFullYear();
+    
+    // Generate event slug from title (lowercase, remove special chars, replace spaces)
+    const eventSlug = reg.event_title
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '') // Remove accents
+      .replace(/[^a-z0-9\s]/g, '') // Remove special characters
+      .replace(/\s+/g, '') // Remove spaces
+      .trim();
+    
+    // URL pattern: https://resultados.cronoteam.com.br/resultados/g-live.html?f=eventos/YYYY/eventname/eventname.clax&B=NUMERO
+    return `https://resultados.cronoteam.com.br/resultados/g-live.html?f=eventos/${year}/${eventSlug}/${eventSlug}.clax&B=${sequentialNumber}`;
+  };
+
+  // Helper function to get kit name
+  const getKitName = (reg: any): string => {
+    return reg.kit_name || '';
+  };
+
+  // Helper function to get kit variation (if available, otherwise empty)
+  const getKitVariation = (reg: any): string => {
+    // If there's a kit variant stored, return it
+    // For now, return empty as it's not stored in the current schema
+    // TODO: Add variant storage when implementing variant selection in registration
+    return '';
+  };
+
+  const rows = registrations.map((reg: any, index: number) => {
+    const runnerName = reg.runner_name || '';
+    const runnerNameLower = runnerName.toLowerCase();
+    const runnerNameUpper = runnerName.toUpperCase();
+    const gender = reg.runner_gender === 'masculino' ? 'M' : reg.runner_gender === 'feminino' ? 'F' : '';
+    const birthDate = formatDate(reg.runner_birth_date);
+    const kitName = getKitName(reg);
+    const kitVariation = getKitVariation(reg);
+    const modality = getModalityDistance(reg);
+    const qrCode = getQRCodeUrl(reg, index + 1);
+
+    return [
+      index + 1, // NUMERO (sequential number)
+      runnerNameLower, // NOME MINUSCULO
+      runnerNameUpper, // NOME
+      gender, // SEXO
+      birthDate, // NASCIMENTO
+      kitName, // KIT
+      kitVariation, // VARIAÇÃO
+      modality, // MODALIDADE
+      qrCode, // QRCODE
+    ];
+  });
+
+  // Use semicolon as separator
   const csvContent = [
-    headers.join(','),
-    ...rows.map((row: any[]) => row.map((cell: any) => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+    headers.join(';'),
+    ...rows.map((row: any[]) => row.map((cell: any) => String(cell || '')).join(';'))
   ].join('\n');
 
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-  res.setHeader('Content-Disposition', `attachment; filename="inscricoes_${new Date().toISOString().split('T')[0]}.csv"`);
+  res.setHeader('Content-Disposition', `attachment; filename="PLANILHA_DE_INSCRITOS_${new Date().toISOString().split('T')[0].replace(/-/g, '')}.csv"`);
   res.send('\ufeff' + csvContent); // BOM for Excel UTF-8 support
 });
 

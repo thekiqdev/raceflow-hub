@@ -52,7 +52,7 @@ export const getRegistrations = async (filters?: {
   search?: string;
 }) => {
   let queryText = `
-    SELECT 
+    SELECT DISTINCT ON (r.id)
       r.*,
       e.title as event_title,
       e.event_date,
@@ -63,7 +63,28 @@ export const getRegistrations = async (filters?: {
       c.min_age as category_min_age,
       p.full_name as runner_name,
       p.cpf as runner_cpf,
+      p.gender as runner_gender,
+      p.birth_date as runner_birth_date,
       ek.name as kit_name,
+      -- Modalidades associadas à categoria (usando subquery)
+      (
+        SELECT COALESCE(
+          ARRAY_AGG(DISTINCT m2.distance) FILTER (WHERE m2.distance IS NOT NULL),
+          ARRAY[]::TEXT[]
+        )
+        FROM category_modalities cm2
+        LEFT JOIN modalities m2 ON cm2.modality_id = m2.id
+        WHERE cm2.category_id = c.id
+      ) as modality_distances,
+      (
+        SELECT COALESCE(
+          ARRAY_AGG(DISTINCT m2.name) FILTER (WHERE m2.name IS NOT NULL),
+          ARRAY[]::TEXT[]
+        )
+        FROM category_modalities cm2
+        LEFT JOIN modalities m2 ON cm2.modality_id = m2.id
+        WHERE cm2.category_id = c.id
+      ) as modality_names,
       -- Se a inscrição foi transferida:
       -- - Se o runner_id atual é diferente do registered_by, mostrar como 'confirmed' para o novo titular
       -- - Se o registered_by está visualizando (será calculado no map), mostrar como 'transferred'
@@ -141,7 +162,7 @@ export const getRegistrations = async (filters?: {
     queryText += ' WHERE ' + conditions.join(' AND ');
   }
 
-  queryText += ' ORDER BY r.created_at DESC';
+  queryText += ' ORDER BY r.id, r.created_at DESC';
 
   const result = await query(queryText, params);
   
@@ -178,11 +199,31 @@ export const getRegistrationById = async (registrationId: string, viewerId?: str
       c.category_type as category_type,
       c.gender as category_gender,
       c.min_age as category_min_age,
+      -- Modalidades associadas à categoria
+      COALESCE(
+        ARRAY_AGG(DISTINCT m.id) FILTER (WHERE m.id IS NOT NULL),
+        ARRAY[]::UUID[]
+      ) as modality_ids,
+      COALESCE(
+        ARRAY_AGG(DISTINCT m.name) FILTER (WHERE m.name IS NOT NULL),
+        ARRAY[]::TEXT[]
+      ) as modality_names,
       p.full_name as runner_name,
       p.cpf as runner_cpf,
       p.phone as runner_phone,
+      p.birth_date as runner_birth_date,
       u.email as runner_email,
       ek.name as kit_name,
+      -- Informações do cupom (se houver)
+      cp.code as coupon_code,
+      cp.name as coupon_name,
+      cp.type as coupon_type,
+      cp.discount_value as coupon_discount_value,
+      cp.leader_id as coupon_leader_id,
+      -- Informações do líder (se o cupom pertence a um líder)
+      gl.id as leader_id,
+      gl.referral_code as leader_referral_code,
+      lp.full_name as leader_name,
       -- Se a inscrição foi transferida:
       -- - Se o viewer é o novo titular (runner_id), mostrar como 'confirmed'
       -- - Se o viewer é o antigo titular (registered_by), mostrar como 'transferred'
@@ -199,10 +240,16 @@ export const getRegistrationById = async (registrationId: string, viewerId?: str
     FROM registrations r
     LEFT JOIN events e ON r.event_id = e.id
     LEFT JOIN categories c ON r.category_id = c.id
+    LEFT JOIN category_modalities cm ON c.id = cm.category_id
+    LEFT JOIN modalities m ON cm.modality_id = m.id
     LEFT JOIN profiles p ON r.runner_id = p.id
     LEFT JOIN users u ON p.id = u.id
     LEFT JOIN event_kits ek ON r.kit_id = ek.id
-    WHERE r.id = $1`,
+    LEFT JOIN coupons cp ON r.coupon_code = cp.code
+    LEFT JOIN group_leaders gl ON cp.leader_id = gl.id
+    LEFT JOIN profiles lp ON gl.user_id = lp.id
+    WHERE r.id = $1
+    GROUP BY r.id, e.id, c.id, p.id, u.id, ek.id, cp.id, gl.id, lp.id`,
     [registrationId, viewerId || null]
   );
 

@@ -1327,8 +1327,8 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
             if (modality.id) {
               try {
                 const response = await updateModality(modality.id, {
-                  name: modality.name,
-                  distance: modality.distance,
+              name: modality.name,
+              distance: modality.distance,
                 });
                 if (response && !response.success) {
                   console.error('Error updating modality:', response.error);
@@ -1386,8 +1386,8 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
                 
                 if (modalityOrders.length > 1) {
                   await reorderModalities(eventId, { modalityOrders });
-                }
-              } catch (error) {
+                  }
+                } catch (error) {
                 console.error('Error reordering modalities:', error);
               }
             }
@@ -1699,11 +1699,11 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
                 }
               } catch (error: any) {
                 console.error('Error syncing batches:', error);
-                toast({
-                  title: "Aviso",
+            toast({
+              title: "Aviso",
                   description: "Evento salvo, mas houve erro ao salvar lotes de preço",
-                  variant: "destructive",
-                });
+              variant: "destructive",
+            });
               }
             }
           }
@@ -2167,15 +2167,15 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
                               >
                                 <ChevronDown className="h-4 w-4" />
                               </Button>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon"
-                                onClick={() => removeModality(index)}
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => removeModality(index)}
                                 title="Remover"
-                              >
-                                <Trash2 className="h-4 w-4 text-destructive" />
-                              </Button>
+                            >
+                              <Trash2 className="h-4 w-4 text-destructive" />
+                            </Button>
                             </div>
                           </div>
                         </CardHeader>
@@ -2445,7 +2445,7 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
                             )}
                           </div>
 
-                          <div>
+                              <div>
                             <label className="text-sm font-medium mb-2 block">
                               Modalidades Disponíveis
                             </label>
@@ -2453,7 +2453,7 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
                               Selecione em quais modalidades esta categoria estará disponível
                             </p>
                             {modalities.length === 0 ? (
-                              <p className="text-sm text-muted-foreground">
+                                <p className="text-sm text-muted-foreground">
                                 Adicione modalidades primeiro na aba "Modalidades"
                               </p>
                             ) : (
@@ -2508,18 +2508,18 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
                                 Adicionar Lote
                               </Button>
                             </div>
-                            
+
                             {(!category.batches || category.batches.length === 0) ? (
                               <p className="text-sm text-muted-foreground text-center py-4 border rounded-md">
                                 Nenhum lote adicionado. O preço padrão da categoria será usado.
                               </p>
                             ) : (
-                              <div className="space-y-3">
+                            <div className="space-y-3">
                                 {category.batches.map((batch, batchIndex) => (
                                   <Card key={batch.id || `batch-${batchIndex}`} className="bg-muted/30">
                                     <CardContent className="pt-4">
                                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                        <div>
+                                    <div>
                                           <label className="text-xs font-medium text-muted-foreground">
                                             Nome do Lote (opcional)
                                           </label>
@@ -2535,13 +2535,13 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
                                         <div>
                                           <label className="text-xs font-medium text-muted-foreground">
                                             Preço (R$)
-                                          </label>
-                                          <Input
-                                            type="number"
-                                            step="0.01"
+                                      </label>
+                                      <Input
+                                        type="number"
+                                        step="0.01"
                                             min="0"
                                             placeholder="0.00"
-                                            value={batch.price}
+                                        value={batch.price}
                                             onChange={(e) => {
                                               const value = parseFloat(e.target.value);
                                               if (!isNaN(value) && value >= 0) {
@@ -2552,15 +2552,15 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
                                             }}
                                             className="h-9"
                                             required
-                                          />
-                                        </div>
-                                        <div>
+                                      />
+                                    </div>
+                                    <div>
                                           <label className="text-xs font-medium text-muted-foreground">
                                             Data de Início (opcional)
-                                          </label>
+                                      </label>
                                           <div className="flex gap-2">
-                                            <Input
-                                              type="date"
+                                      <Input
+                                        type="date"
                                               key={`date-from-org-${batch.id || batchIndex}-${batch.valid_from || 'empty'}`}
                                               defaultValue={(() => {
                                                 if (!batch.valid_from) return "";
@@ -2576,12 +2576,12 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
                                                   return "";
                                                 }
                                               })()}
-                                              onChange={(e) => {
+                                        onChange={(e) => {
                                                 // Não faz nada durante a digitação - permite digitação livre
                                                 // O valor será processado apenas no onBlur
                                               }}
                                               onBlur={(e) => {
-                                                const dateValue = e.target.value;
+                                          const dateValue = e.target.value;
                                                 console.log('📅 onBlur date valid_from (organizador):', dateValue);
                                                 
                                                 if (!dateValue || dateValue.trim() === '') {
@@ -2603,9 +2603,9 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
                                                   
                                                   if (processedValue) {
                                                     updateBatchLocal(
-                                                      index,
+                                              index,
                                                       batchIndex,
-                                                      "valid_from",
+                                              "valid_from",
                                                       processedValue
                                                     );
                                                   }
@@ -2639,9 +2639,9 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
                                                 console.log('📅 onChange time valid_from (organizador) processado:', processedValue);
                                                 
                                                 updateBatchLocal(
-                                                  index,
+                                              index,
                                                   batchIndex,
-                                                  "valid_from",
+                                              "valid_from",
                                                   processedValue
                                                 );
                                               }}
@@ -2674,14 +2674,14 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
                                               onChange={(e) => {
                                                 // Não faz nada durante a digitação - permite digitação livre
                                                 // O valor será processado apenas no onBlur
-                                              }}
-                                              onBlur={(e) => {
-                                                const dateValue = e.target.value;
+                                        }}
+                                        onBlur={(e) => {
+                                          const dateValue = e.target.value;
                                                 console.log('📅 onBlur date valid_to (organizador):', dateValue);
                                                 
                                                 if (!dateValue || dateValue.trim() === '') {
                                                   updateBatchLocal(
-                                                    index,
+                                                index,
                                                     batchIndex,
                                                     "valid_to",
                                                     null
@@ -2741,26 +2741,26 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
                                                 );
                                               }}
                                               className="h-9 w-32"
-                                            />
-                                          </div>
-                                        </div>
+                                      />
+                                    </div>
+                                  </div>
                                       </div>
                                       <div className="flex justify-end mt-3">
-                                        <Button
-                                          type="button"
-                                          variant="ghost"
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
                                           size="sm"
                                           onClick={() => removeBatchFromCategory(index, batchIndex)}
                                           className="text-destructive hover:text-destructive"
                                         >
                                           <Trash2 className="h-4 w-4 mr-1" />
                                           Remover
-                                        </Button>
-                                      </div>
+                                  </Button>
+                                </div>
                                     </CardContent>
                                   </Card>
-                                ))}
-                              </div>
+                              ))}
+                            </div>
                             )}
                           </div>
                         </CardContent>
@@ -2821,15 +2821,15 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
                               >
                                 <ChevronDown className="h-4 w-4" />
                               </Button>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon"
-                                onClick={() => removeKit(index)}
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => removeKit(index)}
                                 title="Remover"
-                              >
-                                <Trash2 className="h-4 w-4 text-destructive" />
-                              </Button>
+                            >
+                              <Trash2 className="h-4 w-4 text-destructive" />
+                            </Button>
                             </div>
                           </div>
                         </CardHeader>
@@ -3348,10 +3348,10 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
                                         </Button>
                                       )}
                                     </div>
-                                    <Input
+                            <Input
                                       type="date"
                                       value={scheduleItem.date}
-                                      onChange={(e) =>
+                              onChange={(e) =>
                                         updatePickupDate(locationIndex, dateIndex, e.target.value)
                                       }
                                     />
@@ -3734,7 +3734,7 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
                       const tabs = ["info", "modalities", "categories", "kits", "pickup", "payment", "publish"];
                       const currentIndex = tabs.indexOf(activeTab);
                       if (currentIndex > 0) {
-                        setActiveTab(tabs[currentIndex - 1]);
+                      setActiveTab(tabs[currentIndex - 1]);
                       }
                     }}
                   >
@@ -3761,7 +3761,7 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
                         const tabs = ["info", "modalities", "categories", "kits", "pickup", "payment", "publish"];
                         const currentIndex = tabs.indexOf(activeTab);
                         if (currentIndex < tabs.length - 1) {
-                          setActiveTab(tabs[currentIndex + 1]);
+                        setActiveTab(tabs[currentIndex + 1]);
                         }
                       }}
                     >

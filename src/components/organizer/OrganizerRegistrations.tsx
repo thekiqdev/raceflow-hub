@@ -30,7 +30,7 @@ import { Plus, Search, MoreVertical, Eye, MessageSquare, FileDown, Loader2, User
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { useAuth } from "@/contexts/AuthContext";
-import { getRegistrations, exportRegistrations, createRegistrationByOrganizer, type Registration } from "@/lib/api/registrations";
+import { getRegistrations, exportRegistrations, createRegistrationByOrganizer, getRegistrationById, type Registration } from "@/lib/api/registrations";
 import { getEvents, type Event } from "@/lib/api/events";
 import { getModalities, type Modality } from "@/lib/api/modalities";
 import { getCategories, type Category } from "@/lib/api/categories";
@@ -64,6 +64,12 @@ const OrganizerRegistrations = () => {
   const [loadingCategories, setLoadingCategories] = useState(false);
   const [loadingKits, setLoadingKits] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  
+  // Registration details dialog
+  const [isDetailsDialogOpen, setIsDetailsDialogOpen] = useState(false);
+  const [selectedRegistration, setSelectedRegistration] = useState<Registration | null>(null);
+  const [registrationDetails, setRegistrationDetails] = useState<any>(null);
+  const [loadingDetails, setLoadingDetails] = useState(false);
 
   const debouncedSearch = useDebounce(searchQuery, 500);
 
@@ -277,6 +283,26 @@ const OrganizerRegistrations = () => {
     }
   };
 
+  const handleViewDetails = async (registration: Registration) => {
+    setSelectedRegistration(registration);
+    setIsDetailsDialogOpen(true);
+    setLoadingDetails(true);
+    
+    try {
+      const response = await getRegistrationById(registration.id);
+      if (response.success && response.data) {
+        setRegistrationDetails(response.data);
+      } else {
+        toast.error(response.error || "Erro ao carregar detalhes da inscrição");
+      }
+    } catch (error: any) {
+      console.error("Error loading registration details:", error);
+      toast.error("Erro ao carregar detalhes da inscrição");
+    } finally {
+      setLoadingDetails(false);
+    }
+  };
+
   const handleConvertToLeader = async (registration: Registration) => {
     if (!registration.runner_id) {
       toast.error("Não é possível converter: runner_id não encontrado");
@@ -323,6 +349,10 @@ const OrganizerRegistrations = () => {
 
       if (eventFilter !== "all") {
         filters.event_id = eventFilter;
+      }
+
+      if (searchQuery && searchQuery.trim()) {
+        filters.search = searchQuery.trim();
       }
 
       await exportRegistrations(filters);
@@ -593,7 +623,7 @@ const OrganizerRegistrations = () => {
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
-                              <DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleViewDetails(registration)}>
                                 <Eye className="mr-2 h-4 w-4" />
                                 Ver Detalhes
                               </DropdownMenuItem>
@@ -783,6 +813,188 @@ const OrganizerRegistrations = () => {
                   Inscrever Atleta
                 </>
               )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Registration Details Dialog */}
+      <Dialog open={isDetailsDialogOpen} onOpenChange={setIsDetailsDialogOpen}>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Detalhes da Inscrição</DialogTitle>
+            <DialogDescription>
+              Informações completas da inscrição
+            </DialogDescription>
+          </DialogHeader>
+
+          {loadingDetails ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            </div>
+          ) : registrationDetails ? (
+            <div className="space-y-6 py-4">
+              {/* Dados do Inscrito */}
+              <div className="space-y-3">
+                <h3 className="text-lg font-semibold border-b pb-2">Dados do Inscrito</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <Label className="text-sm text-muted-foreground">Nome Completo</Label>
+                    <p className="font-medium">{registrationDetails.runner_name || "N/A"}</p>
+                  </div>
+                  <div>
+                    <Label className="text-sm text-muted-foreground">CPF</Label>
+                    <p className="font-medium font-mono">{registrationDetails.runner_cpf ? formatCPF(registrationDetails.runner_cpf) : "N/A"}</p>
+                  </div>
+                  <div>
+                    <Label className="text-sm text-muted-foreground">Email</Label>
+                    <p className="font-medium">{registrationDetails.runner_email || "N/A"}</p>
+                  </div>
+                  <div>
+                    <Label className="text-sm text-muted-foreground">Telefone</Label>
+                    <p className="font-medium">{registrationDetails.runner_phone || "N/A"}</p>
+                  </div>
+                  {registrationDetails.runner_birth_date && (
+                    <div>
+                      <Label className="text-sm text-muted-foreground">Data de Nascimento</Label>
+                      <p className="font-medium">
+                        {format(new Date(registrationDetails.runner_birth_date), "dd/MM/yyyy", { locale: ptBR })}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Dados da Inscrição */}
+              <div className="space-y-3">
+                <h3 className="text-lg font-semibold border-b pb-2">Dados da Inscrição</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <Label className="text-sm text-muted-foreground">Evento</Label>
+                    <p className="font-medium">{registrationDetails.event_title || "N/A"}</p>
+                  </div>
+                  <div>
+                    <Label className="text-sm text-muted-foreground">Categoria</Label>
+                    <p className="font-medium">
+                      {registrationDetails.category_name || "N/A"}
+                      {registrationDetails.category_distance && ` - ${registrationDetails.category_distance}`}
+                    </p>
+                  </div>
+                  <div>
+                    <Label className="text-sm text-muted-foreground">Tipo de Categoria</Label>
+                    <p className="font-medium capitalize">{registrationDetails.category_type || "N/A"}</p>
+                  </div>
+                  {registrationDetails.modality_names && registrationDetails.modality_names.length > 0 && (
+                    <div>
+                      <Label className="text-sm text-muted-foreground">Modalidade(s)</Label>
+                      <p className="font-medium">{registrationDetails.modality_names.join(', ')}</p>
+                    </div>
+                  )}
+                  <div>
+                    <Label className="text-sm text-muted-foreground">Kit</Label>
+                    <p className="font-medium">{registrationDetails.kit_name || "Sem kit"}</p>
+                  </div>
+                  <div>
+                    <Label className="text-sm text-muted-foreground">Valor Total</Label>
+                    <p className="font-medium text-lg">{formatCurrency(parseFloat(String(registrationDetails.total_amount || 0)))}</p>
+                  </div>
+                  <div>
+                    <Label className="text-sm text-muted-foreground">Status</Label>
+                    <div className="mt-1">{getStatusBadge(registrationDetails.status || "pending")}</div>
+                  </div>
+                  <div>
+                    <Label className="text-sm text-muted-foreground">Status do Pagamento</Label>
+                    <div className="mt-1">{getPaymentStatusBadge(registrationDetails.payment_status || "pending")}</div>
+                  </div>
+                  <div>
+                    <Label className="text-sm text-muted-foreground">Data da Inscrição</Label>
+                    <p className="font-medium">
+                      {registrationDetails.created_at
+                        ? format(new Date(registrationDetails.created_at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })
+                        : "N/A"}
+                    </p>
+                  </div>
+                  {registrationDetails.confirmation_code && (
+                    <div>
+                      <Label className="text-sm text-muted-foreground">Código de Confirmação</Label>
+                      <p className="font-medium font-mono">{registrationDetails.confirmation_code}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Forma de Pagamento */}
+              <div className="space-y-3">
+                <h3 className="text-lg font-semibold border-b pb-2">Forma de Pagamento</h3>
+                <div>
+                  <Label className="text-sm text-muted-foreground">Método de Pagamento</Label>
+                  <p className="font-medium">
+                    {registrationDetails.payment_method === 'pix' ? 'PIX' :
+                     registrationDetails.payment_method === 'credit_card' ? 'Cartão de Crédito' :
+                     registrationDetails.payment_method === 'boleto' ? 'Boleto' :
+                     registrationDetails.payment_status === 'convidado' ? 'Convite (Grátis)' :
+                     'N/A'}
+                  </p>
+                </div>
+              </div>
+
+              {/* Cupom de Desconto */}
+              {registrationDetails.coupon_code && (
+                <div className="space-y-3">
+                  <h3 className="text-lg font-semibold border-b pb-2">Cupom de Desconto</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <Label className="text-sm text-muted-foreground">Código do Cupom</Label>
+                      <p className="font-medium font-mono">{registrationDetails.coupon_code}</p>
+                    </div>
+                    {registrationDetails.coupon_name && (
+                      <div>
+                        <Label className="text-sm text-muted-foreground">Nome do Cupom</Label>
+                        <p className="font-medium">{registrationDetails.coupon_name}</p>
+                      </div>
+                    )}
+                    {registrationDetails.coupon_type && registrationDetails.coupon_discount_value && (
+                      <div>
+                        <Label className="text-sm text-muted-foreground">Desconto</Label>
+                        <p className="font-medium">
+                          {registrationDetails.coupon_type === 'percentage' 
+                            ? `${registrationDetails.coupon_discount_value}%`
+                            : `R$ ${parseFloat(registrationDetails.coupon_discount_value).toFixed(2).replace('.', ',')}`}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Cupom de Líder */}
+              {registrationDetails.coupon_leader_id && registrationDetails.leader_name && (
+                <div className="space-y-3">
+                  <h3 className="text-lg font-semibold border-b pb-2">Cupom de Líder</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <Label className="text-sm text-muted-foreground">Líder</Label>
+                      <p className="font-medium">{registrationDetails.leader_name}</p>
+                    </div>
+                    {registrationDetails.leader_referral_code && (
+                      <div>
+                        <Label className="text-sm text-muted-foreground">Código de Referência</Label>
+                        <p className="font-medium font-mono">{registrationDetails.leader_referral_code}</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="py-8 text-center text-muted-foreground">
+              Nenhum detalhe disponível
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsDetailsDialogOpen(false)}>
+              Fechar
             </Button>
           </DialogFooter>
         </DialogContent>
