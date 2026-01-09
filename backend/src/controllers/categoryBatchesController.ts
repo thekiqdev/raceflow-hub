@@ -235,12 +235,29 @@ export const createCategoryBatchController = asyncHandler(
 
     try {
       // Converter strings de data para Date ou null
-      const validFrom = validation.data.valid_from 
-        ? new Date(validation.data.valid_from) 
-        : null;
-      const validTo = validation.data.valid_to 
-        ? new Date(validation.data.valid_to) 
-        : null;
+      let validFrom: Date | null = null;
+      let validTo: Date | null = null;
+
+      if (validation.data.valid_from && validation.data.valid_from !== 'null' && validation.data.valid_from.trim() !== '') {
+        const dateFrom = new Date(validation.data.valid_from);
+        if (!isNaN(dateFrom.getTime())) {
+          validFrom = dateFrom;
+        }
+      }
+
+      if (validation.data.valid_to && validation.data.valid_to !== 'null' && validation.data.valid_to.trim() !== '') {
+        const dateTo = new Date(validation.data.valid_to);
+        if (!isNaN(dateTo.getTime())) {
+          validTo = dateTo;
+        }
+      }
+
+      console.log('📅 Criando batch com datas:', {
+        valid_from_input: validation.data.valid_from,
+        valid_to_input: validation.data.valid_to,
+        valid_from_parsed: validFrom,
+        valid_to_parsed: validTo,
+      });
 
       const batch = await createCategoryBatch({
         category_id: categoryId,
@@ -361,15 +378,29 @@ export const updateCategoryBatchController = asyncHandler(
         updateData.price = validation.data.price;
       }
       if (validation.data.valid_from !== undefined) {
-        updateData.valid_from = validation.data.valid_from 
-          ? new Date(validation.data.valid_from) 
-          : null;
+        if (validation.data.valid_from && validation.data.valid_from !== 'null' && validation.data.valid_from.trim() !== '') {
+          const dateFrom = new Date(validation.data.valid_from);
+          updateData.valid_from = !isNaN(dateFrom.getTime()) ? dateFrom : null;
+        } else {
+          updateData.valid_from = null;
+        }
       }
       if (validation.data.valid_to !== undefined) {
-        updateData.valid_to = validation.data.valid_to 
-          ? new Date(validation.data.valid_to) 
-          : null;
+        if (validation.data.valid_to && validation.data.valid_to !== 'null' && validation.data.valid_to.trim() !== '') {
+          const dateTo = new Date(validation.data.valid_to);
+          updateData.valid_to = !isNaN(dateTo.getTime()) ? dateTo : null;
+        } else {
+          updateData.valid_to = null;
+        }
       }
+
+      console.log('📅 Atualizando batch com datas:', {
+        batch_id: batchId,
+        valid_from_input: validation.data.valid_from,
+        valid_to_input: validation.data.valid_to,
+        valid_from_parsed: updateData.valid_from,
+        valid_to_parsed: updateData.valid_to,
+      });
 
       const batch = await updateCategoryBatch(batchId, updateData);
 

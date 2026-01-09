@@ -20,7 +20,7 @@ export const getCategoriesByEvent = async (eventId: string): Promise<Category[]>
     [eventId]
   );
 
-  return result.rows.map((row) => ({
+  const categories = result.rows.map((row) => ({
     id: row.id,
     event_id: row.event_id,
     name: row.name,
@@ -36,6 +36,43 @@ export const getCategoriesByEvent = async (eventId: string): Promise<Category[]>
     updated_at: row.updated_at,
     modality_ids: row.modality_ids || [],
   }));
+
+  // Load batches for all categories
+  if (categories.length > 0) {
+    const categoryIds = categories.map(c => c.id);
+    const batchesResult = await query(
+      `SELECT * FROM category_batches 
+       WHERE category_id = ANY($1::uuid[])
+       ORDER BY category_id, valid_from ASC NULLS FIRST, created_at ASC`,
+      [categoryIds]
+    );
+
+    const batchesByCategory = new Map<string, CategoryBatch[]>();
+    batchesResult.rows.forEach((row) => {
+      const batch: CategoryBatch = {
+        id: row.id,
+        category_id: row.category_id,
+        name: row.name,
+        price: parseFloat(row.price) || 0,
+        valid_from: row.valid_from,
+        valid_to: row.valid_to,
+        created_at: row.created_at,
+      };
+      
+      if (!batchesByCategory.has(row.category_id)) {
+        batchesByCategory.set(row.category_id, []);
+      }
+      batchesByCategory.get(row.category_id)!.push(batch);
+    });
+
+    // Attach batches to categories
+    return categories.map(category => ({
+      ...category,
+      batches: batchesByCategory.get(category.id) || [],
+    }));
+  }
+
+  return categories;
 };
 
 /**
@@ -55,7 +92,7 @@ export const getCategoriesByModality = async (modalityId: string): Promise<Categ
     [modalityId]
   );
 
-  return result.rows.map((row) => ({
+  const categories = result.rows.map((row) => ({
     id: row.id,
     event_id: row.event_id,
     name: row.name,
@@ -71,6 +108,43 @@ export const getCategoriesByModality = async (modalityId: string): Promise<Categ
     updated_at: row.updated_at,
     modality_ids: row.modality_ids || [],
   }));
+
+  // Load batches for all categories
+  if (categories.length > 0) {
+    const categoryIds = categories.map(c => c.id);
+    const batchesResult = await query(
+      `SELECT * FROM category_batches 
+       WHERE category_id = ANY($1::uuid[])
+       ORDER BY category_id, valid_from ASC NULLS FIRST, created_at ASC`,
+      [categoryIds]
+    );
+
+    const batchesByCategory = new Map<string, CategoryBatch[]>();
+    batchesResult.rows.forEach((row) => {
+      const batch: CategoryBatch = {
+        id: row.id,
+        category_id: row.category_id,
+        name: row.name,
+        price: parseFloat(row.price) || 0,
+        valid_from: row.valid_from,
+        valid_to: row.valid_to,
+        created_at: row.created_at,
+      };
+      
+      if (!batchesByCategory.has(row.category_id)) {
+        batchesByCategory.set(row.category_id, []);
+      }
+      batchesByCategory.get(row.category_id)!.push(batch);
+    });
+
+    // Attach batches to categories
+    return categories.map(category => ({
+      ...category,
+      batches: batchesByCategory.get(category.id) || [],
+    }));
+  }
+
+  return categories;
 };
 
 /**
@@ -96,7 +170,7 @@ export const getCategoryById = async (categoryId: string): Promise<Category | nu
   }
 
   const row = result.rows[0];
-  return {
+  const category = {
     id: row.id,
     event_id: row.event_id,
     name: row.name,
@@ -111,6 +185,13 @@ export const getCategoryById = async (categoryId: string): Promise<Category | nu
     created_at: row.created_at,
     updated_at: row.updated_at,
     modality_ids: row.modality_ids || [],
+  };
+
+  // Load batches for this category
+  const batches = await getCategoryBatches(categoryId);
+  return {
+    ...category,
+    batches,
   };
 };
 
@@ -500,12 +581,28 @@ export const createCategoryBatch = async (data: {
     throw new Error('Category not found');
   }
 
+  console.log('💾 Salvando batch no banco:', {
+    category_id: data.category_id,
+    name: data.name,
+    price: data.price,
+    valid_from: data.valid_from,
+    valid_to: data.valid_to,
+    valid_from_type: typeof data.valid_from,
+    valid_to_type: typeof data.valid_to,
+  });
+
   const result = await query(
     `INSERT INTO category_batches (category_id, name, price, valid_from, valid_to)
      VALUES ($1, $2, $3, $4, $5)
      RETURNING *`,
     [data.category_id, data.name || null, data.price, data.valid_from || null, data.valid_to || null]
   );
+
+  console.log('✅ Batch salvo no banco:', {
+    id: result.rows[0].id,
+    valid_from: result.rows[0].valid_from,
+    valid_to: result.rows[0].valid_to,
+  });
 
   return {
     id: result.rows[0].id,

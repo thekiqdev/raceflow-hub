@@ -19,7 +19,8 @@ import { createRegistration, getPaymentStatus } from "@/lib/api/registrations";
 import { PixQrCode } from "@/components/payment/PixQrCode";
 import { CreditCardForm } from "@/components/payment/CreditCardForm";
 import { CreditCardData, CreditCardHolderInfo } from "@/lib/api/registrations";
-import { getEventCategories, EventCategory, CategoryBatch } from "@/lib/api/eventCategories";
+import { getEventCategories, EventCategory } from "@/lib/api/eventCategories";
+import { type CategoryBatch } from "@/lib/api/categories";
 import { EventKit, KitProduct, ProductVariant } from "@/lib/api/eventKits";
 import { validateCoupon } from "@/lib/api/coupons";
 import { getEnabledModules } from "@/lib/api/systemSettings";
@@ -586,17 +587,32 @@ export function RegistrationFlow({
     // If category has valid batches, select the first one automatically
     if (category.batches && category.batches.length > 0) {
       const now = new Date();
-      // Filtrar lotes ativos (data já chegou) e ordenar por data (mais recente primeiro)
+      // Filtrar lotes ativos considerando valid_from e valid_to
       const activeBatches = category.batches
         .filter(batch => {
+          // Se não tem valid_from, não está ativo (precisa de data de início)
           if (!batch.valid_from) return false;
-          const batchDate = new Date(batch.valid_from);
-          return !isNaN(batchDate.getTime()) && batchDate <= now;
+          
+          const startDate = new Date(batch.valid_from);
+          if (isNaN(startDate.getTime())) return false;
+          
+          // Se a data de início ainda não chegou, não está ativo
+          if (startDate > now) return false;
+          
+          // Se tem valid_to, verificar se ainda não passou
+          if (batch.valid_to) {
+            const endDate = new Date(batch.valid_to);
+            if (!isNaN(endDate.getTime()) && endDate < now) {
+              return false; // Lote já expirou
+            }
+          }
+          
+          return true; // Lote está ativo
         })
         .sort((a, b) => {
+          // Ordenar por data de início (mais recente primeiro)
           const dateA = new Date(a.valid_from!);
           const dateB = new Date(b.valid_from!);
-          // Ordenar do mais recente para o mais antigo
           return dateB.getTime() - dateA.getTime();
         });
       
@@ -1969,6 +1985,35 @@ export function RegistrationFlow({
                                   category.available_spots !== null && 
                                   category.available_spots <= 0;
                     
+                    // Encontrar o lote ativo para esta categoria
+                    const getActiveBatch = (cat: NewCategory): CategoryBatch | null => {
+                      if (!cat.batches || cat.batches.length === 0) return null;
+                      
+                      const now = new Date();
+                      const activeBatches = cat.batches
+                        .filter(batch => {
+                          if (!batch.valid_from) return false;
+                          const startDate = new Date(batch.valid_from);
+                          if (isNaN(startDate.getTime()) || startDate > now) return false;
+                          if (batch.valid_to) {
+                            const endDate = new Date(batch.valid_to);
+                            if (!isNaN(endDate.getTime()) && endDate < now) return false;
+                          }
+                          return true;
+                        })
+                        .sort((a, b) => {
+                          const dateA = new Date(a.valid_from!);
+                          const dateB = new Date(b.valid_from!);
+                          return dateB.getTime() - dateA.getTime();
+                        });
+                      
+                      return activeBatches.length > 0 ? activeBatches[0] : null;
+                    };
+                    
+                    const activeBatch = getActiveBatch(category);
+                    const displayPrice = activeBatch ? activeBatch.price : category.price;
+                    const batchName = activeBatch?.name || null;
+                    
                     return (
                       <Card
                         key={category.id}
@@ -1986,7 +2031,7 @@ export function RegistrationFlow({
                         <CardContent className="p-4">
                           <div className="flex justify-between items-start">
                             <div className="flex-1">
-                          <h4 className="font-semibold">{category.name}</h4>
+                              <h4 className="font-semibold">{category.name}</h4>
                               <div className="mt-2 flex flex-wrap gap-2">
                                 <Badge variant="outline">{category.category_type}</Badge>
                                 <Badge variant="outline">
@@ -1995,19 +2040,25 @@ export function RegistrationFlow({
                                 {category.min_age && (
                                   <Badge variant="outline">Idade mínima: {category.min_age} anos</Badge>
                                 )}
-                        </div>
-                                  </div>
+                              </div>
+                            </div>
                             <div className="text-right ml-4">
                               <div className="text-lg font-bold">
-                                    {formatPrice(category.price)}
+                                {formatPrice(displayPrice)}
+                              </div>
+                              {batchName && (
+                                <div className="text-xs text-muted-foreground mt-1">
+                                  {batchName}
                                 </div>
+                              )}
                             </div>
-                        </div>
-                      </CardContent>
-                    </Card>
+                          </div>
+                        </CardContent>
+                      </Card>
                     );
                   })}
                 </div>
+                
                 <div className="flex justify-between pt-4">
                   <Button
                     variant="outline"
@@ -2017,7 +2068,7 @@ export function RegistrationFlow({
                   </Button>
                   <Button
                     onClick={handleNextStep}
-                    disabled={!selectedCategory}
+                    disabled={!selectedCategory || (selectedCategory.batches && selectedCategory.batches.length > 0 && !selectedBatch)}
                   >
                     Próximo
                   </Button>
@@ -2605,6 +2656,14 @@ export function RegistrationFlow({
                     <span>
                       {formatPrice(selectedBatch?.price || selectedCategory?.price || 0)}
                       {selectedBatch && (() => {
+                        // Mostrar nome do lote se disponível
+                        if (selectedBatch.name) {
+                          return (
+                            <span className="text-xs text-muted-foreground ml-1">
+                              ({selectedBatch.name})
+                            </span>
+                          );
+                        }
                         // Encontrar o número do lote baseado na ordem original de criação
                         const allBatches = (selectedCategory?.batches || [])
                           .filter(batch => batch.valid_from)

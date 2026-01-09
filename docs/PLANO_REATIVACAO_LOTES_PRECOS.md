@@ -219,10 +219,48 @@ interface CategoryBatch {
      - `DELETE /api/categories/:categoryId/batches/:batchId` - Deletar batch
    - ✅ Validação com Zod para criação e atualização
    - ✅ Verificação de permissões (organizador do evento ou admin)
-4. ⏳ **ETAPA 4**: Atualizar API client do frontend
-5. ⏳ **ETAPA 5**: Atualizar UI do admin
-6. ⏳ **ETAPA 6**: Atualizar UI do organizador
-7. ⏳ **ETAPA 7**: Verificar/atualizar RegistrationFlow
+4. ✅ **ETAPA 4**: Atualizar API client do frontend - **CONCLUÍDA**
+   - ✅ Criado `src/lib/api/categoryBatches.ts` com todas as funções
+   - ✅ Adicionada interface `CategoryBatch` em `categories.ts`
+   - ✅ Adicionado campo `batches?: CategoryBatch[]` à interface `Category`
+   - ✅ Funções implementadas:
+     - `getCategoryBatches(categoryId)` - Listar batches
+     - `getActiveBatches(categoryId, date?)` - Listar batches ativos
+     - `createCategoryBatch(categoryId, data)` - Criar batch
+     - `updateCategoryBatch(categoryId, batchId, data)` - Atualizar batch
+     - `deleteCategoryBatch(categoryId, batchId)` - Deletar batch
+5. ✅ **ETAPA 5**: Atualizar UI do admin - **CONCLUÍDA**
+   - ✅ Adicionada seção "Lotes de Preço" em cada categoria no `EventViewEditDialog.tsx`
+   - ✅ Botão "Adicionar Lote" por categoria
+   - ✅ Interface para gerenciar lotes com:
+     - Nome do lote (opcional)
+     - Preço
+     - Data de início (valid_from, opcional)
+     - Data de término (valid_to, opcional)
+     - Botão de remover
+   - ✅ Funções para gerenciar batches localmente: `addBatchToCategory`, `removeBatchFromCategory`, `updateBatchLocal`
+   - ✅ Lógica para salvar batches ao salvar categorias (criar, atualizar, deletar)
+   - ✅ Carregamento de batches ao carregar categorias
+6. ✅ **ETAPA 6**: Atualizar UI do organizador - **CONCLUÍDA**
+   - ✅ Adicionada seção "Lotes de Preço" em cada categoria no `EventFormDialog.tsx`
+   - ✅ Botão "Adicionar Lote" por categoria
+   - ✅ Interface para gerenciar lotes (mesma funcionalidade do admin)
+   - ✅ Funções para gerenciar batches localmente: `addBatchToCategory`, `removeBatchFromCategory`, `updateBatchLocal`
+   - ✅ Lógica para salvar batches ao salvar categorias (criar, atualizar, deletar)
+   - ✅ Carregamento de batches ao carregar categorias
+   - ✅ Interface `Category` local atualizada para incluir `batches?: CategoryBatch[]`
+7. ✅ **ETAPA 7**: Verificar/atualizar RegistrationFlow - **CONCLUÍDA**
+   - ✅ Atualizado import para usar `CategoryBatch` de `@/lib/api/categories` (nova estrutura)
+   - ✅ Atualizada lógica de filtro de batches ativos para considerar `valid_to`
+   - ✅ Adicionada seção de seleção de batches na UI após seleção de categoria
+   - ✅ Interface para exibir batches disponíveis com:
+     - Nome do lote (ou "Lote Padrão" se não tiver nome)
+     - Preço
+     - Datas de início e término (quando disponíveis)
+     - Badges de status (Ativo, Em breve, Encerrado)
+     - Indicação visual do lote selecionado
+   - ✅ Atualizada exibição do preço no resumo para mostrar nome do lote quando disponível
+   - ✅ Lógica de auto-seleção do lote mais recente ativo mantida
 8. ⏳ **ETAPA 8**: Testes completos
 
 ---

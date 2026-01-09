@@ -11,6 +11,8 @@ import {
   DollarSign,
   FileText,
   MessageSquare,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import { Header } from "@/components/Header";
 import { format } from "date-fns";
@@ -28,6 +30,7 @@ import { getEventPickupLocations } from "@/lib/api/kitPickup";
 import { toast } from "sonner";
 import { getEffectiveRegistrationStatus, getRegistrationStatusMessage, getRegistrationStatusLabel, getRegistrationStatusVariant } from "@/lib/utils/eventRegistration";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 
 interface EventDetail {
   id: string;
@@ -54,6 +57,16 @@ interface EventDetail {
   organizer_bio?: string;
 }
 
+interface CategoryBatch {
+  id: string;
+  category_id: string;
+  name?: string | null;
+  price: number;
+  valid_from: string | null;
+  valid_to?: string | null;
+  created_at?: string | null;
+}
+
 interface Category {
   id: string;
   name: string;
@@ -64,6 +77,7 @@ interface Category {
   max_participants: number | null;
   is_default: boolean;
   modality_ids?: string[];
+  batches?: CategoryBatch[];
 }
 
 interface Kit {
@@ -92,6 +106,25 @@ const formatPrice = (price: number): string => {
   return `R$ ${price.toFixed(2).replace('.', ',')}`;
 };
 
+// Função para formatar data usando UTC para evitar problemas de timezone
+const formatDateUTC = (dateString: string | null | undefined): string => {
+  if (!dateString) return "";
+  
+  try {
+    const date = new Date(dateString);
+    if (isNaN(date.getTime())) return "";
+    
+    // Usa métodos UTC para preservar a data exata que foi salva
+    const year = date.getUTCFullYear();
+    const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(date.getUTCDate()).padStart(2, '0');
+    
+    return `${day}/${month}/${year}`;
+  } catch {
+    return "";
+  }
+};
+
 const EventDetails = () => {
   const navigate = useNavigate();
   const { id } = useParams();
@@ -100,6 +133,7 @@ const EventDetails = () => {
   const [kits, setKits] = useState<Kit[]>([]);
   const [pickupLocations, setPickupLocations] = useState<any[]>([]);
   const [isRegistrationOpen, setIsRegistrationOpen] = useState(false);
+  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
   const [showBottomBar, setShowBottomBar] = useState(false);
   const [isContactOpen, setIsContactOpen] = useState(false);
   const [organizerLogoError, setOrganizerLogoError] = useState(false);
@@ -431,50 +465,194 @@ const EventDetails = () => {
                         const isFull = category.max_participants !== null && 
                                       category.max_participants <= 0;
 
+                        // Encontrar lotes ativos, futuros e expirados
+                        const now = new Date();
+                        const getBatchesStatus = (cat: Category) => {
+                          if (!cat.batches || cat.batches.length === 0) {
+                            return { active: [], future: [], expired: [] };
+                          }
+
+                          const active: CategoryBatch[] = [];
+                          const future: CategoryBatch[] = [];
+                          const expired: CategoryBatch[] = [];
+
+                          cat.batches.forEach(batch => {
+                            if (!batch.valid_from) return;
+
+                            const startDate = new Date(batch.valid_from);
+                            if (isNaN(startDate.getTime())) return;
+
+                            const endDate = batch.valid_to ? new Date(batch.valid_to) : null;
+
+                            if (startDate > now) {
+                              future.push(batch);
+                            } else if (endDate && endDate < now) {
+                              expired.push(batch);
+                            } else {
+                              active.push(batch);
+                            }
+                          });
+
+                          // Ordenar por data de início (mais recente primeiro)
+                          active.sort((a, b) => {
+                            const dateA = new Date(a.valid_from!);
+                            const dateB = new Date(b.valid_from!);
+                            return dateB.getTime() - dateA.getTime();
+                          });
+
+                          return { active, future, expired };
+                        };
+
+                        const { active, future, expired } = getBatchesStatus(category);
+                        const activeBatch = active.length > 0 ? active[0] : null;
+                        const displayPrice = activeBatch ? activeBatch.price : category.price;
+
                         return (
                           <div
                             key={category.id}
-                            className={`flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50 transition-colors ${
+                            className={`p-4 border rounded-lg hover:bg-muted/50 transition-colors ${
                               isFull ? 'opacity-60' : ''
                             } ${category.is_default ? 'border-primary border-2' : ''}`}
                           >
-                            <div className="flex-1">
-                              <div className="flex items-center gap-2">
-                                <h3 className="font-semibold">{category.name}</h3>
-                                {category.is_default && (
-                                  <Badge variant="default" className="text-xs">Padrão</Badge>
-                                )}
-                                {isFull && (
-                                  <Badge variant="destructive" className="text-xs">Esgotada</Badge>
-                                )}
-                              </div>
-                              <div className="flex flex-wrap gap-2 mt-1">
-                                <p className="text-xs text-muted-foreground capitalize">
-                                  Tipo: {category.category_type}
-                                </p>
-                                {category.gender !== 'ambos' && (
+                            <div className="flex items-start justify-between">
+                              <div className="flex-1">
+                                <div className="flex items-center gap-2">
+                                  <h3 className="font-semibold">{category.name}</h3>
+                                  {category.is_default && (
+                                    <Badge variant="default" className="text-xs">Padrão</Badge>
+                                  )}
+                                  {isFull && (
+                                    <Badge variant="destructive" className="text-xs">Esgotada</Badge>
+                                  )}
+                                </div>
+                                <div className="flex flex-wrap gap-2 mt-1">
                                   <p className="text-xs text-muted-foreground capitalize">
-                                    • Gênero: {category.gender}
+                                    Tipo: {category.category_type}
                                   </p>
-                                )}
-                                {category.min_age !== null && (
-                                  <p className="text-xs text-muted-foreground">
-                                    • Idade mínima: {category.min_age} anos
+                                  {category.gender !== 'ambos' && (
+                                    <p className="text-xs text-muted-foreground capitalize">
+                                      • Gênero: {category.gender}
+                                    </p>
+                                  )}
+                                  {category.min_age !== null && (
+                                    <p className="text-xs text-muted-foreground">
+                                      • Idade mínima: {category.min_age} anos
+                                    </p>
+                                  )}
+                                </div>
+                                {category.max_participants !== null && (
+                                  <p className="text-xs text-muted-foreground flex items-center gap-1 mt-1">
+                                    <Users className="h-3 w-3" />
+                                    Máximo: {category.max_participants} participantes
                                   </p>
                                 )}
                               </div>
-                              {category.max_participants !== null && (
-                                <p className="text-xs text-muted-foreground flex items-center gap-1 mt-1">
-                                  <Users className="h-3 w-3" />
-                                  Máximo: {category.max_participants} participantes
+                              <div className="text-right ml-4">
+                                <p className="text-2xl font-bold text-primary">
+                                  {formatPrice(displayPrice)}
                                 </p>
-                              )}
+                                {activeBatch?.name && (
+                                  <p className="text-xs text-muted-foreground mt-1">
+                                    {activeBatch.name}
+                                  </p>
+                                )}
+                              </div>
                             </div>
-                            <div className="text-right ml-4">
-                              <p className="text-2xl font-bold text-primary">
-                                {formatPrice(category.price)}
-                              </p>
-                            </div>
+
+                            {/* Mostrar lotes disponíveis e expirados - Colapsável */}
+                            {(active.length > 0 || future.length > 0 || expired.length > 0) && (
+                              <Collapsible 
+                                className="mt-4 pt-4 border-t"
+                                open={expandedCategories.has(category.id)}
+                                onOpenChange={(open) => {
+                                  setExpandedCategories(prev => {
+                                    const next = new Set(prev);
+                                    if (open) {
+                                      next.add(category.id);
+                                    } else {
+                                      next.delete(category.id);
+                                    }
+                                    return next;
+                                  });
+                                }}
+                              >
+                                <CollapsibleTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="w-full justify-between p-0 h-auto hover:bg-transparent"
+                                  >
+                                    <span className="text-xs font-semibold text-muted-foreground">
+                                      Ver todos os lotes ({active.length + future.length + expired.length})
+                                    </span>
+                                    {expandedCategories.has(category.id) ? (
+                                      <ChevronUp className="h-4 w-4 text-muted-foreground transition-transform duration-200" />
+                                    ) : (
+                                      <ChevronDown className="h-4 w-4 text-muted-foreground transition-transform duration-200" />
+                                    )}
+                                  </Button>
+                                </CollapsibleTrigger>
+                                <CollapsibleContent className="space-y-2 mt-2">
+                                  {active.length > 0 && (
+                                    <div>
+                                      <p className="text-xs font-semibold text-muted-foreground mb-1">
+                                        Lotes Disponíveis:
+                                      </p>
+                                      <div className="space-y-1">
+                                        {active.map((batch) => (
+                                          <div key={batch.id} className="flex items-center justify-between text-xs bg-green-50 dark:bg-green-950/20 p-2 rounded">
+                                            <span className="font-medium">
+                                              {batch.name || "Lote Ativo"}
+                                            </span>
+                                            <span className="font-bold text-green-700 dark:text-green-400">
+                                              {formatPrice(batch.price)}
+                                            </span>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
+                                  {future.length > 0 && (
+                                    <div>
+                                      <p className="text-xs font-semibold text-muted-foreground mb-1">
+                                        Lotes Futuros:
+                                      </p>
+                                      <div className="space-y-1">
+                                        {future.map((batch) => (
+                                          <div key={batch.id} className="flex items-center justify-between text-xs bg-blue-50 dark:bg-blue-950/20 p-2 rounded opacity-75">
+                                            <span>
+                                              {batch.name || "Lote Futuro"} - {formatDateUTC(batch.valid_from)}
+                                            </span>
+                                            <span className="font-bold text-blue-700 dark:text-blue-400">
+                                              {formatPrice(batch.price)}
+                                            </span>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
+                                  {expired.length > 0 && (
+                                    <div>
+                                      <p className="text-xs font-semibold text-muted-foreground mb-1">
+                                        Lotes Expirados:
+                                      </p>
+                                      <div className="space-y-1">
+                                        {expired.map((batch) => (
+                                          <div key={batch.id} className="flex items-center justify-between text-xs bg-gray-50 dark:bg-gray-950/20 p-2 rounded opacity-50 line-through">
+                                            <span>
+                                              {batch.name || "Lote Expirado"}
+                                            </span>
+                                            <span className="font-bold text-gray-500">
+                                              {formatPrice(batch.price)}
+                                            </span>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
+                                </CollapsibleContent>
+                              </Collapsible>
+                            )}
                           </div>
                         );
                       })
@@ -732,19 +910,62 @@ const EventDetails = () => {
                     <CardContent className="space-y-4">
                       <div className="space-y-2">
                         {(() => {
+                          const getActiveBatch = (cat: Category): CategoryBatch | null => {
+                            if (!cat.batches || cat.batches.length === 0) {
+                              return null;
+                            }
+
+                            const now = new Date();
+                            const activeBatches = cat.batches
+                              .filter(batch => {
+                                if (!batch.valid_from) return false;
+                                const startDate = new Date(batch.valid_from);
+                                if (isNaN(startDate.getTime()) || startDate > now) return false;
+                                if (batch.valid_to) {
+                                  const endDate = new Date(batch.valid_to);
+                                  if (!isNaN(endDate.getTime()) && endDate < now) return false;
+                                }
+                                return true;
+                              })
+                              .sort((a, b) => {
+                                const dateA = new Date(a.valid_from!);
+                                const dateB = new Date(b.valid_from!);
+                                return dateB.getTime() - dateA.getTime();
+                              });
+
+                            return activeBatches.length > 0 ? activeBatches[0] : null;
+                          };
+
+                          const getActiveBatchPrice = (cat: Category): number => {
+                            const activeBatch = getActiveBatch(cat);
+                            return activeBatch ? activeBatch.price : cat.price;
+                          };
+
                           const defaultCategory = categories.find(c => c.is_default === true);
-                          const priceToShow = defaultCategory ? defaultCategory.price : (categories.length > 0 ? Math.min(...categories.map((c) => c.price)) : 0);
+                          const categoryToUse = defaultCategory || (categories.length > 0 ? categories.reduce((min, cat) => {
+                            const minPrice = getActiveBatchPrice(min);
+                            const catPrice = getActiveBatchPrice(cat);
+                            return catPrice < minPrice ? cat : min;
+                          }) : null);
+                          
+                          const activeBatch = categoryToUse ? getActiveBatch(categoryToUse) : null;
+                          const priceToShow = categoryToUse ? getActiveBatchPrice(categoryToUse) : 0;
                           
                           return (
                             <>
                               {priceToShow > 0 && (
                                 <p className="text-sm text-muted-foreground">
-                                  {defaultCategory ? "Valor:" : "A partir de:"}
+                                  Valor:
                                 </p>
                               )}
                               <p className="text-3xl font-bold text-primary">
                                 {priceToShow > 0 ? formatPrice(priceToShow) : ''}
                               </p>
+                              {activeBatch?.name && (
+                                <p className="text-xs text-muted-foreground mt-1">
+                                  {activeBatch.name}
+                                </p>
+                              )}
                             </>
                           );
                         })()}
@@ -1004,19 +1225,62 @@ const EventDetails = () => {
               <div className="flex items-center justify-between gap-4">
                 <div>
                   {(() => {
+                    const getActiveBatch = (cat: Category): CategoryBatch | null => {
+                      if (!cat.batches || cat.batches.length === 0) {
+                        return null;
+                      }
+
+                      const now = new Date();
+                      const activeBatches = cat.batches
+                        .filter(batch => {
+                          if (!batch.valid_from) return false;
+                          const startDate = new Date(batch.valid_from);
+                          if (isNaN(startDate.getTime()) || startDate > now) return false;
+                          if (batch.valid_to) {
+                            const endDate = new Date(batch.valid_to);
+                            if (!isNaN(endDate.getTime()) && endDate < now) return false;
+                          }
+                          return true;
+                        })
+                        .sort((a, b) => {
+                          const dateA = new Date(a.valid_from!);
+                          const dateB = new Date(b.valid_from!);
+                          return dateB.getTime() - dateA.getTime();
+                        });
+
+                      return activeBatches.length > 0 ? activeBatches[0] : null;
+                    };
+
+                    const getActiveBatchPrice = (cat: Category): number => {
+                      const activeBatch = getActiveBatch(cat);
+                      return activeBatch ? activeBatch.price : cat.price;
+                    };
+
                     const defaultCategory = categories.find(c => c.is_default === true);
-                    const priceToShow = defaultCategory ? defaultCategory.price : (categories.length > 0 ? Math.min(...categories.map((c) => c.price)) : 0);
+                    const categoryToUse = defaultCategory || (categories.length > 0 ? categories.reduce((min, cat) => {
+                      const minPrice = getActiveBatchPrice(min);
+                      const catPrice = getActiveBatchPrice(cat);
+                      return catPrice < minPrice ? cat : min;
+                    }) : null);
+                    
+                    const activeBatch = categoryToUse ? getActiveBatch(categoryToUse) : null;
+                    const priceToShow = categoryToUse ? getActiveBatchPrice(categoryToUse) : 0;
                     
                     return (
                       <>
                         {priceToShow > 0 && (
                           <p className="text-sm text-muted-foreground">
-                            {defaultCategory ? "Valor:" : "A partir de:"}
+                            Valor:
                           </p>
                         )}
                         <p className="text-2xl font-bold text-primary">
                           {priceToShow > 0 ? formatPrice(priceToShow) : ''}
                         </p>
+                        {activeBatch?.name && (
+                          <p className="text-xs text-muted-foreground mt-1">
+                            {activeBatch.name}
+                          </p>
+                        )}
                       </>
                     );
                   })()}

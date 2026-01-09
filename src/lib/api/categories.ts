@@ -3,6 +3,16 @@ import { apiClient } from './client.js';
 export type CategoryType = 'visitante' | 'local' | 'geral' | 'PCD' | 'militar' | 'civil' | 'outro';
 export type CategoryGender = 'ambos' | 'masculino' | 'feminino';
 
+export interface CategoryBatch {
+  id: string;
+  category_id: string;
+  name: string | null;
+  price: number;
+  valid_from: string | null;
+  valid_to: string | null;
+  created_at: string;
+}
+
 export interface Category {
   id: string;
   event_id: string;
@@ -18,6 +28,7 @@ export interface Category {
   created_at: string;
   updated_at: string;
   modality_ids?: string[]; // IDs das modalidades associadas
+  batches?: CategoryBatch[]; // Lotes de preço da categoria
 }
 
 export interface CreateCategoryData {

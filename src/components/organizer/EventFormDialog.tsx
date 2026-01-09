@@ -27,7 +27,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { CalendarIcon, Plus, Trash2, Upload, X, ChevronUp, ChevronDown } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { cn } from "@/lib/utils";
+import { cn, isoToDatetimeLocal, processDatetimeLocalForSave } from "@/lib/utils";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -37,7 +37,8 @@ import { createEvent, updateEvent, getEventById } from "@/lib/api/events";
 import { getEventCategories } from "@/lib/api/eventCategories";
 import { getEventKits } from "@/lib/api/eventKits";
 import { getModalities, createModality, updateModality, deleteModality, reorderModalities, type Modality as ModalityType } from "@/lib/api/modalities";
-import { getCategories, createCategory, updateCategory, deleteCategory, reorderCategories, type Category as CategoryType, type CategoryType as CategoryTypeEnum, type CategoryGender } from "@/lib/api/categories";
+import { getCategories, createCategory, updateCategory, deleteCategory, reorderCategories, type Category as CategoryType, type CategoryType as CategoryTypeEnum, type CategoryGender, type CategoryBatch } from "@/lib/api/categories";
+import { getCategoryBatches, createCategoryBatch, updateCategoryBatch, deleteCategoryBatch } from "@/lib/api/categoryBatches";
 import { reorderEventKits } from "@/lib/api/eventKits";
 import { FileUpload } from "@/components/ui/file-upload";
 import { deleteUploadedFile } from "@/lib/api/upload";
@@ -113,6 +114,7 @@ interface Category {
   max_participants: number | null;
   is_default: boolean;
   modality_ids: string[];
+  batches?: CategoryBatch[];
 }
 
 interface ProductVariant {
@@ -307,6 +309,7 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
                 max_participants: cat.max_participants,
                 is_default: cat.is_default === true, // Garantir boolean explícito
                 modality_ids: cat.modality_ids || [],
+                batches: cat.batches || [],
               }));
               console.log("✅ Categorias carregadas:", loadedCategories.length);
               console.log("📋 Categorias com is_default:", loadedCategories.map(c => ({ name: c.name, is_default: c.is_default })));
@@ -602,6 +605,7 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
         max_participants: null,
         is_default: categories.length === 0, // Primeira categoria sempre é padrão
         modality_ids: [],
+        batches: [],
       },
     ]);
   };
@@ -643,6 +647,53 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
     if (index === categories.length - 1) return;
     const updated = [...categories];
     [updated[index], updated[index + 1]] = [updated[index + 1], updated[index]];
+    setCategories(updated);
+  };
+
+  // Batch functions
+  const addBatchToCategory = (categoryIndex: number) => {
+    const updated = [...categories];
+    const category = updated[categoryIndex];
+    const currentBatches = category.batches || [];
+    updated[categoryIndex] = {
+      ...category,
+      batches: [
+        ...currentBatches,
+        {
+          id: `temp-batch-${Date.now()}`,
+          category_id: category.id || "",
+          name: null,
+          price: category.price || 0,
+          valid_from: null,
+          valid_to: null,
+          created_at: new Date().toISOString(),
+        },
+      ],
+    };
+    setCategories(updated);
+  };
+
+  const removeBatchFromCategory = (categoryIndex: number, batchIndex: number) => {
+    const updated = [...categories];
+    const category = updated[categoryIndex];
+    const currentBatches = category.batches || [];
+    updated[categoryIndex] = {
+      ...category,
+      batches: currentBatches.filter((_, i) => i !== batchIndex),
+    };
+    setCategories(updated);
+  };
+
+  const updateBatchLocal = (categoryIndex: number, batchIndex: number, field: string, value: any) => {
+    const updated = [...categories];
+    const category = updated[categoryIndex];
+    const currentBatches = category.batches || [];
+    const updatedBatches = [...currentBatches];
+    updatedBatches[batchIndex] = { ...updatedBatches[batchIndex], [field]: value };
+    updated[categoryIndex] = {
+      ...category,
+      batches: updatedBatches,
+    };
     setCategories(updated);
   };
 
@@ -1546,6 +1597,7 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
                 max_participants: cat.max_participants,
                 is_default: cat.is_default === true,
                 modality_ids: cat.modality_ids || [],
+                batches: cat.batches || [],
               }));
               console.log("🔄 Categorias recarregadas após salvar:", reloadedCategories.map(c => ({ name: c.name, is_default: c.is_default })));
               setCategories(reloadedCategories);
@@ -1573,6 +1625,85 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
                 } catch (error) {
                   console.error('Error reordering categories:', error);
                 }
+              }
+
+              // Sync batches for all categories
+              try {
+                for (const category of categoriesToProcess) {
+                  let categoryId = category.id;
+                  
+                  if (!categoryId || categoryId.startsWith('temp-')) {
+                    // Find the saved category by name and price
+                    const savedCategory = savedCategories.find(sc => 
+                      sc.name === category.name && 
+                      sc.price === category.price &&
+                      sc.category_type === category.category_type
+                    );
+                    if (!savedCategory) continue;
+                    categoryId = savedCategory.id;
+                  }
+
+                  const categoryBatches = category.batches || [];
+                  
+                  // Get existing batches for this category
+                  const existingBatchesResponse = await getCategoryBatches(categoryId);
+                  const existingBatches = existingBatchesResponse.success && existingBatchesResponse.data
+                    ? existingBatchesResponse.data
+                    : [];
+                  
+                  const existingBatchIds = new Set(existingBatches.map(b => b.id));
+                  const currentBatchIds = new Set(
+                    categoryBatches
+                      .filter(b => b.id && !b.id.startsWith('temp-'))
+                      .map(b => b.id!)
+                  );
+
+                  // Delete batches that were removed
+                  const batchesToDelete = existingBatches.filter(b => !currentBatchIds.has(b.id));
+                  for (const batch of batchesToDelete) {
+                    await deleteCategoryBatch(categoryId, batch.id);
+                  }
+
+                  // Create or update batches
+                  for (const batch of categoryBatches) {
+                    // Normalize dates: convert to ISO string or null
+                    const validFrom = batch.valid_from ? (typeof batch.valid_from === 'string' ? batch.valid_from : new Date(batch.valid_from).toISOString()) : null;
+                    const validTo = batch.valid_to ? (typeof batch.valid_to === 'string' ? batch.valid_to : new Date(batch.valid_to).toISOString()) : null;
+                    
+                    console.log('📅 Enviando batch com datas (organizador):', {
+                      batch_id: batch.id,
+                      valid_from: validFrom,
+                      valid_to: validTo,
+                      valid_from_type: typeof batch.valid_from,
+                      valid_to_type: typeof batch.valid_to,
+                    });
+
+                    if (batch.id && batch.id.startsWith('temp-')) {
+                      // Create new batch
+                      await createCategoryBatch(categoryId, {
+                        name: batch.name || null,
+                        price: batch.price,
+                        valid_from: validFrom,
+                        valid_to: validTo,
+                      });
+                    } else if (batch.id && existingBatchIds.has(batch.id)) {
+                      // Update existing batch
+                      await updateCategoryBatch(categoryId, batch.id, {
+                        name: batch.name || null,
+                        price: batch.price,
+                        valid_from: validFrom,
+                        valid_to: validTo,
+                      });
+                    }
+                  }
+                }
+              } catch (error: any) {
+                console.error('Error syncing batches:', error);
+                toast({
+                  title: "Aviso",
+                  description: "Evento salvo, mas houve erro ao salvar lotes de preço",
+                  variant: "destructive",
+                });
               }
             }
           }
@@ -2352,6 +2483,283 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
                                     </div>
                                   );
                                 })}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Lotes de Preço */}
+                          <div className="border-t pt-4 mt-4">
+                            <div className="flex justify-between items-center mb-3">
+                              <div>
+                                <label className="text-sm font-medium">
+                                  Lotes de Preço
+                                </label>
+                                <p className="text-xs text-muted-foreground">
+                                  Configure diferentes preços baseados em datas
+                                </p>
+                              </div>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => addBatchToCategory(index)}
+                              >
+                                <Plus className="mr-2 h-3 w-3" />
+                                Adicionar Lote
+                              </Button>
+                            </div>
+                            
+                            {(!category.batches || category.batches.length === 0) ? (
+                              <p className="text-sm text-muted-foreground text-center py-4 border rounded-md">
+                                Nenhum lote adicionado. O preço padrão da categoria será usado.
+                              </p>
+                            ) : (
+                              <div className="space-y-3">
+                                {category.batches.map((batch, batchIndex) => (
+                                  <Card key={batch.id || `batch-${batchIndex}`} className="bg-muted/30">
+                                    <CardContent className="pt-4">
+                                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                        <div>
+                                          <label className="text-xs font-medium text-muted-foreground">
+                                            Nome do Lote (opcional)
+                                          </label>
+                                          <Input
+                                            placeholder="Ex: 1º Lote, 2º Lote, Promocional"
+                                            value={batch.name || ""}
+                                            onChange={(e) =>
+                                              updateBatchLocal(index, batchIndex, "name", e.target.value || null)
+                                            }
+                                            className="h-9"
+                                          />
+                                        </div>
+                                        <div>
+                                          <label className="text-xs font-medium text-muted-foreground">
+                                            Preço (R$)
+                                          </label>
+                                          <Input
+                                            type="number"
+                                            step="0.01"
+                                            min="0"
+                                            placeholder="0.00"
+                                            value={batch.price}
+                                            onChange={(e) => {
+                                              const value = parseFloat(e.target.value);
+                                              if (!isNaN(value) && value >= 0) {
+                                                updateBatchLocal(index, batchIndex, "price", value);
+                                              } else if (e.target.value === "" || e.target.value === "-") {
+                                                updateBatchLocal(index, batchIndex, "price", 0);
+                                              }
+                                            }}
+                                            className="h-9"
+                                            required
+                                          />
+                                        </div>
+                                        <div>
+                                          <label className="text-xs font-medium text-muted-foreground">
+                                            Data de Início (opcional)
+                                          </label>
+                                          <div className="flex gap-2">
+                                            <Input
+                                              type="date"
+                                              key={`date-from-org-${batch.id || batchIndex}-${batch.valid_from || 'empty'}`}
+                                              defaultValue={(() => {
+                                                if (!batch.valid_from) return "";
+                                                try {
+                                                  const date = new Date(batch.valid_from);
+                                                  if (isNaN(date.getTime())) return "";
+                                                  // Usa UTC para evitar problemas de timezone
+                                                  const year = date.getUTCFullYear();
+                                                  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+                                                  const day = String(date.getUTCDate()).padStart(2, '0');
+                                                  return `${year}-${month}-${day}`;
+                                                } catch {
+                                                  return "";
+                                                }
+                                              })()}
+                                              onChange={(e) => {
+                                                // Não faz nada durante a digitação - permite digitação livre
+                                                // O valor será processado apenas no onBlur
+                                              }}
+                                              onBlur={(e) => {
+                                                const dateValue = e.target.value;
+                                                console.log('📅 onBlur date valid_from (organizador):', dateValue);
+                                                
+                                                if (!dateValue || dateValue.trim() === '') {
+                                                  updateBatchLocal(
+                                                    index,
+                                                    batchIndex,
+                                                    "valid_from",
+                                                    null
+                                                  );
+                                                  return;
+                                                }
+
+                                                // Valida se a data está completa (YYYY-MM-DD = 10 caracteres)
+                                                if (dateValue.length === 10 && dateValue.match(/^\d{4}-\d{2}-\d{2}$/)) {
+                                                  // Se tiver apenas a data, adiciona 00:00 automaticamente
+                                                  const datetimeValue = `${dateValue}T00:00`;
+                                                  const processedValue = processDatetimeLocalForSave(datetimeValue);
+                                                  console.log('📅 onBlur date valid_from (organizador) processado:', processedValue);
+                                                  
+                                                  if (processedValue) {
+                                                    updateBatchLocal(
+                                                      index,
+                                                      batchIndex,
+                                                      "valid_from",
+                                                      processedValue
+                                                    );
+                                                  }
+                                                }
+                                              }}
+                                              className="h-9 flex-1"
+                                            />
+                                            <Input
+                                              type="time"
+                                              value={batch.valid_from ? (() => {
+                                                const date = new Date(batch.valid_from);
+                                                if (isNaN(date.getTime())) return "00:00";
+                                                return `${String(date.getUTCHours()).padStart(2, '0')}:${String(date.getUTCMinutes()).padStart(2, '0')}`;
+                                              })() : "00:00"}
+                                              onChange={(e) => {
+                                                const timeValue = e.target.value;
+                                                console.log('📅 onChange time valid_from (organizador):', timeValue);
+                                                
+                                                // Pega a data atual do batch ou usa hoje
+                                                const currentDate = batch.valid_from 
+                                                  ? new Date(batch.valid_from)
+                                                  : new Date();
+                                                  
+                                                if (isNaN(currentDate.getTime())) {
+                                                  return;
+                                                }
+
+                                                const dateStr = `${currentDate.getUTCFullYear()}-${String(currentDate.getUTCMonth() + 1).padStart(2, '0')}-${String(currentDate.getUTCDate()).padStart(2, '0')}`;
+                                                const datetimeValue = `${dateStr}T${timeValue || '00:00'}`;
+                                                const processedValue = processDatetimeLocalForSave(datetimeValue);
+                                                console.log('📅 onChange time valid_from (organizador) processado:', processedValue);
+                                                
+                                                updateBatchLocal(
+                                                  index,
+                                                  batchIndex,
+                                                  "valid_from",
+                                                  processedValue
+                                                );
+                                              }}
+                                              className="h-9 w-32"
+                                            />
+                                          </div>
+                                        </div>
+                                        <div>
+                                          <label className="text-xs font-medium text-muted-foreground">
+                                            Data de Término (opcional)
+                                          </label>
+                                          <div className="flex gap-2">
+                                            <Input
+                                              type="date"
+                                              key={`date-to-org-${batch.id || batchIndex}-${batch.valid_to || 'empty'}`}
+                                              defaultValue={(() => {
+                                                if (!batch.valid_to) return "";
+                                                try {
+                                                  const date = new Date(batch.valid_to);
+                                                  if (isNaN(date.getTime())) return "";
+                                                  // Usa UTC para evitar problemas de timezone
+                                                  const year = date.getUTCFullYear();
+                                                  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+                                                  const day = String(date.getUTCDate()).padStart(2, '0');
+                                                  return `${year}-${month}-${day}`;
+                                                } catch {
+                                                  return "";
+                                                }
+                                              })()}
+                                              onChange={(e) => {
+                                                // Não faz nada durante a digitação - permite digitação livre
+                                                // O valor será processado apenas no onBlur
+                                              }}
+                                              onBlur={(e) => {
+                                                const dateValue = e.target.value;
+                                                console.log('📅 onBlur date valid_to (organizador):', dateValue);
+                                                
+                                                if (!dateValue || dateValue.trim() === '') {
+                                                  updateBatchLocal(
+                                                    index,
+                                                    batchIndex,
+                                                    "valid_to",
+                                                    null
+                                                  );
+                                                  return;
+                                                }
+
+                                                // Valida se a data está completa (YYYY-MM-DD = 10 caracteres)
+                                                if (dateValue.length === 10 && dateValue.match(/^\d{4}-\d{2}-\d{2}$/)) {
+                                                  // Se tiver apenas a data, adiciona 00:00 automaticamente
+                                                  const datetimeValue = `${dateValue}T00:00`;
+                                                  const processedValue = processDatetimeLocalForSave(datetimeValue);
+                                                  console.log('📅 onBlur date valid_to (organizador) processado:', processedValue);
+                                                  
+                                                  if (processedValue) {
+                                                    updateBatchLocal(
+                                                      index,
+                                                      batchIndex,
+                                                      "valid_to",
+                                                      processedValue
+                                                    );
+                                                  }
+                                                }
+                                              }}
+                                              className="h-9 flex-1"
+                                            />
+                                            <Input
+                                              type="time"
+                                              value={batch.valid_to ? (() => {
+                                                const date = new Date(batch.valid_to);
+                                                if (isNaN(date.getTime())) return "00:00";
+                                                return `${String(date.getUTCHours()).padStart(2, '0')}:${String(date.getUTCMinutes()).padStart(2, '0')}`;
+                                              })() : "00:00"}
+                                              onChange={(e) => {
+                                                const timeValue = e.target.value;
+                                                console.log('📅 onChange time valid_to (organizador):', timeValue);
+                                                
+                                                // Pega a data atual do batch ou usa hoje
+                                                const currentDate = batch.valid_to 
+                                                  ? new Date(batch.valid_to)
+                                                  : new Date();
+                                                  
+                                                if (isNaN(currentDate.getTime())) {
+                                                  return;
+                                                }
+
+                                                const dateStr = `${currentDate.getUTCFullYear()}-${String(currentDate.getUTCMonth() + 1).padStart(2, '0')}-${String(currentDate.getUTCDate()).padStart(2, '0')}`;
+                                                const datetimeValue = `${dateStr}T${timeValue || '00:00'}`;
+                                                const processedValue = processDatetimeLocalForSave(datetimeValue);
+                                                console.log('📅 onChange time valid_to (organizador) processado:', processedValue);
+                                                
+                                                updateBatchLocal(
+                                                  index,
+                                                  batchIndex,
+                                                  "valid_to",
+                                                  processedValue
+                                                );
+                                              }}
+                                              className="h-9 w-32"
+                                            />
+                                          </div>
+                                        </div>
+                                      </div>
+                                      <div className="flex justify-end mt-3">
+                                        <Button
+                                          type="button"
+                                          variant="ghost"
+                                          size="sm"
+                                          onClick={() => removeBatchFromCategory(index, batchIndex)}
+                                          className="text-destructive hover:text-destructive"
+                                        >
+                                          <Trash2 className="h-4 w-4 mr-1" />
+                                          Remover
+                                        </Button>
+                                      </div>
+                                    </CardContent>
+                                  </Card>
+                                ))}
                               </div>
                             )}
                           </div>
