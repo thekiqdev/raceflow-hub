@@ -92,6 +92,7 @@ const migrations = [
   '063_add_registration_status_to_events.sql',
   '064_migrate_existing_events_registration_status.sql',
   '065_add_old_results_url_to_system_settings.sql',
+  '066_adapt_category_batches_to_categories.sql',
 ];
 
 // Create migrations tracking table
