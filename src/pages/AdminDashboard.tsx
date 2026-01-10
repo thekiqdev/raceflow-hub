@@ -17,7 +17,6 @@ import HomeCustomization from "@/components/admin/HomeCustomization";
 import TransferManagement from "@/components/admin/TransferManagement";
 import { GroupLeadersManagement } from "@/components/admin/GroupLeadersManagement";
 import QuotesManagement from "@/components/admin/QuotesManagement";
-import ContactMessagesManagement from "@/components/admin/ContactMessagesManagement";
 import { getSystemSettings } from "@/lib/api/systemSettings";
 
 const AdminDashboard = () => {
@@ -97,8 +96,6 @@ const AdminDashboard = () => {
         return <GroupLeadersManagement />;
       case "quotes":
         return <QuotesManagement />;
-      case "contact-messages":
-        return <ContactMessagesManagement />;
       default:
         return <DashboardOverview />;
     }
