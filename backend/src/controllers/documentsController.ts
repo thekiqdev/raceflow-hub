@@ -8,7 +8,6 @@ import {
   updateDocumentStatus,
   deleteDocument,
   getPendingDocuments,
-  getDocumentsByStatus,
   getAllDocuments,
   CreateDocumentData,
   UpdateDocumentStatusData,
