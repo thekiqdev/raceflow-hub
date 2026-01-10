@@ -8,8 +8,6 @@ import {
   createDocumentType,
   updateDocumentType,
   deleteDocumentType,
-  CreateDocumentTypeData,
-  UpdateDocumentTypeData,
 } from '../services/documentTypesService.js';
 import { hasRole } from '../services/userRolesService.js';
 import { z } from 'zod';

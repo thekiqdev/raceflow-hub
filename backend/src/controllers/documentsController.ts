@@ -388,7 +388,7 @@ export const uploadRunnerDocumentController = asyncHandler(
     // Criar documento no banco de dados
     const documentData: CreateDocumentData = {
       runner_id: req.user.id,
-      document_type: document_type as DocumentType,
+      document_type: document_type,
       file_name: sanitizedFileName,
       file_path: req.file.path,
       file_url: fileUrl || '',
