@@ -11,6 +11,7 @@ const defaultUploadsDir = isProduction ? '/app/uploads' : path.join(process.cwd(
 const uploadsDir = process.env.UPLOADS_DIR || defaultUploadsDir;
 const bannersDir = path.join(uploadsDir, 'banners');
 const regulationsDir = path.join(uploadsDir, 'regulations');
+const documentsDir = path.join(uploadsDir, 'documents');
 
 console.log('📁 Uploads configuration:', {
   UPLOADS_DIR: process.env.UPLOADS_DIR,
@@ -20,10 +21,11 @@ console.log('📁 Uploads configuration:', {
   uploadsDir,
   bannersDir,
   regulationsDir,
+  documentsDir,
   processCwd: process.cwd(),
 });
 
-[uploadsDir, bannersDir, regulationsDir].forEach(dir => {
+[uploadsDir, bannersDir, regulationsDir, documentsDir].forEach(dir => {
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
     console.log(`✅ Created directory: ${dir}`);
@@ -92,6 +94,101 @@ export const uploadRegulation = multer({
   },
 });
 
+// Storage configuration for documents (PDF, JPG, PNG)
+// Organized by runner_id: documents/{runner_id}/{document_id}_{timestamp}.{ext}
+const documentStorage = multer.diskStorage({
+  destination: (req: any, _file, cb) => {
+    // Try to get runner_id from req.user (set by auth middleware)
+    // If not available, save to documents root (will be organized later)
+    let targetDir = documentsDir;
+    
+    if (req.user?.id) {
+      const runnerDir = path.join(documentsDir, req.user.id);
+      // Create runner directory if it doesn't exist
+      if (!fs.existsSync(runnerDir)) {
+        fs.mkdirSync(runnerDir, { recursive: true });
+        console.log(`✅ Created runner documents directory: ${runnerDir}`);
+      }
+      targetDir = runnerDir;
+    }
+    
+    cb(null, targetDir);
+  },
+  filename: (req: any, file, cb) => {
+    // Generate filename with document ID prefix (will be updated after document creation)
+    // Format: {runner_id}_{timestamp}_{random}.{ext}
+    const runnerId = req.user?.id || 'unknown';
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    // Sanitize extension and ensure it's lowercase
+    const ext = path.extname(file.originalname).toLowerCase();
+    // Validate extension
+    const allowedExtensions = ['.pdf', '.jpg', '.jpeg', '.png'];
+    const safeExt = allowedExtensions.includes(ext) ? ext : '.pdf';
+    cb(null, `${runnerId}_${uniqueSuffix}${safeExt}`);
+  },
+});
+
+// Sanitize filename to prevent path traversal and special characters
+const sanitizeFilename = (filename: string): string => {
+  // Remove path separators and dangerous characters
+  let sanitized = filename
+    .replace(/[\/\\?%*:|"<>]/g, '') // Remove path separators and special chars
+    .replace(/\.\./g, '') // Remove parent directory references
+    .trim();
+  
+  // Limit filename length
+  const maxLength = 255;
+  if (sanitized.length > maxLength) {
+    const ext = path.extname(sanitized);
+    const nameWithoutExt = sanitized.substring(0, maxLength - ext.length);
+    sanitized = nameWithoutExt + ext;
+  }
+  
+  return sanitized || 'document';
+};
+
+// File filter for documents (PDF, JPG, PNG)
+const documentFilter = (_req: Request, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
+  const allowedMimes = [
+    'application/pdf',
+    'image/jpeg',
+    'image/jpg',
+    'image/png',
+  ];
+  
+  // Validate MIME type
+  if (!allowedMimes.includes(file.mimetype)) {
+    cb(new Error('Apenas arquivos PDF, JPG e PNG são permitidos'));
+    return;
+  }
+  
+  // Validate file extension (double check)
+  const ext = path.extname(file.originalname).toLowerCase();
+  const allowedExtensions = ['.pdf', '.jpg', '.jpeg', '.png'];
+  
+  if (!allowedExtensions.includes(ext)) {
+    cb(new Error('Extensão de arquivo não permitida. Use PDF, JPG ou PNG'));
+    return;
+  }
+  
+  // Validate filename (prevent path traversal)
+  const sanitized = sanitizeFilename(file.originalname);
+  if (sanitized !== file.originalname) {
+    console.warn(`⚠️ Nome de arquivo sanitizado: ${file.originalname} -> ${sanitized}`);
+  }
+  
+  cb(null, true);
+};
+
+// Multer instance for documents
+export const uploadDocument = multer({
+  storage: documentStorage,
+  fileFilter: documentFilter,
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB
+  },
+});
+
 // Helper function to delete file
 export const deleteFile = (filePath: string): void => {
   try {
@@ -128,11 +225,14 @@ export const getFileUrl = (filePath: string | null | undefined): string | null =
     const parts = relativePath.split('/');
     const bannersIndex = parts.indexOf('banners');
     const regulationsIndex = parts.indexOf('regulations');
+    const documentsIndex = parts.indexOf('documents');
     
     if (bannersIndex !== -1) {
       relativePath = 'banners/' + parts.slice(bannersIndex + 1).join('/');
     } else if (regulationsIndex !== -1) {
       relativePath = 'regulations/' + parts.slice(regulationsIndex + 1).join('/');
+    } else if (documentsIndex !== -1) {
+      relativePath = 'documents/' + parts.slice(documentsIndex + 1).join('/');
     } else {
       // Fallback: just use the filename
       relativePath = path.basename(filePath);
@@ -141,6 +241,8 @@ export const getFileUrl = (filePath: string | null | undefined): string | null =
         relativePath = 'banners/' + relativePath;
       } else if (relativePath.startsWith('regulation-')) {
         relativePath = 'regulations/' + relativePath;
+      } else if (relativePath.startsWith('document-')) {
+        relativePath = 'documents/' + relativePath;
       }
     }
   }
@@ -208,9 +310,22 @@ export const getFilePath = (urlOrPath: string | null | undefined): string | null
       const match = pathname.match(/\/uploads\/(.+)$/);
       if (match) {
         const relativePath = match[1];
-        // Determine subdirectory based on filename
+        // For documents, preserve the full path including runner_id subdirectory
+        // Format: documents/{runner_id}/{filename}
+        if (relativePath.startsWith('documents/')) {
+          return path.join(uploadsDir, relativePath);
+        }
+        // For banners and regulations, determine subdirectory based on filename
         const filename = path.basename(relativePath);
-        const subDir = filename.startsWith('banner-') ? 'banners' : 'regulations';
+        let subDir = 'documents'; // default
+        if (filename.startsWith('banner-')) {
+          subDir = 'banners';
+        } else if (filename.startsWith('regulation-')) {
+          subDir = 'regulations';
+        } else if (filename.startsWith('document-') || filename.match(/^[a-f0-9-]+_\d+/)) {
+          // Document files: either start with 'document-' or have UUID_timestamp format
+          subDir = 'documents';
+        }
         return path.join(uploadsDir, subDir, filename);
       }
       return null;
@@ -221,13 +336,23 @@ export const getFilePath = (urlOrPath: string | null | undefined): string | null
   
   // If it's a relative path, join with uploads directory
   // Check if it already includes the subdirectory
-  if (urlOrPath.includes('banners/') || urlOrPath.includes('regulations/')) {
+  if (urlOrPath.includes('banners/') || urlOrPath.includes('regulations/') || urlOrPath.includes('documents/')) {
     return path.join(uploadsDir, urlOrPath.replace(/^uploads[\\/]/, ''));
   }
   
   // Try to determine subdirectory from filename
   const filename = path.basename(urlOrPath);
-  const subDir = filename.startsWith('banner-') ? 'banners' : 'regulations';
+  let subDir = 'documents'; // default
+  if (filename.startsWith('banner-')) {
+    subDir = 'banners';
+  } else if (filename.startsWith('regulation-')) {
+    subDir = 'regulations';
+  } else if (filename.startsWith('document-') || filename.match(/^[a-f0-9-]+_\d+/)) {
+    // Document files: either start with 'document-' or have UUID_timestamp format
+    // Note: For documents organized by runner_id, we need the full path from database
+    // This fallback assumes file is in documents root (legacy files)
+    subDir = 'documents';
+  }
   return path.join(uploadsDir, subDir, filename);
 };
 

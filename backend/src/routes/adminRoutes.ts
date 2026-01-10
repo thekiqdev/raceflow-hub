@@ -103,6 +103,11 @@ import {
   updateAllRegistrationStatusesController,
   updateEventRegistrationStatusController,
 } from '../controllers/registrationStatusController.js';
+import {
+  getAllDocumentsController,
+  getPendingDocumentsController,
+  updateDocumentStatusController,
+} from '../controllers/documentsController.js';
 
 const router = Router();
 
@@ -211,6 +216,11 @@ router.delete('/group-leaders/:id/coupons/:couponId', deleteLeaderCouponControll
 // Registration Status Management endpoints (admin)
 router.post('/update-registration-statuses', updateAllRegistrationStatusesController);
 router.post('/events/:eventId/update-registration-status', updateEventRegistrationStatusController);
+
+// Documents Management endpoints (admin)
+router.get('/documents', getAllDocumentsController);
+router.get('/documents/pending', getPendingDocumentsController);
+router.put('/documents/:id/status', updateDocumentStatusController);
 
 export default router;
 
