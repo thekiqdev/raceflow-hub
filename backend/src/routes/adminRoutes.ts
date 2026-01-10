@@ -108,6 +108,13 @@ import {
   getPendingDocumentsController,
   updateDocumentStatusController,
 } from '../controllers/documentsController.js';
+import {
+  getAllDocumentTypesController,
+  getDocumentTypeByIdController,
+  createDocumentTypeController,
+  updateDocumentTypeController,
+  deleteDocumentTypeController,
+} from '../controllers/documentTypesController.js';
 
 const router = Router();
 
@@ -221,6 +228,13 @@ router.post('/events/:eventId/update-registration-status', updateEventRegistrati
 router.get('/documents', getAllDocumentsController);
 router.get('/documents/pending', getPendingDocumentsController);
 router.put('/documents/:id/status', updateDocumentStatusController);
+
+// Document Types Management endpoints (admin)
+router.get('/document-types', getAllDocumentTypesController);
+router.get('/document-types/:id', getDocumentTypeByIdController);
+router.post('/document-types', createDocumentTypeController);
+router.put('/document-types/:id', updateDocumentTypeController);
+router.delete('/document-types/:id', deleteDocumentTypeController);
 
 export default router;
 

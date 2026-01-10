@@ -1,14 +1,14 @@
 import { query } from '../config/database.js';
 
-// Document types
-export type DocumentType = 'militar' | 'estudante' | 'pcd' | 'rg' | 'cpf' | 'atestado_medico' | 'comprovante_residencia' | 'outro';
+// Document types - now using string (code from document_types table)
+export type DocumentType = string; // Code from document_types table
 export type DocumentStatus = 'pending' | 'approved' | 'rejected';
 
 // Document interface
 export interface RunnerDocument {
   id: string;
   runner_id: string;
-  document_type: DocumentType;
+  document_type: DocumentType; // Now a string (code)
   file_name: string;
   file_path: string;
   file_url: string;

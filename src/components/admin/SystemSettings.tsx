@@ -13,6 +13,7 @@ import { toast } from "sonner";
 import { getSystemSettings, updateSystemSettings, testEmail, type SystemSettings as SystemSettingsType } from "@/lib/api/systemSettings";
 import FormConfigurations from "./FormConfigurations";
 import NotificationTemplatesManagement from "./NotificationTemplatesManagement";
+import { DocumentTypesManagement } from "./DocumentTypesManagement";
 
 const SystemSettings = () => {
   const [settings, setSettings] = useState<SystemSettingsType | null>(null);
@@ -404,13 +405,13 @@ const SystemSettings = () => {
           <TabsTrigger value="general">Geral</TabsTrigger>
           <TabsTrigger value="email">E-mail</TabsTrigger>
           <TabsTrigger value="payment">Pagamento</TabsTrigger>
-          <TabsTrigger value="commissions">Comissões</TabsTrigger>
           <TabsTrigger value="modules">Módulos</TabsTrigger>
           {modulesForm.platform_fees && (
             <TabsTrigger value="fees">Taxas</TabsTrigger>
           )}
           <TabsTrigger value="forms">Formulários</TabsTrigger>
           <TabsTrigger value="notification-templates">Templates de Notificação</TabsTrigger>
+          <TabsTrigger value="document-types">Documentos</TabsTrigger>
         </TabsList>
 
         <TabsContent value="general" className="space-y-4">
@@ -1010,6 +1011,10 @@ const SystemSettings = () => {
 
         <TabsContent value="notification-templates" className="space-y-4">
           <NotificationTemplatesManagement />
+        </TabsContent>
+
+        <TabsContent value="document-types" className="space-y-4">
+          <DocumentTypesManagement />
         </TabsContent>
       </Tabs>
     </div>

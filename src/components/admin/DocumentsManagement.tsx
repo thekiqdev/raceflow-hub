@@ -21,25 +21,18 @@ import {
   approveDocument,
   rejectDocument,
   type RunnerDocument,
-  type DocumentType,
   type DocumentStatus,
 } from "@/lib/api/documents";
+import {
+  getAllDocumentTypes,
+  type DocumentType as ConfigurableDocumentType,
+} from "@/lib/api/documentTypes";
 import { useToast } from "@/hooks/use-toast";
-
-const DOCUMENT_TYPE_LABELS: Record<DocumentType, string> = {
-  militar: "Militar",
-  estudante: "Estudante",
-  pcd: "PCD",
-  rg: "RG",
-  cpf: "CPF",
-  atestado_medico: "Atestado Médico",
-  comprovante_residencia: "Comprovante de Residência",
-  outro: "Outro",
-};
 
 export function DocumentsManagement() {
   const [loading, setLoading] = useState(true);
   const [documents, setDocuments] = useState<RunnerDocument[]>([]);
+  const [documentTypes, setDocumentTypes] = useState<ConfigurableDocumentType[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [typeFilter, setTypeFilter] = useState<string>("all");
@@ -52,8 +45,20 @@ export function DocumentsManagement() {
   const { toast } = useToast();
 
   useEffect(() => {
+    loadDocumentTypes();
     loadDocuments();
   }, [statusFilter, typeFilter, searchTerm]);
+
+  const loadDocumentTypes = async () => {
+    try {
+      const response = await getAllDocumentTypes();
+      if (response.success && response.data) {
+        setDocumentTypes(response.data);
+      }
+    } catch (error) {
+      console.error("Erro ao carregar tipos de documentos:", error);
+    }
+  };
 
   const loadDocuments = async () => {
     setLoading(true);
@@ -296,9 +301,9 @@ export function DocumentsManagement() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Todos os tipos</SelectItem>
-                {Object.entries(DOCUMENT_TYPE_LABELS).map(([value, label]) => (
-                  <SelectItem key={value} value={value}>
-                    {label}
+                {documentTypes.map((type) => (
+                  <SelectItem key={type.id} value={type.code}>
+                    {type.name}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -354,7 +359,7 @@ export function DocumentsManagement() {
                         </div>
                       </TableCell>
                       <TableCell>
-                        {DOCUMENT_TYPE_LABELS[doc.document_type] || doc.document_type}
+                        {documentTypes.find((dt) => dt.code === doc.document_type)?.name || doc.document_type}
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
@@ -442,7 +447,7 @@ export function DocumentsManagement() {
                 <div>
                   <Label className="text-muted-foreground">Tipo de Documento</Label>
                   <p className="font-medium">
-                    {DOCUMENT_TYPE_LABELS[selectedDocument.document_type] || selectedDocument.document_type}
+                    {documentTypes.find((dt) => dt.code === selectedDocument.document_type)?.name || selectedDocument.document_type}
                   </p>
                 </div>
                 <div>

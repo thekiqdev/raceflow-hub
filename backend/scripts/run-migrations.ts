@@ -94,6 +94,7 @@ const migrations = [
   '065_add_old_results_url_to_system_settings.sql',
   '066_adapt_category_batches_to_categories.sql',
   '067_create_runner_documents.sql',
+  '068_create_document_types.sql',
 ];
 
 // Create migrations tracking table

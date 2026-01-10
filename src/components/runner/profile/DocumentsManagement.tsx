@@ -13,42 +13,54 @@ import {
   uploadDocument,
   deleteDocument,
   type RunnerDocument,
-  type DocumentType,
 } from "@/lib/api/documents";
+import {
+  getActiveDocumentTypes,
+  type DocumentType as ConfigurableDocumentType,
+} from "@/lib/api/documentTypes";
 
 interface DocumentsManagementProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
 
-const DOCUMENT_TYPE_LABELS: Record<DocumentType, string> = {
-  militar: "Militar",
-  estudante: "Estudante",
-  pcd: "PCD",
-  rg: "RG",
-  cpf: "CPF",
-  atestado_medico: "Atestado Médico",
-  comprovante_residencia: "Comprovante de Residência",
-  outro: "Outro",
-};
-
 export function DocumentsManagement({ open, onOpenChange }: DocumentsManagementProps) {
   const [documents, setDocuments] = useState<RunnerDocument[]>([]);
+  const [documentTypes, setDocumentTypes] = useState<ConfigurableDocumentType[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadingTypes, setLoadingTypes] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [showUploadForm, setShowUploadForm] = useState(false);
-  const [uploadType, setUploadType] = useState<DocumentType | "">("");
+  const [uploadType, setUploadType] = useState<string>("");
   const [expiryDate, setExpiryDate] = useState("");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [filePreview, setFilePreview] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  // Load documents when dialog opens
+  // Load document types and documents when dialog opens
   useEffect(() => {
     if (open) {
+      loadDocumentTypes();
       loadDocuments();
     }
   }, [open]);
+
+  const loadDocumentTypes = async () => {
+    setLoadingTypes(true);
+    try {
+      const response = await getActiveDocumentTypes();
+      if (response.success && response.data) {
+        setDocumentTypes(response.data);
+      } else {
+        toast.error(response.error || "Erro ao carregar tipos de documentos");
+      }
+    } catch (error) {
+      console.error("Erro ao carregar tipos de documentos:", error);
+      toast.error("Erro ao carregar tipos de documentos");
+    } finally {
+      setLoadingTypes(false);
+    }
+  };
 
   const loadDocuments = async () => {
     setLoading(true);
@@ -107,6 +119,13 @@ export function DocumentsManagement({ open, onOpenChange }: DocumentsManagementP
 
     if (!selectedFile) {
       toast.error("Selecione um arquivo");
+      return;
+    }
+
+    // Get selected document type to check if expiry date is required
+    const selectedDocType = documentTypes.find((dt) => dt.code === uploadType);
+    if (selectedDocType?.requires_expiry_date && !expiryDate) {
+      toast.error("Data de validade é obrigatória para este tipo de documento");
       return;
     }
 
@@ -207,27 +226,57 @@ export function DocumentsManagement({ open, onOpenChange }: DocumentsManagementP
               <CardContent className="pt-6 space-y-4">
                 <div className="space-y-2">
                   <Label>Tipo de Documento *</Label>
-                  <Select value={uploadType} onValueChange={(value) => setUploadType(value as DocumentType)}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Selecione o tipo" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {Object.entries(DOCUMENT_TYPE_LABELS).map(([value, label]) => (
-                        <SelectItem key={value} value={value}>
-                          {label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  {loadingTypes ? (
+                    <div className="flex items-center justify-center py-4">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    </div>
+                  ) : (
+                    <Select value={uploadType} onValueChange={(value) => {
+                      setUploadType(value);
+                      // Reset expiry date when type changes
+                      setExpiryDate("");
+                    }}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Selecione o tipo" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {documentTypes.map((type) => (
+                          <SelectItem key={type.id} value={type.code}>
+                            {type.name}
+                            {type.description && (
+                              <span className="text-muted-foreground text-xs ml-2">
+                                - {type.description}
+                              </span>
+                            )}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
                 </div>
-                <div className="space-y-2">
-                  <Label>Data de Validade (opcional)</Label>
-                  <Input
-                    type="date"
-                    value={expiryDate}
-                    onChange={(e) => setExpiryDate(e.target.value)}
-                  />
-                </div>
+                {(() => {
+                  const selectedDocType = documentTypes.find((dt) => dt.code === uploadType);
+                  const requiresExpiry = selectedDocType?.requires_expiry_date || false;
+                  
+                  return (
+                    <div className="space-y-2">
+                      <Label>
+                        Data de Validade {requiresExpiry ? "*" : "(opcional)"}
+                      </Label>
+                      <Input
+                        type="date"
+                        value={expiryDate}
+                        onChange={(e) => setExpiryDate(e.target.value)}
+                        required={requiresExpiry}
+                      />
+                      {selectedDocType?.description && (
+                        <p className="text-sm text-muted-foreground">
+                          {selectedDocType.description}
+                        </p>
+                      )}
+                    </div>
+                  );
+                })()}
                 <div className="space-y-2">
                   <Label>Arquivo * (PDF, JPG ou PNG - máximo 10MB)</Label>
                   <Input
@@ -301,7 +350,9 @@ export function DocumentsManagement({ open, onOpenChange }: DocumentsManagementP
                         <div className="flex gap-3 flex-1">
                           <FileText className="w-5 h-5 text-muted-foreground mt-0.5" />
                           <div className="space-y-1 flex-1">
-                            <div className="font-medium">{DOCUMENT_TYPE_LABELS[doc.document_type] || doc.document_type}</div>
+                            <div className="font-medium">
+                              {documentTypes.find((dt) => dt.code === doc.document_type)?.name || doc.document_type}
+                            </div>
                             <div className="text-sm text-muted-foreground">{doc.file_name}</div>
                             <div className="flex gap-4 text-xs text-muted-foreground flex-wrap">
                               <span className="flex items-center gap-1">

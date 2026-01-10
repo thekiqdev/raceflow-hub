@@ -26,6 +26,7 @@ import quotesRouter from './routes/quotes.js';
 import contactMessagesRouter from './routes/contactMessages.js';
 import formConfigurationsRouter from './routes/formConfigurations.js';
 import notificationTemplatesRouter from './routes/notificationTemplates.js';
+import documentTypesRouter from './routes/documentTypes.js';
 import { updateRegistrationStatuses } from './services/registrationStatusService.js';
 
 // Load environment variables
@@ -234,6 +235,7 @@ app.use('/api/quotes', quotesRouter);
 app.use('/api/contact-messages', contactMessagesRouter);
 app.use('/api/form-configurations', formConfigurationsRouter);
 app.use('/api/notification-templates', notificationTemplatesRouter);
+app.use('/api/document-types', documentTypesRouter);
 app.use('/api/group-leaders', groupLeadersRouter);
 app.use('/api/events', eventsRouter);
 app.use('/api/profiles', profilesRouter);

@@ -11,8 +11,8 @@ import {
   getAllDocuments,
   CreateDocumentData,
   UpdateDocumentStatusData,
-  DocumentType,
 } from '../services/documentsService.js';
+import { getDocumentTypeByCode } from '../services/documentTypesService.js';
 import { hasRole } from '../services/userRolesService.js';
 import { getFileUrl } from '../middleware/upload.js';
 import { z } from 'zod';
@@ -22,16 +22,8 @@ import { sendNotificationSafely, getUserEmail, getUserName } from '../services/n
 import { getAdminEmail } from '../services/notificationService.js';
 
 // Validation schemas
-const documentTypeSchema = z.enum([
-  'militar',
-  'estudante',
-  'pcd',
-  'rg',
-  'cpf',
-  'atestado_medico',
-  'comprovante_residencia',
-  'outro',
-]);
+// Document type is now a string (code from document_types table)
+const documentTypeSchema = z.string().min(1, 'Tipo de documento é obrigatório');
 
 // Helper function to validate and normalize expiry_date
 const normalizeExpiryDate = (value: any): string | null => {
@@ -318,6 +310,61 @@ export const uploadRunnerDocumentController = asyncHandler(
     }
 
     const { document_type, expiry_date } = bodyValidation.data;
+
+    // Validate document type exists and is active
+    const docType = await getDocumentTypeByCode(document_type);
+    if (!docType) {
+      // Delete file if document type not found
+      if (req.file.path && fs.existsSync(req.file.path)) {
+        try {
+          fs.unlinkSync(req.file.path);
+        } catch (error) {
+          console.error('❌ Erro ao deletar arquivo:', error);
+        }
+      }
+      res.status(400).json({
+        success: false,
+        error: 'Invalid document type',
+        message: 'Tipo de documento não encontrado ou não está ativo',
+      });
+      return;
+    }
+
+    if (!docType.is_active) {
+      // Delete file if document type is not active
+      if (req.file.path && fs.existsSync(req.file.path)) {
+        try {
+          fs.unlinkSync(req.file.path);
+        } catch (error) {
+          console.error('❌ Erro ao deletar arquivo:', error);
+        }
+      }
+      res.status(400).json({
+        success: false,
+        error: 'Invalid document type',
+        message: 'Este tipo de documento não está disponível',
+      });
+      return;
+    }
+
+    // Validate expiry date is required if document type requires it
+    if (docType.requires_expiry_date && (!expiry_date || expiry_date === '' || expiry_date === null)) {
+      // Delete file if expiry date is required but not provided
+      if (req.file.path && fs.existsSync(req.file.path)) {
+        try {
+          fs.unlinkSync(req.file.path);
+        } catch (error) {
+          console.error('❌ Erro ao deletar arquivo:', error);
+        }
+      }
+      res.status(400).json({
+        success: false,
+        error: 'Validation error',
+        message: 'Data de validade é obrigatória para este tipo de documento',
+        path: ['expiry_date'],
+      });
+      return;
+    }
 
     // Verificar se o arquivo existe
     if (!fs.existsSync(req.file.path)) {
