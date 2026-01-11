@@ -24,6 +24,7 @@ export interface CreateEventData {
 }
 
 export interface UpdateEventData {
+  organizer_id?: string;
   title?: string;
   description?: string;
   event_date?: string;

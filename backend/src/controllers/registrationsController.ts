@@ -497,6 +497,47 @@ export const createRegistrationController = asyncHandler(async (req: AuthRequest
     }
   }
 
+  // Check modality limits (if category is associated with modalities that have limits)
+  const { getModalitiesByEvent } = await import('../services/modalitiesService.js');
+  const modalities = await getModalitiesByEvent(event_id);
+  
+  // Get modality IDs associated with this category
+  const categoryModalities = await query(
+    `SELECT modality_id FROM category_modalities WHERE category_id = $1`,
+    [category_id]
+  );
+  
+  const modalityIds = categoryModalities.rows.map(row => row.modality_id);
+  
+  // Check each modality limit
+  for (const modalityId of modalityIds) {
+    const modality = modalities.find(m => m.id === modalityId);
+    if (modality && modality.max_participants !== null && modality.max_participants > 0) {
+      // Count registrations for this modality (through all categories associated with it)
+      const modalityRegistrations = await query(
+        `SELECT COUNT(DISTINCT r.id) as count
+         FROM registrations r
+         INNER JOIN category_modalities cm ON r.category_id = cm.category_id
+         WHERE cm.modality_id = $1
+         AND r.status != 'cancelled'
+         AND r.payment_status IN ('pending', 'paid')`,
+        [modalityId]
+      );
+      
+      const currentModalityCount = parseInt(modalityRegistrations.rows[0].count) || 0;
+      const availableModalitySpots = modality.max_participants - currentModalityCount;
+      
+      if (availableModalitySpots <= 0) {
+        res.status(400).json({
+          success: false,
+          error: 'Modality is full',
+          message: `A modalidade "${modality.name}" atingiu o limite máximo de ${modality.max_participants} participantes. Por favor, escolha outra modalidade.`,
+        });
+        return;
+      }
+    }
+  }
+
   const registrationData = {
     ...validation.data,
     registered_by: req.user.id,
@@ -1156,6 +1197,47 @@ export const createRegistrationByOrganizerController = asyncHandler(async (req: 
         message: 'Esta categoria está esgotada',
       });
       return;
+    }
+  }
+
+  // Check modality limits (if category is associated with modalities that have limits)
+  const { getModalitiesByEvent } = await import('../services/modalitiesService.js');
+  const modalities = await getModalitiesByEvent(event_id);
+  
+  // Get modality IDs associated with this category
+  const categoryModalities = await query(
+    `SELECT modality_id FROM category_modalities WHERE category_id = $1`,
+    [category_id]
+  );
+  
+  const modalityIds = categoryModalities.rows.map(row => row.modality_id);
+  
+  // Check each modality limit
+  for (const modalityId of modalityIds) {
+    const modality = modalities.find(m => m.id === modalityId);
+    if (modality && modality.max_participants !== null && modality.max_participants > 0) {
+      // Count registrations for this modality (through all categories associated with it)
+      const modalityRegistrations = await query(
+        `SELECT COUNT(DISTINCT r.id) as count
+         FROM registrations r
+         INNER JOIN category_modalities cm ON r.category_id = cm.category_id
+         WHERE cm.modality_id = $1
+         AND r.status != 'cancelled'
+         AND r.payment_status IN ('pending', 'paid')`,
+        [modalityId]
+      );
+      
+      const currentModalityCount = parseInt(modalityRegistrations.rows[0].count) || 0;
+      const availableModalitySpots = modality.max_participants - currentModalityCount;
+      
+      if (availableModalitySpots <= 0) {
+        res.status(400).json({
+          success: false,
+          error: 'Modality is full',
+          message: `A modalidade "${modality.name}" atingiu o limite máximo de ${modality.max_participants} participantes. Por favor, escolha outra modalidade.`,
+        });
+        return;
+      }
     }
   }
 
@@ -2403,6 +2485,47 @@ export const createRegistrationByLeaderController = asyncHandler(async (req: Aut
         message: 'Esta categoria está esgotada',
       });
       return;
+    }
+  }
+
+  // Check modality limits (if category is associated with modalities that have limits)
+  const { getModalitiesByEvent } = await import('../services/modalitiesService.js');
+  const modalities = await getModalitiesByEvent(event_id);
+  
+  // Get modality IDs associated with this category
+  const categoryModalities = await query(
+    `SELECT modality_id FROM category_modalities WHERE category_id = $1`,
+    [category_id]
+  );
+  
+  const modalityIds = categoryModalities.rows.map(row => row.modality_id);
+  
+  // Check each modality limit
+  for (const modalityId of modalityIds) {
+    const modality = modalities.find(m => m.id === modalityId);
+    if (modality && modality.max_participants !== null && modality.max_participants > 0) {
+      // Count registrations for this modality (through all categories associated with it)
+      const modalityRegistrations = await query(
+        `SELECT COUNT(DISTINCT r.id) as count
+         FROM registrations r
+         INNER JOIN category_modalities cm ON r.category_id = cm.category_id
+         WHERE cm.modality_id = $1
+         AND r.status != 'cancelled'
+         AND r.payment_status IN ('pending', 'paid')`,
+        [modalityId]
+      );
+      
+      const currentModalityCount = parseInt(modalityRegistrations.rows[0].count) || 0;
+      const availableModalitySpots = modality.max_participants - currentModalityCount;
+      
+      if (availableModalitySpots <= 0) {
+        res.status(400).json({
+          success: false,
+          error: 'Modality is full',
+          message: `A modalidade "${modality.name}" atingiu o limite máximo de ${modality.max_participants} participantes. Por favor, escolha outra modalidade.`,
+        });
+        return;
+      }
     }
   }
 

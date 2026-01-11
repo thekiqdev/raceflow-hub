@@ -16,6 +16,7 @@ import { getCategories, createCategory, updateCategory, deleteCategory, reorderC
 import { getCategoryBatches, createCategoryBatch, updateCategoryBatch, deleteCategoryBatch } from "@/lib/api/categoryBatches";
 import { getEventKits, syncEventKits } from "@/lib/api/eventKits";
 import { getEventPickupLocations, createPickupLocation, updatePickupLocation, deletePickupLocation } from "@/lib/api/kitPickup";
+import { getOrganizers } from "@/lib/api/userManagement";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, MapPin, Calendar, Users, DollarSign, Search, CheckCircle, Package, MapPin as MapPinIcon, Plus, Trash2, ChevronUp, ChevronDown, X } from "lucide-react";
 import { FileUpload } from "@/components/ui/file-upload";
@@ -50,6 +51,9 @@ export function EventViewEditDialog({
   const [allRegistrations, setAllRegistrations] = useState<any[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [confirmingRegistration, setConfirmingRegistration] = useState<string | null>(null);
+  const [selectedOrganizerId, setSelectedOrganizerId] = useState<string>("");
+  const [organizers, setOrganizers] = useState<any[]>([]);
+  const [loadingOrganizers, setLoadingOrganizers] = useState(false);
 
   const [formData, setFormData] = useState({
     title: "",
@@ -75,8 +79,30 @@ export function EventViewEditDialog({
   useEffect(() => {
     if (open && eventId) {
       loadEventData();
+      loadOrganizers();
     }
   }, [open, eventId]);
+
+  // Load organizers for admin
+  const loadOrganizers = async () => {
+    if (!open) return;
+    setLoadingOrganizers(true);
+    try {
+      const response = await getOrganizers();
+      if (response.success && response.data) {
+        setOrganizers(response.data);
+      }
+    } catch (error: any) {
+      console.error("Erro ao carregar organizadores:", error);
+      toast({
+        title: "Erro",
+        description: "Erro ao carregar lista de organizadores",
+        variant: "destructive",
+      });
+    } finally {
+      setLoadingOrganizers(false);
+    }
+  };
 
   useEffect(() => {
     setMode(initialMode);
@@ -97,6 +123,12 @@ export function EventViewEditDialog({
       const eventData = eventResponse.data;
       setEvent(eventData);
       const autoMode = eventData.registration_auto_mode || false;
+      
+      // Set organizer ID for admin editing
+      if (eventData.organizer_id) {
+        setSelectedOrganizerId(eventData.organizer_id);
+      }
+      
       setFormData({
         title: eventData.title || "",
         description: eventData.description || "",
@@ -237,7 +269,7 @@ export function EventViewEditDialog({
 
   // Modalidades functions
   const addModality = () => {
-    setModalities([...modalities, { name: "", distance: "", id: `temp-${Date.now()}` }]);
+    setModalities([...modalities, { name: "", distance: "", max_participants: null, id: `temp-${Date.now()}` }]);
   };
 
   const removeModality = (index: number) => {
@@ -554,8 +586,27 @@ export function EventViewEditDialog({
 
     setSaving(true);
     try {
+      // Prepare event data with organizer_id if changed
+      const eventUpdateData: any = {
+        ...formData,
+      };
+      
+      // Include organizer_id if it was changed
+      // Only update if selectedOrganizerId is set and different from current
+      if (selectedOrganizerId && selectedOrganizerId !== "self" && selectedOrganizerId !== event?.organizer_id) {
+        eventUpdateData.organizer_id = selectedOrganizerId;
+        console.log('🔄 Atualizando organizador do evento:', {
+          current: event?.organizer_id,
+          new: selectedOrganizerId,
+          eventId: eventId
+        });
+      } else if (selectedOrganizerId === "self" && event?.organizer_id) {
+        // If "self" is selected, keep current organizer
+        console.log('✅ Mantendo organizador atual:', event?.organizer_id);
+      }
+      
       // Update event basic info
-      const response = await updateEvent(eventId, formData);
+      const response = await updateEvent(eventId, eventUpdateData);
 
       if (!response.success) {
         throw new Error(response.error || "Erro ao atualizar evento");
@@ -582,6 +633,7 @@ export function EventViewEditDialog({
             event_id: eventId,
             name: modality.name,
             distance: modality.distance,
+            max_participants: modality.max_participants ?? null,
           });
           if (createResponse.success && createResponse.data) {
             createdModalities.push(createResponse.data);
@@ -594,6 +646,7 @@ export function EventViewEditDialog({
             await updateModality(modality.id, {
               name: modality.name,
               distance: modality.distance,
+              max_participants: modality.max_participants ?? null,
             });
           }
         }
@@ -1171,11 +1224,43 @@ export function EventViewEditDialog({
                 </div>
               </div>
 
-              {event?.organizer_name && (
+              {mode === "edit" ? (
                 <div className="grid gap-2">
-                  <Label>Organizador</Label>
-                  <p className="text-sm">{event.organizer_name}</p>
+                  <Label htmlFor="organizer-select">Organizador</Label>
+                  <Select
+                    value={selectedOrganizerId || (event?.organizer_id || "self")}
+                    onValueChange={(value) => {
+                      if (value === "self") {
+                        setSelectedOrganizerId(event?.organizer_id || "");
+                      } else {
+                        setSelectedOrganizerId(value);
+                      }
+                    }}
+                    disabled={loadingOrganizers}
+                  >
+                    <SelectTrigger id="organizer-select">
+                      <SelectValue placeholder={loadingOrganizers ? "Carregando organizadores..." : "Selecione um organizador"} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="self">Manter organizador atual</SelectItem>
+                      {organizers.map((organizer) => (
+                        <SelectItem key={organizer.id} value={organizer.id}>
+                          {organizer.name} ({organizer.email})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    Altere o organizador responsável por este evento
+                  </p>
                 </div>
+              ) : (
+                event?.organizer_name && (
+                  <div className="grid gap-2">
+                    <Label>Organizador</Label>
+                    <p className="text-sm">{event.organizer_name}</p>
+                  </div>
+                )
               )}
 
               <div className="grid gap-2">
@@ -1302,32 +1387,52 @@ export function EventViewEditDialog({
                     </CardHeader>
                     <CardContent className="space-y-3">
                       {mode === "edit" ? (
-                        <div className="grid grid-cols-2 gap-3">
-                          <div>
-                            <label className="text-sm font-medium">
-                              Nome da Modalidade
-                            </label>
-                            <Input
-                              placeholder="Ex: Corrida 5km, Corrida 10km"
-                              value={modality.name}
-                              onChange={(e) =>
-                                updateModalityLocal(index, "name", e.target.value)
-                              }
-                            />
+                        <>
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <label className="text-sm font-medium">
+                                Nome da Modalidade
+                              </label>
+                              <Input
+                                placeholder="Ex: Corrida 5km, Corrida 10km"
+                                value={modality.name}
+                                onChange={(e) =>
+                                  updateModalityLocal(index, "name", e.target.value)
+                                }
+                              />
+                            </div>
+                            <div>
+                              <label className="text-sm font-medium">
+                                Distância
+                              </label>
+                              <Input
+                                placeholder="Ex: 5km, 10km, 21km, 42km"
+                                value={modality.distance}
+                                onChange={(e) =>
+                                  updateModalityLocal(index, "distance", e.target.value)
+                                }
+                              />
+                            </div>
                           </div>
                           <div>
                             <label className="text-sm font-medium">
-                              Distância
+                              Limite de Inscrições (Opcional)
                             </label>
                             <Input
-                              placeholder="Ex: 5km, 10km, 21km, 42km"
-                              value={modality.distance}
-                              onChange={(e) =>
-                                updateModalityLocal(index, "distance", e.target.value)
-                              }
+                              type="number"
+                              min="1"
+                              placeholder="Ex: 100 (deixe em branco para sem limite)"
+                              value={modality.max_participants ?? ""}
+                              onChange={(e) => {
+                                const value = e.target.value === "" ? null : parseInt(e.target.value);
+                                updateModalityLocal(index, "max_participants", value);
+                              }}
                             />
+                            <p className="text-xs text-muted-foreground mt-1">
+                              Número máximo de participantes para esta modalidade. Deixe em branco para permitir inscrições ilimitadas.
+                            </p>
                           </div>
-                        </div>
+                        </>
                       ) : (
                         <div className="space-y-2">
                           <CardDescription>Distância: {modality.distance}</CardDescription>

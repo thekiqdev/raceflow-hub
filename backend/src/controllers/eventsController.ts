@@ -58,6 +58,7 @@ const createEventSchema = z.object({
 
 // Schema for update event request
 const updateEventSchema = z.object({
+  organizer_id: z.string().uuid('ID do organizador inválido').optional(),
   title: z.string().min(3, 'Título deve ter no mínimo 3 caracteres').optional(),
   description: z.string().optional(),
   event_date: z.string().datetime('Data do evento inválida').optional(),

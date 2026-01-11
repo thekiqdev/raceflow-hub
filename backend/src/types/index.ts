@@ -173,6 +173,7 @@ export interface Modality {
   name: string;
   distance: string;
   display_order: number;
+  max_participants: number | null;
   created_at: Date;
   updated_at: Date;
 }
@@ -217,12 +218,14 @@ export interface CreateModalityData {
   name: string;
   distance: string;
   display_order?: number; // Opcional na criação - será calculado automaticamente se não fornecido
+  max_participants?: number | null; // Limite máximo de participantes (NULL = sem limite)
 }
 
 export interface UpdateModalityData {
   name?: string;
   distance?: string;
   display_order?: number; // Permite atualizar a ordem de exibição
+  max_participants?: number | null; // Limite máximo de participantes (NULL = sem limite)
 }
 
 export interface CreateCategoryData {

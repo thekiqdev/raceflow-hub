@@ -18,11 +18,27 @@ export const createModality = async (
     displayOrder = (maxResult.rows[0]?.max_order || 0) + 1;
   }
 
+  const maxParticipants = (data.max_participants === undefined || data.max_participants === null)
+    ? null
+    : (typeof data.max_participants === 'number' && !isNaN(data.max_participants) && data.max_participants > 0)
+      ? data.max_participants
+      : null;
+  
+  console.log('🔍 createModality service - SQL params:', {
+    event_id: data.event_id,
+    name: data.name,
+    distance: data.distance,
+    display_order: displayOrder,
+    max_participants_input: data.max_participants,
+    max_participants_processed: maxParticipants,
+    type: typeof data.max_participants
+  });
+  
   const result = await query(
-    `INSERT INTO modalities (event_id, name, distance, display_order)
-     VALUES ($1, $2, $3, $4)
+    `INSERT INTO modalities (event_id, name, distance, display_order, max_participants)
+     VALUES ($1, $2, $3, $4, $5)
      RETURNING *`,
-    [data.event_id, data.name, data.distance, displayOrder]
+    [data.event_id, data.name, data.distance, displayOrder, maxParticipants]
   );
 
   if (result.rows.length === 0) {
@@ -35,6 +51,7 @@ export const createModality = async (
     name: result.rows[0].name,
     distance: result.rows[0].distance,
     display_order: result.rows[0].display_order,
+    max_participants: result.rows[0].max_participants ? parseInt(result.rows[0].max_participants) : null,
     created_at: result.rows[0].created_at,
     updated_at: result.rows[0].updated_at,
   };
@@ -57,6 +74,7 @@ export const getModalitiesByEvent = async (eventId: string): Promise<Modality[]>
     name: row.name,
     distance: row.distance,
     display_order: row.display_order,
+    max_participants: row.max_participants ? parseInt(row.max_participants) : null,
     created_at: row.created_at,
     updated_at: row.updated_at,
   }));
@@ -83,6 +101,7 @@ export const getModalityById = async (modalityId: string): Promise<Modality | nu
     name: row.name,
     distance: row.distance,
     display_order: row.display_order,
+    max_participants: row.max_participants ? parseInt(row.max_participants) : null,
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
@@ -117,6 +136,24 @@ export const updateModality = async (
     paramIndex++;
   }
 
+  if (data.max_participants !== undefined) {
+    const maxParticipants = (data.max_participants === null || data.max_participants === undefined)
+      ? null
+      : (typeof data.max_participants === 'number' && !isNaN(data.max_participants) && data.max_participants > 0)
+        ? data.max_participants
+        : null;
+    
+    console.log('🔍 updateModality service - max_participants:', {
+      input: data.max_participants,
+      processed: maxParticipants,
+      type: typeof data.max_participants
+    });
+    
+    fields.push(`max_participants = $${paramIndex}`);
+    values.push(maxParticipants);
+    paramIndex++;
+  }
+
   if (fields.length === 0) {
     throw new Error('No fields to update');
   }
@@ -142,6 +179,7 @@ export const updateModality = async (
     name: row.name,
     distance: row.distance,
     display_order: row.display_order,
+    max_participants: row.max_participants ? parseInt(row.max_participants) : null,
     created_at: row.created_at,
     updated_at: row.updated_at,
   };

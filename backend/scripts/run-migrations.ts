@@ -97,6 +97,7 @@ const migrations = [
   '068_create_document_types.sql',
   '069_add_old_platform_url_to_system_settings.sql',
   '070_add_payment_methods_to_events.sql',
+  '071_add_max_participants_to_modalities.sql',
 ];
 
 // Create migrations tracking table

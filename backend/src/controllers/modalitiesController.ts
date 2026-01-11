@@ -18,11 +18,13 @@ const createModalitySchema = z.object({
   event_id: z.string().uuid('ID do evento inválido'),
   name: z.string().min(1, 'Nome da modalidade é obrigatório').max(255, 'Nome deve ter no máximo 255 caracteres'),
   distance: z.string().min(1, 'Distância é obrigatória').max(50, 'Distância deve ter no máximo 50 caracteres'),
+  max_participants: z.number().int().positive('Limite de participantes deve ser um número positivo').nullable().optional(),
 });
 
 const updateModalitySchema = z.object({
   name: z.string().min(1).max(255).optional(),
   distance: z.string().min(1).max(50).optional(),
+  max_participants: z.number().int().positive('Limite de participantes deve ser um número positivo').nullable().optional(),
 });
 
 /**
@@ -77,13 +79,32 @@ export const createModalityController = asyncHandler(
     }
 
     try {
+      const maxParticipants = validation.data.max_participants === undefined || validation.data.max_participants === null
+        ? null
+        : validation.data.max_participants;
+      
+      console.log('🔍 createModalityController - received data:', {
+        event_id: validation.data.event_id,
+        name: validation.data.name,
+        distance: validation.data.distance,
+        max_participants_raw: validation.data.max_participants,
+        max_participants_processed: maxParticipants,
+        type: typeof validation.data.max_participants
+      });
+      
       const modalityData: CreateModalityData = {
         event_id: validation.data.event_id,
         name: validation.data.name,
         distance: validation.data.distance,
+        max_participants: maxParticipants,
       };
 
       const modality = await createModality(modalityData);
+      
+      console.log('✅ createModalityController - created modality:', {
+        id: modality.id,
+        max_participants: modality.max_participants
+      });
 
       res.status(201).json({
         success: true,
@@ -231,12 +252,31 @@ export const updateModalityController = asyncHandler(
     }
 
     try {
+      const maxParticipants = validation.data.max_participants === undefined || validation.data.max_participants === null
+        ? null
+        : validation.data.max_participants;
+      
+      console.log('🔍 updateModalityController - received data:', {
+        id,
+        name: validation.data.name,
+        distance: validation.data.distance,
+        max_participants_raw: validation.data.max_participants,
+        max_participants_processed: maxParticipants,
+        type: typeof validation.data.max_participants
+      });
+      
       const updateData: UpdateModalityData = {
         name: validation.data.name,
         distance: validation.data.distance,
+        max_participants: maxParticipants,
       };
 
       const updatedModality = await updateModality(id, updateData);
+      
+      console.log('✅ updateModalityController - updated modality:', {
+        id: updatedModality?.id,
+        max_participants: updatedModality?.max_participants
+      });
 
       if (!updatedModality) {
         res.status(404).json({

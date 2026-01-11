@@ -156,10 +156,16 @@ class ApiClient {
   }
 
   async put<T>(endpoint: string, data?: any): Promise<ApiResponse<T>> {
-    return this.request<T>(endpoint, {
+    if (data) {
+      console.log('📤 [apiClient.put] Enviando dados:', JSON.stringify(data, null, 2));
+      console.log('📤 [apiClient.put] Endpoint:', endpoint);
+    }
+    const result = await this.request<T>(endpoint, {
       method: 'PUT',
       body: data ? JSON.stringify(data) : undefined,
     });
+    console.log('📥 [apiClient.put] Resposta recebida:', result);
+    return result;
   }
 
   async delete<T>(endpoint: string): Promise<ApiResponse<T>> {

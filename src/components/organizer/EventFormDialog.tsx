@@ -36,7 +36,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { createEvent, updateEvent, getEventById } from "@/lib/api/events";
 import { getEventCategories } from "@/lib/api/eventCategories";
 import { getEventKits } from "@/lib/api/eventKits";
-import { getModalities, createModality, updateModality, deleteModality, reorderModalities, type Modality as ModalityType } from "@/lib/api/modalities";
+import { getModalities, createModality, updateModality as updateModalityAPI, deleteModality, reorderModalities, type Modality as ModalityType } from "@/lib/api/modalities";
 import { getCategories, createCategory, updateCategory, deleteCategory, reorderCategories, type Category as CategoryType, type CategoryType as CategoryTypeEnum, type CategoryGender, type CategoryBatch } from "@/lib/api/categories";
 import { getCategoryBatches, createCategoryBatch, updateCategoryBatch, deleteCategoryBatch } from "@/lib/api/categoryBatches";
 import { reorderEventKits } from "@/lib/api/eventKits";
@@ -105,6 +105,7 @@ interface Modality {
   id?: string;
   name: string;
   distance: string;
+  max_participants?: number | null;
 }
 
 interface Category {
@@ -260,6 +261,7 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
         setPickupLocations([]);
         setActiveTab("info");
         setSelectedOrganizerId("");
+        setOrganizers([]);
         return;
       }
 
@@ -296,6 +298,11 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
             });
             setRegistrationAutoMode(autoMode);
 
+            // Set organizer ID for admin editing
+            if (isAdmin && eventData.organizer_id) {
+              setSelectedOrganizerId(eventData.organizer_id);
+            }
+
             // Load modalities
             const modalitiesResponse = await getModalities(event.id);
             if (modalitiesResponse.success && modalitiesResponse.data) {
@@ -303,6 +310,7 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
                 id: mod.id,
                 name: mod.name,
                 distance: mod.distance,
+                max_participants: mod.max_participants ?? null,
               }));
               console.log("✅ Modalidades carregadas:", loadedModalities.length);
               setModalities(loadedModalities);
@@ -546,17 +554,18 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, event?.id]);
 
-  // Load organizers for admin when dialog opens
+  // Load organizers for admin when dialog opens (both creating and editing)
   useEffect(() => {
     const loadOrganizers = async () => {
-      if (!isAdmin || !open || event?.id) return;
+      // Load organizers for admin when creating or editing event
+      if (!isAdmin || !open) return;
       setLoadingOrganizers(true);
       try {
         const response = await getOrganizers();
         if (response.success && response.data) {
           setOrganizers(response.data);
-          // Se o usuário atual for um organizador, selecionar por padrão
-          if (user && response.data.find((o: any) => o.id === user.id)) {
+          // Se o usuário atual for um organizador e estiver criando novo evento, selecionar por padrão
+          if (!event?.id && user && response.data.find((o: any) => o.id === user.id)) {
             setSelectedOrganizerId(user.id);
           }
         }
@@ -572,7 +581,7 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
       }
     };
 
-    if (open && isAdmin && !event?.id) {
+    if (open && isAdmin) {
       loadOrganizers();
     }
   }, [open, isAdmin, event?.id, user, toast]);
@@ -580,7 +589,7 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
   const addModality = () => {
     setModalities([
       ...modalities,
-      { name: "", distance: "" },
+      { name: "", distance: "", max_participants: null },
     ]);
   };
 
@@ -1264,12 +1273,31 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
       }
 
       // Determine organizer_id: 
-      // - If admin selected an organizer, use it
-      // - If admin didn't select, use admin's own ID (admin becomes organizer)
+      // - If admin selected an organizer (and it's different from current), use it
+      // - If admin selected "self" or didn't select and editing event, keep current organizer_id
+      // - If admin didn't select and creating event, use admin's own ID (admin becomes organizer)
       // - If not admin, use current user's ID
-      const organizerId = isAdmin && selectedOrganizerId 
-        ? selectedOrganizerId 
-        : user.id; // Admin's ID if no selection, or regular user's ID
+      let organizerId: string;
+      if (isAdmin) {
+        if (selectedOrganizerId && selectedOrganizerId !== "self" && selectedOrganizerId !== (event?.organizer_id || "")) {
+          // Admin selected a different organizer
+          organizerId = selectedOrganizerId;
+          console.log('🔄 Admin alterando organizador:', {
+            current: event?.organizer_id,
+            new: selectedOrganizerId,
+            eventId: event?.id
+          });
+        } else if (event?.id && event.organizer_id) {
+          // Editing event: keep current organizer if not changed
+          organizerId = event.organizer_id;
+        } else {
+          // Creating event: use admin's ID
+          organizerId = user.id;
+        }
+      } else {
+        // Not admin: use current user's ID
+        organizerId = user.id;
+      }
 
       // Insert or update event
       const eventData = {
@@ -1330,11 +1358,27 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
           // Create new modalities and update local state with returned IDs
           const createdModalities: Modality[] = [];
           for (const modality of modalitiesToCreate) {
+            const maxParticipants = (modality.max_participants === undefined || modality.max_participants === null) 
+              ? null 
+              : (typeof modality.max_participants === 'number' ? modality.max_participants : null);
+            
+            console.log('🔍 Creating modality:', { 
+              name: modality.name, 
+              distance: modality.distance,
+              max_participants_raw: modality.max_participants,
+              max_participants_processed: maxParticipants,
+              type: typeof modality.max_participants
+            });
+            
             const response = await createModality({
               event_id: eventId,
               name: modality.name,
               distance: modality.distance,
+              max_participants: maxParticipants,
             });
+            
+            console.log('✅ Create modality response:', response);
+            
             if (response.success && response.data) {
               createdModalities.push(response.data);
             } else {
@@ -1346,12 +1390,39 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
           for (const modality of modalitiesToUpdate) {
             if (modality.id) {
               try {
-                const response = await updateModality(modality.id, {
+                const maxParticipants = (modality.max_participants === undefined || modality.max_participants === null) 
+                  ? null 
+                  : (typeof modality.max_participants === 'number' ? modality.max_participants : null);
+                
+                console.log('🔍 Updating modality:', { 
+                  id: modality.id,
               name: modality.name,
               distance: modality.distance,
+                  max_participants_raw: modality.max_participants,
+                  max_participants_processed: maxParticipants,
+                  type: typeof modality.max_participants
                 });
-                if (response && !response.success) {
-                  console.error('Error updating modality:', response.error);
+                
+                const updatePayload = {
+                  name: modality.name,
+                  distance: modality.distance,
+                  max_participants: maxParticipants,
+                };
+                
+                console.log('📤 Sending update payload:', updatePayload);
+                
+                const response = await updateModalityAPI(modality.id, updatePayload);
+                
+                console.log('✅ Update modality response:', response);
+                console.log('✅ Response type:', typeof response);
+                console.log('✅ Response keys:', response ? Object.keys(response) : 'null/undefined');
+                
+                if (!response) {
+                  console.error('❌ Response is null/undefined');
+                } else if (!response.success) {
+                  console.error('❌ Error updating modality:', response.error);
+                } else {
+                  console.log('✅ Modality updated successfully:', response.data);
                 }
               } catch (error) {
                 console.error('Error updating modality:', error);
@@ -1957,20 +2028,31 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
 
               {/* Tab 1: Informações Gerais */}
               <TabsContent value="info" className="space-y-4">
-                {/* Organizer selection for admin when creating new event */}
-                {isAdmin && !event?.id && (
+                {/* Organizer selection for admin when creating or editing event */}
+                {isAdmin && (
                   <div className="space-y-2">
-                    <Label htmlFor="organizer-select">Organizador (Opcional)</Label>
+                    <Label htmlFor="organizer-select">
+                      {event?.id ? "Organizador" : "Organizador (Opcional)"}
+                    </Label>
                     <Select
-                      value={selectedOrganizerId || "self"}
-                      onValueChange={(value) => setSelectedOrganizerId(value === "self" ? "" : value)}
+                      value={selectedOrganizerId || (event?.id && event.organizer_id ? event.organizer_id : "self")}
+                      onValueChange={(value) => {
+                        if (value === "self") {
+                          // Se estiver editando, manter organizador atual; se criando, usar admin
+                          setSelectedOrganizerId(event?.id && event.organizer_id ? event.organizer_id : "");
+                        } else {
+                          setSelectedOrganizerId(value);
+                        }
+                      }}
                       disabled={loadingOrganizers}
                     >
                       <SelectTrigger id="organizer-select">
-                        <SelectValue placeholder={loadingOrganizers ? "Carregando organizadores..." : "Selecione um organizador ou deixe em branco para criar no seu nome"} />
+                        <SelectValue placeholder={loadingOrganizers ? "Carregando organizadores..." : "Selecione um organizador"} />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="self">Criar no meu nome (Admin)</SelectItem>
+                        <SelectItem value="self">
+                          {event?.id ? "Manter organizador atual" : "Criar no meu nome (Admin)"}
+                        </SelectItem>
                         {organizers.map((organizer) => (
                           <SelectItem key={organizer.id} value={organizer.id}>
                             {organizer.name} ({organizer.email})
@@ -1979,7 +2061,10 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
                       </SelectContent>
                     </Select>
                     <p className="text-xs text-muted-foreground">
-                      Selecione um organizador responsável ou escolha "Criar no meu nome" para criar o evento no seu nome
+                      {event?.id 
+                        ? "Altere o organizador responsável por este evento"
+                        : "Selecione um organizador responsável ou escolha 'Criar no meu nome' para criar o evento no seu nome"
+                      }
                     </p>
                   </div>
                 )}
@@ -2225,6 +2310,55 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
                                 }
                               />
                             </div>
+                          </div>
+                          <div>
+                            <label className="text-sm font-medium">
+                              Limite de Inscrições (Opcional)
+                            </label>
+                            <Input
+                              type="number"
+                              min="1"
+                              placeholder="Ex: 100 (deixe em branco para sem limite)"
+                              value={modality.max_participants ?? ""}
+                              onChange={(e) => {
+                                const inputValue = e.target.value.trim();
+                                let value: number | null = null;
+                                
+                                if (inputValue === "" || inputValue === null || inputValue === undefined) {
+                                  value = null;
+                                } else {
+                                  const parsed = parseInt(inputValue, 10);
+                                  value = (isNaN(parsed) || parsed <= 0) ? null : parsed;
+                                }
+                                
+                                console.log('🔍 Updating max_participants:', { 
+                                  inputValue, 
+                                  value, 
+                                  modalityIndex: index,
+                                  modalityName: modality.name,
+                                  currentValue: modality.max_participants
+                                });
+                                
+                                updateModality(index, "max_participants", value);
+                              }}
+                              onBlur={(e) => {
+                                // Garantir que o valor seja salvo quando o campo perder o foco
+                                const inputValue = e.target.value.trim();
+                                let value: number | null = null;
+                                
+                                if (inputValue === "" || inputValue === null || inputValue === undefined) {
+                                  value = null;
+                                } else {
+                                  const parsed = parseInt(inputValue, 10);
+                                  value = (isNaN(parsed) || parsed <= 0) ? null : parsed;
+                                }
+                                
+                                updateModality(index, "max_participants", value);
+                              }}
+                            />
+                            <p className="text-xs text-muted-foreground mt-1">
+                              Número máximo de participantes para esta modalidade. Deixe em branco para permitir inscrições ilimitadas.
+                            </p>
                           </div>
                         </CardContent>
                       </Card>
@@ -3511,13 +3645,13 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
                         <div className="flex items-center gap-3">
                           <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
                             <span className="text-xl">📱</span>
-                          </div>
+                        </div>
                           <div>
                             <h4 className="font-medium">PIX</h4>
-                            <p className="text-sm text-muted-foreground">
+                        <p className="text-sm text-muted-foreground">
                               Pagamento instantâneo via PIX
-                            </p>
-                          </div>
+                        </p>
+                      </div>
                         </div>
                         <FormField
                           control={form.control}
@@ -3580,7 +3714,7 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
                           </div>
                           <div>
                             <h4 className="font-medium">Cartão de Crédito</h4>
-                            <p className="text-sm text-muted-foreground">
+                      <p className="text-sm text-muted-foreground">
                               Pagamento via cartão de crédito
                             </p>
                           </div>
