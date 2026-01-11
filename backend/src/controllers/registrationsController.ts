@@ -1804,6 +1804,9 @@ export const exportRegistrationsController = asyncHandler(async (req: AuthReques
     'KIT',
     'VARIAÇÃO',
     'MODALIDADE',
+    'DATA HORA INSCRIÇÃO',
+    'MEIO DE PAGAMENTO',
+    'LÍDER',
     'QRCODE',
   ];
 
@@ -1816,6 +1819,32 @@ export const exportRegistrationsController = asyncHandler(async (req: AuthReques
     const month = String(d.getMonth() + 1).padStart(2, '0');
     const year = d.getFullYear();
     return `${day}/${month}/${year}`;
+  };
+
+  // Helper function to format date and time as DD/MM/YYYY HH:MM:SS
+  const formatDateTime = (date: string | Date | null): string => {
+    if (!date) return '';
+    const d = typeof date === 'string' ? new Date(date) : date;
+    if (isNaN(d.getTime())) return '';
+    const day = String(d.getDate()).padStart(2, '0');
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const year = d.getFullYear();
+    const hours = String(d.getHours()).padStart(2, '0');
+    const minutes = String(d.getMinutes()).padStart(2, '0');
+    const seconds = String(d.getSeconds()).padStart(2, '0');
+    return `${day}/${month}/${year} ${hours}:${minutes}:${seconds}`;
+  };
+
+  // Helper function to format payment method
+  const formatPaymentMethod = (paymentMethod: string | null | undefined): string => {
+    if (!paymentMethod) return '';
+    const methodMap: { [key: string]: string } = {
+      'pix': 'PIX',
+      'credit_card': 'Cartão de Crédito',
+      'boleto': 'Boleto',
+      'free_bonus': 'Convite Grátis',
+    };
+    return methodMap[paymentMethod] || paymentMethod;
   };
 
   // Helper function to get modality distance (first available)
@@ -1859,15 +1888,56 @@ export const exportRegistrationsController = asyncHandler(async (req: AuthReques
     return '';
   };
 
+  // Helper function to format gender
+  const formatGender = (gender: string | null | undefined): string => {
+    // Se não houver valor, retornar string vazia
+    if (!gender || gender === null || gender === undefined) {
+      return '';
+    }
+    
+    // Converter para string e normalizar
+    const genderStr = String(gender).trim();
+    if (!genderStr) {
+      return '';
+    }
+    
+    const genderLower = genderStr.toLowerCase();
+    
+    // Verificar diferentes variações de "masculino"
+    if (genderLower === 'masculino' || genderLower === 'm' || genderLower === 'masculine' || genderLower.startsWith('mascul')) {
+      return 'M';
+    }
+    
+    // Verificar diferentes variações de "feminino"
+    if (genderLower === 'feminino' || genderLower === 'f' || genderLower === 'feminine' || genderLower.startsWith('femin')) {
+      return 'F';
+    }
+    
+    // Se não encontrar correspondência, retornar string vazia
+    return '';
+  };
+
   const rows = registrations.map((reg: any, index: number) => {
     const runnerName = reg.runner_name || '';
     const runnerNameLower = runnerName.toLowerCase();
     const runnerNameUpper = runnerName.toUpperCase();
-    const gender = reg.runner_gender === 'masculino' ? 'M' : reg.runner_gender === 'feminino' ? 'F' : '';
+    // Debug: logar o valor do gênero para as primeiras 3 inscrições
+    if (index < 3) {
+      console.log(`🔍 CSV Export - Inscrição ${index + 1}:`, {
+        runner_name: runnerName,
+        runner_gender_raw: reg.runner_gender,
+        runner_gender_type: typeof reg.runner_gender,
+        runner_gender_formatted: formatGender(reg.runner_gender),
+      });
+    }
+    const gender = formatGender(reg.runner_gender);
     const birthDate = formatDate(reg.runner_birth_date);
     const kitName = getKitName(reg);
     const kitVariation = getKitVariation(reg);
     const modality = getModalityDistance(reg);
+    const registrationDateTime = formatDateTime(reg.created_at);
+    const paymentMethod = formatPaymentMethod(reg.payment_method);
+    const leaderName = reg.leader_name || '';
     const qrCode = getQRCodeUrl(reg, index + 1);
 
     return [
@@ -1879,6 +1949,9 @@ export const exportRegistrationsController = asyncHandler(async (req: AuthReques
       kitName, // KIT
       kitVariation, // VARIAÇÃO
       modality, // MODALIDADE
+      registrationDateTime, // DATA HORA INSCRIÇÃO
+      paymentMethod, // MEIO DE PAGAMENTO
+      leaderName, // LÍDER
       qrCode, // QRCODE
     ];
   });

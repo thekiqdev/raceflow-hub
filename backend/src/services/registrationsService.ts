@@ -94,12 +94,21 @@ export const getRegistrations = async (filters?: {
         ELSE r.status
       END as display_status,
       -- Flag para identificar se esta é uma inscrição transferida visualizada pelo antigo titular
-      (r.status = 'transferred' AND r.runner_id != r.registered_by) as is_transferred
+      (r.status = 'transferred' AND r.runner_id != r.registered_by) as is_transferred,
+      -- Informações do cupom (se houver)
+      cp.code as coupon_code,
+      cp.leader_id as coupon_leader_id,
+      -- Informações do líder (se o cupom pertence a um líder)
+      gl.id as leader_id,
+      lp.full_name as leader_name
     FROM registrations r
     LEFT JOIN events e ON r.event_id = e.id
     LEFT JOIN categories c ON r.category_id = c.id
     LEFT JOIN profiles p ON r.runner_id = p.id
     LEFT JOIN event_kits ek ON r.kit_id = ek.id
+    LEFT JOIN coupons cp ON r.coupon_code = cp.code
+    LEFT JOIN group_leaders gl ON cp.leader_id = gl.id
+    LEFT JOIN profiles lp ON gl.user_id = lp.id
   `;
   const params: any[] = [];
   const conditions: string[] = [];
