@@ -96,6 +96,12 @@ export const getAllEvents = asyncHandler(async (req: AuthRequest, res: Response)
   const filters: any = {};
 
   // Get all query parameters first
+  if (req.query.order_by_date) {
+    const orderBy = String(req.query.order_by_date);
+    if (orderBy === 'asc' || orderBy === 'desc') {
+      filters.order_by_date = orderBy;
+    }
+  }
   if (req.query.city) {
     filters.city = req.query.city;
   }

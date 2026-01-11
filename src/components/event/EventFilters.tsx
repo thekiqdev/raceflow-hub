@@ -1,7 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Calendar, MapPin, Filter, X } from "lucide-react";
+import { Calendar, MapPin, Filter, X, ArrowUpDown } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 
 export interface EventFiltersState {
@@ -9,6 +9,7 @@ export interface EventFiltersState {
   month: string;
   category: string;
   search: string;
+  order_by_date?: 'asc' | 'desc';
 }
 
 interface EventFiltersProps {
@@ -42,7 +43,7 @@ export function EventFilters({ filters, onFiltersChange, cities, categories = []
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
         <Select
           value={filters.city}
           onValueChange={(value) => onFiltersChange({ ...filters, city: value })}
@@ -104,6 +105,22 @@ export function EventFilters({ filters, onFiltersChange, cities, categories = []
             </SelectContent>
           </Select>
         )}
+
+        <Select
+          value={filters.order_by_date || 'asc'}
+          onValueChange={(value) => onFiltersChange({ ...filters, order_by_date: value as 'asc' | 'desc' })}
+        >
+          <SelectTrigger>
+            <div className="flex items-center gap-2">
+              <ArrowUpDown className="h-4 w-4 text-muted-foreground" />
+              <SelectValue placeholder="Ordenar por data" />
+            </div>
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="asc">Mais próximo primeiro</SelectItem>
+            <SelectItem value="desc">Mais longe primeiro</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       {activeFiltersCount > 0 && (

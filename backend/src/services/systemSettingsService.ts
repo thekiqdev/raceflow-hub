@@ -40,6 +40,7 @@ export interface SystemSettings {
   currency: string;
   language: string;
   old_results_url?: string;
+  old_platform_url?: string;
   created_at: string;
   updated_at: string;
 }

@@ -32,6 +32,7 @@ const EventManagement = () => {
   const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("");
+  const [dateOrderFilter, setDateOrderFilter] = useState<string>("asc"); // 'asc' = mais próximo, 'desc' = mais longe
   const [loading, setLoading] = useState(true);
   const [events, setEvents] = useState<any[]>([]);
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
@@ -56,6 +57,9 @@ const EventManagement = () => {
       }
       if (statusFilter && statusFilter.trim()) {
         filters.status = statusFilter.trim();
+      }
+      if (dateOrderFilter) {
+        filters.order_by_date = dateOrderFilter;
       }
 
       console.log('🔍 EventManagement - Carregando eventos com filtros:', filters);
@@ -103,7 +107,7 @@ const EventManagement = () => {
     } finally {
       setLoading(false);
     }
-  }, [searchTerm, statusFilter, toast]);
+  }, [searchTerm, statusFilter, dateOrderFilter, toast]);
 
   // Load events on mount and when filters change (with debounce)
   useEffect(() => {
@@ -307,6 +311,15 @@ const EventManagement = () => {
                 <SelectItem value="ongoing">Em andamento</SelectItem>
                 <SelectItem value="finished">Finalizado</SelectItem>
                 <SelectItem value="cancelled">Cancelado</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={dateOrderFilter} onValueChange={setDateOrderFilter}>
+              <SelectTrigger className="w-[200px]">
+                <SelectValue placeholder="Ordenar por data" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="asc">Mais próximo primeiro</SelectItem>
+                <SelectItem value="desc">Mais longe primeiro</SelectItem>
               </SelectContent>
             </Select>
             <Button variant="outline">

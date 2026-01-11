@@ -36,7 +36,8 @@ const Index = () => {
     city: "",
     month: "",
     category: "",
-    search: ""
+    search: "",
+    order_by_date: 'asc',
   });
   const [oldResultsUrl, setOldResultsUrl] = useState<string | null>(null);
   const [pageSettings, setPageSettings] = useState({
@@ -58,9 +59,12 @@ const Index = () => {
   });
   useEffect(() => {
     loadPageSettings();
-    loadUpcomingEvents(); // Load events from API instead of mock
     loadSystemSettings();
   }, []);
+
+  useEffect(() => {
+    loadUpcomingEvents(); // Load events from API when order filter changes
+  }, [filters.order_by_date]);
 
   const loadSystemSettings = async () => {
     try {
@@ -76,8 +80,10 @@ const Index = () => {
   const loadUpcomingEvents = async () => {
     try {
       // Buscar eventos publicados e ongoing
-      const publishedResponse = await getEvents({ status: 'published' });
-      const ongoingResponse = await getEvents({ status: 'ongoing' });
+      // Ordenar por data conforme filtro selecionado
+      const orderBy = filters.order_by_date || 'asc';
+      const publishedResponse = await getEvents({ status: 'published', order_by_date: orderBy });
+      const ongoingResponse = await getEvents({ status: 'ongoing', order_by_date: orderBy });
       
       const allEvents: Event[] = [];
       const now = new Date();
@@ -102,14 +108,10 @@ const Index = () => {
         allEvents.push(...openEvents);
       }
       
-      // Remover duplicatas e ordenar por data (mais próximo primeiro)
+      // Remover duplicatas (já ordenados pelo backend)
       const uniqueEvents = Array.from(
         new Map(allEvents.map(event => [event.id, event])).values()
-      ).sort((a, b) => {
-        const dateA = new Date(a.event_date).getTime();
-        const dateB = new Date(b.event_date).getTime();
-        return dateA - dateB;
-      });
+      );
       
       setUpcomingEvents(uniqueEvents);
     } catch (error) {

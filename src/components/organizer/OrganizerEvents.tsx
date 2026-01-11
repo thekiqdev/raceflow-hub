@@ -43,6 +43,7 @@ const OrganizerEvents = () => {
   const [loading, setLoading] = useState(true);
   const [events, setEvents] = useState<Event[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
+  const [dateOrderFilter, setDateOrderFilter] = useState<string>("asc"); // 'asc' = mais próximo, 'desc' = mais longe
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
   const [isDeleting, setIsDeleting] = useState<string | null>(null);
@@ -61,6 +62,9 @@ const OrganizerEvents = () => {
       const filters: any = { organizer_id: user.id };
       if (searchQuery && searchQuery.trim()) {
         filters.search = searchQuery.trim();
+      }
+      if (dateOrderFilter) {
+        filters.order_by_date = dateOrderFilter;
       }
 
       console.log('🔍 OrganizerEvents - Carregando eventos com filtros:', filters);
@@ -83,7 +87,7 @@ const OrganizerEvents = () => {
     } finally {
       setLoading(false);
     }
-  }, [user, searchQuery, toast]);
+  }, [user, searchQuery, dateOrderFilter, toast]);
 
   // Load events on mount and when search query changes (with debounce)
   useEffect(() => {
@@ -167,14 +171,25 @@ const OrganizerEvents = () => {
       <Card>
         <CardContent className="pt-6">
           <div className="flex flex-col sm:flex-row gap-4 justify-between">
-            <div className="relative flex-1 max-w-md">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Buscar por nome ou cidade..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10"
-              />
+            <div className="flex gap-2 flex-1">
+              <div className="relative flex-1 max-w-md">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Buscar por nome ou cidade..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-10"
+                />
+              </div>
+              <Select value={dateOrderFilter} onValueChange={setDateOrderFilter}>
+                <SelectTrigger className="w-[200px]">
+                  <SelectValue placeholder="Ordenar por data" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="asc">Mais próximo primeiro</SelectItem>
+                  <SelectItem value="desc">Mais longe primeiro</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <Button onClick={() => {
               setSelectedEvent(null);

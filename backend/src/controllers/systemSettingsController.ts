@@ -43,6 +43,7 @@ const updateSystemSettingsSchema = z.object({
   currency: z.string().optional(),
   language: z.string().optional(),
   old_results_url: z.string().url().optional().nullable(),
+  old_platform_url: z.string().url().optional().nullable(),
 });
 
 /**
@@ -90,6 +91,7 @@ export const getEnabledModulesController = async (
         platform_fee_type: settings.platform_fee_type || 'fixed',
         withdrawal_fee: settings.withdrawal_fee || 0,
         withdrawal_fee_type: settings.withdrawal_fee_type || 'fixed',
+        old_platform_url: settings.old_platform_url || null,
       },
     });
   } catch (error: any) {

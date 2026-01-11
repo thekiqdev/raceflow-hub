@@ -37,19 +37,23 @@ const Events = () => {
     month: "",
     category: "",
     search: "",
+    order_by_date: 'asc',
   });
 
+  // Recarregar eventos quando filtro de ordenação mudar
   useEffect(() => {
     loadEvents();
-  }, []);
+  }, [filters.order_by_date]);
 
   const loadEvents = async () => {
     try {
       setLoading(true);
       
       // Buscar eventos publicados e ongoing (eventos com inscrição aberta)
-      const publishedResponse = await getEvents({ status: 'published' });
-      const ongoingResponse = await getEvents({ status: 'ongoing' });
+      // Ordenar por data conforme filtro selecionado
+      const orderBy = filters.order_by_date || 'asc';
+      const publishedResponse = await getEvents({ status: 'published', order_by_date: orderBy });
+      const ongoingResponse = await getEvents({ status: 'ongoing', order_by_date: orderBy });
       
       const allEvents: Event[] = [];
       
@@ -63,14 +67,10 @@ const Events = () => {
         allEvents.push(...ongoingResponse.data);
       }
       
-      // Remover duplicatas e ordenar por data (mais próximo primeiro)
+      // Remover duplicatas (já ordenados pelo backend)
       const uniqueEvents = Array.from(
         new Map(allEvents.map(event => [event.id, event])).values()
-      ).sort((a, b) => {
-        const dateA = new Date(a.event_date).getTime();
-        const dateB = new Date(b.event_date).getTime();
-        return dateA - dateB;
-      });
+      );
       
       setEvents(uniqueEvents);
     } catch (error) {

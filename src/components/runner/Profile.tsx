@@ -31,6 +31,7 @@ import { LeaderDashboard } from "./leader/LeaderDashboard";
 import { getOwnProfile, type Profile } from "@/lib/api/profiles";
 import { getRunnerStats, type RunnerStats } from "@/lib/api/runnerStats";
 import { getMyGroupLeader } from "@/lib/api/groupLeaders";
+import { getEnabledModules } from "@/lib/api/systemSettings";
 
 export function Profile() {
   const navigate = useNavigate();
@@ -39,6 +40,7 @@ export function Profile() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [stats, setStats] = useState<RunnerStats | null>(null);
   const [isLeader, setIsLeader] = useState(false);
+  const [oldPlatformUrl, setOldPlatformUrl] = useState<string | null>(null);
 
   const [openDialogs, setOpenDialogs] = useState({
     editProfile: false,
@@ -72,10 +74,11 @@ export function Profile() {
 
     try {
       setLoading(true);
-      const [profileResponse, statsResponse, leaderResponse] = await Promise.all([
+      const [profileResponse, statsResponse, leaderResponse, modulesResponse] = await Promise.all([
         getOwnProfile(),
         getRunnerStats(),
         getMyGroupLeader().catch(() => ({ success: false, data: null })),
+        getEnabledModules().catch(() => ({ success: false, data: null })),
       ]);
 
       if (profileResponse.success && profileResponse.data) {
@@ -95,6 +98,13 @@ export function Profile() {
         setIsLeader(true);
       } else {
         setIsLeader(false);
+      }
+
+      // Get old platform URL from modules/settings
+      if (modulesResponse.success && modulesResponse.data?.old_platform_url) {
+        setOldPlatformUrl(modulesResponse.data.old_platform_url);
+      } else {
+        setOldPlatformUrl(null);
       }
     } catch (error: any) {
       console.error("Error loading profile data:", error);
@@ -303,9 +313,23 @@ export function Profile() {
         </div>
 
         {/* App Version */}
-        <div className="text-center text-xs text-muted-foreground mb-4">
+        <div className="text-center text-xs text-muted-foreground mb-2">
           Cronoteam v1.0.0
         </div>
+        
+        {/* Old Platform Link */}
+        {oldPlatformUrl && (
+          <div className="text-center mb-4">
+            <a
+              href={oldPlatformUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs text-primary hover:underline"
+            >
+              Acessar plataforma antiga
+            </a>
+          </div>
+        )}
       </div>
 
       {/* Dialogs */}

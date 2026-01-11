@@ -33,6 +33,7 @@ const SystemSettings = () => {
     company_zip: "",
     company_country: "",
     old_results_url: "",
+    old_platform_url: "",
   });
   
   const [emailForm, setEmailForm] = useState({
@@ -106,6 +107,7 @@ const SystemSettings = () => {
           company_zip: data.company_zip || "",
           company_country: data.company_country || "Brasil",
           old_results_url: data.old_results_url || "",
+          old_platform_url: data.old_platform_url || "",
         });
         
         setEmailForm({
@@ -244,6 +246,7 @@ const SystemSettings = () => {
         company_zip: generalForm.company_zip || null,
         company_country: generalForm.company_country,
         old_results_url: generalForm.old_results_url || null,
+        old_platform_url: generalForm.old_platform_url || null,
       });
       
       if (response.success) {
@@ -576,6 +579,20 @@ const SystemSettings = () => {
                 />
                 <p className="text-xs text-muted-foreground mt-1">
                   URL do site antigo para visualização de resultados. Será exibido na página inicial após a seção "Nossos Números".
+                </p>
+              </div>
+              <div>
+                <Label htmlFor="old_platform_url">Plataforma Antiga (URL)</Label>
+                <Input 
+                  id="old_platform_url"
+                  type="url"
+                  value={generalForm.old_platform_url}
+                  onChange={(e) => setGeneralForm({ ...generalForm, old_platform_url: e.target.value })}
+                  placeholder="https://exemplo.com/plataforma-antiga"
+                  className="mt-2" 
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  URL da plataforma antiga. Será exibido no menu perfil do runner, logo abaixo da versão do app.
                 </p>
               </div>
               <Button onClick={handleSaveGeneral} disabled={saving}>

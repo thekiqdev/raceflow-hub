@@ -67,6 +67,7 @@ export const getEvents = async (filters?: {
   state?: string;
   organizer_id?: string;
   search?: string;
+  order_by_date?: 'asc' | 'desc'; // 'asc' = mais próximo primeiro, 'desc' = mais longe primeiro
 }) => {
   // Use a subquery approach to avoid GROUP BY issues
   let queryText = `
@@ -148,7 +149,9 @@ export const getEvents = async (filters?: {
     queryText += ' WHERE ' + conditions.join(' AND ');
   }
 
-  queryText += ' ORDER BY e.created_at DESC, e.event_date DESC';
+  // Order by event date (default: ASC - mais próximo primeiro)
+  const orderBy = filters?.order_by_date === 'desc' ? 'DESC' : 'ASC';
+  queryText += ` ORDER BY e.event_date ${orderBy}, e.created_at DESC`;
 
   console.log('🔍 Executing query with filters:', JSON.stringify(filters, null, 2));
   console.log('🔍 Query text:', queryText);

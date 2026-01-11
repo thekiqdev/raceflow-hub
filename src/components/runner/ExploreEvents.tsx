@@ -25,11 +25,12 @@ export function ExploreEvents() {
     month: "",
     category: "",
     search: "",
+    order_by_date: 'asc',
   });
 
   useEffect(() => {
     loadEvents();
-  }, [debouncedSearchQuery]);
+  }, [debouncedSearchQuery, filters.order_by_date]);
 
   const loadEvents = async () => {
     try {
@@ -39,6 +40,7 @@ export function ExploreEvents() {
       const response = await getEvents({ 
         status: 'published',
         search: debouncedSearchQuery || undefined,
+        order_by_date: filters.order_by_date || 'asc',
       });
       
       if (response.success && response.data) {
@@ -211,7 +213,7 @@ export function ExploreEvents() {
                   variant="outline" 
                   onClick={() => {
                     setSearchQuery("");
-                    setFilters({ city: "", month: "", category: "", search: "" });
+                    setFilters({ city: "", month: "", category: "", search: "", order_by_date: 'asc' });
                   }}
                   className="mt-4"
                 >

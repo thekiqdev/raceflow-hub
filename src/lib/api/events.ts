@@ -76,6 +76,7 @@ export const getEvents = async (filters?: {
   state?: string;
   organizer_id?: string;
   search?: string;
+  order_by_date?: 'asc' | 'desc';
 }) => {
   const queryParams = new URLSearchParams();
   if (filters?.status) queryParams.append('status', filters.status);
@@ -83,6 +84,7 @@ export const getEvents = async (filters?: {
   if (filters?.state) queryParams.append('state', filters.state);
   if (filters?.organizer_id) queryParams.append('organizer_id', filters.organizer_id);
   if (filters?.search) queryParams.append('search', filters.search);
+  if (filters?.order_by_date) queryParams.append('order_by_date', filters.order_by_date);
 
   const queryString = queryParams.toString();
   const endpoint = `/events${queryString ? `?${queryString}` : ''}`;

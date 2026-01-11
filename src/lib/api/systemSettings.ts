@@ -40,6 +40,7 @@ export interface SystemSettings {
   currency: string;
   language: string;
   old_results_url?: string;
+  old_platform_url?: string;
   created_at: string;
   updated_at: string;
 }
@@ -82,6 +83,7 @@ export interface UpdateSystemSettingsData {
   currency?: string;
   language?: string;
   old_results_url?: string | null;
+  old_platform_url?: string | null;
 }
 
 /**
@@ -108,6 +110,7 @@ export const getEnabledModules = async (): Promise<{
     platform_fee_type?: 'fixed' | 'percentage';
     withdrawal_fee?: number;
     withdrawal_fee_type?: 'fixed' | 'percentage';
+    old_platform_url?: string | null;
   };
   error?: string;
   message?: string;
@@ -119,6 +122,7 @@ export const getEnabledModules = async (): Promise<{
     platform_fee_type?: 'fixed' | 'percentage';
     withdrawal_fee?: number;
     withdrawal_fee_type?: 'fixed' | 'percentage';
+    old_platform_url?: string | null;
   }>('/registrations/settings/modules');
 };
 
