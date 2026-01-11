@@ -48,6 +48,10 @@ interface EventDetail {
   registration_start_date?: string | null;
   registration_end_date?: string | null;
   registration_auto_mode?: boolean;
+  pix_enabled?: boolean | null;
+  pix_disabled_at?: string | null;
+  credit_card_enabled?: boolean | null;
+  credit_card_disabled_at?: string | null;
   organizer_name?: string;
   organizer_logo_url?: string;
   organizer_organization_name?: string;
@@ -179,6 +183,10 @@ const EventDetails = () => {
             registration_start_date: eventResponse.data.registration_start_date || null,
             registration_end_date: eventResponse.data.registration_end_date || null,
             registration_auto_mode: eventResponse.data.registration_auto_mode || false,
+            pix_enabled: eventResponse.data.pix_enabled !== null && eventResponse.data.pix_enabled !== undefined ? eventResponse.data.pix_enabled : null,
+            pix_disabled_at: eventResponse.data.pix_disabled_at || null,
+            credit_card_enabled: eventResponse.data.credit_card_enabled !== null && eventResponse.data.credit_card_enabled !== undefined ? eventResponse.data.credit_card_enabled : null,
+            credit_card_disabled_at: eventResponse.data.credit_card_disabled_at || null,
             organizer_name: eventResponse.data.organizer_name,
             organizer_logo_url: eventResponse.data.organizer_logo_url,
             organizer_organization_name: eventResponse.data.organizer_organization_name,
@@ -1191,6 +1199,10 @@ const EventDetails = () => {
             registration_start_date: event.registration_start_date,
             registration_end_date: event.registration_end_date,
             registration_auto_mode: event.registration_auto_mode,
+            pix_enabled: event.pix_enabled,
+            pix_disabled_at: event.pix_disabled_at,
+            credit_card_enabled: event.credit_card_enabled,
+            credit_card_disabled_at: event.credit_card_disabled_at,
           }}
           categories={categories}
           kits={kits}

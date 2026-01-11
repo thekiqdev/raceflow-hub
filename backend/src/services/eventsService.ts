@@ -17,6 +17,10 @@ export interface CreateEventData {
   registration_start_date?: string | null;
   registration_end_date?: string | null;
   registration_auto_mode?: boolean;
+  pix_enabled?: boolean;
+  pix_disabled_at?: string | null;
+  credit_card_enabled?: boolean;
+  credit_card_disabled_at?: string | null;
 }
 
 export interface UpdateEventData {
@@ -34,6 +38,10 @@ export interface UpdateEventData {
   registration_start_date?: string | null;
   registration_end_date?: string | null;
   registration_auto_mode?: boolean;
+  pix_enabled?: boolean;
+  pix_disabled_at?: string | null;
+  credit_card_enabled?: boolean;
+  credit_card_disabled_at?: string | null;
 }
 
 /**
@@ -270,9 +278,10 @@ export const createEvent = async (data: CreateEventData) => {
     `INSERT INTO events (
       organizer_id, title, description, event_date, location, 
       city, state, banner_url, regulation_url, result_url, status,
-      registration_status, registration_start_date, registration_end_date, registration_auto_mode
+      registration_status, registration_start_date, registration_end_date, registration_auto_mode,
+      pix_enabled, pix_disabled_at, credit_card_enabled, credit_card_disabled_at
     )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
     RETURNING *`,
     [
       data.organizer_id,
@@ -290,6 +299,10 @@ export const createEvent = async (data: CreateEventData) => {
       data.registration_start_date || null,
       data.registration_end_date || null,
       data.registration_auto_mode || false,
+      data.pix_enabled !== undefined ? data.pix_enabled : true,
+      data.pix_disabled_at || null,
+      data.credit_card_enabled !== undefined ? data.credit_card_enabled : true,
+      data.credit_card_disabled_at || null,
     ]
   );
 

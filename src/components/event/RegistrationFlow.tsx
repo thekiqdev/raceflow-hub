@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -69,6 +69,10 @@ interface EventInfo {
   registration_start_date?: string | null;
   registration_end_date?: string | null;
   registration_auto_mode?: boolean;
+  pix_enabled?: boolean | null;
+  pix_disabled_at?: string | null;
+  credit_card_enabled?: boolean | null;
+  credit_card_disabled_at?: string | null;
 }
 
 interface RegistrationFlowProps {
@@ -222,6 +226,74 @@ export function RegistrationFlow({
   }
   
   const totalPrice = Math.max(0, totalAfterDiscounts + platformFeeAmount);
+
+  // Função helper para verificar se um método de pagamento está habilitado
+  const isPaymentMethodEnabled = useCallback((method: 'pix' | 'credit_card'): boolean => {
+    if (!event) return true; // Se não houver evento, permite ambos (compatibilidade)
+    
+    const now = new Date();
+    
+    if (method === 'pix') {
+      // Verifica se PIX está habilitado
+      const pixEnabled = event.pix_enabled !== null && event.pix_enabled !== undefined 
+        ? event.pix_enabled 
+        : true; // Padrão é true se não especificado
+      
+      if (!pixEnabled) return false;
+      
+      // Verifica se a data de desabilitação automática já passou
+      if (event.pix_disabled_at) {
+        const disabledAt = new Date(event.pix_disabled_at);
+        if (now >= disabledAt) return false;
+      }
+      
+      return true;
+    }
+    
+    if (method === 'credit_card') {
+      // Verifica se Cartão de Crédito está habilitado
+      const creditCardEnabled = event.credit_card_enabled !== null && event.credit_card_enabled !== undefined 
+        ? event.credit_card_enabled 
+        : true; // Padrão é true se não especificado
+      
+      if (!creditCardEnabled) return false;
+      
+      // Verifica se a data de desabilitação automática já passou
+      if (event.credit_card_disabled_at) {
+        const disabledAt = new Date(event.credit_card_disabled_at);
+        if (now >= disabledAt) return false;
+      }
+      
+      return true;
+    }
+    
+    return false;
+  }, [event]);
+
+  // Ajustar seleção de método de pagamento quando entrar no step 6
+  useEffect(() => {
+    if (step === 6 && totalPrice > 0 && event) {
+      const pixEnabled = isPaymentMethodEnabled('pix');
+      const creditCardEnabled = isPaymentMethodEnabled('credit_card');
+      
+      // Se o método selecionado não está mais habilitado, resetar
+      if (selectedPaymentMethod === 'pix' && !pixEnabled) {
+        setSelectedPaymentMethod(null);
+      }
+      if (selectedPaymentMethod === 'credit_card' && !creditCardEnabled) {
+        setSelectedPaymentMethod(null);
+      }
+      
+      // Se apenas um método estiver disponível, selecionar automaticamente
+      if (!selectedPaymentMethod) {
+        if (pixEnabled && !creditCardEnabled) {
+          setSelectedPaymentMethod('pix');
+        } else if (creditCardEnabled && !pixEnabled) {
+          setSelectedPaymentMethod('credit_card');
+        }
+      }
+    }
+  }, [step, event, totalPrice, selectedPaymentMethod, isPaymentMethodEnabled]);
 
   // Load system settings and user profile when modal opens
   useEffect(() => {
@@ -2810,85 +2882,118 @@ export function RegistrationFlow({
         )}
 
         {/* Step 6: Payment Method Selection */}
-        {step === 6 && canRegister && (
-          <div className="space-y-6">
-            {(() => {
-              console.log('🔍 Step 6 - Debug:', {
-                step,
-                totalPrice,
-                shouldShowPaymentSelection: totalPrice > 0,
-                selectedPaymentMethod,
-              });
-              return null;
-            })()}
-            {totalPrice > 0 ? (
-              <>
-                <div>
-                  <h3 className="text-lg font-semibold mb-4">Escolha o Método de Pagamento</h3>
-                  <p className="text-sm text-muted-foreground mb-6">
-                    Selecione como deseja pagar sua inscrição
+        {step === 6 && canRegister && (() => {
+          const pixEnabled = isPaymentMethodEnabled('pix');
+          const creditCardEnabled = isPaymentMethodEnabled('credit_card');
+          
+          // Se nenhum método estiver habilitado, mostrar mensagem
+          if (!pixEnabled && !creditCardEnabled) {
+            return (
+              <div className="space-y-6">
+                <div className="rounded-lg border border-destructive bg-destructive/10 p-6 text-center">
+                  <h3 className="text-lg font-semibold text-destructive mb-2">
+                    Métodos de Pagamento Indisponíveis
+                  </h3>
+                  <p className="text-sm text-muted-foreground">
+                    Nenhum método de pagamento está disponível para este evento no momento.
+                    Entre em contato com o organizador para mais informações.
                   </p>
-                  
-                  <RadioGroup 
-                    value={selectedPaymentMethod || undefined}
-                    onValueChange={(value) => setSelectedPaymentMethod(value as 'pix' | 'credit_card')}
-                    className="grid gap-4"
-                  >
-                    <Card 
-                      className={`cursor-pointer transition-all hover:border-primary ${
-                        selectedPaymentMethod === 'pix' ? 'border-primary border-2 bg-primary/5' : ''
-                      }`}
-                      onClick={() => setSelectedPaymentMethod('pix')}
-                    >
-                      <CardContent className="p-6">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-4">
-                            <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
-                              <span className="text-2xl">📱</span>
-                            </div>
-                            <div>
-                              <h4 className="font-semibold">PIX</h4>
-                              <p className="text-sm text-muted-foreground">
-                                Aprovação instantânea
-                              </p>
-                            </div>
-                          </div>
-                          <RadioGroupItem 
-                            value="pix" 
-                            className="ml-auto"
-                          />
-                        </div>
-                      </CardContent>
-                    </Card>
-
-                    <Card 
-                      className={`cursor-pointer transition-all hover:border-primary ${
-                        selectedPaymentMethod === 'credit_card' ? 'border-primary border-2 bg-primary/5' : ''
-                      }`}
-                      onClick={() => setSelectedPaymentMethod('credit_card')}
-                    >
-                      <CardContent className="p-6">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-4">
-                            <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
-                              <span className="text-2xl">💳</span>
-                            </div>
-                            <div>
-                              <h4 className="font-semibold">Cartão de Crédito</h4>
-                              <p className="text-sm text-muted-foreground">
-                                Pagamento seguro e rápido
-                              </p>
-                            </div>
-                          </div>
-                          <RadioGroupItem 
-                            value="credit_card" 
-                            className="ml-auto"
-                          />
-                        </div>
-                      </CardContent>
-                    </Card>
-                  </RadioGroup>
                 </div>
+              </div>
+            );
+          }
+          
+          return (
+            <div className="space-y-6">
+              {(() => {
+                console.log('🔍 Step 6 - Debug:', {
+                  step,
+                  totalPrice,
+                  shouldShowPaymentSelection: totalPrice > 0,
+                  selectedPaymentMethod,
+                  pixEnabled,
+                  creditCardEnabled,
+                  eventPaymentConfig: {
+                    pix_enabled: event?.pix_enabled,
+                    pix_disabled_at: event?.pix_disabled_at,
+                    credit_card_enabled: event?.credit_card_enabled,
+                    credit_card_disabled_at: event?.credit_card_disabled_at,
+                  },
+                });
+                return null;
+              })()}
+              {totalPrice > 0 ? (
+                <>
+                  <div>
+                    <h3 className="text-lg font-semibold mb-4">Escolha o Método de Pagamento</h3>
+                    <p className="text-sm text-muted-foreground mb-6">
+                      Selecione como deseja pagar sua inscrição
+                    </p>
+                    
+                    <RadioGroup 
+                      value={selectedPaymentMethod || undefined}
+                      onValueChange={(value) => setSelectedPaymentMethod(value as 'pix' | 'credit_card')}
+                      className="grid gap-4"
+                    >
+                      {pixEnabled && (
+                        <Card 
+                          className={`cursor-pointer transition-all hover:border-primary ${
+                            selectedPaymentMethod === 'pix' ? 'border-primary border-2 bg-primary/5' : ''
+                          }`}
+                          onClick={() => setSelectedPaymentMethod('pix')}
+                        >
+                          <CardContent className="p-6">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-4">
+                                <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
+                                  <span className="text-2xl">📱</span>
+                                </div>
+                                <div>
+                                  <h4 className="font-semibold">PIX</h4>
+                                  <p className="text-sm text-muted-foreground">
+                                    Aprovação instantânea
+                                  </p>
+                                </div>
+                              </div>
+                              <RadioGroupItem 
+                                value="pix" 
+                                className="ml-auto"
+                              />
+                            </div>
+                          </CardContent>
+                        </Card>
+                      )}
+
+                      {creditCardEnabled && (
+                        <Card 
+                          className={`cursor-pointer transition-all hover:border-primary ${
+                            selectedPaymentMethod === 'credit_card' ? 'border-primary border-2 bg-primary/5' : ''
+                          }`}
+                          onClick={() => setSelectedPaymentMethod('credit_card')}
+                        >
+                          <CardContent className="p-6">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-4">
+                                <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
+                                  <span className="text-2xl">💳</span>
+                                </div>
+                                <div>
+                                  <h4 className="font-semibold">Cartão de Crédito</h4>
+                                  <p className="text-sm text-muted-foreground">
+                                    Pagamento seguro e rápido
+                                  </p>
+                                </div>
+                              </div>
+                              <RadioGroupItem 
+                                value="credit_card" 
+                                className="ml-auto"
+                              />
+                            </div>
+                          </CardContent>
+                        </Card>
+                      )}
+                    </RadioGroup>
+                  </div>
 
                 {/* Credit Card Form - only show if credit card is selected */}
                 {selectedPaymentMethod === 'credit_card' && (
@@ -3061,8 +3166,9 @@ export function RegistrationFlow({
                 </div>
               </div>
             )}
-          </div>
-        )}
+            </div>
+          );
+        })()}
 
         {/* Step 7: Confirmation Ticket / Payment */}
         {step === 7 && (

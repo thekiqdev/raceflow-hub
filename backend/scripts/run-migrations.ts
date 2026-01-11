@@ -96,6 +96,7 @@ const migrations = [
   '067_create_runner_documents.sql',
   '068_create_document_types.sql',
   '069_add_old_platform_url_to_system_settings.sql',
+  '070_add_payment_methods_to_events.sql',
 ];
 
 // Create migrations tracking table

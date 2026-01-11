@@ -144,6 +144,10 @@ export interface Event {
   registration_start_date: Date | null;
   registration_end_date: Date | null;
   registration_auto_mode: boolean | null;
+  pix_enabled: boolean | null;
+  pix_disabled_at: Date | null;
+  credit_card_enabled: boolean | null;
+  credit_card_disabled_at: Date | null;
   created_at: Date | null;
   updated_at: Date | null;
 }

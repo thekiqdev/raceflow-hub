@@ -19,6 +19,10 @@ export interface Event {
   registration_start_date?: string | null;
   registration_end_date?: string | null;
   registration_auto_mode?: boolean;
+  pix_enabled?: boolean | null;
+  pix_disabled_at?: string | null;
+  credit_card_enabled?: boolean | null;
+  credit_card_disabled_at?: string | null;
   created_at?: string;
   updated_at?: string;
   organizer_name?: string;
@@ -50,6 +54,10 @@ export interface CreateEventData {
   registration_start_date?: string | null;
   registration_end_date?: string | null;
   registration_auto_mode?: boolean;
+  pix_enabled?: boolean;
+  pix_disabled_at?: string | null;
+  credit_card_enabled?: boolean;
+  credit_card_disabled_at?: string | null;
 }
 
 export interface UpdateEventData {
@@ -67,6 +75,10 @@ export interface UpdateEventData {
   registration_start_date?: string | null;
   registration_end_date?: string | null;
   registration_auto_mode?: boolean;
+  pix_enabled?: boolean;
+  pix_disabled_at?: string | null;
+  credit_card_enabled?: boolean;
+  credit_card_disabled_at?: string | null;
 }
 
 // Get all events

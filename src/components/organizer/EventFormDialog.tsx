@@ -61,6 +61,10 @@ const eventFormSchema = z.object({
   registration_start_date: z.string().nullable().optional(),
   registration_end_date: z.string().nullable().optional(),
   registration_auto_mode: z.boolean().optional(),
+  pix_enabled: z.boolean().optional(),
+  pix_disabled_at: z.string().nullable().optional(),
+  credit_card_enabled: z.boolean().optional(),
+  credit_card_disabled_at: z.string().nullable().optional(),
 }).refine((data) => {
   // Se modo automático está ativado, datas são obrigatórias
   if (data.registration_auto_mode === true) {
@@ -218,6 +222,10 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
       registration_start_date: null,
       registration_end_date: null,
       registration_auto_mode: false,
+      pix_enabled: true,
+      pix_disabled_at: null,
+      credit_card_enabled: true,
+      credit_card_disabled_at: null,
     },
   });
 
@@ -240,6 +248,10 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
           registration_start_date: null,
           registration_end_date: null,
           registration_auto_mode: false,
+          pix_enabled: true,
+          pix_disabled_at: null,
+          credit_card_enabled: true,
+          credit_card_disabled_at: null,
         });
         setRegistrationAutoMode(false);
         setModalities([]);
@@ -277,6 +289,10 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
               registration_start_date: eventData.registration_start_date || null,
               registration_end_date: eventData.registration_end_date || null,
               registration_auto_mode: autoMode,
+              pix_enabled: eventData.pix_enabled !== null && eventData.pix_enabled !== undefined ? eventData.pix_enabled : true,
+              pix_disabled_at: eventData.pix_disabled_at || null,
+              credit_card_enabled: eventData.credit_card_enabled !== null && eventData.credit_card_enabled !== undefined ? eventData.credit_card_enabled : true,
+              credit_card_disabled_at: eventData.credit_card_disabled_at || null,
             });
             setRegistrationAutoMode(autoMode);
 
@@ -1271,6 +1287,10 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
         registration_start_date: values.registration_start_date || null,
         registration_end_date: values.registration_end_date || null,
         registration_auto_mode: values.registration_auto_mode || false,
+        pix_enabled: values.pix_enabled ?? true,
+        pix_disabled_at: values.pix_disabled_at || null,
+        credit_card_enabled: values.credit_card_enabled ?? true,
+        credit_card_disabled_at: values.credit_card_disabled_at || null,
       };
 
       let eventId = event?.id;
@@ -1931,7 +1951,7 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
                 <TabsTrigger value="categories">Categorias</TabsTrigger>
                 <TabsTrigger value="kits">Kits</TabsTrigger>
                 <TabsTrigger value="pickup">Retirada</TabsTrigger>
-                <TabsTrigger value="payment">Valores</TabsTrigger>
+                <TabsTrigger value="payment">Pagamentos</TabsTrigger>
                 <TabsTrigger value="publish">Publicação</TabsTrigger>
               </TabsList>
 
@@ -3475,35 +3495,146 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
                 )}
               </TabsContent>
 
-              {/* Tab 5: Valores e Pagamento */}
+              {/* Tab 5: Pagamentos */}
               <TabsContent value="payment" className="space-y-4">
                 <Card>
                   <CardHeader>
                     <CardTitle>Configurações de Pagamento</CardTitle>
                     <CardDescription>
-                      Configure as formas de pagamento aceitas
+                      Configure quais métodos de pagamento estão disponíveis para este evento
                     </CardDescription>
                   </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="rounded-lg border p-4 space-y-2">
-                      <h4 className="font-medium">Formas de Pagamento</h4>
-                      <div className="space-y-2">
-                        <div className="flex items-center gap-2">
-                          <Badge>Pix</Badge>
-                          <Badge>Cartão de Crédito</Badge>
-                          <Badge variant="outline">Boleto</Badge>
+                  <CardContent className="space-y-6">
+                    {/* PIX */}
+                    <div className="rounded-lg border p-4 space-y-4">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
+                            <span className="text-xl">📱</span>
+                          </div>
+                          <div>
+                            <h4 className="font-medium">PIX</h4>
+                            <p className="text-sm text-muted-foreground">
+                              Pagamento instantâneo via PIX
+                            </p>
+                          </div>
                         </div>
-                        <p className="text-sm text-muted-foreground">
-                          As configurações de pagamento serão gerenciadas pelo sistema
-                        </p>
+                        <FormField
+                          control={form.control}
+                          name="pix_enabled"
+                          render={({ field }) => (
+                            <FormItem className="flex flex-row items-center space-x-3 space-y-0">
+                              <FormControl>
+                                <Checkbox
+                                  checked={field.value ?? true}
+                                  onCheckedChange={(checked) => {
+                                    field.onChange(checked);
+                                    if (!checked) {
+                                      form.setValue("pix_disabled_at", null);
+                                    }
+                                  }}
+                                />
+                              </FormControl>
+                            </FormItem>
+                          )}
+                        />
                       </div>
+                      {form.watch("pix_enabled") && (
+                        <div className="space-y-2 pl-12">
+                          <Label className="text-sm font-normal">
+                            Desabilitar automaticamente em:
+                          </Label>
+                          <FormField
+                            control={form.control}
+                            name="pix_disabled_at"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormControl>
+                                  <Input
+                                    type="datetime-local"
+                                    value={field.value ? new Date(field.value).toISOString().slice(0, 16) : ""}
+                                    onChange={(e) => {
+                                      const value = e.target.value ? new Date(e.target.value).toISOString() : null;
+                                      field.onChange(value);
+                                    }}
+                                    placeholder="Opcional - deixe em branco para manter sempre habilitado"
+                                  />
+                                </FormControl>
+                                <FormDescription className="text-xs">
+                                  Se preenchido, o PIX será desabilitado automaticamente nesta data/hora
+                                </FormDescription>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                        </div>
+                      )}
                     </div>
 
-                    <div className="rounded-lg border p-4 space-y-2">
-                      <h4 className="font-medium">Política de Reembolso</h4>
-                      <p className="text-sm text-muted-foreground">
-                        Configure em Configurações {'>'} Financeiro
-                      </p>
+                    {/* Cartão de Crédito */}
+                    <div className="rounded-lg border p-4 space-y-4">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
+                            <span className="text-xl">💳</span>
+                          </div>
+                          <div>
+                            <h4 className="font-medium">Cartão de Crédito</h4>
+                            <p className="text-sm text-muted-foreground">
+                              Pagamento via cartão de crédito
+                            </p>
+                          </div>
+                        </div>
+                        <FormField
+                          control={form.control}
+                          name="credit_card_enabled"
+                          render={({ field }) => (
+                            <FormItem className="flex flex-row items-center space-x-3 space-y-0">
+                              <FormControl>
+                                <Checkbox
+                                  checked={field.value ?? true}
+                                  onCheckedChange={(checked) => {
+                                    field.onChange(checked);
+                                    if (!checked) {
+                                      form.setValue("credit_card_disabled_at", null);
+                                    }
+                                  }}
+                                />
+                              </FormControl>
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+                      {form.watch("credit_card_enabled") && (
+                        <div className="space-y-2 pl-12">
+                          <Label className="text-sm font-normal">
+                            Desabilitar automaticamente em:
+                          </Label>
+                          <FormField
+                            control={form.control}
+                            name="credit_card_disabled_at"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormControl>
+                                  <Input
+                                    type="datetime-local"
+                                    value={field.value ? new Date(field.value).toISOString().slice(0, 16) : ""}
+                                    onChange={(e) => {
+                                      const value = e.target.value ? new Date(e.target.value).toISOString() : null;
+                                      field.onChange(value);
+                                    }}
+                                    placeholder="Opcional - deixe em branco para manter sempre habilitado"
+                                  />
+                                </FormControl>
+                                <FormDescription className="text-xs">
+                                  Se preenchido, o cartão de crédito será desabilitado automaticamente nesta data/hora
+                                </FormDescription>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                        </div>
+                      )}
                     </div>
                   </CardContent>
                 </Card>

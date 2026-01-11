@@ -65,6 +65,10 @@ export function EventViewEditDialog({
     registration_start_date: null as string | null,
     registration_end_date: null as string | null,
     registration_auto_mode: false,
+    pix_enabled: true,
+    pix_disabled_at: null as string | null,
+    credit_card_enabled: true,
+    credit_card_disabled_at: null as string | null,
   });
   const [registrationAutoMode, setRegistrationAutoMode] = useState(false);
 
@@ -107,6 +111,10 @@ export function EventViewEditDialog({
         registration_start_date: eventData.registration_start_date || null,
         registration_end_date: eventData.registration_end_date || null,
         registration_auto_mode: autoMode,
+        pix_enabled: eventData.pix_enabled !== null && eventData.pix_enabled !== undefined ? eventData.pix_enabled : true,
+        pix_disabled_at: eventData.pix_disabled_at || null,
+        credit_card_enabled: eventData.credit_card_enabled !== null && eventData.credit_card_enabled !== undefined ? eventData.credit_card_enabled : true,
+        credit_card_disabled_at: eventData.credit_card_disabled_at || null,
       });
       setRegistrationAutoMode(autoMode);
 
@@ -1037,12 +1045,13 @@ export function EventViewEditDialog({
         </DialogHeader>
 
         <Tabs defaultValue="details" className="w-full">
-          <TabsList className="grid w-full grid-cols-7">
+          <TabsList className="grid w-full grid-cols-8">
             <TabsTrigger value="details">Detalhes</TabsTrigger>
             <TabsTrigger value="modalities">Modalidades</TabsTrigger>
             <TabsTrigger value="categories">Categorias</TabsTrigger>
             <TabsTrigger value="kits">Kits</TabsTrigger>
             <TabsTrigger value="pickup">Retirada</TabsTrigger>
+            <TabsTrigger value="payment">Pagamentos</TabsTrigger>
             <TabsTrigger value="publish">Publicação</TabsTrigger>
             <TabsTrigger value="registrations">Inscrições</TabsTrigger>
           </TabsList>
@@ -2608,6 +2617,154 @@ export function EventViewEditDialog({
                 ))}
               </div>
             )}
+          </TabsContent>
+
+          <TabsContent value="payment" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>Configurações de Pagamento</CardTitle>
+                <CardDescription>
+                  Configure quais métodos de pagamento estão disponíveis para este evento
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                {/* PIX */}
+                <div className="rounded-lg border p-4 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
+                        <span className="text-xl">📱</span>
+                      </div>
+                      <div>
+                        <h4 className="font-medium">PIX</h4>
+                        <p className="text-sm text-muted-foreground">
+                          Pagamento instantâneo via PIX
+                        </p>
+                      </div>
+                    </div>
+                    {mode === "view" ? (
+                      <Badge variant={formData.pix_enabled ? "default" : "secondary"}>
+                        {formData.pix_enabled ? "Habilitado" : "Desabilitado"}
+                      </Badge>
+                    ) : (
+                      <div className="flex items-center space-x-2">
+                        <Checkbox
+                          id="pix_enabled"
+                          checked={formData.pix_enabled}
+                          onCheckedChange={(checked) => {
+                            setFormData({
+                              ...formData,
+                              pix_enabled: checked as boolean,
+                              pix_disabled_at: !checked ? null : formData.pix_disabled_at,
+                            });
+                          }}
+                        />
+                        <Label htmlFor="pix_enabled" className="cursor-pointer">
+                          Habilitado
+                        </Label>
+                      </div>
+                    )}
+                  </div>
+                  {formData.pix_enabled && (
+                    <div className="space-y-2 pl-12">
+                      <Label className="text-sm font-normal">
+                        Desabilitar automaticamente em:
+                      </Label>
+                      {mode === "view" ? (
+                        <p className="text-sm text-muted-foreground">
+                          {formData.pix_disabled_at
+                            ? new Date(formData.pix_disabled_at).toLocaleString("pt-BR")
+                            : "Não configurado"}
+                        </p>
+                      ) : (
+                        <>
+                          <Input
+                            type="datetime-local"
+                            value={formData.pix_disabled_at ? new Date(formData.pix_disabled_at).toISOString().slice(0, 16) : ""}
+                            onChange={(e) => {
+                              const value = e.target.value ? new Date(e.target.value).toISOString() : null;
+                              setFormData({ ...formData, pix_disabled_at: value });
+                            }}
+                            placeholder="Opcional - deixe em branco para manter sempre habilitado"
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            Se preenchido, o PIX será desabilitado automaticamente nesta data/hora
+                          </p>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Cartão de Crédito */}
+                <div className="rounded-lg border p-4 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
+                        <span className="text-xl">💳</span>
+                      </div>
+                      <div>
+                        <h4 className="font-medium">Cartão de Crédito</h4>
+                        <p className="text-sm text-muted-foreground">
+                          Pagamento via cartão de crédito
+                        </p>
+                      </div>
+                    </div>
+                    {mode === "view" ? (
+                      <Badge variant={formData.credit_card_enabled ? "default" : "secondary"}>
+                        {formData.credit_card_enabled ? "Habilitado" : "Desabilitado"}
+                      </Badge>
+                    ) : (
+                      <div className="flex items-center space-x-2">
+                        <Checkbox
+                          id="credit_card_enabled"
+                          checked={formData.credit_card_enabled}
+                          onCheckedChange={(checked) => {
+                            setFormData({
+                              ...formData,
+                              credit_card_enabled: checked as boolean,
+                              credit_card_disabled_at: !checked ? null : formData.credit_card_disabled_at,
+                            });
+                          }}
+                        />
+                        <Label htmlFor="credit_card_enabled" className="cursor-pointer">
+                          Habilitado
+                        </Label>
+                      </div>
+                    )}
+                  </div>
+                  {formData.credit_card_enabled && (
+                    <div className="space-y-2 pl-12">
+                      <Label className="text-sm font-normal">
+                        Desabilitar automaticamente em:
+                      </Label>
+                      {mode === "view" ? (
+                        <p className="text-sm text-muted-foreground">
+                          {formData.credit_card_disabled_at
+                            ? new Date(formData.credit_card_disabled_at).toLocaleString("pt-BR")
+                            : "Não configurado"}
+                        </p>
+                      ) : (
+                        <>
+                          <Input
+                            type="datetime-local"
+                            value={formData.credit_card_disabled_at ? new Date(formData.credit_card_disabled_at).toISOString().slice(0, 16) : ""}
+                            onChange={(e) => {
+                              const value = e.target.value ? new Date(e.target.value).toISOString() : null;
+                              setFormData({ ...formData, credit_card_disabled_at: value });
+                            }}
+                            placeholder="Opcional - deixe em branco para manter sempre habilitado"
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            Se preenchido, o cartão de crédito será desabilitado automaticamente nesta data/hora
+                          </p>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
           </TabsContent>
 
           <TabsContent value="publish" className="space-y-4">
