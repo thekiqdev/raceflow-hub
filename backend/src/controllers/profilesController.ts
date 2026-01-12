@@ -1,7 +1,9 @@
 import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth.js';
-import { getProfileByUserId, updateProfile, getPublicProfileByCpf } from '../services/profilesService.js';
+import { getProfileByUserId, updateProfile, getPublicProfileByCpf, verifyUserPassword } from '../services/profilesService.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
+import { hasRole } from '../services/userRolesService.js';
+import { query } from '../config/database.js';
 
 // Get own profile
 export const getOwnProfile = asyncHandler(async (req: AuthRequest, res: Response) => {
@@ -37,7 +39,54 @@ export const updateOwnProfile = asyncHandler(async (req: AuthRequest, res: Respo
     });
   }
 
-  const updatedProfile = await updateProfile(req.user.id, req.body);
+  const { password, ...profileData } = req.body;
+
+  // Check if user is trying to update CPF
+  if (profileData.cpf !== undefined) {
+    // Check if user is runner
+    const isRunner = await hasRole(req.user.id, 'runner');
+    
+    if (isRunner) {
+      // Runner needs to provide password to update CPF
+      if (!password) {
+        return res.status(400).json({
+          success: false,
+          error: 'Password required',
+          message: 'É necessário confirmar sua senha para alterar o CPF',
+        });
+      }
+
+      // Verify password
+      const isValidPassword = await verifyUserPassword(req.user.id, password);
+      if (!isValidPassword) {
+        return res.status(401).json({
+          success: false,
+          error: 'Invalid password',
+          message: 'Senha incorreta. Não foi possível atualizar o CPF.',
+        });
+      }
+    }
+    // Admin can update CPF without password verification
+  }
+
+  // Check if CPF already exists (excluding current user)
+  if (profileData.cpf) {
+    const cleanCpf = String(profileData.cpf).replace(/[^0-9]/g, '');
+    const existingCpf = await query(
+      'SELECT id FROM profiles WHERE cpf = $1 AND id != $2',
+      [cleanCpf, req.user.id]
+    );
+
+    if (existingCpf.rows.length > 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'CPF already registered',
+        message: 'Este CPF já está cadastrado para outro usuário',
+      });
+    }
+  }
+
+  const updatedProfile = await updateProfile(req.user.id, profileData);
 
   if (!updatedProfile) {
     return res.status(404).json({

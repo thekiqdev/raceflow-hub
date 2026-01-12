@@ -13,6 +13,7 @@ import {
   MessageSquare,
   ChevronDown,
   ChevronUp,
+  Image as ImageIcon,
 } from "lucide-react";
 import { Header } from "@/components/Header";
 import { format } from "date-fns";
@@ -27,10 +28,17 @@ import { getEventById } from "@/lib/api/events";
 import { getCategories } from "@/lib/api/categories";
 import { getEventKits } from "@/lib/api/eventKits";
 import { getEventPickupLocations } from "@/lib/api/kitPickup";
+import { getModalities, Modality } from "@/lib/api/modalities";
 import { toast } from "sonner";
 import { getEffectiveRegistrationStatus, getRegistrationStatusMessage, getRegistrationStatusLabel, getRegistrationStatusVariant } from "@/lib/utils/eventRegistration";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 interface EventDetail {
   id: string;
@@ -134,6 +142,7 @@ const EventDetails = () => {
   const { id } = useParams();
   const [event, setEvent] = useState<EventDetail | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [modalities, setModalities] = useState<Modality[]>([]);
   const [kits, setKits] = useState<Kit[]>([]);
   const [pickupLocations, setPickupLocations] = useState<any[]>([]);
   const [isRegistrationOpen, setIsRegistrationOpen] = useState(false);
@@ -142,6 +151,8 @@ const EventDetails = () => {
   const [isContactOpen, setIsContactOpen] = useState(false);
   const [organizerLogoError, setOrganizerLogoError] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [selectedRouteImage, setSelectedRouteImage] = useState<string | null>(null);
+  const [selectedModalityName, setSelectedModalityName] = useState<string>("");
 
   useEffect(() => {
     const handleScroll = () => {
@@ -159,10 +170,11 @@ const EventDetails = () => {
       try {
         setLoading(true);
         setOrganizerLogoError(false); // Reset logo error when loading new event
-        const [eventResponse, categoriesResponse, kitsResponse] = await Promise.all([
+        const [eventResponse, categoriesResponse, kitsResponse, modalitiesResponse] = await Promise.all([
           getEventById(id),
           getCategories(id),
           getEventKits(id),
+          getModalities(id).catch(() => ({ success: true, data: [] })),
           getEventPickupLocations(id).catch(() => ({ success: true, data: [] })),
         ]);
 
@@ -224,6 +236,14 @@ const EventDetails = () => {
           setKits(kitsResponse.data);
         } else {
           toast.error(kitsResponse.error || "Erro ao carregar kits");
+        }
+
+        if (modalitiesResponse.success && modalitiesResponse.data) {
+          // Ordenar modalidades por display_order
+          const sortedModalities = [...modalitiesResponse.data].sort((a, b) => a.display_order - b.display_order);
+          setModalities(sortedModalities);
+        } else {
+          setModalities([]);
         }
 
         // Load pickup locations (optional, don't fail if endpoint doesn't exist)
@@ -668,6 +688,60 @@ const EventDetails = () => {
                   </div>
                 </CardContent>
               </Card>
+
+              {/* Modalities */}
+              {modalities.length > 0 && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Trophy className="h-5 w-5" />
+                      Modalidades
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-4">
+                      {modalities.map((modality) => (
+                        <div
+                          key={modality.id}
+                          className="p-4 border rounded-lg hover:bg-muted/50 transition-colors"
+                        >
+                          <div className="flex items-start justify-between gap-4">
+                            <div className="flex-1">
+                              <h3 className="font-semibold text-lg mb-2">{modality.name}</h3>
+                              <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
+                                <p className="flex items-center gap-1">
+                                  <Trophy className="h-4 w-4" />
+                                  Distância: {modality.distance}
+                                </p>
+                                {modality.max_participants !== null && (
+                                  <p className="flex items-center gap-1">
+                                    <Users className="h-4 w-4" />
+                                    Máximo: {modality.max_participants} participantes
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                            {modality.route_image_url && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => {
+                                  setSelectedRouteImage(modality.route_image_url);
+                                  setSelectedModalityName(modality.name);
+                                }}
+                                className="flex items-center gap-2"
+                              >
+                                <ImageIcon className="h-4 w-4" />
+                                Ver Percurso
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
 
               {/* Kits */}
               <Card>
@@ -1339,6 +1413,28 @@ const EventDetails = () => {
         organizerName={event?.organizer_organization_name || event?.organizer_name}
         eventId={event?.id}
       />
+
+      {/* Route Image Dialog */}
+      <Dialog open={!!selectedRouteImage} onOpenChange={(open) => !open && setSelectedRouteImage(null)}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-auto">
+          <DialogHeader>
+            <DialogTitle>Percurso - {selectedModalityName}</DialogTitle>
+          </DialogHeader>
+          {selectedRouteImage && (
+            <div className="mt-4">
+              <img
+                src={selectedRouteImage}
+                alt={`Percurso da modalidade ${selectedModalityName}`}
+                className="w-full h-auto rounded-lg"
+                onError={(e) => {
+                  const target = e.target as HTMLImageElement;
+                  target.src = heroImage;
+                }}
+              />
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

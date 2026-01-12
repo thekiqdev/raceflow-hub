@@ -1,6 +1,6 @@
 import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { User, LogIn, FileText, Trophy, UserCircle, LogOut, Calculator, Menu } from "lucide-react";
+import { User, LogIn, FileText, Trophy, UserCircle, LogOut, Calculator, Menu, Home, ClipboardList, Award } from "lucide-react";
 import { useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import {
@@ -43,6 +43,7 @@ export function Header() {
 
   const userProfile = user?.profile;
   const userName = userProfile?.full_name || user?.email || "Usuário";
+  const isRunner = user?.roles?.includes('runner');
 
   return (
     <header className="bg-black text-white py-4 sticky top-0 z-50">
@@ -100,26 +101,84 @@ export function Header() {
                 {isAuthenticated ? (
                   <>
                     <div className="border-t border-white/20 my-2"></div>
-                    <button
-                      onClick={() => {
-                        setMobileMenuOpen(false);
-                        navigate("/dashboard");
-                      }}
-                      className="flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-white/10 transition-colors text-left"
-                    >
-                      <UserCircle className="w-5 h-5" />
-                      <span>Dashboard</span>
-                    </button>
-                    <button
-                      onClick={() => {
-                        setMobileMenuOpen(false);
-                        handleLogout();
-                      }}
-                      className="flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-white/10 transition-colors text-left"
-                    >
-                      <LogOut className="w-5 h-5" />
-                      <span>Sair</span>
-                    </button>
+                    {isRunner ? (
+                      <>
+                        <button
+                          onClick={() => {
+                            setMobileMenuOpen(false);
+                            navigate("/runner/dashboard?tab=home");
+                          }}
+                          className="flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-white/10 transition-colors text-left"
+                        >
+                          <Home className="w-5 h-5" />
+                          <span>Início</span>
+                        </button>
+                        <button
+                          onClick={() => {
+                            setMobileMenuOpen(false);
+                            navigate("/runner/dashboard?tab=registrations");
+                          }}
+                          className="flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-white/10 transition-colors text-left"
+                        >
+                          <ClipboardList className="w-5 h-5" />
+                          <span>Inscrições</span>
+                        </button>
+                        <button
+                          onClick={() => {
+                            setMobileMenuOpen(false);
+                            navigate("/runner/dashboard?tab=results");
+                          }}
+                          className="flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-white/10 transition-colors text-left"
+                        >
+                          <Award className="w-5 h-5" />
+                          <span>Resultados</span>
+                        </button>
+                        <button
+                          onClick={() => {
+                            setMobileMenuOpen(false);
+                            navigate("/runner/dashboard?tab=profile");
+                          }}
+                          className="flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-white/10 transition-colors text-left"
+                        >
+                          <UserCircle className="w-5 h-5" />
+                          <span>Perfil</span>
+                        </button>
+                        <div className="border-t border-white/20 my-2"></div>
+                        <button
+                          onClick={() => {
+                            setMobileMenuOpen(false);
+                            handleLogout();
+                          }}
+                          className="flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-white/10 transition-colors text-left"
+                        >
+                          <LogOut className="w-5 h-5" />
+                          <span>Sair</span>
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          onClick={() => {
+                            setMobileMenuOpen(false);
+                            navigate("/dashboard");
+                          }}
+                          className="flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-white/10 transition-colors text-left"
+                        >
+                          <UserCircle className="w-5 h-5" />
+                          <span>Dashboard</span>
+                        </button>
+                        <button
+                          onClick={() => {
+                            setMobileMenuOpen(false);
+                            handleLogout();
+                          }}
+                          className="flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-white/10 transition-colors text-left"
+                        >
+                          <LogOut className="w-5 h-5" />
+                          <span>Sair</span>
+                        </button>
+                      </>
+                    )}
                   </>
                 ) : (
                   <>
@@ -196,14 +255,42 @@ export function Header() {
                 <DropdownMenuContent align="end" className="w-56">
                   <DropdownMenuLabel>Minha Conta</DropdownMenuLabel>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={() => navigate("/dashboard")}>
-                    <UserCircle className="mr-2 h-4 w-4" />
-                    Dashboard
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={handleLogout}>
-                    <LogOut className="mr-2 h-4 w-4" />
-                    Sair
-                  </DropdownMenuItem>
+                  {isRunner ? (
+                    <>
+                      <DropdownMenuItem onClick={() => navigate("/runner/dashboard?tab=home")}>
+                        <Home className="mr-2 h-4 w-4" />
+                        Início
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => navigate("/runner/dashboard?tab=registrations")}>
+                        <ClipboardList className="mr-2 h-4 w-4" />
+                        Inscrições
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => navigate("/runner/dashboard?tab=results")}>
+                        <Award className="mr-2 h-4 w-4" />
+                        Resultados
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => navigate("/runner/dashboard?tab=profile")}>
+                        <UserCircle className="mr-2 h-4 w-4" />
+                        Perfil
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem onClick={handleLogout}>
+                        <LogOut className="mr-2 h-4 w-4" />
+                        Sair
+                      </DropdownMenuItem>
+                    </>
+                  ) : (
+                    <>
+                      <DropdownMenuItem onClick={() => navigate("/dashboard")}>
+                        <UserCircle className="mr-2 h-4 w-4" />
+                        Dashboard
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={handleLogout}>
+                        <LogOut className="mr-2 h-4 w-4" />
+                        Sair
+                      </DropdownMenuItem>
+                    </>
+                  )}
                 </DropdownMenuContent>
               </DropdownMenu>
             </>

@@ -106,6 +106,7 @@ interface Modality {
   name: string;
   distance: string;
   max_participants?: number | null;
+  route_image_url?: string | null;
 }
 
 interface Category {
@@ -311,6 +312,7 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
                 name: mod.name,
                 distance: mod.distance,
                 max_participants: mod.max_participants ?? null,
+                route_image_url: mod.route_image_url ?? null,
               }));
               console.log("✅ Modalidades carregadas:", loadedModalities.length);
               setModalities(loadedModalities);
@@ -1375,6 +1377,7 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
               name: modality.name,
               distance: modality.distance,
               max_participants: maxParticipants,
+              route_image_url: modality.route_image_url || null,
             });
             
             console.log('✅ Create modality response:', response);
@@ -1407,6 +1410,7 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
                   name: modality.name,
                   distance: modality.distance,
                   max_participants: maxParticipants,
+                  route_image_url: modality.route_image_url || null,
                 };
                 
                 console.log('📤 Sending update payload:', updatePayload);
@@ -2359,6 +2363,19 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
                             <p className="text-xs text-muted-foreground mt-1">
                               Número máximo de participantes para esta modalidade. Deixe em branco para permitir inscrições ilimitadas.
                             </p>
+                          </div>
+                          <div>
+                            <label className="text-sm font-medium">
+                              Imagem do Percurso (Opcional)
+                            </label>
+                            <FileUpload
+                              type="banner"
+                              value={modality.route_image_url || ""}
+                              onChange={(url) => updateModality(index, "route_image_url", url)}
+                              onDelete={() => updateModality(index, "route_image_url", null)}
+                              label="Upload da imagem do percurso"
+                              description="Faça upload da imagem do percurso desta modalidade"
+                            />
                           </div>
                         </CardContent>
                       </Card>

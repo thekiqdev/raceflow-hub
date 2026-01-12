@@ -7,6 +7,7 @@ export interface Modality {
   distance: string;
   display_order: number;
   max_participants: number | null;
+  route_image_url: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -17,6 +18,7 @@ export interface CreateModalityData {
   distance: string;
   display_order?: number; // Opcional na criação - será calculado automaticamente se não fornecido
   max_participants?: number | null; // Limite máximo de participantes (NULL = sem limite)
+  route_image_url?: string | null; // URL da imagem do percurso (opcional)
 }
 
 export interface UpdateModalityData {
@@ -24,6 +26,7 @@ export interface UpdateModalityData {
   distance?: string;
   display_order?: number; // Permite atualizar a ordem de exibição
   max_participants?: number | null; // Limite máximo de participantes (NULL = sem limite)
+  route_image_url?: string | null; // URL da imagem do percurso (opcional)
 }
 
 // Get all modalities for an event

@@ -7,8 +7,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 import { updateOwnProfile, type Profile } from "@/lib/api/profiles";
-import { maskPhone, maskCep, unmask } from "@/lib/utils/masks";
+import { maskPhone, maskCep, maskCpf, unmask } from "@/lib/utils/masks";
 import { fetchAddressByCep } from "@/lib/api/viacep";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface ProfileEditDialogProps {
   open: boolean;
@@ -17,9 +18,12 @@ interface ProfileEditDialogProps {
 }
 
 export function ProfileEditDialog({ open, onOpenChange, profile }: ProfileEditDialogProps) {
+  const { user } = useAuth();
+  const isRunner = user?.roles?.includes('runner');
   const [formData, setFormData] = useState({
     full_name: profile.full_name || "",
     preferred_name: profile.preferred_name || "",
+    cpf: profile.cpf || "",
     phone: profile.phone || "",
     birth_date: profile.birth_date || "",
     gender: profile.gender || "",
@@ -34,8 +38,18 @@ export function ProfileEditDialog({ open, onOpenChange, profile }: ProfileEditDi
     city: profile.city || "",
     state: profile.state || "",
   });
+  const [password, setPassword] = useState("");
   const [saving, setSaving] = useState(false);
   const [loadingCep, setLoadingCep] = useState(false);
+  const [originalCpf, setOriginalCpf] = useState(profile.cpf || "");
+  
+  useEffect(() => {
+    if (open && profile) {
+      setOriginalCpf(profile.cpf || "");
+    }
+  }, [open, profile]);
+  
+  const cpfChanged = unmask(formData.cpf) !== unmask(originalCpf);
 
   useEffect(() => {
     if (open && profile) {
@@ -43,9 +57,12 @@ export function ProfileEditDialog({ open, onOpenChange, profile }: ProfileEditDi
       const formattedPhone = profile.phone ? maskPhone(profile.phone) : "";
       const formattedCep = profile.postal_code ? maskCep(profile.postal_code) : "";
       
+      const formattedCpf = profile.cpf ? maskCpf(profile.cpf) : "";
+      
       setFormData({
         full_name: profile.full_name || "",
         preferred_name: profile.preferred_name || "",
+        cpf: formattedCpf,
         phone: formattedPhone,
         birth_date: profile.birth_date ? profile.birth_date.split('T')[0] : "",
         gender: profile.gender || "",
@@ -60,6 +77,7 @@ export function ProfileEditDialog({ open, onOpenChange, profile }: ProfileEditDi
         city: profile.city || "",
         state: profile.state || "",
       });
+      setPassword("");
     }
   }, [open, profile]);
 
@@ -96,8 +114,16 @@ export function ProfileEditDialog({ open, onOpenChange, profile }: ProfileEditDi
 
   const handleSave = async () => {
     try {
+      // Validate CPF change for runners
+      if (isRunner && cpfChanged) {
+        if (!password) {
+          toast.error("É necessário confirmar sua senha para alterar o CPF");
+          return;
+        }
+      }
+
       setSaving(true);
-      const response = await updateOwnProfile({
+      const updateData: any = {
         full_name: formData.full_name,
         preferred_name: formData.preferred_name || undefined,
         phone: unmask(formData.phone),
@@ -113,15 +139,28 @@ export function ProfileEditDialog({ open, onOpenChange, profile }: ProfileEditDi
         neighborhood: formData.neighborhood || undefined,
         city: formData.city || undefined,
         state: formData.state || undefined,
-      });
+      };
+
+      // Include CPF if changed
+      if (cpfChanged) {
+        updateData.cpf = unmask(formData.cpf);
+      }
+
+      // Include password if CPF changed and user is runner
+      if (isRunner && cpfChanged && password) {
+        updateData.password = password;
+      }
+
+      const response = await updateOwnProfile(updateData);
 
       if (response.success) {
         toast.success("Dados atualizados com sucesso!");
         onOpenChange(false);
+        setPassword("");
         // Disparar evento para recarregar dados do perfil
         window.dispatchEvent(new CustomEvent('profile:updated'));
       } else {
-        toast.error(response.error || "Erro ao atualizar dados");
+        toast.error(response.error || response.message || "Erro ao atualizar dados");
       }
     } catch (error: any) {
       console.error("Error updating profile:", error);
@@ -194,7 +233,31 @@ export function ProfileEditDialog({ open, onOpenChange, profile }: ProfileEditDi
 
             <div className="space-y-2">
               <Label htmlFor="cpf">CPF</Label>
-              <Input id="cpf" value={profile.cpf} disabled className="bg-muted" />
+              <Input
+                id="cpf"
+                value={formData.cpf}
+                onChange={(e) => {
+                  const masked = maskCpf(e.target.value);
+                  setFormData({ ...formData, cpf: masked });
+                }}
+                maxLength={14}
+                placeholder="000.000.000-00"
+              />
+              {isRunner && cpfChanged && (
+                <div className="space-y-2 mt-2">
+                  <Label htmlFor="password">Confirmar Senha *</Label>
+                  <Input
+                    id="password"
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="Digite sua senha para confirmar a alteração"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    É necessário confirmar sua senha para alterar o CPF
+                  </p>
+                </div>
+              )}
             </div>
 
             <div className="grid grid-cols-2 gap-4">

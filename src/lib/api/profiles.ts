@@ -42,6 +42,8 @@ export interface UpdateProfileData {
   city?: string;
   state?: string;
   is_public?: boolean;
+  cpf?: string;
+  password?: string; // Required when runner updates CPF
 }
 
 // Get own profile

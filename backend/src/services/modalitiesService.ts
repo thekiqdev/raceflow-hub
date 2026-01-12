@@ -35,10 +35,10 @@ export const createModality = async (
   });
   
   const result = await query(
-    `INSERT INTO modalities (event_id, name, distance, display_order, max_participants)
-     VALUES ($1, $2, $3, $4, $5)
+    `INSERT INTO modalities (event_id, name, distance, display_order, max_participants, route_image_url)
+     VALUES ($1, $2, $3, $4, $5, $6)
      RETURNING *`,
-    [data.event_id, data.name, data.distance, displayOrder, maxParticipants]
+    [data.event_id, data.name, data.distance, displayOrder, maxParticipants, data.route_image_url || null]
   );
 
   if (result.rows.length === 0) {
@@ -52,6 +52,7 @@ export const createModality = async (
     distance: result.rows[0].distance,
     display_order: result.rows[0].display_order,
     max_participants: result.rows[0].max_participants ? parseInt(result.rows[0].max_participants) : null,
+    route_image_url: result.rows[0].route_image_url || null,
     created_at: result.rows[0].created_at,
     updated_at: result.rows[0].updated_at,
   };
@@ -75,6 +76,7 @@ export const getModalitiesByEvent = async (eventId: string): Promise<Modality[]>
     distance: row.distance,
     display_order: row.display_order,
     max_participants: row.max_participants ? parseInt(row.max_participants) : null,
+    route_image_url: row.route_image_url || null,
     created_at: row.created_at,
     updated_at: row.updated_at,
   }));
@@ -102,6 +104,7 @@ export const getModalityById = async (modalityId: string): Promise<Modality | nu
     distance: row.distance,
     display_order: row.display_order,
     max_participants: row.max_participants ? parseInt(row.max_participants) : null,
+    route_image_url: row.route_image_url || null,
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
@@ -154,6 +157,12 @@ export const updateModality = async (
     paramIndex++;
   }
 
+  if (data.route_image_url !== undefined) {
+    fields.push(`route_image_url = $${paramIndex}`);
+    values.push(data.route_image_url || null);
+    paramIndex++;
+  }
+
   if (fields.length === 0) {
     throw new Error('No fields to update');
   }
@@ -180,6 +189,7 @@ export const updateModality = async (
     distance: row.distance,
     display_order: row.display_order,
     max_participants: row.max_participants ? parseInt(row.max_participants) : null,
+    route_image_url: row.route_image_url || null,
     created_at: row.created_at,
     updated_at: row.updated_at,
   };

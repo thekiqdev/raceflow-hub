@@ -26,7 +26,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Plus, Search, MoreVertical, Eye, MessageSquare, FileDown, Loader2, UserCog, Mail } from "lucide-react";
+import { Plus, Search, MoreVertical, Eye, MessageSquare, FileDown, Loader2, UserCog, Mail, ChevronDown, ChevronUp } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { useAuth } from "@/contexts/AuthContext";
@@ -38,6 +38,8 @@ import { getEventKits, type EventKit } from "@/lib/api/eventKits";
 import { toast } from "sonner";
 import { useDebounce } from "@/hooks/useDebounce";
 import { createOrganizerGroupLeader } from "@/lib/api/groupLeaders";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import type { KitProduct, ProductVariant } from "@/lib/api/eventKits";
 
 const OrganizerRegistrations = () => {
   const { user } = useAuth();
@@ -64,6 +66,11 @@ const OrganizerRegistrations = () => {
   const [loadingCategories, setLoadingCategories] = useState(false);
   const [loadingKits, setLoadingKits] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  
+  // Kit products and variants selection
+  const [expandedKits, setExpandedKits] = useState<Set<string>>(new Set());
+  const [selectedProducts, setSelectedProducts] = useState<Map<string, { productId: string; variantId?: string }>>(new Map());
+  const [variantSelections, setVariantSelections] = useState<Map<string, Record<string, string>>>(new Map());
   
   // Registration details dialog
   const [isDetailsDialogOpen, setIsDetailsDialogOpen] = useState(false);
@@ -244,6 +251,9 @@ const OrganizerRegistrations = () => {
     setSelectedModalityId("");
     setSelectedCategoryId("");
     setSelectedKitId("");
+    setExpandedKits(new Set());
+    setSelectedProducts(new Map());
+    setVariantSelections(new Map());
   };
 
   const handleRegisterAthlete = async () => {
@@ -749,34 +759,276 @@ const OrganizerRegistrations = () => {
 
             {/* Kit (optional) */}
             {selectedEventId && (
-              <div className="space-y-2">
-                <Label htmlFor="kit">Kit</Label>
-                <Select 
-                  value={selectedKitId || undefined} 
-                  onValueChange={(value) => setSelectedKitId(value || "")}
-                  disabled={loadingKits}
-                >
-                  <SelectTrigger id="kit">
-                    <SelectValue placeholder={loadingKits ? "Carregando..." : "Selecione o kit (opcional)"} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {kits.map((kit) => (
-                      <SelectItem key={kit.id} value={kit.id}>
-                        {kit.name} - R$ {kit.price.toFixed(2).replace('.', ',')}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {selectedKitId && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="h-8 text-xs"
-                    onClick={() => setSelectedKitId("")}
-                  >
-                    Remover kit
-                  </Button>
+              <div className="space-y-4">
+                <Label htmlFor="kit">Kit (opcional)</Label>
+                {loadingKits ? (
+                  <div className="flex items-center justify-center py-4">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <span className="ml-2 text-sm text-muted-foreground">Carregando kits...</span>
+                  </div>
+                ) : kits.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">Nenhum kit disponível para este evento</p>
+                ) : (
+                  <div className="space-y-2">
+                    <Select 
+                      value={selectedKitId || undefined} 
+                      onValueChange={(value) => {
+                        setSelectedKitId(value || "");
+                        if (!value) {
+                          setExpandedKits(new Set());
+                          setSelectedProducts(new Map());
+                          setVariantSelections(new Map());
+                        } else {
+                          // Expand kit when selected
+                          setExpandedKits(prev => new Set(prev).add(value));
+                        }
+                      }}
+                      disabled={loadingKits}
+                    >
+                      <SelectTrigger id="kit">
+                        <SelectValue placeholder="Selecione o kit (opcional)" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {kits.map((kit) => (
+                          <SelectItem key={kit.id} value={kit.id}>
+                            {kit.name} - R$ {kit.price.toFixed(2).replace('.', ',')}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    
+                    {/* Show products and variants when kit is selected */}
+                    {selectedKitId && (() => {
+                      const selectedKit = kits.find(k => k.id === selectedKitId);
+                      if (!selectedKit) return null;
+                      
+                      const kitProducts = selectedKit.products || [];
+                      const isExpanded = expandedKits.has(selectedKitId);
+                      
+                      return (
+                        <div className="mt-4">
+                          <Collapsible open={isExpanded} onOpenChange={(open) => {
+                            if (open) {
+                              setExpandedKits(prev => new Set(prev).add(selectedKitId));
+                            } else {
+                              setExpandedKits(prev => {
+                                const newSet = new Set(prev);
+                                newSet.delete(selectedKitId);
+                                return newSet;
+                              });
+                            }
+                          }}>
+                            <CollapsibleTrigger asChild>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                className="w-full justify-between"
+                              >
+                                <span>Ver produtos do kit</span>
+                                {isExpanded ? (
+                                  <ChevronUp className="h-4 w-4" />
+                                ) : (
+                                  <ChevronDown className="h-4 w-4" />
+                                )}
+                              </Button>
+                            </CollapsibleTrigger>
+                            <CollapsibleContent>
+                              <div className="mt-4 space-y-4 border-t pt-4">
+                                {kitProducts.length === 0 ? (
+                                  <p className="text-sm text-muted-foreground">Este kit não possui produtos cadastrados</p>
+                                ) : (
+                                  kitProducts.map((product: KitProduct) => {
+                                    const productKey = `${selectedKitId}-${product.id}`;
+                                    const selections = variantSelections.get(productKey) || {};
+                                    const selectedProduct = selectedProducts.get(selectedKitId);
+                                    const isProductSelected = selectedProduct?.productId === product.id;
+                                    
+                                    return (
+                                      <Card key={product.id} className={isProductSelected ? "ring-2 ring-primary" : ""}>
+                                        <CardHeader>
+                                          <CardTitle className="text-base">{product.name}</CardTitle>
+                                          {product.description && (
+                                            <CardDescription>{product.description}</CardDescription>
+                                          )}
+                                        </CardHeader>
+                                        <CardContent className="space-y-4">
+                                          {product.type === 'variable' && product.variants && product.variants.length > 0 ? (
+                                            <div className="space-y-3">
+                                              <Label className="text-sm font-medium">Selecione a variação:</Label>
+                                              {(() => {
+                                                // Get variant attributes
+                                                const savedAttributeNames = product.variant_attributes as string[] | undefined;
+                                                let attributeOrder: string[] = [];
+                                                
+                                                if (savedAttributeNames && savedAttributeNames.length > 0) {
+                                                  attributeOrder = savedAttributeNames;
+                                                } else {
+                                                  // Extract from variants
+                                                  const firstAttributes = new Set<string>();
+                                                  product.variants.forEach(variant => {
+                                                    if (variant.variant_group_name) {
+                                                      firstAttributes.add(variant.variant_group_name);
+                                                    }
+                                                  });
+                                                  if (firstAttributes.size > 0) {
+                                                    attributeOrder.push(Array.from(firstAttributes)[0]);
+                                                  }
+                                                  let maxValues = 0;
+                                                  product.variants.forEach(variant => {
+                                                    const values = variant.name.split(' - ').map(v => v.trim());
+                                                    maxValues = Math.max(maxValues, values.length);
+                                                  });
+                                                  for (let i = 1; i < maxValues; i++) {
+                                                    attributeOrder.push(`Atributo ${i + 1}`);
+                                                  }
+                                                }
+                                                
+                                                // Filter variants based on selections
+                                                const getAvailableVariants = (attributeIndex: number): ProductVariant[] => {
+                                                  return product.variants!.filter(variant => {
+                                                    const variantValues = variant.name.split(' - ').map(v => v.trim());
+                                                    for (let i = 0; i < attributeIndex; i++) {
+                                                      const attrName = attributeOrder[i];
+                                                      const selectedValue = selections[attrName];
+                                                      if (selectedValue && variantValues[i]?.trim() !== selectedValue) {
+                                                        return false;
+                                                      }
+                                                    }
+                                                    return variant.available_quantity === null || variant.available_quantity > 0;
+                                                  });
+                                                };
+                                                
+                                                const getAvailableValues = (attributeIndex: number): string[] => {
+                                                  const availableVariants = getAvailableVariants(attributeIndex);
+                                                  const orderedValues: string[] = [];
+                                                  const seen = new Set<string>();
+                                                  
+                                                  availableVariants.forEach(variant => {
+                                                    const variantValues = variant.name.split(' - ').map(v => v.trim());
+                                                    const value = variantValues[attributeIndex]?.trim();
+                                                    if (value && !seen.has(value)) {
+                                                      seen.add(value);
+                                                      orderedValues.push(value);
+                                                    }
+                                                  });
+                                                  
+                                                  return orderedValues;
+                                                };
+                                                
+                                                return (
+                                                  <div className="space-y-3">
+                                                    {attributeOrder.map((attrName, attrIndex) => {
+                                                      const availableValues = getAvailableValues(attrIndex);
+                                                      const selectedValue = selections[attrName];
+                                                      
+                                                      return (
+                                                        <div key={attrIndex} className="space-y-2">
+                                                          <Label className="text-sm">{attrName}</Label>
+                                                          <Select
+                                                            value={selectedValue || ""}
+                                                            onValueChange={(value) => {
+                                                              const newSelections = { ...selections, [attrName]: value };
+                                                              setVariantSelections(prev => {
+                                                                const newMap = new Map(prev);
+                                                                newMap.set(productKey, newSelections);
+                                                                return newMap;
+                                                              });
+                                                              
+                                                              // Find matching variant
+                                                              const matchingVariant = product.variants!.find(variant => {
+                                                                const variantValues = variant.name.split(' - ').map(v => v.trim());
+                                                                return variantValues.every((val, idx) => {
+                                                                  const attr = attributeOrder[idx];
+                                                                  return !newSelections[attr] || val === newSelections[attr];
+                                                                });
+                                                              });
+                                                              
+                                                              if (matchingVariant) {
+                                                                setSelectedProducts(prev => {
+                                                                  const newMap = new Map(prev);
+                                                                  newMap.set(selectedKitId, {
+                                                                    productId: product.id,
+                                                                    variantId: matchingVariant.id
+                                                                  });
+                                                                  return newMap;
+                                                                });
+                                                              }
+                                                            }}
+                                                          >
+                                                            <SelectTrigger>
+                                                              <SelectValue placeholder={`Selecione ${attrName.toLowerCase()}`} />
+                                                            </SelectTrigger>
+                                                            <SelectContent>
+                                                              {availableValues.map((value) => (
+                                                                <SelectItem key={value} value={value}>
+                                                                  {value}
+                                                                </SelectItem>
+                                                              ))}
+                                                            </SelectContent>
+                                                          </Select>
+                                                        </div>
+                                                      );
+                                                    })}
+                                                  </div>
+                                                );
+                                              })()}
+                                            </div>
+                                          ) : (
+                                            <div className="flex items-center justify-between">
+                                              <span className="text-sm text-muted-foreground">Produto único</span>
+                                              <Button
+                                                type="button"
+                                                variant={isProductSelected ? "default" : "outline"}
+                                                size="sm"
+                                                onClick={() => {
+                                                  if (isProductSelected) {
+                                                    setSelectedProducts(prev => {
+                                                      const newMap = new Map(prev);
+                                                      newMap.delete(selectedKitId);
+                                                      return newMap;
+                                                    });
+                                                  } else {
+                                                    setSelectedProducts(prev => {
+                                                      const newMap = new Map(prev);
+                                                      newMap.set(selectedKitId, {
+                                                        productId: product.id
+                                                      });
+                                                      return newMap;
+                                                    });
+                                                  }
+                                                }}
+                                              >
+                                                {isProductSelected ? "Selecionado" : "Selecionar"}
+                                              </Button>
+                                            </div>
+                                          )}
+                                        </CardContent>
+                                      </Card>
+                                    );
+                                  })
+                                )}
+                              </div>
+                            </CollapsibleContent>
+                          </Collapsible>
+                          
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 text-xs mt-2"
+                            onClick={() => {
+                              setSelectedKitId("");
+                              setExpandedKits(new Set());
+                              setSelectedProducts(new Map());
+                              setVariantSelections(new Map());
+                            }}
+                          >
+                            Remover kit
+                          </Button>
+                        </div>
+                      );
+                    })()}
+                  </div>
                 )}
               </div>
             )}

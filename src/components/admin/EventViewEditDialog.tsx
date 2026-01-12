@@ -271,7 +271,7 @@ export function EventViewEditDialog({
 
   // Modalidades functions
   const addModality = () => {
-    setModalities([...modalities, { name: "", distance: "", max_participants: null, id: `temp-${Date.now()}` }]);
+    setModalities([...modalities, { name: "", distance: "", max_participants: null, route_image_url: null, id: `temp-${Date.now()}` }]);
   };
 
   const removeModality = (index: number) => {
@@ -636,6 +636,7 @@ export function EventViewEditDialog({
             name: modality.name,
             distance: modality.distance,
             max_participants: modality.max_participants ?? null,
+            route_image_url: modality.route_image_url ?? null,
           });
           if (createResponse.success && createResponse.data) {
             createdModalities.push(createResponse.data);
@@ -649,6 +650,7 @@ export function EventViewEditDialog({
               name: modality.name,
               distance: modality.distance,
               max_participants: modality.max_participants ?? null,
+              route_image_url: modality.route_image_url ?? null,
             });
           }
         }
@@ -1507,6 +1509,19 @@ export function EventViewEditDialog({
                             <p className="text-xs text-muted-foreground mt-1">
                               Número máximo de participantes para esta modalidade. Deixe em branco para permitir inscrições ilimitadas.
                             </p>
+                          </div>
+                          <div>
+                            <label className="text-sm font-medium">
+                              Imagem do Percurso (Opcional)
+                            </label>
+                            <FileUpload
+                              type="banner"
+                              value={modality.route_image_url || ""}
+                              onChange={(url) => updateModalityLocal(index, "route_image_url", url)}
+                              onDelete={() => updateModalityLocal(index, "route_image_url", null)}
+                              label="Upload da imagem do percurso"
+                              description="Faça upload da imagem do percurso desta modalidade"
+                            />
                           </div>
                         </>
                       ) : (

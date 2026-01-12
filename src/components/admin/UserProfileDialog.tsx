@@ -117,6 +117,9 @@ export function UserProfileDialog({
       if (formData.full_name && formData.full_name.trim() !== '') {
         updateData.full_name = formData.full_name;
       }
+      if (formData.cpf && formData.cpf.trim() !== '') {
+        updateData.cpf = formData.cpf;
+      }
       if (formData.phone && formData.phone.trim() !== '') {
         updateData.phone = formData.phone;
       }
@@ -261,10 +264,22 @@ export function UserProfileDialog({
                 <Label htmlFor="cpf">CPF</Label>
                 <Input
                   id="cpf"
-                  value={formatCPF(formData.cpf)}
-                  disabled
-                  className="bg-muted"
+                  value={formData.cpf}
+                  onChange={(e) => {
+                    const value = e.target.value.replace(/\D/g, '');
+                    if (value.length <= 11) {
+                      setFormData({ ...formData, cpf: value });
+                    }
+                  }}
+                  disabled={!isEditing}
+                  placeholder="00000000000"
+                  maxLength={11}
                 />
+                {isEditing && (
+                  <p className="text-xs text-muted-foreground">
+                    Digite apenas os números do CPF (11 dígitos)
+                  </p>
+                )}
               </div>
 
               <div className="space-y-2">

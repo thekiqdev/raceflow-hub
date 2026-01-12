@@ -19,12 +19,22 @@ const createModalitySchema = z.object({
   name: z.string().min(1, 'Nome da modalidade é obrigatório').max(255, 'Nome deve ter no máximo 255 caracteres'),
   distance: z.string().min(1, 'Distância é obrigatória').max(50, 'Distância deve ter no máximo 50 caracteres'),
   max_participants: z.number().int().positive('Limite de participantes deve ser um número positivo').nullable().optional(),
+  route_image_url: z.union([
+    z.string().url('URL da imagem inválida'),
+    z.literal(''),
+    z.null()
+  ]).optional(),
 });
 
 const updateModalitySchema = z.object({
   name: z.string().min(1).max(255).optional(),
   distance: z.string().min(1).max(50).optional(),
   max_participants: z.number().int().positive('Limite de participantes deve ser um número positivo').nullable().optional(),
+  route_image_url: z.union([
+    z.string().url('URL da imagem inválida'),
+    z.literal(''),
+    z.null()
+  ]).optional(),
 });
 
 /**
@@ -92,11 +102,16 @@ export const createModalityController = asyncHandler(
         type: typeof validation.data.max_participants
       });
       
+      const routeImageUrl = validation.data.route_image_url && validation.data.route_image_url.trim() !== '' 
+        ? validation.data.route_image_url 
+        : null;
+      
       const modalityData: CreateModalityData = {
         event_id: validation.data.event_id,
         name: validation.data.name,
         distance: validation.data.distance,
         max_participants: maxParticipants,
+        route_image_url: routeImageUrl,
       };
 
       const modality = await createModality(modalityData);
@@ -265,10 +280,15 @@ export const updateModalityController = asyncHandler(
         type: typeof validation.data.max_participants
       });
       
+      const routeImageUrl = validation.data.route_image_url && validation.data.route_image_url.trim() !== '' 
+        ? validation.data.route_image_url 
+        : null;
+      
       const updateData: UpdateModalityData = {
         name: validation.data.name,
         distance: validation.data.distance,
         max_participants: maxParticipants,
+        route_image_url: routeImageUrl,
       };
 
       const updatedModality = await updateModality(id, updateData);

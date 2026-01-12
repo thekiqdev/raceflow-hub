@@ -18,6 +18,7 @@ import {
   hardDeleteUser,
 } from '../services/userManagementService.js';
 import { updateProfile } from '../services/profilesService.js';
+import { query } from '../config/database.js';
 import { z } from 'zod';
 
 // Validation schemas
@@ -44,6 +45,7 @@ const updateProfileSchema = z.object({
   birth_date: z.union([z.string(), z.literal('')]).optional(),
   status: z.enum(['active', 'pending', 'blocked']).optional(),
   role: z.enum(['admin', 'organizer', 'runner']).optional(),
+  cpf: z.string().optional(),
 });
 
 /**
@@ -456,6 +458,26 @@ export const updateUserProfileController = async (
     }
     if (data.birth_date !== undefined && data.birth_date !== null && data.birth_date !== '' && data.birth_date.trim() !== '') {
       profileData.birth_date = data.birth_date.trim();
+    }
+    if (data.cpf !== undefined && data.cpf !== null && data.cpf !== '') {
+      const cleanCpf = String(data.cpf).replace(/[^0-9]/g, '');
+      if (cleanCpf.length === 11) {
+        // Check if CPF already exists (excluding current user)
+        const existingCpf = await query(
+          'SELECT id FROM profiles WHERE cpf = $1 AND id != $2',
+          [cleanCpf, id]
+        );
+
+        if (existingCpf.rows.length > 0) {
+          res.status(400).json({
+            success: false,
+            error: 'CPF already registered',
+            message: 'Este CPF já está cadastrado para outro usuário',
+          });
+          return;
+        }
+        profileData.cpf = cleanCpf;
+      }
     }
 
     console.log('📋 Profile data to update:', profileData);
