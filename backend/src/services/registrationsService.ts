@@ -30,6 +30,8 @@ export interface CreateRegistrationData {
   payment_method?: PaymentMethod;
   total_amount: number;
   coupon_code?: string;
+  status?: RegistrationStatus; // Optional status (used when organizer creates registration)
+  payment_status?: PaymentStatus; // Optional payment_status (used when organizer creates registration)
   // Credit card data (only when payment_method is 'credit_card')
   credit_card?: CreditCardData;
   credit_card_holder_info?: CreditCardHolderInfo;
@@ -171,7 +173,17 @@ export const getRegistrations = async (filters?: {
     queryText += ' WHERE ' + conditions.join(' AND ');
   }
 
+  // DISTINCT ON requires the first ORDER BY column to match DISTINCT ON column
+  // So we order by r.id first, then created_at DESC
   queryText += ' ORDER BY r.id, r.created_at DESC';
+  
+  // Wrap query to apply final ordering by created_at DESC (most recent first)
+  queryText = `
+    SELECT * FROM (
+      ${queryText}
+    ) AS distinct_registrations
+    ORDER BY created_at DESC
+  `;
 
   const result = await query(queryText, params);
   
@@ -394,9 +406,11 @@ export const createRegistration = async (data: CreateRegistrationData) => {
     total_amount: data.total_amount,
   });
 
-  // Set payment_status and status for free bonus registrations (convites)
-  const paymentStatus = data.payment_method === 'free_bonus' ? 'convidado' : 'pending';
-  const registrationStatus = data.payment_method === 'free_bonus' ? 'confirmed' : 'pending';
+  // Set payment_status and status
+  // If status/payment_status are explicitly provided (e.g., when organizer creates registration), use them
+  // Otherwise, use default logic: confirmed for free_bonus, pending otherwise
+  const paymentStatus = data.payment_status || (data.payment_method === 'free_bonus' ? 'convidado' : 'pending');
+  const registrationStatus = data.status || (data.payment_method === 'free_bonus' ? 'confirmed' : 'pending');
 
   const result = await query(
     `INSERT INTO registrations (

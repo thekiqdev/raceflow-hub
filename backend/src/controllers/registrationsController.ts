@@ -1254,6 +1254,8 @@ export const createRegistrationByOrganizerController = asyncHandler(async (req: 
   }
 
   // Create registration data
+  // When organizer creates registration, set status as 'confirmed'
+  // If total_amount is 0, set payment_status as 'convidado', otherwise 'paid' (organizer handles payment manually)
   const registrationData = {
     event_id,
     category_id,
@@ -1262,6 +1264,8 @@ export const createRegistrationByOrganizerController = asyncHandler(async (req: 
     registered_by: req.user.id,
     total_amount: totalAmount,
     payment_method: 'pix' as const,
+    status: 'confirmed' as const, // Inscrições criadas por organizador vêm como confirmadas
+    payment_status: (totalAmount === 0 ? 'convidado' : 'paid') as const, // Se grátis = convidado, senão = pago (organizador trata pagamento manualmente)
   };
 
   console.log('📝 Organizador criando inscrição para atleta:', {
