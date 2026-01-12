@@ -2262,6 +2262,81 @@ export const cancelRegistrationController = asyncHandler(async (req: AuthRequest
   }
 });
 
+// Delete registration (hard delete - only for admin)
+export const deleteRegistrationController = asyncHandler(async (req: AuthRequest, res: Response) => {
+  if (!req.user) {
+    res.status(401).json({
+      success: false,
+      error: 'Not authenticated',
+    });
+    return;
+  }
+
+  const { id } = req.params;
+
+  // Only admin can delete registrations
+  const isAdmin = await hasRole(req.user.id, 'admin');
+  if (!isAdmin) {
+    res.status(403).json({
+      success: false,
+      error: 'Forbidden',
+      message: 'Only administrators can delete registrations',
+    });
+    return;
+  }
+
+  // Get registration to verify it exists
+  let registration;
+  try {
+    registration = await getRegistrationById(id);
+  } catch (error: any) {
+    console.error('[deleteRegistrationController] Erro ao buscar inscrição:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Internal server error',
+      message: 'Erro ao verificar inscrição',
+    });
+    return;
+  }
+
+  if (!registration) {
+    res.status(404).json({
+      success: false,
+      error: 'Registration not found',
+      message: 'Inscrição não encontrada',
+    });
+    return;
+  }
+
+  // Delete registration
+  try {
+    const { deleteRegistration } = await import('../services/registrationsService.js');
+    const deletedRegistration = await deleteRegistration(id);
+
+    if (!deletedRegistration) {
+      res.status(404).json({
+        success: false,
+        error: 'Registration not found',
+        message: 'A inscrição não foi encontrada ou já foi excluída',
+      });
+      return;
+    }
+
+    res.json({
+      success: true,
+      data: deletedRegistration,
+      message: 'Inscrição excluída com sucesso',
+    });
+  } catch (error: any) {
+    console.error('[deleteRegistrationController] Erro ao excluir inscrição:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Internal server error',
+      message: error.message || 'Erro ao excluir inscrição',
+    });
+  }
+});
+
 // Get registration receipt (for download)
 export const getRegistrationReceiptController = asyncHandler(async (req: AuthRequest, res: Response) => {
   if (!req.user) {

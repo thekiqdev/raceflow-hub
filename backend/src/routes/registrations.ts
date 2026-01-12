@@ -9,6 +9,7 @@ import {
   exportRegistrationsController,
   transferRegistrationController,
   cancelRegistrationController,
+  deleteRegistrationController,
   getRegistrationReceiptController,
   getPaymentStatusController,
   generatePaymentController,
@@ -41,6 +42,7 @@ router.post('/leader/register-athlete', createRegistrationByLeaderController);
 router.put('/:id', updateRegistrationController);
 router.put('/:id/transfer', transferRegistrationController);
 router.put('/:id/cancel', cancelRegistrationController);
+router.delete('/:id', deleteRegistrationController);
 
 // Transfer requests routes
 router.post('/transfer-requests', createTransferRequestController);

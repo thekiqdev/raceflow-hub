@@ -2904,13 +2904,13 @@ export function RegistrationFlow({
           }
           
           return (
-            <div className="space-y-6">
-              {(() => {
-                console.log('🔍 Step 6 - Debug:', {
-                  step,
-                  totalPrice,
-                  shouldShowPaymentSelection: totalPrice > 0,
-                  selectedPaymentMethod,
+          <div className="space-y-6">
+            {(() => {
+              console.log('🔍 Step 6 - Debug:', {
+                step,
+                totalPrice,
+                shouldShowPaymentSelection: totalPrice > 0,
+                selectedPaymentMethod,
                   pixEnabled,
                   creditCardEnabled,
                   eventPaymentConfig: {
@@ -2919,81 +2919,81 @@ export function RegistrationFlow({
                     credit_card_enabled: event?.credit_card_enabled,
                     credit_card_disabled_at: event?.credit_card_disabled_at,
                   },
-                });
-                return null;
-              })()}
-              {totalPrice > 0 ? (
-                <>
-                  <div>
-                    <h3 className="text-lg font-semibold mb-4">Escolha o Método de Pagamento</h3>
-                    <p className="text-sm text-muted-foreground mb-6">
-                      Selecione como deseja pagar sua inscrição
-                    </p>
-                    
-                    <RadioGroup 
-                      value={selectedPaymentMethod || undefined}
-                      onValueChange={(value) => setSelectedPaymentMethod(value as 'pix' | 'credit_card')}
-                      className="grid gap-4"
-                    >
+              });
+              return null;
+            })()}
+            {totalPrice > 0 ? (
+              <>
+                <div>
+                  <h3 className="text-lg font-semibold mb-4">Escolha o Método de Pagamento</h3>
+                  <p className="text-sm text-muted-foreground mb-6">
+                    Selecione como deseja pagar sua inscrição
+                  </p>
+                  
+                  <RadioGroup 
+                    value={selectedPaymentMethod || undefined}
+                    onValueChange={(value) => setSelectedPaymentMethod(value as 'pix' | 'credit_card')}
+                    className="grid gap-4"
+                  >
                       {pixEnabled && (
-                        <Card 
-                          className={`cursor-pointer transition-all hover:border-primary ${
-                            selectedPaymentMethod === 'pix' ? 'border-primary border-2 bg-primary/5' : ''
-                          }`}
-                          onClick={() => setSelectedPaymentMethod('pix')}
-                        >
-                          <CardContent className="p-6">
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-4">
-                                <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
-                                  <span className="text-2xl">📱</span>
-                                </div>
-                                <div>
-                                  <h4 className="font-semibold">PIX</h4>
-                                  <p className="text-sm text-muted-foreground">
-                                    Aprovação instantânea
-                                  </p>
-                                </div>
-                              </div>
-                              <RadioGroupItem 
-                                value="pix" 
-                                className="ml-auto"
-                              />
+                    <Card 
+                      className={`cursor-pointer transition-all hover:border-primary ${
+                        selectedPaymentMethod === 'pix' ? 'border-primary border-2 bg-primary/5' : ''
+                      }`}
+                      onClick={() => setSelectedPaymentMethod('pix')}
+                    >
+                      <CardContent className="p-6">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-4">
+                            <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
+                              <span className="text-2xl">📱</span>
                             </div>
-                          </CardContent>
-                        </Card>
+                            <div>
+                              <h4 className="font-semibold">PIX</h4>
+                              <p className="text-sm text-muted-foreground">
+                                Aprovação instantânea
+                              </p>
+                            </div>
+                          </div>
+                          <RadioGroupItem 
+                            value="pix" 
+                            className="ml-auto"
+                          />
+                        </div>
+                      </CardContent>
+                    </Card>
                       )}
 
                       {creditCardEnabled && (
-                        <Card 
-                          className={`cursor-pointer transition-all hover:border-primary ${
-                            selectedPaymentMethod === 'credit_card' ? 'border-primary border-2 bg-primary/5' : ''
-                          }`}
-                          onClick={() => setSelectedPaymentMethod('credit_card')}
-                        >
-                          <CardContent className="p-6">
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-4">
-                                <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
-                                  <span className="text-2xl">💳</span>
-                                </div>
-                                <div>
-                                  <h4 className="font-semibold">Cartão de Crédito</h4>
-                                  <p className="text-sm text-muted-foreground">
-                                    Pagamento seguro e rápido
-                                  </p>
-                                </div>
-                              </div>
-                              <RadioGroupItem 
-                                value="credit_card" 
-                                className="ml-auto"
-                              />
+                    <Card 
+                      className={`cursor-pointer transition-all hover:border-primary ${
+                        selectedPaymentMethod === 'credit_card' ? 'border-primary border-2 bg-primary/5' : ''
+                      }`}
+                      onClick={() => setSelectedPaymentMethod('credit_card')}
+                    >
+                      <CardContent className="p-6">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-4">
+                            <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
+                              <span className="text-2xl">💳</span>
                             </div>
-                          </CardContent>
-                        </Card>
+                            <div>
+                              <h4 className="font-semibold">Cartão de Crédito</h4>
+                              <p className="text-sm text-muted-foreground">
+                                Pagamento seguro e rápido
+                              </p>
+                            </div>
+                          </div>
+                          <RadioGroupItem 
+                            value="credit_card" 
+                            className="ml-auto"
+                          />
+                        </div>
+                      </CardContent>
+                    </Card>
                       )}
-                    </RadioGroup>
-                  </div>
+                  </RadioGroup>
+                </div>
 
                 {/* Credit Card Form - only show if credit card is selected */}
                 {selectedPaymentMethod === 'credit_card' && (
@@ -3166,7 +3166,7 @@ export function RegistrationFlow({
                 </div>
               </div>
             )}
-            </div>
+          </div>
           );
         })()}
 

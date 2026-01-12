@@ -728,3 +728,21 @@ export const cancelRegistration = async (registrationId: string) => {
   return result.rows[0];
 };
 
+// Delete registration (hard delete - only for admin)
+export const deleteRegistration = async (registrationId: string) => {
+  // Delete registration (cascade will handle related records)
+  // Note: The controller should verify the registration exists before calling this
+  const result = await query(
+    `DELETE FROM registrations 
+     WHERE id = $1
+     RETURNING *`,
+    [registrationId]
+  );
+
+  if (result.rows.length === 0) {
+    return null;
+  }
+
+  return result.rows[0];
+};
+

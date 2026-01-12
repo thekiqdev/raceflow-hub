@@ -10,7 +10,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { getEventById, updateEvent } from "@/lib/api/events";
-import { getRegistrations, updateRegistration } from "@/lib/api/registrations";
+import { getRegistrations, updateRegistration, cancelRegistration, deleteRegistration } from "@/lib/api/registrations";
 import { getModalities, createModality, updateModality, deleteModality, reorderModalities } from "@/lib/api/modalities";
 import { getCategories, createCategory, updateCategory, deleteCategory, reorderCategories, type CategoryType as CategoryTypeEnum, type CategoryGender, type CategoryBatch } from "@/lib/api/categories";
 import { getCategoryBatches, createCategoryBatch, updateCategoryBatch, deleteCategoryBatch } from "@/lib/api/categoryBatches";
@@ -18,7 +18,7 @@ import { getEventKits, syncEventKits } from "@/lib/api/eventKits";
 import { getEventPickupLocations, createPickupLocation, updatePickupLocation, deletePickupLocation } from "@/lib/api/kitPickup";
 import { getOrganizers } from "@/lib/api/userManagement";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, MapPin, Calendar, Users, DollarSign, Search, CheckCircle, Package, MapPin as MapPinIcon, Plus, Trash2, ChevronUp, ChevronDown, X } from "lucide-react";
+import { Loader2, MapPin, Calendar, Users, DollarSign, Search, CheckCircle, Package, MapPin as MapPinIcon, Plus, Trash2, ChevronUp, ChevronDown, X, Ban, AlertTriangle } from "lucide-react";
 import { FileUpload } from "@/components/ui/file-upload";
 import { isoToDatetimeLocal, processDatetimeLocalForSave } from "@/lib/utils";
 
@@ -51,6 +51,8 @@ export function EventViewEditDialog({
   const [allRegistrations, setAllRegistrations] = useState<any[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [confirmingRegistration, setConfirmingRegistration] = useState<string | null>(null);
+  const [cancellingRegistration, setCancellingRegistration] = useState<string | null>(null);
+  const [deletingRegistration, setDeletingRegistration] = useState<string | null>(null);
   const [selectedOrganizerId, setSelectedOrganizerId] = useState<string>("");
   const [organizers, setOrganizers] = useState<any[]>([]);
   const [loadingOrganizers, setLoadingOrganizers] = useState(false);
@@ -1059,6 +1061,80 @@ export function EventViewEditDialog({
     }
   };
 
+  const handleCancelRegistration = async (registrationId: string) => {
+    if (!confirm("Deseja cancelar esta inscrição? Esta ação pode ser revertida.")) {
+      return;
+    }
+
+    setCancellingRegistration(registrationId);
+    try {
+      const response = await cancelRegistration(registrationId);
+
+      if (response.success) {
+        toast({
+          title: "Inscrição cancelada",
+          description: "A inscrição foi cancelada com sucesso!",
+        });
+        // Reload registrations
+        await loadEventData();
+      } else {
+        toast({
+          title: "Erro ao cancelar inscrição",
+          description: response.error || "Ocorreu um erro ao cancelar a inscrição",
+          variant: "destructive",
+        });
+      }
+    } catch (error: any) {
+      console.error("Error cancelling registration:", error);
+      toast({
+        title: "Erro ao cancelar inscrição",
+        description: error.message || "Ocorreu um erro ao cancelar a inscrição",
+        variant: "destructive",
+      });
+    } finally {
+      setCancellingRegistration(null);
+    }
+  };
+
+  const handleDeleteRegistration = async (registrationId: string) => {
+    if (!confirm("ATENÇÃO: Deseja excluir permanentemente esta inscrição? Esta ação não pode ser desfeita!")) {
+      return;
+    }
+
+    if (!confirm("Tem certeza? Esta ação irá excluir permanentemente a inscrição e todos os dados relacionados.")) {
+      return;
+    }
+
+    setDeletingRegistration(registrationId);
+    try {
+      const response = await deleteRegistration(registrationId);
+
+      if (response.success) {
+        toast({
+          title: "Inscrição excluída",
+          description: "A inscrição foi excluída permanentemente com sucesso!",
+        });
+        // Reload registrations
+        await loadEventData();
+      } else {
+        toast({
+          title: "Erro ao excluir inscrição",
+          description: response.error || "Ocorreu um erro ao excluir a inscrição",
+          variant: "destructive",
+        });
+      }
+    } catch (error: any) {
+      console.error("Error deleting registration:", error);
+      toast({
+        title: "Erro ao excluir inscrição",
+        description: error.message || "Ocorreu um erro ao excluir a inscrição",
+        variant: "destructive",
+      });
+    } finally {
+      setDeletingRegistration(null);
+    }
+  };
+
   if (loading) {
     return (
       <Dialog open={open} onOpenChange={onOpenChange}>
@@ -1256,10 +1332,10 @@ export function EventViewEditDialog({
                 </div>
               ) : (
                 event?.organizer_name && (
-                  <div className="grid gap-2">
-                    <Label>Organizador</Label>
-                    <p className="text-sm">{event.organizer_name}</p>
-                  </div>
+                <div className="grid gap-2">
+                  <Label>Organizador</Label>
+                  <p className="text-sm">{event.organizer_name}</p>
+                </div>
                 )
               )}
 
@@ -1388,32 +1464,32 @@ export function EventViewEditDialog({
                     <CardContent className="space-y-3">
                       {mode === "edit" ? (
                         <>
-                          <div className="grid grid-cols-2 gap-3">
-                            <div>
-                              <label className="text-sm font-medium">
-                                Nome da Modalidade
-                              </label>
-                              <Input
-                                placeholder="Ex: Corrida 5km, Corrida 10km"
-                                value={modality.name}
-                                onChange={(e) =>
-                                  updateModalityLocal(index, "name", e.target.value)
-                                }
-                              />
-                            </div>
-                            <div>
-                              <label className="text-sm font-medium">
-                                Distância
-                              </label>
-                              <Input
-                                placeholder="Ex: 5km, 10km, 21km, 42km"
-                                value={modality.distance}
-                                onChange={(e) =>
-                                  updateModalityLocal(index, "distance", e.target.value)
-                                }
-                              />
-                            </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="text-sm font-medium">
+                              Nome da Modalidade
+                            </label>
+                            <Input
+                              placeholder="Ex: Corrida 5km, Corrida 10km"
+                              value={modality.name}
+                              onChange={(e) =>
+                                updateModalityLocal(index, "name", e.target.value)
+                              }
+                            />
                           </div>
+                          <div>
+                            <label className="text-sm font-medium">
+                              Distância
+                            </label>
+                            <Input
+                              placeholder="Ex: 5km, 10km, 21km, 42km"
+                              value={modality.distance}
+                              onChange={(e) =>
+                                updateModalityLocal(index, "distance", e.target.value)
+                              }
+                            />
+                          </div>
+                        </div>
                           <div>
                             <label className="text-sm font-medium">
                               Limite de Inscrições (Opcional)
@@ -3145,21 +3221,53 @@ export function EventViewEditDialog({
                                 )}
                               </div>
                             </div>
-                            {reg.status !== "confirmed" && (
+                            <div className="flex items-center gap-2">
+                              {reg.status !== "confirmed" && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => handleConfirmRegistration(reg.id)}
+                                  disabled={confirmingRegistration === reg.id}
+                                  title="Confirmar inscrição manualmente"
+                                >
+                                  {confirmingRegistration === reg.id ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                  ) : (
+                                    <CheckCircle className="h-4 w-4" />
+                                  )}
+                                </Button>
+                              )}
+                              {reg.status !== "cancelled" && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => handleCancelRegistration(reg.id)}
+                                  disabled={cancellingRegistration === reg.id}
+                                  title="Cancelar inscrição"
+                                  className="text-orange-600 hover:text-orange-700"
+                                >
+                                  {cancellingRegistration === reg.id ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                  ) : (
+                                    <Ban className="h-4 w-4" />
+                                  )}
+                                </Button>
+                              )}
                               <Button
                                 size="sm"
                                 variant="outline"
-                                onClick={() => handleConfirmRegistration(reg.id)}
-                                disabled={confirmingRegistration === reg.id}
-                                title="Confirmar inscrição manualmente"
+                                onClick={() => handleDeleteRegistration(reg.id)}
+                                disabled={deletingRegistration === reg.id}
+                                title="Excluir inscrição permanentemente"
+                                className="text-destructive hover:text-destructive"
                               >
-                                {confirmingRegistration === reg.id ? (
+                                {deletingRegistration === reg.id ? (
                                   <Loader2 className="h-4 w-4 animate-spin" />
                                 ) : (
-                                  <CheckCircle className="h-4 w-4" />
+                                  <Trash2 className="h-4 w-4" />
                                 )}
                               </Button>
-                            )}
+                            </div>
                           </div>
                         </div>
                       </CardContent>

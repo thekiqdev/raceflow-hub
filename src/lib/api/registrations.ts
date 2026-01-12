@@ -179,6 +179,11 @@ export const cancelRegistration = async (id: string) => {
   return apiClient.put<Registration>(`/registrations/${id}/cancel`, {});
 };
 
+// Delete registration (hard delete - only for admin)
+export const deleteRegistration = async (id: string) => {
+  return apiClient.delete<Registration>(`/registrations/${id}`);
+};
+
 // Get registration receipt
 export const getRegistrationReceipt = async (id: string) => {
   return apiClient.get<Registration>(`/registrations/${id}/receipt`);

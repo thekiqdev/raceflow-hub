@@ -28,6 +28,7 @@ import formConfigurationsRouter from './routes/formConfigurations.js';
 import notificationTemplatesRouter from './routes/notificationTemplates.js';
 import documentTypesRouter from './routes/documentTypes.js';
 import { updateRegistrationStatuses } from './services/registrationStatusService.js';
+import { cancelExpiredRegistrations } from './services/expiredRegistrationsService.js';
 
 // Load environment variables
 // Try to load from backend/.env explicitly
@@ -309,6 +310,29 @@ app.listen(PORT, () => {
   }, UPDATE_INTERVAL_MS);
   
   console.log(`✅ Atualização automática de status de inscrições configurada`);
+
+  // Schedule automatic cancellation of expired unpaid registrations
+  // Run every 5 minutes (300000 ms) - same interval as registration status updates
+  const EXPIRED_REGISTRATIONS_CHECK_INTERVAL_MS = parseInt(process.env.EXPIRED_REGISTRATIONS_CHECK_INTERVAL_MS || '300000', 10);
+  const EXPIRATION_MINUTES = parseInt(process.env.REGISTRATION_EXPIRATION_MINUTES || '20', 10);
+  
+  console.log(`⏰ Configurando cancelamento automático de inscrições não pagas após ${EXPIRATION_MINUTES} minutos...`);
+  console.log(`🔄 Verificação a cada ${EXPIRED_REGISTRATIONS_CHECK_INTERVAL_MS / 1000} segundos...`);
+  
+  // Run immediately on startup
+  cancelExpiredRegistrations(EXPIRATION_MINUTES).catch((error) => {
+    console.error('❌ Erro no cancelamento inicial de inscrições expiradas:', error);
+  });
+  
+  // Schedule periodic checks
+  setInterval(() => {
+    console.log('🔄 Executando verificação de inscrições expiradas...');
+    cancelExpiredRegistrations(EXPIRATION_MINUTES).catch((error) => {
+      console.error('❌ Erro no cancelamento automático de inscrições expiradas:', error);
+    });
+  }, EXPIRED_REGISTRATIONS_CHECK_INTERVAL_MS);
+  
+  console.log(`✅ Cancelamento automático de inscrições expiradas configurado`);
 });
 
 export default app;
