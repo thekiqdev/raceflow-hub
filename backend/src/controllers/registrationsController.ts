@@ -19,7 +19,7 @@ import { getProfileByUserId } from '../services/profilesService.js';
 import { query } from '../config/database.js';
 import { sendNotificationSafely, getUserEmail, getUserName, getOrganizerEmail } from '../services/notificationService.js';
 import { z } from 'zod';
-import { EventRegistrationStatus, Event } from '../types/index.js';
+import { EventRegistrationStatus, Event, PaymentStatus } from '../types/index.js';
 import { calculateRegistrationStatus } from '../services/eventsService.js';
 
 /**
@@ -1256,6 +1256,8 @@ export const createRegistrationByOrganizerController = asyncHandler(async (req: 
   // Create registration data
   // When organizer creates registration, set status as 'confirmed'
   // If total_amount is 0, set payment_status as 'convidado', otherwise 'paid' (organizer handles payment manually)
+  const paymentStatusValue: PaymentStatus = totalAmount === 0 ? 'convidado' : 'paid';
+  
   const registrationData = {
     event_id,
     category_id,
@@ -1265,7 +1267,7 @@ export const createRegistrationByOrganizerController = asyncHandler(async (req: 
     total_amount: totalAmount,
     payment_method: 'pix' as const,
     status: 'confirmed' as const, // Inscrições criadas por organizador vêm como confirmadas
-    payment_status: (totalAmount === 0 ? 'convidado' : 'paid') as const, // Se grátis = convidado, senão = pago (organizador trata pagamento manualmente)
+    payment_status: paymentStatusValue, // Se grátis = convidado, senão = pago (organizador trata pagamento manualmente)
   };
 
   console.log('📝 Organizador criando inscrição para atleta:', {
