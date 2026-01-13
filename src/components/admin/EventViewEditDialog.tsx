@@ -3289,21 +3289,21 @@ export function EventViewEditDialog({
                               </div>
                             </div>
                             <div className="flex items-center gap-2">
-                              {reg.status !== "confirmed" && (
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => handleConfirmRegistration(reg.id)}
-                                  disabled={confirmingRegistration === reg.id}
-                                  title="Confirmar inscrição manualmente"
-                                >
-                                  {confirmingRegistration === reg.id ? (
-                                    <Loader2 className="h-4 w-4 animate-spin" />
-                                  ) : (
-                                    <CheckCircle className="h-4 w-4" />
-                                  )}
-                                </Button>
-                              )}
+                            {reg.status !== "confirmed" && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleConfirmRegistration(reg.id)}
+                                disabled={confirmingRegistration === reg.id}
+                                title="Confirmar inscrição manualmente"
+                              >
+                                {confirmingRegistration === reg.id ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <CheckCircle className="h-4 w-4" />
+                                )}
+                              </Button>
+                            )}
                               {reg.status !== "cancelled" && (
                                 <Button
                                   size="sm"

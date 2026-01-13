@@ -171,3 +171,18 @@ export function getEffectiveRegistrationStatus(event: Event): EventRegistrationS
   return event.registration_status || null;
 }
 
+export interface AttributeSelectionStats {
+  kit_id: string;
+  kit_name: string;
+  product_id: string;
+  product_name: string;
+  attribute_name: string;
+  attribute_value: string;
+  selection_count: number;
+  variant_price?: number | null;
+}
+
+export const getAttributeSelectionStats = async (eventId: string) => {
+  return apiClient.get<AttributeSelectionStats[]>(`/events/${eventId}/product-selection-stats`);
+};
+

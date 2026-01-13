@@ -17,6 +17,7 @@ import {
   updatePickupLocationController,
   deletePickupLocationController,
 } from '../controllers/kitPickupController.js';
+import { getAttributeSelectionStatsController } from '../controllers/registrationProductSelectionsController.js';
 
 const router = Router();
 
@@ -25,6 +26,7 @@ router.get('/', optionalAuth, getAllEvents);
 router.get('/:eventId/categories', optionalAuth, getEventCategoriesController);
 router.get('/:eventId/kits', optionalAuth, getEventKitsController);
 router.get('/:eventId/pickup-locations', optionalAuth, getEventPickupLocationsController);
+router.get('/:eventId/product-selection-stats', authenticate, getAttributeSelectionStatsController);
 router.post('/:eventId/pickup-locations', authenticate, requireEventOwnership('eventId'), createPickupLocationController);
 router.put('/:eventId/pickup-locations/:locationId', authenticate, requireEventOwnership('eventId'), updatePickupLocationController);
 router.delete('/:eventId/pickup-locations/:locationId', authenticate, requireEventOwnership('eventId'), deletePickupLocationController);

@@ -44,6 +44,12 @@ export interface CreditCardHolderInfo {
   mobilePhone?: string;
 }
 
+export interface ProductSelection {
+  product_id: string;
+  variant_id?: string;
+  attribute_selections?: Record<string, string>; // { attributeName: attributeValue }
+}
+
 export interface CreateRegistrationData {
   event_id: string;
   runner_id?: string;
@@ -52,6 +58,7 @@ export interface CreateRegistrationData {
   payment_method?: 'pix' | 'credit_card' | 'boleto';
   total_amount: number;
   coupon_code?: string;
+  product_selections?: ProductSelection[];
   // Credit card data (only when payment_method is 'credit_card')
   credit_card?: CreditCardData;
   credit_card_holder_info?: CreditCardHolderInfo;
@@ -145,6 +152,7 @@ export interface CreateRegistrationByOrganizerData {
   event_id: string;
   category_id: string;
   kit_id?: string;
+  product_selections?: ProductSelection[];
 }
 
 export const createRegistrationByOrganizer = async (data: CreateRegistrationByOrganizerData) => {

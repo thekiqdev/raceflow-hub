@@ -66,6 +66,13 @@ const creditCardHolderInfoSchema = z.object({
   mobilePhone: z.string().optional(),
 });
 
+// Schema for product selection
+const productSelectionSchema = z.object({
+  product_id: z.string().uuid('ID do produto inválido'),
+  variant_id: z.string().uuid('ID da variação inválido').optional(),
+  attribute_selections: z.record(z.string(), z.string()).optional(),
+});
+
 // Schema for create registration request
 const createRegistrationSchema = z.object({
   event_id: z.string().uuid('ID do evento inválido'),
@@ -75,6 +82,7 @@ const createRegistrationSchema = z.object({
   payment_method: z.enum(['pix', 'credit_card', 'boleto']).optional(),
   total_amount: z.number().min(0, 'Valor total deve ser maior ou igual a zero'),
   coupon_code: z.string().optional(),
+  product_selections: z.array(productSelectionSchema).optional(),
   credit_card: creditCardDataSchema.optional(),
   credit_card_holder_info: creditCardHolderInfoSchema.optional(),
 }).refine((data) => {
@@ -320,9 +328,22 @@ export const getRegistration = asyncHandler(async (req: AuthRequest, res: Respon
     return;
   }
 
+  // Get product selections if available
+  let productSelections = null;
+  try {
+    const { getRegistrationProductSelections } = await import('../services/registrationProductSelectionsService.js');
+    productSelections = await getRegistrationProductSelections(id);
+  } catch (error: any) {
+    // Log error but don't fail the request if product selections can't be loaded
+    console.error('⚠️ Erro ao carregar seleções de produtos/variantes:', error.message);
+  }
+
   res.json({
     success: true,
-    data: registration,
+    data: {
+      ...registration,
+      product_selections: productSelections || [],
+    },
   });
 });
 
@@ -1268,6 +1289,7 @@ export const createRegistrationByOrganizerController = asyncHandler(async (req: 
     payment_method: 'pix' as const,
     status: 'confirmed' as const, // Inscrições criadas por organizador vêm como confirmadas
     payment_status: paymentStatusValue, // Se grátis = convidado, senão = pago (organizador trata pagamento manualmente)
+    product_selections: req.body.product_selections || undefined,
   };
 
   console.log('📝 Organizador criando inscrição para atleta:', {

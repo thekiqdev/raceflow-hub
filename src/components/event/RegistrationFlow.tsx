@@ -1089,6 +1089,23 @@ export function RegistrationFlow({
       // Use otherPersonId if registering for someone else, otherwise use logged user id
       const runnerId = otherPersonId || user.id;
       
+      // Build product_selections from selectedProducts and variantSelections
+      const productSelections: Array<{ product_id: string; variant_id?: string; attribute_selections?: Record<string, string> }> = [];
+      
+      if (selectedKit?.id && selectedProducts.has(selectedKit.id)) {
+        const selection = selectedProducts.get(selectedKit.id);
+        if (selection) {
+          const kitKey = `${selectedKit.id}-${selection.productId}`;
+          const variantSelection = variantSelections.get(kitKey);
+          
+          productSelections.push({
+            product_id: selection.productId,
+            variant_id: selection.variantId,
+            attribute_selections: variantSelection || undefined,
+          });
+        }
+      }
+
       const registrationData: any = {
         event_id: event.id,
         runner_id: runnerId,
@@ -1097,6 +1114,7 @@ export function RegistrationFlow({
         payment_method: selectedPaymentMethod || "pix", // Use selected payment method
         total_amount: totalPrice,
         coupon_code: appliedCoupon?.code || undefined,
+        product_selections: productSelections.length > 0 ? productSelections : undefined,
       };
 
       // Add credit card data if payment method is credit card

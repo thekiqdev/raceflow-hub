@@ -282,11 +282,29 @@ const OrganizerRegistrations = () => {
 
     setIsSubmitting(true);
     try {
+      // Build product_selections from selectedProducts and variantSelections
+      const productSelections: Array<{ product_id: string; variant_id?: string; attribute_selections?: Record<string, string> }> = [];
+      
+      if (selectedKitId && selectedProducts.has(selectedKitId)) {
+        const selection = selectedProducts.get(selectedKitId);
+        if (selection) {
+          const kitKey = `${selectedKitId}-${selection.productId}`;
+          const variantSelection = variantSelections.get(kitKey);
+          
+          productSelections.push({
+            product_id: selection.productId,
+            variant_id: selection.variantId,
+            attribute_selections: variantSelection || undefined,
+          });
+        }
+      }
+
       const response = await createRegistrationByOrganizer({
         email: registerEmail,
         event_id: selectedEventId,
         category_id: selectedCategoryId,
         kit_id: selectedKitId || undefined,
+        product_selections: productSelections.length > 0 ? productSelections : undefined,
       });
 
       if (response.success) {
@@ -1185,6 +1203,69 @@ const OrganizerRegistrations = () => {
                   )}
                 </div>
               </div>
+
+              {/* Produto e Variações Selecionadas */}
+              {registrationDetails.product_selections && registrationDetails.product_selections.length > 0 && (
+                <div className="space-y-3">
+                  <h3 className="text-lg font-semibold border-b pb-2">Produto e Variações Selecionadas</h3>
+                  <div className="space-y-4">
+                    {(() => {
+                      // Group selections by product
+                      const productGroups = new Map<string, {
+                        product_id: string;
+                        variant_id: string | null;
+                        variant_name: string | null;
+                        attributes: Array<{
+                          attribute_name: string;
+                          attribute_value: string;
+                        }>;
+                      }>();
+                      
+                      registrationDetails.product_selections.forEach((selection: any) => {
+                        const key = selection.product_id;
+                        if (!productGroups.has(key)) {
+                          productGroups.set(key, {
+                            product_id: selection.product_id,
+                            variant_id: selection.variant_id,
+                            variant_name: selection.variant_name,
+                            attributes: [],
+                          });
+                        }
+                        productGroups.get(key)!.attributes.push({
+                          attribute_name: selection.attribute_name,
+                          attribute_value: selection.attribute_value,
+                        });
+                      });
+                      
+                      return Array.from(productGroups.entries()).map(([productId, productData]) => {
+                        const productName = registrationDetails.product_selections.find(
+                          (s: any) => s.product_id === productId
+                        )?.product_name || 'Produto';
+                        
+                        return (
+                          <div key={productId} className="border rounded-lg p-4 bg-muted/50">
+                            <h4 className="font-semibold mb-3 text-base">{productName}</h4>
+                            <div className="space-y-2">
+                              {productData.attributes.map((attr, index) => (
+                                <div key={index} className="flex items-center gap-2">
+                                  <span className="text-sm text-muted-foreground min-w-[100px]">{attr.attribute_name}:</span>
+                                  <span className="font-medium">{attr.attribute_value}</span>
+                                </div>
+                              ))}
+                              {productData.variant_name && (
+                                <div className="mt-3 pt-3 border-t">
+                                  <span className="text-sm text-muted-foreground">Variação completa: </span>
+                                  <span className="font-medium">{productData.variant_name}</span>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      });
+                    })()}
+                  </div>
+                </div>
+              )}
 
               {/* Forma de Pagamento */}
               <div className="space-y-3">

@@ -100,6 +100,7 @@ const migrations = [
   '071_add_max_participants_to_modalities.sql',
   '072_add_route_image_to_modalities.sql',
   '073_create_kit_categories.sql',
+  '074_create_registration_product_selections.sql',
 ];
 
 // Create migrations tracking table

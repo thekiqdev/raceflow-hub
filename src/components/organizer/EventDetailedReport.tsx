@@ -1,8 +1,9 @@
 import { useState, useEffect } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { getEventById } from "@/lib/api/events";
+import { getEventById, getAttributeSelectionStats, AttributeSelectionStats } from "@/lib/api/events";
 import { getRegistrations } from "@/lib/api/registrations";
+import { getEventKits, EventKit, KitProduct } from "@/lib/api/eventKits";
 import { ArrowLeft, Users, DollarSign, Package, CreditCard, Smartphone } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -59,12 +60,31 @@ interface KitRevenue {
   revenue: number;
 }
 
+interface ProductVariationInfo {
+  kitName: string;
+  productName: string;
+  productType: 'variable' | 'unique';
+  variantCount: number;
+  attributeCount: number;
+}
+
+interface AttributeSelectionInfo {
+  kitName: string;
+  productName: string;
+  attributeName: string;
+  attributeValue: string;
+  selectionCount: number;
+  variantPrice?: number | null;
+}
+
 const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
   const [loading, setLoading] = useState(true);
   const [eventTitle, setEventTitle] = useState("");
   const [registrations, setRegistrations] = useState<RegistrationDetail[]>([]);
   const [categoryRevenues, setCategoryRevenues] = useState<CategoryRevenue[]>([]);
   const [kitRevenues, setKitRevenues] = useState<KitRevenue[]>([]);
+  const [productVariations, setProductVariations] = useState<ProductVariationInfo[]>([]);
+  const [attributeSelections, setAttributeSelections] = useState<AttributeSelectionInfo[]>([]);
   const [totalRevenue, setTotalRevenue] = useState(0);
   const [paidCount, setPaidCount] = useState(0);
   const [pixRevenue, setPixRevenue] = useState(0);
@@ -191,6 +211,49 @@ const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
           revenue: data.revenue,
         }))
       );
+
+      // Load kits with products and variants
+      const kitsResponse = await getEventKits(eventId);
+      if (kitsResponse.success && kitsResponse.data) {
+        const variationsInfo: ProductVariationInfo[] = [];
+        
+        kitsResponse.data.forEach((kit: EventKit) => {
+          if (kit.products && kit.products.length > 0) {
+            kit.products.forEach((product: KitProduct) => {
+              const variantCount = product.type === 'variable' && product.variants 
+                ? product.variants.length 
+                : 0;
+              const attributeCount = product.variant_attributes 
+                ? product.variant_attributes.length 
+                : 0;
+              
+              variationsInfo.push({
+                kitName: kit.name,
+                productName: product.name,
+                productType: product.type,
+                variantCount,
+                attributeCount,
+              });
+            });
+          }
+        });
+        
+        setProductVariations(variationsInfo);
+      }
+
+      // Load attribute selection statistics
+      const statsResponse = await getAttributeSelectionStats(eventId);
+      if (statsResponse.success && statsResponse.data) {
+        const selectionsInfo: AttributeSelectionInfo[] = statsResponse.data.map((stat: AttributeSelectionStats) => ({
+          kitName: stat.kit_name,
+          productName: stat.product_name,
+          attributeName: stat.attribute_name,
+          attributeValue: stat.attribute_value,
+          selectionCount: stat.selection_count,
+          variantPrice: stat.variant_price,
+        }));
+        setAttributeSelections(selectionsInfo);
+      }
     } catch (error) {
       console.error("Error loading event details:", error);
       toast.error("Erro ao carregar detalhes do evento");
@@ -391,6 +454,78 @@ const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
                   </TableCell>
                   <TableCell className="text-right">
                     {formatCurrency(kit.revenue / kit.count)}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </Card>
+      )}
+
+      {/* Product Variations and Attributes */}
+      {productVariations.length > 0 && (
+        <Card className="p-6">
+          <h3 className="text-lg font-semibold mb-4">Variações/Atributos dos Produtos</h3>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Kit</TableHead>
+                <TableHead>Produto</TableHead>
+                <TableHead>Tipo</TableHead>
+                <TableHead className="text-right">Quantidade de Variações</TableHead>
+                <TableHead className="text-right">Quantidade de Atributos</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {productVariations.map((item, index) => (
+                <TableRow key={`${item.kitName}-${item.productName}-${index}`}>
+                  <TableCell className="font-medium">{item.kitName}</TableCell>
+                  <TableCell>{item.productName}</TableCell>
+                  <TableCell>
+                    <Badge variant={item.productType === 'variable' ? 'default' : 'secondary'}>
+                      {item.productType === 'variable' ? 'Variável' : 'Único'}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-right">
+                    {item.productType === 'variable' ? item.variantCount : '-'}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    {item.attributeCount > 0 ? item.attributeCount : '-'}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </Card>
+      )}
+
+      {/* Attribute Selection Statistics */}
+      {attributeSelections.length > 0 && (
+        <Card className="p-6">
+          <h3 className="text-lg font-semibold mb-4">Estatísticas de Seleção de Atributos</h3>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Kit</TableHead>
+                <TableHead>Produto</TableHead>
+                <TableHead>Atributo</TableHead>
+                <TableHead>Valor</TableHead>
+                <TableHead className="text-right">Quantidade Escolhida</TableHead>
+                <TableHead className="text-right">Valor</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {attributeSelections.map((item, index) => (
+                <TableRow key={`${item.kitName}-${item.productName}-${item.attributeName}-${item.attributeValue}-${index}`}>
+                  <TableCell className="font-medium">{item.kitName}</TableCell>
+                  <TableCell>{item.productName}</TableCell>
+                  <TableCell>{item.attributeName}</TableCell>
+                  <TableCell>{item.attributeValue}</TableCell>
+                  <TableCell className="text-right font-semibold">{item.selectionCount}</TableCell>
+                  <TableCell className="text-right">
+                    {item.variantPrice !== null && item.variantPrice !== undefined
+                      ? formatCurrency(item.variantPrice)
+                      : '-'}
                   </TableCell>
                 </TableRow>
               ))}

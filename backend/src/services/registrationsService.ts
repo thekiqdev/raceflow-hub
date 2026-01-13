@@ -21,6 +21,12 @@ export interface CreditCardHolderInfo {
   mobilePhone?: string;
 }
 
+export interface ProductSelection {
+  product_id: string;
+  variant_id?: string;
+  attribute_selections?: Record<string, string>; // { attributeName: attributeValue }
+}
+
 export interface CreateRegistrationData {
   event_id: string;
   runner_id: string;
@@ -32,6 +38,8 @@ export interface CreateRegistrationData {
   coupon_code?: string;
   status?: RegistrationStatus; // Optional status (used when organizer creates registration)
   payment_status?: PaymentStatus; // Optional payment_status (used when organizer creates registration)
+  // Product and variant selections
+  product_selections?: ProductSelection[];
   // Credit card data (only when payment_method is 'credit_card')
   credit_card?: CreditCardData;
   credit_card_holder_info?: CreditCardHolderInfo;
@@ -440,6 +448,76 @@ export const createRegistration = async (data: CreateRegistrationData) => {
   });
 
   const registration = result.rows[0];
+
+  // Save product and variant selections if provided
+  if (data.product_selections && data.product_selections.length > 0) {
+    try {
+      for (const selection of data.product_selections) {
+        // If variant_id is provided, get variant details to extract attributes
+        if (selection.variant_id) {
+          const variantResult = await query(
+            `SELECT name, product_id FROM product_variants WHERE id = $1`,
+            [selection.variant_id]
+          );
+          
+          if (variantResult.rows.length > 0) {
+            const variant = variantResult.rows[0];
+            
+            // Get product variant_attributes to parse variant name
+            const productResult = await query(
+              `SELECT variant_attributes FROM kit_products WHERE id = $1`,
+              [selection.product_id]
+            );
+            
+            if (productResult.rows.length > 0) {
+              const variantAttributes = productResult.rows[0].variant_attributes as string[] | null;
+              
+              if (variantAttributes && variantAttributes.length > 0) {
+                // Parse variant name (format: "Value1 - Value2 - ...")
+                const variantValues = variant.name.split(' - ').map(v => v.trim());
+                
+                // Save each attribute selection
+                for (let i = 0; i < variantAttributes.length && i < variantValues.length; i++) {
+                  await query(
+                    `INSERT INTO registration_product_selections 
+                     (registration_id, product_id, variant_id, attribute_name, attribute_value)
+                     VALUES ($1, $2, $3, $4, $5)`,
+                    [
+                      registration.id,
+                      selection.product_id,
+                      selection.variant_id,
+                      variantAttributes[i],
+                      variantValues[i],
+                    ]
+                  );
+                }
+              }
+            }
+          }
+        } else if (selection.attribute_selections) {
+          // If attribute_selections is provided directly (for manual registration)
+          for (const [attributeName, attributeValue] of Object.entries(selection.attribute_selections)) {
+            await query(
+              `INSERT INTO registration_product_selections 
+               (registration_id, product_id, variant_id, attribute_name, attribute_value)
+               VALUES ($1, $2, $3, $4, $5)`,
+              [
+                registration.id,
+                selection.product_id,
+                selection.variant_id || null,
+                attributeName,
+                attributeValue,
+              ]
+            );
+          }
+        }
+      }
+      console.log(`✅ Seleções de produtos/variantes salvas para inscrição ${registration.id}`);
+    } catch (error: any) {
+      // Log error but don't fail registration if product selection save fails
+      console.error('⚠️ Erro ao salvar seleções de produtos/variantes (não bloqueia inscrição):', error.message);
+    }
+  }
 
   // Check if user has a referral OR if coupon belongs to a leader, and create commission if applicable
   // Only create commission if payment is already paid (free registrations or instant payments)
