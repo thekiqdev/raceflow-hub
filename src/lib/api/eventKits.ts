@@ -32,11 +32,15 @@ export interface EventKit {
   display_order: number;
   created_at?: string;
   products?: KitProduct[];
+  category_ids?: string[]; // IDs das categorias associadas ao kit (opcional para compatibilidade retroativa)
 }
 
 // Get all kits for an event
-export const getEventKits = async (eventId: string) => {
-  return apiClient.get<EventKit[]>(`/events/${eventId}/kits`);
+// @param eventId - ID of the event
+// @param categoryId - Optional category ID to filter kits
+export const getEventKits = async (eventId: string, categoryId?: string) => {
+  const query = categoryId ? `?category_id=${encodeURIComponent(categoryId)}` : '';
+  return apiClient.get<EventKit[]>(`/events/${eventId}/kits${query}`);
 };
 
 // Sync (create/update/delete) kits for an event
@@ -65,6 +69,7 @@ export interface SyncKitData {
   description?: string | null;
   price: number;
   display_order?: number; // Opcional na criação - será calculado automaticamente se não fornecido
+  category_ids?: string[]; // IDs das categorias associadas ao kit (opcional)
   products?: SyncProductData[];
 }
 

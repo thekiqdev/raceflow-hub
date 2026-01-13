@@ -21,7 +21,7 @@ import { CreditCardForm } from "@/components/payment/CreditCardForm";
 import { CreditCardData, CreditCardHolderInfo } from "@/lib/api/registrations";
 import { getEventCategories, EventCategory } from "@/lib/api/eventCategories";
 import { type CategoryBatch } from "@/lib/api/categories";
-import { EventKit, KitProduct, ProductVariant } from "@/lib/api/eventKits";
+import { EventKit, KitProduct, ProductVariant, getEventKits } from "@/lib/api/eventKits";
 import { validateCoupon } from "@/lib/api/coupons";
 import { getEnabledModules } from "@/lib/api/systemSettings";
 import { getModalities, type Modality } from "@/lib/api/modalities";
@@ -108,6 +108,8 @@ export function RegistrationFlow({
   const [modalities, setModalities] = useState<Modality[]>([]);
   const [availableCategories, setAvailableCategories] = useState<NewCategory[]>([]);
   const [loadingModalities, setLoadingModalities] = useState(false);
+  const [filteredKits, setFilteredKits] = useState<Kit[]>(kits);
+  const [loadingKits, setLoadingKits] = useState(false);
   const [selectedKit, setSelectedKit] = useState<Kit | null>(null);
   const [expandedKits, setExpandedKits] = useState<Set<string>>(new Set());
   const [selectedProducts, setSelectedProducts] = useState<Map<string, { productId: string; variantId?: string }>>(new Map());
@@ -517,6 +519,35 @@ export function RegistrationFlow({
 
     loadUserData();
   }, [open, user]);
+
+  // Load kits filtered by category when category is selected
+  useEffect(() => {
+    const loadKitsForCategory = async () => {
+      if (!event?.id) return;
+      
+      if (selectedCategory?.id) {
+        setLoadingKits(true);
+        try {
+          const response = await getEventKits(event.id, selectedCategory.id);
+          if (response.success && response.data) {
+            setFilteredKits(response.data);
+          } else {
+            setFilteredKits([]);
+          }
+        } catch (error) {
+          console.error('Error loading kits for category:', error);
+          setFilteredKits([]);
+        } finally {
+          setLoadingKits(false);
+        }
+      } else {
+        // If no category selected, show all kits
+        setFilteredKits(kits);
+      }
+    };
+    
+    loadKitsForCategory();
+  }, [selectedCategory?.id, event?.id, kits]);
 
   // Load categories when modality is selected
   useEffect(() => {
@@ -2155,7 +2186,13 @@ export function RegistrationFlow({
           <div className="space-y-6">
             <div>
               <h3 className="text-lg font-semibold mb-4">Escolha o Kit</h3>
-              {kits.length === 0 ? (
+              {loadingKits ? (
+                <Card>
+                  <CardContent className="py-8 text-center">
+                    <p className="text-muted-foreground">Carregando kits...</p>
+                  </CardContent>
+                </Card>
+              ) : filteredKits.length === 0 ? (
                 <Card>
                   <CardContent className="py-8 text-center">
                     <p className="text-muted-foreground">Nenhum kit disponível para este evento.</p>
@@ -2163,7 +2200,7 @@ export function RegistrationFlow({
                 </Card>
               ) : (
                 <div className="grid gap-4">
-                  {kits.map((kit) => {
+                  {filteredKits.map((kit) => {
                     const isExpanded = expandedKits.has(kit.id);
                     const isSelected = selectedKit?.id === kit.id;
                     const kitProducts = kit.products || [];

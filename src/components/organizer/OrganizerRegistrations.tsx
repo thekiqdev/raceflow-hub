@@ -156,6 +156,13 @@ const OrganizerRegistrations = () => {
     }
   }, [selectedEventId]);
 
+  // Reload kits when category changes
+  useEffect(() => {
+    if (selectedEventId) {
+      loadKits();
+    }
+  }, [selectedCategoryId]);
+
   // Load categories when modality is selected
   useEffect(() => {
     if (selectedModalityId) {
@@ -223,13 +230,17 @@ const OrganizerRegistrations = () => {
     
     try {
       setLoadingKits(true);
-      const response = await getEventKits(selectedEventId);
+      // Load kits filtered by category if category is selected
+      const response = await getEventKits(selectedEventId, selectedCategoryId || undefined);
       if (response.success && response.data) {
         setKits(response.data);
+      } else {
+        setKits([]);
       }
     } catch (error) {
       console.error("Error loading kits:", error);
       toast.error("Erro ao carregar kits");
+      setKits([]);
     } finally {
       setLoadingKits(false);
     }

@@ -99,6 +99,7 @@ const migrations = [
   '070_add_payment_methods_to_events.sql',
   '071_add_max_participants_to_modalities.sql',
   '072_add_route_image_to_modalities.sql',
+  '073_create_kit_categories.sql',
 ];
 
 // Create migrations tracking table

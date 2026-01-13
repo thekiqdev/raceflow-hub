@@ -1,4 +1,5 @@
 import { query } from '../config/database.js';
+import { getKitCategories, associateKitToCategories } from './kitCategoriesService.js';
 
 export interface ProductVariant {
   id: string;
@@ -31,16 +32,44 @@ export interface EventKit {
   display_order: number;
   created_at: Date | null;
   products?: KitProduct[];
+  category_ids?: string[]; // IDs das categorias associadas ao kit (opcional para compatibilidade retroativa)
 }
 
 /**
  * Get all kits for an event with products and variants
+ * @param eventId - ID of the event
+ * @param categoryId - Optional category ID to filter kits (only kits associated with this category or not associated with any category)
  */
-export const getEventKits = async (eventId: string): Promise<EventKit[]> => {
-  const kitsResult = await query(
-    `SELECT * FROM event_kits WHERE event_id = $1 ORDER BY display_order ASC`,
-    [eventId]
-  );
+export const getEventKits = async (eventId: string, categoryId?: string): Promise<EventKit[]> => {
+  let queryText: string;
+  let queryParams: any[];
+
+  if (categoryId) {
+    // Filter kits that are either:
+    // 1. Associated with this category, OR
+    // 2. Not associated with any category (available for all categories)
+    queryText = `
+      SELECT DISTINCT k.*
+      FROM event_kits k
+      WHERE k.event_id = $1
+        AND (
+          k.id IN (
+            SELECT kit_id FROM kit_categories WHERE category_id = $2
+          )
+          OR k.id NOT IN (
+            SELECT DISTINCT kit_id FROM kit_categories
+          )
+        )
+      ORDER BY k.display_order ASC
+    `;
+    queryParams = [eventId, categoryId];
+  } else {
+    // Get all kits for the event
+    queryText = `SELECT * FROM event_kits WHERE event_id = $1 ORDER BY display_order ASC`;
+    queryParams = [eventId];
+  }
+
+  const kitsResult = await query(queryText, queryParams);
 
   const kits: EventKit[] = kitsResult.rows.map((row) => ({
     id: row.id,
@@ -52,8 +81,13 @@ export const getEventKits = async (eventId: string): Promise<EventKit[]> => {
     created_at: row.created_at,
   }));
 
-  // Get products for each kit
+  // Get category_ids and products for each kit
   for (const kit of kits) {
+    // Get category_ids for this kit
+    const categoryIds = await getKitCategories(kit.id);
+    kit.category_ids = categoryIds.length > 0 ? categoryIds : undefined;
+
+    // Get products for this kit
     const productsResult = await query(
       `SELECT * FROM kit_products WHERE kit_id = $1 ORDER BY name ASC`,
       [kit.id]
@@ -95,6 +129,37 @@ export const getEventKits = async (eventId: string): Promise<EventKit[]> => {
   }
 
   return kits;
+};
+
+/**
+ * Get a kit by ID
+ */
+export const getEventKitById = async (kitId: string): Promise<EventKit | null> => {
+  const result = await query(
+    `SELECT * FROM event_kits WHERE id = $1`,
+    [kitId]
+  );
+
+  if (result.rows.length === 0) {
+    return null;
+  }
+
+  const row = result.rows[0];
+  const kit: EventKit = {
+    id: row.id,
+    event_id: row.event_id,
+    name: row.name,
+    description: row.description,
+    price: parseFloat(row.price) || 0,
+    display_order: row.display_order,
+    created_at: row.created_at,
+  };
+
+  // Get category_ids
+  const categoryIds = await getKitCategories(kit.id);
+  kit.category_ids = categoryIds.length > 0 ? categoryIds : undefined;
+
+  return kit;
 };
 
 /**
@@ -223,30 +288,33 @@ export const deleteEventKit = async (kitId: string): Promise<boolean> => {
 /**
  * Bulk create/update/delete kits for an event
  */
-export const syncEventKits = async (
-  eventId: string,
-  kits: Array<{
+export interface SyncKitData {
+  id?: string;
+  name: string;
+  description?: string | null;
+  price: number;
+  display_order?: number;
+  category_ids?: string[]; // IDs das categorias associadas ao kit (opcional)
+  products?: Array<{
     id?: string;
     name: string;
     description?: string | null;
-    price: number;
-    display_order?: number;
-    products?: Array<{
+    type: 'variable' | 'unique';
+    image_url?: string | null;
+    variant_attributes?: string[] | null;
+    variants?: Array<{
       id?: string;
       name: string;
-      description?: string | null;
-      type: 'variable' | 'unique';
-      image_url?: string | null;
-      variant_attributes?: string[] | null;
-      variants?: Array<{
-        id?: string;
-        name: string;
-        variant_group_name?: string | null;
-        available_quantity?: number | null;
-        sku?: string | null;
-      }>;
+      variant_group_name?: string | null;
+      available_quantity?: number | null;
+      sku?: string | null;
     }>;
-  }>
+  }>;
+}
+
+export const syncEventKits = async (
+  eventId: string,
+  kits: SyncKitData[]
 ): Promise<EventKit[]> => {
   // Get existing kits
   const existing = await getEventKits(eventId);
@@ -393,10 +461,15 @@ export const syncEventKits = async (
       }
     }
 
+    // Process category associations for this kit
+    if (kitData.category_ids !== undefined) {
+      await associateKitToCategories(kit.id, kitData.category_ids);
+    }
+
     result.push(kit);
   }
 
-  // Return kits with products and variants loaded
+  // Return kits with products, variants, and category_ids loaded
   return await getEventKits(eventId);
 };
 

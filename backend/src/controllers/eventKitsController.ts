@@ -8,9 +8,11 @@ import { z } from 'zod';
 /**
  * GET /api/events/:eventId/kits
  * Get all kits for an event
+ * Query params: category_id (optional) - Filter kits by category
  */
 export const getEventKitsController = asyncHandler(async (req: AuthRequest, res: Response) => {
   const { eventId } = req.params;
+  const { category_id } = req.query;
 
   if (!eventId) {
     res.status(400).json({
@@ -21,7 +23,22 @@ export const getEventKitsController = asyncHandler(async (req: AuthRequest, res:
     return;
   }
 
-  const kits = await getEventKits(eventId);
+  // Validate category_id if provided
+  if (category_id && typeof category_id === 'string') {
+    const uuidSchema = z.string().uuid('ID da categoria inválido');
+    const validation = uuidSchema.safeParse(category_id);
+    
+    if (!validation.success) {
+      res.status(400).json({
+        success: false,
+        error: 'Validation Error',
+        message: validation.error.errors[0].message,
+      });
+      return;
+    }
+  }
+
+  const kits = await getEventKits(eventId, category_id as string | undefined);
 
   res.json({
     success: true,
@@ -61,6 +78,45 @@ export const syncEventKitsController = asyncHandler(async (req: AuthRequest, res
       message: 'Kits must be an array',
     });
     return;
+  }
+
+  // Validation schema for sync kits
+  const syncKitSchema = z.object({
+    id: z.string().uuid('ID do kit inválido').optional(),
+    name: z.string().min(1, 'Nome do kit é obrigatório'),
+    description: z.string().nullable().optional(),
+    price: z.number().nonnegative('Preço deve ser maior ou igual a zero'),
+    display_order: z.number().int().nonnegative('display_order deve ser um número inteiro não negativo').optional(),
+    category_ids: z.array(z.string().uuid('ID da categoria inválido')).optional(),
+    products: z.array(z.object({
+      id: z.string().uuid().optional(),
+      name: z.string().min(1),
+      description: z.string().nullable().optional(),
+      type: z.enum(['variable', 'unique']),
+      image_url: z.string().nullable().optional(),
+      variant_attributes: z.array(z.string()).nullable().optional(),
+      variants: z.array(z.object({
+        id: z.string().uuid().optional(),
+        name: z.string().min(1),
+        variant_group_name: z.string().nullable().optional(),
+        available_quantity: z.number().int().nonnegative().nullable().optional(),
+        sku: z.string().nullable().optional(),
+      })).optional(),
+    })).optional(),
+  });
+
+  // Validate each kit
+  for (let i = 0; i < kits.length; i++) {
+    const validation = syncKitSchema.safeParse(kits[i]);
+    if (!validation.success) {
+      res.status(400).json({
+        success: false,
+        error: 'Validation Error',
+        message: `Erro de validação no kit ${i + 1}: ${validation.error.errors[0].message}`,
+        errors: validation.error.errors,
+      });
+      return;
+    }
   }
 
   // Verify event ownership

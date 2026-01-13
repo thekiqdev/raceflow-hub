@@ -179,6 +179,7 @@ interface PickupLocation {
 }
 
 interface Kit {
+  category_ids?: string[];
   id?: string;
   name: string;
   description: string;
@@ -353,6 +354,7 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
                 name: kit.name,
                 description: kit.description || "",
                 price: kit.price,
+                category_ids: kit.category_ids,
                 products: kit.products?.map((product: any) => {
                   const variants = product.variants?.map((variant: any) => ({
                     id: variant.id,
@@ -725,7 +727,7 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
   };
 
   const addKit = () => {
-    setKits([...kits, { name: "", description: "", price: 0, products: [] }]);
+    setKits([...kits, { name: "", description: "", price: 0, products: [], category_ids: undefined }]);
   };
 
   const removeKit = (index: number) => {
@@ -1815,11 +1817,13 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
       // Sync kits
       if (kits.length > 0 && eventId) {
         try {
-          const kitsData = kits.map((kit) => ({
+          const kitsData = kits.map((kit, index) => ({
             id: kit.id,
             name: kit.name,
             description: kit.description || null,
             price: kit.price,
+            display_order: index,
+            category_ids: kit.category_ids && kit.category_ids.length > 0 ? kit.category_ids : undefined,
             products: kit.products.map((product) => {
               // Extract variant_attributes from product if available
               const variantAttributeNames = product.variant_attributes || 
@@ -3048,6 +3052,57 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
                                  )
                                }
                              />
+                           </div>
+
+                           {/* Categories Selection */}
+                           <div className="border-t pt-4">
+                             <label className="text-sm font-medium mb-2 block">
+                               Categorias Disponíveis
+                             </label>
+                             <p className="text-xs text-muted-foreground mb-3">
+                               Selecione as categorias em que este kit estará disponível. Se nenhuma for selecionada, o kit aparecerá em todas as categorias.
+                             </p>
+                             {categories.length === 0 ? (
+                               <p className="text-sm text-muted-foreground text-center py-2">
+                                 Nenhuma categoria cadastrada ainda
+                               </p>
+                             ) : (
+                               <div className="space-y-2 border rounded-md p-3 max-h-48 overflow-y-auto">
+                                 {categories.map((category) => {
+                                   const categoryId = category.id;
+                                   const isChecked = kit.category_ids?.includes(categoryId) || false;
+                                   
+                                   return (
+                                     <div key={categoryId} className="flex items-center space-x-2">
+                                       <input
+                                         type="checkbox"
+                                         id={`kit-${index}-category-${categoryId}`}
+                                         checked={isChecked}
+                                         onChange={() => {
+                                           const currentCategoryIds = kit.category_ids || [];
+                                           const newCategoryIds = isChecked
+                                             ? currentCategoryIds.filter(id => id !== categoryId)
+                                             : [...currentCategoryIds, categoryId];
+                                           updateKit(index, "category_ids", newCategoryIds.length > 0 ? newCategoryIds : undefined);
+                                         }}
+                                         className="h-4 w-4 rounded border-gray-300"
+                                       />
+                                       <label
+                                         htmlFor={`kit-${index}-category-${categoryId}`}
+                                         className="text-sm font-medium leading-none cursor-pointer flex-1"
+                                       >
+                                         {category.name}
+                                       </label>
+                                     </div>
+                                   );
+                                 })}
+                               </div>
+                             )}
+                             {kit.category_ids && kit.category_ids.length > 0 && (
+                               <p className="text-xs text-muted-foreground mt-2">
+                                 {kit.category_ids.length} {kit.category_ids.length === 1 ? 'categoria selecionada' : 'categorias selecionadas'}
+                               </p>
+                             )}
                            </div>
 
                            {/* Products Section */}
