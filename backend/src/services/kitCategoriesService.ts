@@ -87,7 +87,7 @@ export const associateKitToCategories = async (
 
   // Insert new associations
   if (categoryIds.length > 0) {
-    const values = categoryIds.map((categoryId, index) => 
+    const values = categoryIds.map((_, index) => 
       `($${index * 2 + 1}, $${index * 2 + 2})`
     ).join(', ');
 

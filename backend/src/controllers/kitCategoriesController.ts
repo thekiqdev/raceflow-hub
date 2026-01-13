@@ -5,7 +5,6 @@ import {
   getKitCategories,
   getCategoryKits,
   associateKitToCategories,
-  removeKitCategoryAssociation,
 } from '../services/kitCategoriesService.js';
 import { getEventKitById } from '../services/eventKitsService.js';
 import { getCategoryById } from '../services/categoriesService.js';
