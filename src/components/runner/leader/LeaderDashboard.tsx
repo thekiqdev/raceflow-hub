@@ -272,9 +272,9 @@ export function LeaderDashboard() {
     }
 
     // Validate email format
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(registerEmail)) {
-      toast.error("Email inválido");
+    const { validateEmail } = await import('@/lib/utils/validators');
+    if (!validateEmail(registerEmail)) {
+      toast.error("E-mail inválido: domínio deve ter um ponto e TLD válido (ex: .com, .com.br)");
       return;
     }
 

@@ -201,8 +201,40 @@ export const validatePhone = (phone: string): boolean => {
  * @returns true if valid, false otherwise
  */
 export const validateEmail = (email: string): boolean => {
+  // Basic format check
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  return emailRegex.test(email);
+  if (!emailRegex.test(email)) {
+    return false;
+  }
+
+  // Split email to check domain structure
+  const parts = email.split('@');
+  if (parts.length !== 2) {
+    return false;
+  }
+
+  const domain = parts[1];
+  const domainParts = domain.split('.');
+
+  // Domain must have at least 2 parts (ex: exemplo.com)
+  if (domainParts.length < 2) {
+    return false;
+  }
+
+  // TLD (last part) must have at least 2 characters (ex: .com, .br, .com.br)
+  const tld = domainParts[domainParts.length - 1];
+  if (tld.length < 2) {
+    return false;
+  }
+
+  // Each domain part must not be empty
+  for (const part of domainParts) {
+    if (part.length === 0) {
+      return false;
+    }
+  }
+
+  return true;
 };
 
 /**

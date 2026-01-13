@@ -828,6 +828,13 @@ export function RegistrationFlow({
       return;
     }
 
+    // Validate email format
+    const { validateEmail } = await import('@/lib/utils/validators');
+    if (!validateEmail(registerData.email)) {
+      toast.error("E-mail inválido: domínio deve ter um ponto e TLD válido (ex: .com, .com.br)");
+      return;
+    }
+
     if (registerData.password !== registerData.confirmPassword) {
       toast.error("As senhas não coincidem");
       return;

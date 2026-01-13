@@ -2,6 +2,22 @@ import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth.js';
 import { register, login, getUserById, RegisterData, LoginData } from '../services/authService.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
+import { z } from 'zod';
+
+// Enhanced email validation schema
+const emailSchema = z.string()
+  .email('E-mail inválido')
+  .refine((email) => {
+    // Verifica se há um ponto no domínio e se o TLD tem pelo menos 2 caracteres
+    const parts = email.split('@');
+    if (parts.length !== 2) return false;
+    const domain = parts[1];
+    const domainParts = domain.split('.');
+    // Deve ter pelo menos 2 partes (ex: exemplo.com) e o TLD deve ter pelo menos 2 caracteres
+    return domainParts.length >= 2 && domainParts[domainParts.length - 1].length >= 2;
+  }, {
+    message: 'E-mail inválido: domínio deve ter um ponto e TLD válido (ex: .com, .com.br)',
+  });
 
 // Register new user
 export const registerUser = asyncHandler(async (req: AuthRequest, res: Response) => {
@@ -13,6 +29,17 @@ export const registerUser = asyncHandler(async (req: AuthRequest, res: Response)
       success: false,
       error: 'Missing required fields',
       message: 'Email, password, full_name, cpf, phone, and birth_date are required',
+    });
+    return;
+  }
+
+  // Validate email format
+  const emailValidation = emailSchema.safeParse(data.email);
+  if (!emailValidation.success) {
+    res.status(400).json({
+      success: false,
+      error: 'Invalid email format',
+      message: emailValidation.error.errors[0].message,
     });
     return;
   }

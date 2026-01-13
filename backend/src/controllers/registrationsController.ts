@@ -1058,6 +1058,53 @@ export const createRegistrationByOrganizerController = asyncHandler(async (req: 
     return;
   }
 
+  // Validate email format with stricter rules
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(email)) {
+    res.status(400).json({
+      success: false,
+      error: 'Invalid email format',
+      message: 'E-mail inválido: formato incorreto',
+    });
+    return;
+  }
+
+  // Check domain structure
+  const emailParts = email.split('@');
+  if (emailParts.length !== 2) {
+    res.status(400).json({
+      success: false,
+      error: 'Invalid email format',
+      message: 'E-mail inválido: formato incorreto',
+    });
+    return;
+  }
+
+  const domain = emailParts[1];
+  const domainParts = domain.split('.');
+
+  // Domain must have at least 2 parts and TLD must have at least 2 characters
+  if (domainParts.length < 2 || domainParts[domainParts.length - 1].length < 2) {
+    res.status(400).json({
+      success: false,
+      error: 'Invalid email format',
+      message: 'E-mail inválido: domínio deve ter um ponto e TLD válido (ex: .com, .com.br)',
+    });
+    return;
+  }
+
+  // Check if any domain part is empty
+  for (const part of domainParts) {
+    if (part.length === 0) {
+      res.status(400).json({
+        success: false,
+        error: 'Invalid email format',
+        message: 'E-mail inválido: formato incorreto',
+      });
+      return;
+    }
+  }
+
   // Find user by email
   const athlete = await findUserByEmail(email);
   
@@ -2420,6 +2467,53 @@ export const createRegistrationByLeaderController = asyncHandler(async (req: Aut
       message: 'email, event_id e category_id são obrigatórios',
     });
     return;
+  }
+
+  // Validate email format with stricter rules
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(email)) {
+    res.status(400).json({
+      success: false,
+      error: 'Invalid email format',
+      message: 'E-mail inválido: formato incorreto',
+    });
+    return;
+  }
+
+  // Check domain structure
+  const emailParts = email.split('@');
+  if (emailParts.length !== 2) {
+    res.status(400).json({
+      success: false,
+      error: 'Invalid email format',
+      message: 'E-mail inválido: formato incorreto',
+    });
+    return;
+  }
+
+  const domain = emailParts[1];
+  const domainParts = domain.split('.');
+
+  // Domain must have at least 2 parts and TLD must have at least 2 characters
+  if (domainParts.length < 2 || domainParts[domainParts.length - 1].length < 2) {
+    res.status(400).json({
+      success: false,
+      error: 'Invalid email format',
+      message: 'E-mail inválido: domínio deve ter um ponto e TLD válido (ex: .com, .com.br)',
+    });
+    return;
+  }
+
+  // Check if any domain part is empty
+  for (const part of domainParts) {
+    if (part.length === 0) {
+      res.status(400).json({
+        success: false,
+        error: 'Invalid email format',
+        message: 'E-mail inválido: formato incorreto',
+      });
+      return;
+    }
   }
 
   // Verify leader has commission configured for this event
