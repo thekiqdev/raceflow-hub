@@ -1015,12 +1015,22 @@ export function EventViewEditDialog({
       return;
     }
 
+    const searchTermLower = term.toLowerCase().trim();
+    const searchTermNumbers = term.replace(/\D/g, ""); // Remove tudo que não é número para busca de CPF
+
     const filtered = allRegistrations.filter((reg) => {
-      const name = (reg.runner_name || reg.profiles?.full_name || "").toLowerCase();
-      const cpf = (reg.runner_cpf || "").replace(/\D/g, "");
-      const searchLower = term.toLowerCase().replace(/\D/g, "");
+      // Buscar por nome (case-insensitive)
+      const runnerName = (reg.runner_name || reg.profiles?.full_name || "").toLowerCase().trim();
+      const nameMatch = runnerName.length > 0 && runnerName.includes(searchTermLower);
       
-      return name.includes(term.toLowerCase()) || cpf.includes(searchLower);
+      // Buscar por CPF (apenas números) - só busca se houver números no termo
+      let cpfMatch = false;
+      if (searchTermNumbers.length > 0) {
+        const runnerCpf = (reg.runner_cpf || "").replace(/\D/g, "");
+        cpfMatch = runnerCpf.length > 0 && runnerCpf.includes(searchTermNumbers);
+      }
+      
+      return nameMatch || cpfMatch;
     });
     
     setRegistrations(filtered);

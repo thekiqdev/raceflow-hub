@@ -46,6 +46,17 @@ const updateProfileSchema = z.object({
   status: z.enum(['active', 'pending', 'blocked']).optional(),
   role: z.enum(['admin', 'organizer', 'runner']).optional(),
   cpf: z.string().optional(),
+  preferred_name: z.union([z.string(), z.literal(''), z.null()]).optional(),
+  profession: z.union([z.string(), z.literal(''), z.null()]).optional(),
+  cbat: z.union([z.string(), z.literal(''), z.null()]).optional(),
+  team: z.union([z.string(), z.literal(''), z.null()]).optional(),
+  postal_code: z.union([z.string(), z.literal(''), z.null()]).optional(),
+  street: z.union([z.string(), z.literal(''), z.null()]).optional(),
+  address_number: z.union([z.string(), z.literal(''), z.null()]).optional(),
+  address_complement: z.union([z.string(), z.literal(''), z.null()]).optional(),
+  neighborhood: z.union([z.string(), z.literal(''), z.null()]).optional(),
+  city: z.union([z.string(), z.literal(''), z.null()]).optional(),
+  state: z.union([z.string(), z.literal(''), z.null()]).optional(),
 });
 
 /**
@@ -478,6 +489,41 @@ export const updateUserProfileController = async (
         }
         profileData.cpf = cleanCpf;
       }
+    }
+
+    // Add additional profile fields
+    if (data.preferred_name !== undefined) {
+      profileData.preferred_name = data.preferred_name === '' ? null : data.preferred_name;
+    }
+    if (data.profession !== undefined) {
+      profileData.profession = data.profession === '' ? null : data.profession;
+    }
+    if (data.cbat !== undefined) {
+      profileData.cbat = data.cbat === '' ? null : data.cbat;
+    }
+    if (data.team !== undefined) {
+      profileData.team = data.team === '' ? null : data.team;
+    }
+    if (data.postal_code !== undefined) {
+      profileData.postal_code = data.postal_code === '' ? null : data.postal_code;
+    }
+    if (data.street !== undefined) {
+      profileData.street = data.street === '' ? null : data.street;
+    }
+    if (data.address_number !== undefined) {
+      profileData.address_number = data.address_number === '' ? null : data.address_number;
+    }
+    if (data.address_complement !== undefined) {
+      profileData.address_complement = data.address_complement === '' ? null : data.address_complement;
+    }
+    if (data.neighborhood !== undefined) {
+      profileData.neighborhood = data.neighborhood === '' ? null : data.neighborhood;
+    }
+    if (data.city !== undefined) {
+      profileData.city = data.city === '' ? null : data.city;
+    }
+    if (data.state !== undefined) {
+      profileData.state = data.state === '' ? null : data.state;
     }
 
     console.log('📋 Profile data to update:', profileData);

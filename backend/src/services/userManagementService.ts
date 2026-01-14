@@ -222,7 +222,7 @@ export const getUserById = async (userId: string): Promise<UserWithStats | null>
  * Get user profile by ID (for admin)
  */
 export const getUserProfileById = async (userId: string) => {
-  // First, get the profile data
+  // First, get the profile data with all fields
   const profileQuery = `
     SELECT 
       p.id,
@@ -232,7 +232,22 @@ export const getUserProfileById = async (userId: string) => {
       p.phone,
       p.gender,
       p.birth_date,
-      COALESCE(p.status, 'active') as status
+      COALESCE(p.status, 'active') as status,
+      p.lgpd_consent,
+      p.is_public,
+      p.preferred_name,
+      p.profession,
+      p.cbat,
+      p.team,
+      p.postal_code,
+      p.street,
+      p.address_number,
+      p.address_complement,
+      p.neighborhood,
+      p.city,
+      p.state,
+      p.created_at,
+      p.updated_at
     FROM profiles p
     JOIN users u ON p.id = u.id
     WHERE p.id = $1
@@ -268,6 +283,21 @@ export const getUserProfileById = async (userId: string) => {
     birth_date: profileRow.birth_date,
     status: profileRow.status || 'active',
     role: role,
+    lgpd_consent: profileRow.lgpd_consent,
+    is_public: profileRow.is_public,
+    preferred_name: profileRow.preferred_name,
+    profession: profileRow.profession,
+    cbat: profileRow.cbat,
+    team: profileRow.team,
+    postal_code: profileRow.postal_code,
+    street: profileRow.street,
+    address_number: profileRow.address_number,
+    address_complement: profileRow.address_complement,
+    neighborhood: profileRow.neighborhood,
+    city: profileRow.city,
+    state: profileRow.state,
+    created_at: profileRow.created_at,
+    updated_at: profileRow.updated_at,
   };
 };
 
