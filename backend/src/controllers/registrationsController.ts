@@ -1852,6 +1852,9 @@ export const exportRegistrationsController = asyncHandler(async (req: AuthReques
 
   const registrations = await getRegistrations(filters);
 
+  // Import service to get product selections
+  const { getRegistrationProductSelections } = await import('../services/registrationProductSelectionsService.js');
+
   // Generate CSV in the requested format
   const headers = [
     'NUMERO',
@@ -1861,11 +1864,11 @@ export const exportRegistrationsController = asyncHandler(async (req: AuthReques
     'NASCIMENTO',
     'KIT',
     'VARIAÇÃO',
+    'ATRIBUTO',
     'MODALIDADE',
     'DATA HORA INSCRIÇÃO',
     'MEIO DE PAGAMENTO',
     'LÍDER',
-    'QRCODE',
   ];
 
   // Helper function to format date as DD/MM/YYYY
@@ -1905,32 +1908,33 @@ export const exportRegistrationsController = asyncHandler(async (req: AuthReques
     return methodMap[paymentMethod] || paymentMethod;
   };
 
-  // Helper function to get modality distance (first available)
-  const getModalityDistance = (reg: any): string => {
-    if (reg.modality_distances && reg.modality_distances.length > 0) {
-      return reg.modality_distances[0] || '';
+  // Helper function to get modality name (first available)
+  const getModalityName = (reg: any): string => {
+    if (reg.modality_names && reg.modality_names.length > 0) {
+      return reg.modality_names[0] || '';
     }
     return '';
   };
 
-  // Helper function to generate QR code URL
-  const getQRCodeUrl = (reg: any, sequentialNumber: number): string => {
-    if (!reg.event_title) return '';
-    // Extract year from event date or use current year
-    const eventDate = reg.event_date ? new Date(reg.event_date) : new Date();
-    const year = eventDate.getFullYear();
-    
-    // Generate event slug from title (lowercase, remove special chars, replace spaces)
-    const eventSlug = reg.event_title
-      .toLowerCase()
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '') // Remove accents
-      .replace(/[^a-z0-9\s]/g, '') // Remove special characters
-      .replace(/\s+/g, '') // Remove spaces
-      .trim();
-    
-    // URL pattern: https://resultados.cronoteam.com.br/resultados/g-live.html?f=eventos/YYYY/eventname/eventname.clax&B=NUMERO
-    return `https://resultados.cronoteam.com.br/resultados/g-live.html?f=eventos/${year}/${eventSlug}/${eventSlug}.clax&B=${sequentialNumber}`;
+  // Helper function to get product attributes as formatted string
+  const getProductAttributes = async (registrationId: string): Promise<string> => {
+    try {
+      const selections = await getRegistrationProductSelections(registrationId);
+      if (!selections || selections.length === 0) {
+        return '';
+      }
+      
+      // Group by product and format as "Atributo: Valor"
+      const attributeStrings = selections.map(sel => {
+        return `${sel.attribute_name}: ${sel.attribute_value}`;
+      });
+      
+      // Join multiple attributes with semicolon
+      return attributeStrings.join('; ');
+    } catch (error) {
+      console.error(`Error fetching product selections for registration ${registrationId}:`, error);
+      return '';
+    }
   };
 
   // Helper function to get kit name
@@ -1975,7 +1979,8 @@ export const exportRegistrationsController = asyncHandler(async (req: AuthReques
     return '';
   };
 
-  const rows = registrations.map((reg: any, index: number) => {
+  // Process registrations and fetch attributes for each
+  const rows = await Promise.all(registrations.map(async (reg: any, index: number) => {
     const runnerName = reg.runner_name || '';
     const runnerNameLower = runnerName.toLowerCase();
     const runnerNameUpper = runnerName.toUpperCase();
@@ -1992,11 +1997,11 @@ export const exportRegistrationsController = asyncHandler(async (req: AuthReques
     const birthDate = formatDate(reg.runner_birth_date);
     const kitName = getKitName(reg);
     const kitVariation = getKitVariation(reg);
-    const modality = getModalityDistance(reg);
+    const attributes = await getProductAttributes(reg.id);
+    const modality = getModalityName(reg);
     const registrationDateTime = formatDateTime(reg.created_at);
     const paymentMethod = formatPaymentMethod(reg.payment_method);
     const leaderName = reg.leader_name || '';
-    const qrCode = getQRCodeUrl(reg, index + 1);
 
     return [
       index + 1, // NUMERO (sequential number)
@@ -2006,13 +2011,13 @@ export const exportRegistrationsController = asyncHandler(async (req: AuthReques
       birthDate, // NASCIMENTO
       kitName, // KIT
       kitVariation, // VARIAÇÃO
+      attributes, // ATRIBUTO
       modality, // MODALIDADE
       registrationDateTime, // DATA HORA INSCRIÇÃO
       paymentMethod, // MEIO DE PAGAMENTO
       leaderName, // LÍDER
-      qrCode, // QRCODE
     ];
-  });
+  }));
 
   // Use semicolon as separator
   const csvContent = [

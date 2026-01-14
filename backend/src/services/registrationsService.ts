@@ -75,6 +75,8 @@ export const getRegistrations = async (filters?: {
       p.cpf as runner_cpf,
       p.gender as runner_gender,
       p.birth_date as runner_birth_date,
+      p.city as runner_city,
+      p.state as runner_state,
       ek.name as kit_name,
       -- Modalidades associadas à categoria (usando subquery)
       (

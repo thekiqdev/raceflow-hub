@@ -3,7 +3,6 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { getEventById, getAttributeSelectionStats, AttributeSelectionStats } from "@/lib/api/events";
 import { getRegistrations } from "@/lib/api/registrations";
-import { getEventKits, EventKit, KitProduct } from "@/lib/api/eventKits";
 import { ArrowLeft, Users, DollarSign, Package, CreditCard, Smartphone } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -33,6 +32,9 @@ interface RegistrationDetail {
   total_amount: number;
   created_at?: string;
   runner_name?: string;
+  runner_birth_date?: string;
+  runner_city?: string;
+  runner_state?: string;
   category_name?: string;
   // Para compatibilidade com código existente
   profiles?: {
@@ -60,14 +62,6 @@ interface KitRevenue {
   revenue: number;
 }
 
-interface ProductVariationInfo {
-  kitName: string;
-  productName: string;
-  productType: 'variable' | 'unique';
-  variantCount: number;
-  attributeCount: number;
-}
-
 interface AttributeSelectionInfo {
   kitName: string;
   productName: string;
@@ -83,12 +77,14 @@ const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
   const [registrations, setRegistrations] = useState<RegistrationDetail[]>([]);
   const [categoryRevenues, setCategoryRevenues] = useState<CategoryRevenue[]>([]);
   const [kitRevenues, setKitRevenues] = useState<KitRevenue[]>([]);
-  const [productVariations, setProductVariations] = useState<ProductVariationInfo[]>([]);
   const [attributeSelections, setAttributeSelections] = useState<AttributeSelectionInfo[]>([]);
   const [totalRevenue, setTotalRevenue] = useState(0);
   const [paidCount, setPaidCount] = useState(0);
   const [pixRevenue, setPixRevenue] = useState(0);
   const [creditCardRevenue, setCreditCardRevenue] = useState(0);
+  const [stateStats, setStateStats] = useState<Map<string, number>>(new Map());
+  const [cityStats, setCityStats] = useState<Map<string, number>>(new Map());
+  const [ageStats, setAgeStats] = useState<{ min: number; max: number; avg: number } | null>(null);
 
   useEffect(() => {
     loadEventDetails();
@@ -125,6 +121,9 @@ const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
         total_amount: reg.total_amount,
         created_at: reg.created_at,
         runner_name: reg.runner_name,
+        runner_birth_date: reg.runner_birth_date,
+        runner_city: reg.runner_city,
+        runner_state: reg.runner_state,
         category_name: reg.category_name,
         // Para compatibilidade com código existente
         profiles: reg.runner_name ? {
@@ -212,33 +211,48 @@ const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
         }))
       );
 
-      // Load kits with products and variants
-      const kitsResponse = await getEventKits(eventId);
-      if (kitsResponse.success && kitsResponse.data) {
-        const variationsInfo: ProductVariationInfo[] = [];
-        
-        kitsResponse.data.forEach((kit: EventKit) => {
-          if (kit.products && kit.products.length > 0) {
-            kit.products.forEach((product: KitProduct) => {
-              const variantCount = product.type === 'variable' && product.variants 
-                ? product.variants.length 
-                : 0;
-              const attributeCount = product.variant_attributes 
-                ? product.variant_attributes.length 
-                : 0;
-              
-              variationsInfo.push({
-                kitName: kit.name,
-                productName: product.name,
-                productType: product.type,
-                variantCount,
-                attributeCount,
-              });
-            });
+      // Calculate state statistics
+      const stateMap = new Map<string, number>();
+      regs.forEach((reg) => {
+        if (reg.runner_state) {
+          const count = stateMap.get(reg.runner_state) || 0;
+          stateMap.set(reg.runner_state, count + 1);
+        }
+      });
+      setStateStats(stateMap);
+
+      // Calculate city statistics
+      const cityMap = new Map<string, number>();
+      regs.forEach((reg) => {
+        if (reg.runner_city) {
+          const count = cityMap.get(reg.runner_city) || 0;
+          cityMap.set(reg.runner_city, count + 1);
+        }
+      });
+      setCityStats(cityMap);
+
+      // Calculate age statistics
+      const ages: number[] = [];
+      regs.forEach((reg) => {
+        if (reg.runner_birth_date) {
+          const birthDate = new Date(reg.runner_birth_date);
+          const today = new Date();
+          let age = today.getFullYear() - birthDate.getFullYear();
+          const monthDiff = today.getMonth() - birthDate.getMonth();
+          if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+            age--;
           }
-        });
-        
-        setProductVariations(variationsInfo);
+          if (age > 0 && age < 150) { // Validação básica
+            ages.push(age);
+          }
+        }
+      });
+      
+      if (ages.length > 0) {
+        const minAge = Math.min(...ages);
+        const maxAge = Math.max(...ages);
+        const avgAge = ages.reduce((sum, age) => sum + age, 0) / ages.length;
+        setAgeStats({ min: minAge, max: maxAge, avg: Math.round(avgAge * 10) / 10 });
       }
 
       // Load attribute selection statistics
@@ -270,6 +284,18 @@ const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
       style: "currency",
       currency: "BRL",
     }).format(value);
+  };
+
+  const calculateAge = (birthDate: string | undefined): number | null => {
+    if (!birthDate) return null;
+    const birth = new Date(birthDate);
+    const today = new Date();
+    let age = today.getFullYear() - birth.getFullYear();
+    const monthDiff = today.getMonth() - birth.getMonth();
+    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) {
+      age--;
+    }
+    return age > 0 && age < 150 ? age : null;
   };
 
   const getPaymentStatusBadge = (status: string | null) => {
@@ -462,44 +488,7 @@ const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
         </Card>
       )}
 
-      {/* Product Variations and Attributes */}
-      {productVariations.length > 0 && (
-        <Card className="p-6">
-          <h3 className="text-lg font-semibold mb-4">Variações/Atributos dos Produtos</h3>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Kit</TableHead>
-                <TableHead>Produto</TableHead>
-                <TableHead>Tipo</TableHead>
-                <TableHead className="text-right">Quantidade de Variações</TableHead>
-                <TableHead className="text-right">Quantidade de Atributos</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {productVariations.map((item, index) => (
-                <TableRow key={`${item.kitName}-${item.productName}-${index}`}>
-                  <TableCell className="font-medium">{item.kitName}</TableCell>
-                  <TableCell>{item.productName}</TableCell>
-                  <TableCell>
-                    <Badge variant={item.productType === 'variable' ? 'default' : 'secondary'}>
-                      {item.productType === 'variable' ? 'Variável' : 'Único'}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    {item.productType === 'variable' ? item.variantCount : '-'}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    {item.attributeCount > 0 ? item.attributeCount : '-'}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </Card>
-      )}
-
-      {/* Attribute Selection Statistics */}
+      {/* Estatísticas de Seleção de Atributos */}
       {attributeSelections.length > 0 && (
         <Card className="p-6">
           <h3 className="text-lg font-semibold mb-4">Estatísticas de Seleção de Atributos</h3>
@@ -534,6 +523,72 @@ const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
         </Card>
       )}
 
+      {/* Statistics by State and City */}
+      {(stateStats.size > 0 || cityStats.size > 0) && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Statistics by State */}
+          {stateStats.size > 0 && (
+            <Card className="p-6">
+              <h3 className="text-lg font-semibold mb-4">Participantes por Estado</h3>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                {Array.from(stateStats.entries())
+                  .sort((a, b) => b[1] - a[1])
+                  .map(([state, count]) => (
+                    <div key={state} className="flex items-center justify-between p-3 border rounded-lg">
+                      <span className="font-medium">{state}</span>
+                      <span className="text-lg font-bold text-primary">{count}</span>
+                    </div>
+                  ))}
+              </div>
+            </Card>
+          )}
+
+          {/* Statistics by City */}
+          {cityStats.size > 0 && (
+            <Card className="p-6">
+              <h3 className="text-lg font-semibold mb-4">Participantes por Cidade</h3>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                {Array.from(cityStats.entries())
+                  .sort((a, b) => b[1] - a[1])
+                  .slice(0, 20) // Mostrar apenas as 20 cidades com mais participantes
+                  .map(([city, count]) => (
+                    <div key={city} className="flex items-center justify-between p-3 border rounded-lg">
+                      <span className="font-medium">{city}</span>
+                      <span className="text-lg font-bold text-primary">{count}</span>
+                    </div>
+                  ))}
+              </div>
+              {cityStats.size > 20 && (
+                <p className="text-sm text-muted-foreground mt-4">
+                  Mostrando as 20 cidades com mais participantes de um total de {cityStats.size} cidades
+                </p>
+              )}
+            </Card>
+          )}
+        </div>
+      )}
+
+      {/* Age Statistics */}
+      {ageStats && (
+        <Card className="p-6">
+          <h3 className="text-lg font-semibold mb-4">Estatísticas de Idade dos Participantes</h3>
+          <div className="grid grid-cols-3 gap-4">
+            <div className="text-center p-4 border rounded-lg">
+              <p className="text-sm text-muted-foreground mb-1">Idade Mínima</p>
+              <p className="text-2xl font-bold text-primary">{ageStats.min} anos</p>
+            </div>
+            <div className="text-center p-4 border rounded-lg">
+              <p className="text-sm text-muted-foreground mb-1">Idade Média</p>
+              <p className="text-2xl font-bold text-primary">{ageStats.avg} anos</p>
+            </div>
+            <div className="text-center p-4 border rounded-lg">
+              <p className="text-sm text-muted-foreground mb-1">Idade Máxima</p>
+              <p className="text-2xl font-bold text-primary">{ageStats.max} anos</p>
+            </div>
+          </div>
+        </Card>
+      )}
+
       {/* All Registrations */}
       <Card className="p-6">
         <h3 className="text-lg font-semibold mb-4">Todas as Inscrições</h3>
@@ -543,6 +598,9 @@ const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
               <TableRow>
                 <TableHead>Corredor</TableHead>
                 <TableHead>CPF</TableHead>
+                <TableHead>Idade</TableHead>
+                <TableHead>Cidade</TableHead>
+                <TableHead>Estado</TableHead>
                 <TableHead>Categoria</TableHead>
                 <TableHead>Kit</TableHead>
                 <TableHead>Pagamento</TableHead>
@@ -552,20 +610,31 @@ const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {registrations.map((reg) => (
-                <TableRow key={reg.id}>
-                  <TableCell className="font-medium">
-                    {reg.profiles?.full_name || reg.runner_name || "N/A"}
-                  </TableCell>
-                  <TableCell className="text-sm">{reg.profiles?.cpf || "-"}</TableCell>
-                  <TableCell>
-                    {reg.event_categories?.name || reg.category_name || "N/A"}
-                    {reg.event_categories?.distance && (
-                      <span className="text-xs text-muted-foreground ml-1">
-                        ({reg.event_categories.distance})
-                      </span>
-                    )}
-                  </TableCell>
+              {registrations.map((reg) => {
+                const age = calculateAge(reg.runner_birth_date);
+                return (
+                  <TableRow key={reg.id}>
+                    <TableCell className="font-medium">
+                      {reg.profiles?.full_name || reg.runner_name || "N/A"}
+                    </TableCell>
+                    <TableCell className="text-sm">{reg.profiles?.cpf || "-"}</TableCell>
+                    <TableCell className="text-sm">
+                      {age !== null ? `${age} anos` : "-"}
+                    </TableCell>
+                    <TableCell className="text-sm">
+                      {reg.runner_city || "-"}
+                    </TableCell>
+                    <TableCell className="text-sm">
+                      {reg.runner_state || "-"}
+                    </TableCell>
+                    <TableCell>
+                      {reg.event_categories?.name || reg.category_name || "N/A"}
+                      {reg.event_categories?.distance && (
+                        <span className="text-xs text-muted-foreground ml-1">
+                          ({reg.event_categories.distance})
+                        </span>
+                      )}
+                    </TableCell>
                   <TableCell>
                     {reg.event_kits?.name || (reg.kit_id ? "Kit" : "-")}
                   </TableCell>
@@ -594,8 +663,9 @@ const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
                       locale: ptBR,
                     })}
                   </TableCell>
-                </TableRow>
-              ))}
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
         </div>

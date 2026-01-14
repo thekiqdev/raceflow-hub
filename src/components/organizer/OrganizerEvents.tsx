@@ -31,6 +31,7 @@ import { Plus, Search, MoreVertical, Edit, Eye, Trash2, BarChart3, Calendar, Loa
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { EventFormDialog } from "./EventFormDialog";
+import EventDetailedReport from "./EventDetailedReport";
 import { getEvents, deleteEvent, updateEvent, type Event } from "@/lib/api/events";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
@@ -48,6 +49,7 @@ const OrganizerEvents = () => {
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
   const [isDeleting, setIsDeleting] = useState<string | null>(null);
   const [editingRegistrationStatus, setEditingRegistrationStatus] = useState<string | null>(null);
+  const [selectedEventIdForReport, setSelectedEventIdForReport] = useState<string | null>(null);
 
   const loadEvents = useCallback(async () => {
     if (!user) {
@@ -159,6 +161,16 @@ const OrganizerEvents = () => {
       setIsDeleting(null);
     }
   };
+
+  // Se um evento foi selecionado para relatório, mostrar apenas o relatório
+  if (selectedEventIdForReport) {
+    return (
+      <EventDetailedReport
+        eventId={selectedEventIdForReport}
+        onBack={() => setSelectedEventIdForReport(null)}
+      />
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -333,7 +345,7 @@ const OrganizerEvents = () => {
                               <Edit className="mr-2 h-4 w-4" />
                               Editar
                             </DropdownMenuItem>
-                            <DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => setSelectedEventIdForReport(event.id)}>
                               <BarChart3 className="mr-2 h-4 w-4" />
                               Estatísticas
                             </DropdownMenuItem>

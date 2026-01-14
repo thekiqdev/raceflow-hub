@@ -25,6 +25,7 @@ import { getEvents, updateEvent, deleteEvent } from "@/lib/api/events";
 import { useToast } from "@/hooks/use-toast";
 import { EventViewEditDialog } from "./EventViewEditDialog";
 import { EventFormDialog } from "@/components/organizer/EventFormDialog";
+import EventDetailedReport from "@/components/organizer/EventDetailedReport";
 import { useNavigate } from "react-router-dom";
 import { getEffectiveRegistrationStatus, getRegistrationStatusLabel, getRegistrationStatusVariant } from "@/lib/utils/eventRegistration";
 
@@ -46,6 +47,7 @@ const EventManagement = () => {
   const [deleting, setDeleting] = useState(false);
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [editingRegistrationStatus, setEditingRegistrationStatus] = useState<string | null>(null);
+  const [selectedEventIdForReport, setSelectedEventIdForReport] = useState<string | null>(null);
   const { toast } = useToast();
 
   const loadEvents = useCallback(async () => {
@@ -279,6 +281,16 @@ const EventManagement = () => {
     return labels[status] || status;
   };
 
+  // Se um evento foi selecionado para relatório, mostrar apenas o relatório
+  if (selectedEventIdForReport) {
+    return (
+      <EventDetailedReport
+        eventId={selectedEventIdForReport}
+        onBack={() => setSelectedEventIdForReport(null)}
+      />
+    );
+  }
+
   return (
     <div className="space-y-6">
       <div>
@@ -474,6 +486,12 @@ const EventManagement = () => {
                                 <DropdownMenuItem onClick={() => handleEditEvent(event.id)}>
                                   <Edit className="mr-2 h-4 w-4" />
                                   Editar
+                                </DropdownMenuItem>
+                                <DropdownMenuItem 
+                                  onClick={() => setSelectedEventIdForReport(event.id)}
+                                >
+                                  <BarChart className="mr-2 h-4 w-4" />
+                                  Estatísticas
                                 </DropdownMenuItem>
                                 <DropdownMenuItem 
                                   onClick={() => {
