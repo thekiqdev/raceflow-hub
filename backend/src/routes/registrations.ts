@@ -15,6 +15,7 @@ import {
   generatePaymentController,
   createRegistrationByOrganizerController,
   createRegistrationByLeaderController,
+  checkExistingRegistrationController,
 } from '../controllers/registrationsController.js';
 import { createTransferRequestController, generateTransferPaymentController, getTransferRequestByIdController } from '../controllers/transferRequestController.js';
 import { getEnabledModulesController } from '../controllers/systemSettingsController.js';
@@ -31,6 +32,7 @@ router.use(authenticate);
 router.get('/settings/modules', getEnabledModulesController);
 
 router.get('/export', exportRegistrationsController);
+router.get('/check-existing', checkExistingRegistrationController);
 router.get('/', getAllRegistrations);
 router.get('/:id/payment-status', getPaymentStatusController);
 router.post('/:id/generate-payment', generatePaymentController);

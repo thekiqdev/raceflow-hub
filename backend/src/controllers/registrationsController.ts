@@ -286,6 +286,43 @@ export const getRegistrationForValidation = asyncHandler(async (req: Request, re
   });
 });
 
+// Check if user already has an active registration for an event
+export const checkExistingRegistrationController = asyncHandler(async (req: AuthRequest, res: Response) => {
+  if (!req.user) {
+    res.status(401).json({
+      success: false,
+      error: 'Not authenticated',
+    });
+    return;
+  }
+
+  const { event_id } = req.query;
+
+  if (!event_id || typeof event_id !== 'string') {
+    res.status(400).json({
+      success: false,
+      error: 'Missing event_id',
+      message: 'event_id é obrigatório',
+    });
+    return;
+  }
+
+  // Check if user already has an active registration for this event
+  const existingRegistration = await query(
+    `SELECT id, status, payment_status FROM registrations 
+     WHERE event_id = $1 AND runner_id = $2 AND status != 'cancelled'`,
+    [event_id, req.user.id]
+  );
+
+  res.json({
+    success: true,
+    data: {
+      hasExistingRegistration: existingRegistration.rows.length > 0,
+      registration: existingRegistration.rows.length > 0 ? existingRegistration.rows[0] : null,
+    },
+  });
+});
+
 // Get registration by ID
 export const getRegistration = asyncHandler(async (req: AuthRequest, res: Response) => {
   if (!req.user) {
@@ -564,6 +601,22 @@ export const createRegistrationController = asyncHandler(async (req: AuthRequest
     registered_by: req.user.id,
     runner_id: validation.data.runner_id || req.user.id,
   };
+
+  // Verificar se o corredor já tem uma inscrição ativa neste evento
+  const existingRegistration = await query(
+    `SELECT id, status, payment_status FROM registrations 
+     WHERE event_id = $1 AND runner_id = $2 AND status != 'cancelled'`,
+    [event_id, registrationData.runner_id]
+  );
+
+  if (existingRegistration.rows.length > 0) {
+    res.status(400).json({
+      success: false,
+      error: 'Already registered',
+      message: 'Você já possui uma inscrição ativa neste evento. Cada corredor pode se inscrever apenas uma vez por evento.',
+    });
+    return;
+  }
 
   console.log('📝 Dados recebidos para criação de inscrição:', {
     event_id: registrationData.event_id,
@@ -1112,68 +1165,8 @@ export const createRegistrationByOrganizerController = asyncHandler(async (req: 
     return;
   }
 
-  // Verificar status efetivo de inscrições
-  const effectiveRegistrationStatus = getEffectiveRegistrationStatus(event);
-
-  // Se status efetivo está definido, usar nova lógica
-  if (effectiveRegistrationStatus !== null) {
-    if (effectiveRegistrationStatus === 'not_open') {
-      const message = event.registration_auto_mode && event.registration_start_date
-        ? `As inscrições abrem em ${new Date(event.registration_start_date).toLocaleString('pt-BR')}.`
-        : 'As inscrições ainda não estão abertas. Aguarde o anúncio oficial.';
-      
-      res.status(400).json({
-        success: false,
-        error: 'Registrations not open yet',
-        message,
-      });
-      return;
-    }
-
-    if (effectiveRegistrationStatus === 'closed') {
-      const message = event.registration_auto_mode && event.registration_end_date
-        ? `As inscrições foram encerradas em ${new Date(event.registration_end_date).toLocaleString('pt-BR')}.`
-        : 'As inscrições para este evento foram encerradas.';
-      
-      res.status(400).json({
-        success: false,
-        error: 'Registrations closed',
-        message,
-      });
-      return;
-    }
-
-    // Se effectiveRegistrationStatus === 'open', continuar com validações abaixo
-  } else {
-    // Se effectiveRegistrationStatus é NULL, usar lógica antiga baseada em event.status
-    if (event.status === 'draft') {
-      res.status(400).json({
-        success: false,
-        error: 'Event not open for registrations',
-        message: 'Este evento ainda não está aberto para inscrições',
-      });
-      return;
-    }
-
-    if (event.status === 'finished' || event.status === 'cancelled') {
-      res.status(400).json({
-        success: false,
-        error: 'Event not accepting registrations',
-        message: 'Este evento não está mais aceitando inscrições',
-      });
-      return;
-    }
-  }
-
-  // Verificar se evento está publicado (sempre necessário)
-  if (event.status !== 'published' && event.status !== 'ongoing') {
-    res.status(400).json({
-      success: false,
-      error: 'Event not published',
-      message: 'Este evento não está publicado',
-    });
-    return;
-  }
+  // Organizadores podem inscrever atletas mesmo quando as inscrições estão encerradas ou fechadas
+  // Apenas verificar se o evento existe (não precisa estar publicado ou com inscrições abertas)
 
   // Validate category
   const selectedCategory = await getCategoryById(category_id);
@@ -1197,69 +1190,24 @@ export const createRegistrationByOrganizerController = asyncHandler(async (req: 
     return;
   }
 
-  // Check available spots
-  if (selectedCategory.max_participants !== null && selectedCategory.max_participants > 0) {
-    const registrationsCount = await query(
-      `SELECT COUNT(*) as count 
-       FROM registrations 
-       WHERE category_id = $1 
-       AND status != 'cancelled' 
-       AND payment_status IN ('pending', 'paid')`,
-      [category_id]
-    );
-    
-    const currentCount = parseInt(registrationsCount.rows[0].count) || 0;
-    const availableSpots = selectedCategory.max_participants - currentCount;
-    
-    if (availableSpots <= 0) {
-      res.status(400).json({
-        success: false,
-        error: 'Category is full',
-        message: 'Esta categoria está esgotada',
-      });
-      return;
-    }
-  }
+  // Organizadores podem inscrever atletas mesmo quando os limites de categoria ou modalidade foram atingidos
+  // Não verificar limites de participantes quando o organizador cria a inscrição manualmente
 
-  // Check modality limits (if category is associated with modalities that have limits)
-  const { getModalitiesByEvent } = await import('../services/modalitiesService.js');
-  const modalities = await getModalitiesByEvent(event_id);
-  
-  // Get modality IDs associated with this category
-  const categoryModalities = await query(
-    `SELECT modality_id FROM category_modalities WHERE category_id = $1`,
-    [category_id]
+  // Verificar se o atleta já tem uma inscrição ativa neste evento
+  // Organizadores também devem respeitar a regra de uma inscrição por corredor por evento
+  const existingRegistration = await query(
+    `SELECT id, status, payment_status FROM registrations 
+     WHERE event_id = $1 AND runner_id = $2 AND status != 'cancelled'`,
+    [event_id, athlete.id]
   );
-  
-  const modalityIds = categoryModalities.rows.map(row => row.modality_id);
-  
-  // Check each modality limit
-  for (const modalityId of modalityIds) {
-    const modality = modalities.find(m => m.id === modalityId);
-    if (modality && modality.max_participants !== null && modality.max_participants > 0) {
-      // Count registrations for this modality (through all categories associated with it)
-      const modalityRegistrations = await query(
-        `SELECT COUNT(DISTINCT r.id) as count
-         FROM registrations r
-         INNER JOIN category_modalities cm ON r.category_id = cm.category_id
-         WHERE cm.modality_id = $1
-         AND r.status != 'cancelled'
-         AND r.payment_status IN ('pending', 'paid')`,
-        [modalityId]
-      );
-      
-      const currentModalityCount = parseInt(modalityRegistrations.rows[0].count) || 0;
-      const availableModalitySpots = modality.max_participants - currentModalityCount;
-      
-      if (availableModalitySpots <= 0) {
-        res.status(400).json({
-          success: false,
-          error: 'Modality is full',
-          message: `A modalidade "${modality.name}" atingiu o limite máximo de ${modality.max_participants} participantes. Por favor, escolha outra modalidade.`,
-        });
-        return;
-      }
-    }
+
+  if (existingRegistration.rows.length > 0) {
+    res.status(400).json({
+      success: false,
+      error: 'Already registered',
+      message: 'Este atleta já possui uma inscrição ativa neste evento. Cada corredor pode se inscrever apenas uma vez por evento.',
+    });
+    return;
   }
 
   // Calculate total amount
@@ -2711,6 +2659,23 @@ export const createRegistrationByLeaderController = asyncHandler(async (req: Aut
       attempting_leader_id: leader.id,
     });
     // Continue anyway - the existing referral will be used for commission
+  }
+
+  // Verificar se o atleta já tem uma inscrição ativa neste evento
+  // Líderes também devem respeitar a regra de uma inscrição por corredor por evento
+  const existingRegistration = await query(
+    `SELECT id, status, payment_status FROM registrations 
+     WHERE event_id = $1 AND runner_id = $2 AND status != 'cancelled'`,
+    [event_id, athlete.id]
+  );
+
+  if (existingRegistration.rows.length > 0) {
+    res.status(400).json({
+      success: false,
+      error: 'Already registered',
+      message: 'Este atleta já possui uma inscrição ativa neste evento. Cada corredor pode se inscrever apenas uma vez por evento.',
+    });
+    return;
   }
 
   // Create registration data

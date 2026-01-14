@@ -15,7 +15,7 @@ import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { useAuth } from "@/contexts/AuthContext";
 import { getOwnProfile, getPublicProfileByCpf } from "@/lib/api/profiles";
-import { createRegistration, getPaymentStatus } from "@/lib/api/registrations";
+import { createRegistration, getPaymentStatus, checkExistingRegistration } from "@/lib/api/registrations";
 import { PixQrCode } from "@/components/payment/PixQrCode";
 import { CreditCardForm } from "@/components/payment/CreditCardForm";
 import { CreditCardData, CreditCardHolderInfo } from "@/lib/api/registrations";
@@ -131,6 +131,8 @@ export function RegistrationFlow({
   const [paymentStatus, setPaymentStatus] = useState<'pending' | 'paid' | 'confirmed'>('pending');
   const [isPollingPayment, setIsPollingPayment] = useState(false);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<'pix' | 'credit_card' | null>(null);
+  const [hasExistingRegistration, setHasExistingRegistration] = useState(false);
+  const [checkingRegistration, setCheckingRegistration] = useState(false);
   const [creditCardData, setCreditCardData] = useState<{
     credit_card: CreditCardData;
     credit_card_holder_info: CreditCardHolderInfo;
@@ -354,6 +356,31 @@ export function RegistrationFlow({
       loadSettings();
       loadUserProfile();
       loadModalities();
+
+      // Check if user already has an active registration for this event
+      const checkRegistration = async () => {
+        if (user) {
+          setCheckingRegistration(true);
+          try {
+            const response = await checkExistingRegistration(event.id);
+            if (response.success && response.data?.hasExistingRegistration) {
+              setHasExistingRegistration(true);
+              toast.error('Você já possui uma inscrição ativa neste evento. Cada corredor pode se inscrever apenas uma vez por evento.');
+            } else {
+              setHasExistingRegistration(false);
+            }
+          } catch (error: any) {
+            console.error('Erro ao verificar inscrição existente:', error);
+            // Não bloquear o fluxo se houver erro na verificação
+          } finally {
+            setCheckingRegistration(false);
+          }
+        } else {
+          setHasExistingRegistration(false);
+        }
+      };
+
+      checkRegistration();
 
       // Check for coupon code in URL and apply automatically
       const couponFromUrl = searchParams.get('cupom');
@@ -813,6 +840,19 @@ export function RegistrationFlow({
         // Login successful - user data will be loaded by useEffect
         setLoginData({ email: "", password: "" });
         setIsRegisteringOther(false);
+        
+        // Check for existing registration after login
+        try {
+          const response = await checkExistingRegistration(event.id);
+          if (response.success && response.data?.hasExistingRegistration) {
+            setHasExistingRegistration(true);
+            toast.error('Você já possui uma inscrição ativa neste evento. Cada corredor pode se inscrever apenas uma vez por evento.');
+          } else {
+            setHasExistingRegistration(false);
+          }
+        } catch (error: any) {
+          console.error('Erro ao verificar inscrição existente após login:', error);
+        }
       }
     } catch (error) {
       console.error("Login error:", error);
@@ -1105,7 +1145,7 @@ export function RegistrationFlow({
           });
         }
       }
-
+      
       const registrationData: any = {
         event_id: event.id,
         runner_id: runnerId,
@@ -1543,6 +1583,25 @@ export function RegistrationFlow({
         {/* Step 1: Personal Data (Login/Register) */}
         {step === 1 && canRegister && (
           <div className="space-y-6">
+            {/* Show warning if user already has registration */}
+            {hasExistingRegistration && (
+              <div className="bg-destructive/10 border border-destructive/20 rounded-lg p-4 mb-4">
+                <div className="flex items-start gap-3">
+                  <div className="flex-shrink-0 mt-0.5">
+                    <svg className="h-5 w-5 text-destructive" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                    </svg>
+                  </div>
+                  <div className="flex-1">
+                    <h4 className="font-semibold text-destructive mb-1">Inscrição já realizada</h4>
+                    <p className="text-sm text-muted-foreground">
+                      Você já possui uma inscrição ativa neste evento. Cada corredor pode se inscrever apenas uma vez por evento.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div>
               <h3 className="text-lg font-semibold mb-4">Dados Pessoais</h3>
               
@@ -1939,7 +1998,7 @@ export function RegistrationFlow({
             <div className="flex justify-end pt-4">
               <Button
                 onClick={handleNextStep}
-                disabled={!user || (isRegisteringOther && !otherPersonId)}
+                disabled={!user || (isRegisteringOther && !otherPersonId) || hasExistingRegistration}
                 className="min-w-32"
               >
                 Próximo

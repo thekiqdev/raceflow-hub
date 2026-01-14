@@ -93,6 +93,11 @@ export const getRegistrations = async (filters?: {
   return apiClient.get<Registration[]>(endpoint);
 };
 
+// Check if user already has an active registration for an event
+export const checkExistingRegistration = async (eventId: string) => {
+  return apiClient.get<{ hasExistingRegistration: boolean; registration: Registration | null }>(`/registrations/check-existing?event_id=${encodeURIComponent(eventId)}`);
+};
+
 // Get registration by ID (requires authentication)
 export const getRegistrationById = async (id: string) => {
   return apiClient.get<Registration>(`/registrations/${id}`);

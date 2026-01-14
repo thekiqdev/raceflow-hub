@@ -360,6 +360,17 @@ export const createRegistration = async (data: CreateRegistrationData) => {
     }
   }
 
+  // Verificar se o corredor já tem uma inscrição ativa neste evento
+  const existingRegistration = await query(
+    `SELECT id, status, payment_status FROM registrations 
+     WHERE event_id = $1 AND runner_id = $2 AND status != 'cancelled'`,
+    [data.event_id, data.runner_id]
+  );
+
+  if (existingRegistration.rows.length > 0) {
+    throw new Error('Você já possui uma inscrição ativa neste evento. Cada corredor pode se inscrever apenas uma vez por evento.');
+  }
+
   // Check max_participants if set
   if (category.max_participants !== null && category.max_participants > 0) {
     const currentRegistrations = await query(
