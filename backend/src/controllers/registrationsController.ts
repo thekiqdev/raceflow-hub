@@ -1869,6 +1869,7 @@ export const exportRegistrationsController = asyncHandler(async (req: AuthReques
     'MODALIDADE',
     'DATA HORA INSCRIÇÃO',
     'MEIO DE PAGAMENTO',
+    'VALOR',
     'LÍDER',
   ];
 
@@ -2003,6 +2004,7 @@ export const exportRegistrationsController = asyncHandler(async (req: AuthReques
     const modality = getModalityName(reg);
     const registrationDateTime = formatDateTime(reg.created_at);
     const paymentMethod = formatPaymentMethod(reg.payment_method);
+    const totalAmount = reg.total_amount ? Number(reg.total_amount).toFixed(2).replace('.', ',') : '0,00';
     const leaderName = reg.leader_name || '';
 
     return [
@@ -2018,6 +2020,7 @@ export const exportRegistrationsController = asyncHandler(async (req: AuthReques
       modality, // MODALIDADE
       registrationDateTime, // DATA HORA INSCRIÇÃO
       paymentMethod, // MEIO DE PAGAMENTO
+      totalAmount, // VALOR
       leaderName, // LÍDER
     ];
   }));
