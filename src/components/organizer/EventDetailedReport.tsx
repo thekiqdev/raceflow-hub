@@ -3,7 +3,8 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { getEventById, getAttributeSelectionStats, AttributeSelectionStats } from "@/lib/api/events";
 import { getRegistrations } from "@/lib/api/registrations";
-import { ArrowLeft, Users, DollarSign, Package, CreditCard, Smartphone } from "lucide-react";
+import { getModalities, type Modality } from "@/lib/api/modalities";
+import { ArrowLeft, Users, DollarSign, Package, CreditCard, Smartphone, MapPin } from "lucide-react";
 import { toast } from "sonner";
 import {
   Table,
@@ -36,6 +37,7 @@ interface RegistrationDetail {
   runner_city?: string;
   runner_state?: string;
   category_name?: string;
+  modality_names?: string[]; // Modalidades associadas à categoria
   // Para compatibilidade com código existente
   profiles?: {
     full_name: string;
@@ -85,6 +87,8 @@ const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
   const [stateStats, setStateStats] = useState<Map<string, number>>(new Map());
   const [cityStats, setCityStats] = useState<Map<string, number>>(new Map());
   const [ageStats, setAgeStats] = useState<{ min: number; max: number; avg: number } | null>(null);
+  const [modalities, setModalities] = useState<Modality[]>([]);
+  const [modalityStats, setModalityStats] = useState<Map<string, { count: number; revenue: number }>>(new Map());
 
   useEffect(() => {
     loadEventDetails();
@@ -125,6 +129,7 @@ const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
         runner_city: reg.runner_city,
         runner_state: reg.runner_state,
         category_name: reg.category_name,
+        modality_names: reg.modality_names || [], // Add modality names from API
         // Para compatibilidade com código existente
         profiles: reg.runner_name ? {
           full_name: reg.runner_name,
@@ -267,6 +272,34 @@ const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
           variantPrice: stat.variant_price,
         }));
         setAttributeSelections(selectionsInfo);
+      }
+
+      // Load modalities
+      const modalitiesResponse = await getModalities(eventId);
+      if (modalitiesResponse.success && modalitiesResponse.data) {
+        setModalities(modalitiesResponse.data);
+
+        // Calculate participants and revenue per modality
+        // Count registrations where the category has each modality associated
+        const modalityStatsMap = new Map<string, { count: number; revenue: number }>();
+        
+        modalitiesResponse.data.forEach((modality) => {
+          // Filter registrations where modality_names includes this modality's name
+          const modalityRegs = regs.filter((reg) => {
+            // Check if the registration's category has this modality
+            const regModalityNames = reg.modality_names || [];
+            return regModalityNames.includes(modality.name);
+          });
+          
+          // Count paid registrations and calculate revenue
+          const paidRegs = modalityRegs.filter((reg) => reg.payment_status === "paid");
+          const count = paidRegs.length;
+          const revenue = paidRegs.reduce((sum, reg) => sum + Number(reg.total_amount || 0), 0);
+          
+          modalityStatsMap.set(modality.id, { count, revenue });
+        });
+        
+        setModalityStats(modalityStatsMap);
       }
     } catch (error) {
       console.error("Error loading event details:", error);
@@ -483,6 +516,69 @@ const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
                   </TableCell>
                 </TableRow>
               ))}
+            </TableBody>
+          </Table>
+        </Card>
+      )}
+
+      {/* Modalidades */}
+      {modalities.length > 0 && (
+        <Card className="p-6">
+          <h3 className="text-lg font-semibold mb-4">Modalidades</h3>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Nome</TableHead>
+                <TableHead>Distância</TableHead>
+                <TableHead className="text-right">Inscritos</TableHead>
+                <TableHead className="text-right">Limite Máximo</TableHead>
+                <TableHead className="text-right">Disponibilidade</TableHead>
+                <TableHead className="text-right">Receita Total</TableHead>
+                <TableHead className="text-right">Ticket Médio</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {modalities
+                .sort((a, b) => (a.display_order || 0) - (b.display_order || 0))
+                .map((modality) => {
+                  const stats = modalityStats.get(modality.id) || { count: 0, revenue: 0 };
+                  const participantsCount = stats.count;
+                  const revenue = stats.revenue;
+                  const avgTicket = participantsCount > 0 ? revenue / participantsCount : 0;
+                  const maxParticipants = modality.max_participants;
+                  const availability = maxParticipants 
+                    ? maxParticipants - participantsCount 
+                    : null;
+                  const isFull = maxParticipants !== null && participantsCount >= maxParticipants;
+                  
+                  return (
+                    <TableRow key={modality.id}>
+                      <TableCell className="font-medium">{modality.name}</TableCell>
+                      <TableCell>{modality.distance}</TableCell>
+                      <TableCell className="text-right font-semibold">
+                        {participantsCount}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {maxParticipants !== null ? maxParticipants : 'Sem limite'}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {maxParticipants !== null ? (
+                          <Badge variant={isFull ? 'destructive' : 'default'}>
+                            {isFull ? 'Lotada' : `${availability} vagas`}
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline">Ilimitado</Badge>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right font-semibold text-green-600">
+                        {formatCurrency(revenue)}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {formatCurrency(avgTicket)}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
             </TableBody>
           </Table>
         </Card>
