@@ -485,7 +485,7 @@ export const createRegistration = async (data: CreateRegistrationData) => {
               
               if (variantAttributes && variantAttributes.length > 0) {
                 // Parse variant name (format: "Value1 - Value2 - ...")
-                const variantValues = variant.name.split(' - ').map(v => v.trim());
+                const variantValues = variant.name.split(' - ').map((v: string) => v.trim());
                 
                 // Save each attribute selection
                 for (let i = 0; i < variantAttributes.length && i < variantValues.length; i++) {
