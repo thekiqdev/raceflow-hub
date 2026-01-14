@@ -1862,6 +1862,7 @@ export const exportRegistrationsController = asyncHandler(async (req: AuthReques
     'NOME',
     'SEXO',
     'NASCIMENTO',
+    'CATEGORIA',
     'KIT',
     'VARIAÇÃO',
     'ATRIBUTO',
@@ -1995,6 +1996,7 @@ export const exportRegistrationsController = asyncHandler(async (req: AuthReques
     }
     const gender = formatGender(reg.runner_gender);
     const birthDate = formatDate(reg.runner_birth_date);
+    const categoryName = reg.category_name || '';
     const kitName = getKitName(reg);
     const kitVariation = getKitVariation(reg);
     const attributes = await getProductAttributes(reg.id);
@@ -2009,6 +2011,7 @@ export const exportRegistrationsController = asyncHandler(async (req: AuthReques
       runnerNameUpper, // NOME
       gender, // SEXO
       birthDate, // NASCIMENTO
+      categoryName, // CATEGORIA
       kitName, // KIT
       kitVariation, // VARIAÇÃO
       attributes, // ATRIBUTO
