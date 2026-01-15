@@ -923,3 +923,46 @@ export const getPaymentByRegistrationId = async (
   return result.rows[0];
 };
 
+// Cancel payment in Asaas
+export const cancelPayment = async (
+  asaasPaymentId: string
+): Promise<void> => {
+  const asaasClient = createAsaasClient();
+
+  try {
+    console.log(`🗑️ Cancelando pagamento no Asaas: ${asaasPaymentId}`);
+
+    // Delete payment in Asaas (DELETE /payments/{id})
+    await asaasClient.delete(`/payments/${asaasPaymentId}`);
+    
+    console.log(`✅ Pagamento ${asaasPaymentId} cancelado no Asaas`);
+
+    // Update payment status in database
+    await query(
+      `UPDATE asaas_payments 
+       SET status = 'DELETED', updated_at = NOW()
+       WHERE asaas_payment_id = $1`,
+      [asaasPaymentId]
+    );
+
+    console.log(`✅ Status do pagamento atualizado no banco de dados`);
+  } catch (error: any) {
+    console.error('❌ Erro ao cancelar pagamento no Asaas:', error);
+    
+    // If payment is already deleted or doesn't exist, that's okay
+    if (error.response?.status === 404) {
+      console.log(`ℹ️ Pagamento ${asaasPaymentId} já foi deletado ou não existe no Asaas`);
+      // Still update database
+      await query(
+        `UPDATE asaas_payments 
+         SET status = 'DELETED', updated_at = NOW()
+         WHERE asaas_payment_id = $1`,
+        [asaasPaymentId]
+      );
+      return;
+    }
+    
+    throw new Error(`Erro ao cancelar pagamento no Asaas: ${error.message}`);
+  }
+};
+

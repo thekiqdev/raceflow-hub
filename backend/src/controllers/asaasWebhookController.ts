@@ -371,16 +371,30 @@ export const handleWebhook = asyncHandler(async (req: Request, res: Response) =>
       const externalRef = payment.externalReference;
       console.log(`🔍 Tentando buscar por external_reference: ${externalRef}`);
     
-      // Tentar buscar diretamente pelo ID se external_reference for UUID
-      // ou pelo confirmation_code
-      const regResult = await query(
-        'SELECT id FROM registrations WHERE id = $1 OR confirmation_code = $2',
-        [externalRef, externalRef]
-      );
+      // Verificar se externalRef é um UUID válido
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      const isUuid = uuidRegex.test(externalRef);
+      
+      let regResult;
+      
+      if (isUuid) {
+        // Se for UUID, buscar por ID ou confirmation_code
+        regResult = await query(
+          'SELECT id FROM registrations WHERE id = $1 OR confirmation_code = $2',
+          [externalRef, externalRef]
+        );
+      } else {
+        // Se não for UUID, buscar apenas por confirmation_code
+        regResult = await query(
+          'SELECT id FROM registrations WHERE confirmation_code = $1',
+          [externalRef]
+        );
+      }
     
       console.log('🔍 Resultado da busca por external_reference:', {
         rowsFound: regResult.rows.length,
         registrationId: regResult.rows[0]?.id || null,
+        isUuid: isUuid,
       });
     
       if (regResult.rows.length > 0) {
@@ -388,21 +402,6 @@ export const handleWebhook = asyncHandler(async (req: Request, res: Response) =>
         console.log(`✅ Inscrição encontrada por external_reference: ${externalRef} -> ${registrationId}`);
       } else {
         console.warn(`⚠️ Inscrição não encontrada por external_reference: ${externalRef}`);
-        
-        // Try to find by confirmation_code pattern (REG-xxx-xxx)
-        if (externalRef.startsWith('REG-')) {
-          const regByCodeResult = await query(
-            'SELECT id FROM registrations WHERE confirmation_code = $1',
-            [externalRef]
-          );
-          
-          if (regByCodeResult.rows.length > 0) {
-            registrationId = regByCodeResult.rows[0].id;
-            console.log(`✅ Inscrição encontrada por confirmation_code: ${externalRef} -> ${registrationId}`);
-          } else {
-            console.warn(`⚠️ Inscrição não encontrada por confirmation_code: ${externalRef}`);
-          }
-        }
       }
     } else {
       console.warn('⚠️ externalReference não fornecido no pagamento');
