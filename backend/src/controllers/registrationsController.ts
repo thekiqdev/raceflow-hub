@@ -1199,15 +1199,15 @@ export const createRegistrationByOrganizerController = asyncHandler(async (req: 
     `SELECT id, status, payment_status FROM registrations 
      WHERE event_id = $1 AND runner_id = $2 AND status != 'cancelled'`,
     [event_id, athlete.id]
-  );
-
+    );
+    
   if (existingRegistration.rows.length > 0) {
-    res.status(400).json({
-      success: false,
+      res.status(400).json({
+        success: false,
       error: 'Already registered',
       message: 'Este atleta já possui uma inscrição ativa neste evento. Cada corredor pode se inscrever apenas uma vez por evento.',
-    });
-    return;
+      });
+      return;
   }
 
   // Calculate total amount
@@ -1854,6 +1854,12 @@ export const exportRegistrationsController = asyncHandler(async (req: AuthReques
 
   // Import service to get product selections
   const { getRegistrationProductSelections } = await import('../services/registrationProductSelectionsService.js');
+  
+  // Get platform fee settings to calculate value without fee
+  const { getSystemSettings } = await import('../services/systemSettingsService.js');
+  const systemSettings = await getSystemSettings();
+  const platformFee = systemSettings.platform_fee || 0;
+  const platformFeeType = systemSettings.platform_fee_type || 'fixed';
 
   // Generate CSV in the requested format
   const headers = [
@@ -1930,7 +1936,7 @@ export const exportRegistrationsController = asyncHandler(async (req: AuthReques
       const attributeStrings = selections.map(sel => {
         return `${sel.attribute_name}: ${sel.attribute_value}`;
       });
-      
+    
       // Join multiple attributes with semicolon
       return attributeStrings.join('; ');
     } catch (error) {
@@ -1950,6 +1956,22 @@ export const exportRegistrationsController = asyncHandler(async (req: AuthReques
     // For now, return empty as it's not stored in the current schema
     // TODO: Add variant storage when implementing variant selection in registration
     return '';
+  };
+
+  // Helper function to calculate value without platform fee
+  const calculateValueWithoutFee = (totalAmount: number): number => {
+    if (!totalAmount || totalAmount <= 0 || !platformFee || platformFee <= 0) {
+      return totalAmount;
+    }
+    
+    if (platformFeeType === 'percentage') {
+      // If fee is percentage: value_without_fee = total_amount / (1 + fee/100)
+      // Example: if total is 110 and fee is 10%, then original = 110 / 1.10 = 100
+      return totalAmount / (1 + platformFee / 100);
+    } else {
+      // If fee is fixed: value_without_fee = total_amount - fee
+      return Math.max(0, totalAmount - platformFee);
+    }
   };
 
   // Helper function to format gender
@@ -2004,7 +2026,10 @@ export const exportRegistrationsController = asyncHandler(async (req: AuthReques
     const modality = getModalityName(reg);
     const registrationDateTime = formatDateTime(reg.created_at);
     const paymentMethod = formatPaymentMethod(reg.payment_method);
-    const totalAmount = reg.total_amount ? Number(reg.total_amount).toFixed(2).replace('.', ',') : '0,00';
+    // Calculate value without platform fee
+    const totalAmountValue = reg.total_amount ? Number(reg.total_amount) : 0;
+    const valueWithoutFee = calculateValueWithoutFee(totalAmountValue);
+    const totalAmount = valueWithoutFee.toFixed(2).replace('.', ',');
     const leaderName = reg.leader_name || '';
 
     return [

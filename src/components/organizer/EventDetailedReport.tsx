@@ -709,11 +709,11 @@ const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
               {registrations.map((reg) => {
                 const age = calculateAge(reg.runner_birth_date);
                 return (
-                  <TableRow key={reg.id}>
-                    <TableCell className="font-medium">
-                      {reg.profiles?.full_name || reg.runner_name || "N/A"}
-                    </TableCell>
-                    <TableCell className="text-sm">{reg.profiles?.cpf || "-"}</TableCell>
+                <TableRow key={reg.id}>
+                  <TableCell className="font-medium">
+                    {reg.profiles?.full_name || reg.runner_name || "N/A"}
+                  </TableCell>
+                  <TableCell className="text-sm">{reg.profiles?.cpf || "-"}</TableCell>
                     <TableCell className="text-sm">
                       {age !== null ? `${age} anos` : "-"}
                     </TableCell>
@@ -723,14 +723,14 @@ const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
                     <TableCell className="text-sm">
                       {reg.runner_state || "-"}
                     </TableCell>
-                    <TableCell>
-                      {reg.event_categories?.name || reg.category_name || "N/A"}
-                      {reg.event_categories?.distance && (
-                        <span className="text-xs text-muted-foreground ml-1">
-                          ({reg.event_categories.distance})
-                        </span>
-                      )}
-                    </TableCell>
+                  <TableCell>
+                    {reg.event_categories?.name || reg.category_name || "N/A"}
+                    {reg.event_categories?.distance && (
+                      <span className="text-xs text-muted-foreground ml-1">
+                        ({reg.event_categories.distance})
+                      </span>
+                    )}
+                  </TableCell>
                   <TableCell>
                     {reg.event_kits?.name || (reg.kit_id ? "Kit" : "-")}
                   </TableCell>
@@ -759,7 +759,7 @@ const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
                       locale: ptBR,
                     })}
                   </TableCell>
-                  </TableRow>
+                </TableRow>
                 );
               })}
             </TableBody>

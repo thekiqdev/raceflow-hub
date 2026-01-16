@@ -932,10 +932,45 @@ export const cancelPayment = async (
   try {
     console.log(`🗑️ Cancelando pagamento no Asaas: ${asaasPaymentId}`);
 
+    // First, check payment status to ensure it can be deleted
+    try {
+      const paymentResponse = await asaasClient.get(`/payments/${asaasPaymentId}`);
+      const payment = paymentResponse.data;
+      
+      console.log(`📊 Status atual do pagamento: ${payment.status}`);
+      
+      // Only delete if payment is pending or overdue
+      // Paid, confirmed, or received payments cannot be deleted
+      if (payment.status === 'CONFIRMED' || payment.status === 'RECEIVED' || payment.status === 'RECEIVED_IN_CASH') {
+        console.log(`⚠️ Pagamento ${asaasPaymentId} já foi pago (status: ${payment.status}). Não é possível cancelar.`);
+        throw new Error(`Pagamento já foi pago e não pode ser cancelado`);
+      }
+    } catch (checkError: any) {
+      if (checkError.response?.status === 404) {
+        console.log(`ℹ️ Pagamento ${asaasPaymentId} não encontrado no Asaas (já foi deletado?)`);
+        // Update database anyway
+        await query(
+          `UPDATE asaas_payments 
+           SET status = 'DELETED', updated_at = NOW()
+           WHERE asaas_payment_id = $1`,
+          [asaasPaymentId]
+        );
+        return;
+      }
+      // If error is about payment being paid, rethrow
+      if (checkError.message?.includes('já foi pago')) {
+        throw checkError;
+      }
+      // Otherwise, continue to try delete
+      console.log(`⚠️ Erro ao verificar status do pagamento, tentando deletar mesmo assim: ${checkError.message}`);
+    }
+
     // Delete payment in Asaas (DELETE /payments/{id})
-    await asaasClient.delete(`/payments/${asaasPaymentId}`);
+    // According to Asaas docs: https://docs.asaas.com/reference/excluir-cobranca
+    const deleteResponse = await asaasClient.delete(`/payments/${asaasPaymentId}`);
     
     console.log(`✅ Pagamento ${asaasPaymentId} cancelado no Asaas`);
+    console.log(`📋 Resposta do Asaas:`, deleteResponse.status, deleteResponse.data);
 
     // Update payment status in database
     await query(
@@ -947,7 +982,13 @@ export const cancelPayment = async (
 
     console.log(`✅ Status do pagamento atualizado no banco de dados`);
   } catch (error: any) {
-    console.error('❌ Erro ao cancelar pagamento no Asaas:', error);
+    console.error('❌ Erro ao cancelar pagamento no Asaas:', {
+      message: error.message,
+      status: error.response?.status,
+      statusText: error.response?.statusText,
+      data: error.response?.data,
+      asaasPaymentId,
+    });
     
     // If payment is already deleted or doesn't exist, that's okay
     if (error.response?.status === 404) {
@@ -958,11 +999,19 @@ export const cancelPayment = async (
          SET status = 'DELETED', updated_at = NOW()
          WHERE asaas_payment_id = $1`,
         [asaasPaymentId]
-      );
+      ).catch((dbError) => {
+        console.error(`⚠️ Erro ao atualizar banco após 404: ${dbError.message}`);
+      });
       return;
     }
     
-    throw new Error(`Erro ao cancelar pagamento no Asaas: ${error.message}`);
+    // If payment was paid, don't throw error - just log
+    if (error.message?.includes('já foi pago')) {
+      console.log(`ℹ️ Pagamento ${asaasPaymentId} não pode ser cancelado porque já foi pago`);
+      return;
+    }
+    
+    // For other errors, throw to be handled by caller
+    throw new Error(`Erro ao cancelar pagamento no Asaas: ${error.message || 'Erro desconhecido'}`);
   }
 };
-

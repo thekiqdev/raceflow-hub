@@ -17,6 +17,7 @@ import HomeCustomization from "@/components/admin/HomeCustomization";
 import TransferManagement from "@/components/admin/TransferManagement";
 import { GroupLeadersManagement } from "@/components/admin/GroupLeadersManagement";
 import QuotesManagement from "@/components/admin/QuotesManagement";
+import AdminRegistrations from "@/components/admin/AdminRegistrations";
 import { getSystemSettings } from "@/lib/api/systemSettings";
 
 const AdminDashboard = () => {
@@ -78,6 +79,8 @@ const AdminDashboard = () => {
         return <UserManagement />;
       case "events":
         return <EventManagement />;
+      case "registrations":
+        return <AdminRegistrations />;
       case "financial":
         return <FinancialManagement />;
       case "reports":

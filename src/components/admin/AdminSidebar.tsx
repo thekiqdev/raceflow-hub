@@ -1,4 +1,4 @@
-import { LayoutDashboard, Users, Calendar, DollarSign, FileText, Settings, MessageSquare, Building2, Palette, ArrowRightLeft, UserCog, Calculator } from "lucide-react";
+import { LayoutDashboard, Users, Calendar, DollarSign, FileText, Settings, MessageSquare, Building2, Palette, ArrowRightLeft, UserCog, Calculator, ClipboardList } from "lucide-react";
 import { useState, useEffect } from "react";
 import {
   Sidebar,
@@ -25,6 +25,7 @@ const menuItems = [
   { id: "overview", title: "Dashboard", icon: LayoutDashboard },
   { id: "users", title: "Usuários", icon: Users },
   { id: "events", title: "Eventos", icon: Calendar },
+  { id: "registrations", title: "Inscrições", icon: ClipboardList },
   { id: "quotes", title: "Orçamentos", icon: Calculator, badge: true },
   { id: "financial", title: "Financeiro", icon: DollarSign },
   { id: "transfers", title: "Transferências", icon: ArrowRightLeft },

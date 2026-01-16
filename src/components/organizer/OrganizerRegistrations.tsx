@@ -798,9 +798,9 @@ const OrganizerRegistrations = () => {
                 ) : kits.length === 0 ? (
                   <p className="text-sm text-muted-foreground">Nenhum kit disponível para este evento</p>
                 ) : (
-                  <div className="space-y-2">
-                    <Select 
-                      value={selectedKitId || undefined} 
+              <div className="space-y-2">
+                <Select 
+                  value={selectedKitId || undefined} 
                       onValueChange={(value) => {
                         setSelectedKitId(value || "");
                         if (!value) {
@@ -812,19 +812,19 @@ const OrganizerRegistrations = () => {
                           setExpandedKits(prev => new Set(prev).add(value));
                         }
                       }}
-                      disabled={loadingKits}
-                    >
-                      <SelectTrigger id="kit">
+                  disabled={loadingKits}
+                >
+                  <SelectTrigger id="kit">
                         <SelectValue placeholder="Selecione o kit (opcional)" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {kits.map((kit) => (
-                          <SelectItem key={kit.id} value={kit.id}>
-                            {kit.name} - R$ {kit.price.toFixed(2).replace('.', ',')}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {kits.map((kit) => (
+                      <SelectItem key={kit.id} value={kit.id}>
+                        {kit.name} - R$ {kit.price.toFixed(2).replace('.', ',')}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
                     
                     {/* Show products and variants when kit is selected */}
                     {selectedKitId && (() => {
@@ -1040,10 +1040,10 @@ const OrganizerRegistrations = () => {
                             </CollapsibleContent>
                           </Collapsible>
                           
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
                             className="h-8 text-xs mt-2"
                             onClick={() => {
                               setSelectedKitId("");
@@ -1051,9 +1051,9 @@ const OrganizerRegistrations = () => {
                               setSelectedProducts(new Map());
                               setVariantSelections(new Map());
                             }}
-                          >
-                            Remover kit
-                          </Button>
+                  >
+                    Remover kit
+                  </Button>
                         </div>
                       );
                     })()}
