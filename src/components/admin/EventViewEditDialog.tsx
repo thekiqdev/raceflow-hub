@@ -50,6 +50,7 @@ export function EventViewEditDialog({
   const [registrations, setRegistrations] = useState<any[]>([]);
   const [allRegistrations, setAllRegistrations] = useState<any[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
   const [confirmingRegistration, setConfirmingRegistration] = useState<string | null>(null);
   const [cancellingRegistration, setCancellingRegistration] = useState<string | null>(null);
   const [deletingRegistration, setDeletingRegistration] = useState<string | null>(null);
@@ -109,6 +110,60 @@ export function EventViewEditDialog({
   useEffect(() => {
     setMode(initialMode);
   }, [initialMode]);
+
+  const applyFilters = (term: string, status: string) => {
+    let filtered = allRegistrations;
+
+    // Aplicar filtro de status
+    if (status !== "all") {
+      filtered = filtered.filter((reg) => {
+        if (status === "confirmed") {
+          // Concluída: status = 'confirmed' e payment_status = 'paid' ou 'convidado'
+          return reg.status === "confirmed" && (reg.payment_status === "paid" || reg.payment_status === "convidado");
+        } else if (status === "pending") {
+          // Pendente: status = 'pending' ou null, e payment_status = 'pending'
+          return (reg.status === "pending" || !reg.status) && reg.payment_status === "pending";
+        } else if (status === "cancelled") {
+          // Cancelada: status = 'cancelled'
+          return reg.status === "cancelled";
+        }
+        return true;
+      });
+    }
+
+    // Aplicar filtro de busca (nome ou CPF)
+    if (term.trim()) {
+      const searchTermLower = term.toLowerCase().trim();
+      const searchTermNumbers = term.replace(/\D/g, ""); // Remove tudo que não é número para busca de CPF
+
+      filtered = filtered.filter((reg) => {
+        // Buscar por nome (case-insensitive)
+        const runnerName = (reg.runner_name || reg.profiles?.full_name || "").toLowerCase().trim();
+        const nameMatch = runnerName.length > 0 && runnerName.includes(searchTermLower);
+        
+        // Buscar por CPF (apenas números) - só busca se houver números no termo
+        let cpfMatch = false;
+        if (searchTermNumbers.length > 0) {
+          const runnerCpf = (reg.runner_cpf || "").replace(/\D/g, "");
+          cpfMatch = runnerCpf.length > 0 && runnerCpf.includes(searchTermNumbers);
+        }
+        
+        return nameMatch || cpfMatch;
+      });
+    }
+    
+    setRegistrations(filtered);
+  };
+
+  const handleSearch = (term: string) => {
+    setSearchTerm(term);
+    applyFilters(term, statusFilter);
+  };
+
+  const handleStatusFilter = (status: string) => {
+    setStatusFilter(status);
+    applyFilters(searchTerm, status);
+  };
 
   const loadEventData = async () => {
     if (!eventId) return;
@@ -172,10 +227,46 @@ export function EventViewEditDialog({
           } : undefined,
         }));
         setAllRegistrations(regs);
-        setRegistrations(regs);
+        // Aplicar filtros iniciais - usar regs diretamente
+        let filtered = regs;
+        
+        // Aplicar filtro de status
+        if (statusFilter !== "all") {
+          filtered = filtered.filter((reg) => {
+            if (statusFilter === "confirmed") {
+              return reg.status === "confirmed" && (reg.payment_status === "paid" || reg.payment_status === "convidado");
+            } else if (statusFilter === "pending") {
+              return (reg.status === "pending" || !reg.status) && reg.payment_status === "pending";
+            } else if (statusFilter === "cancelled") {
+              return reg.status === "cancelled";
+            }
+            return true;
+          });
+        }
+        
+        // Aplicar filtro de busca
+        if (searchTerm.trim()) {
+          const searchTermLower = searchTerm.toLowerCase().trim();
+          const searchTermNumbers = searchTerm.replace(/\D/g, "");
+          filtered = filtered.filter((reg) => {
+            const runnerName = (reg.runner_name || reg.profiles?.full_name || "").toLowerCase().trim();
+            const nameMatch = runnerName.length > 0 && runnerName.includes(searchTermLower);
+            let cpfMatch = false;
+            if (searchTermNumbers.length > 0) {
+              const runnerCpf = (reg.runner_cpf || "").replace(/\D/g, "");
+              cpfMatch = runnerCpf.length > 0 && runnerCpf.includes(searchTermNumbers);
+            }
+            return nameMatch || cpfMatch;
+          });
+        }
+        
+        setRegistrations(filtered);
       } else {
         setAllRegistrations([]);
         setRegistrations([]);
+        // Resetar filtros quando não há inscrições
+        setSearchTerm("");
+        setStatusFilter("all");
       }
 
       // Load modalities
@@ -1006,34 +1097,6 @@ export function EventViewEditDialog({
       cancelled: "destructive",
     };
     return <Badge variant={variants[status] || "secondary"}>{status}</Badge>;
-  };
-
-  const handleSearch = (term: string) => {
-    setSearchTerm(term);
-    if (!term.trim()) {
-      setRegistrations(allRegistrations);
-      return;
-    }
-
-    const searchTermLower = term.toLowerCase().trim();
-    const searchTermNumbers = term.replace(/\D/g, ""); // Remove tudo que não é número para busca de CPF
-
-    const filtered = allRegistrations.filter((reg) => {
-      // Buscar por nome (case-insensitive)
-      const runnerName = (reg.runner_name || reg.profiles?.full_name || "").toLowerCase().trim();
-      const nameMatch = runnerName.length > 0 && runnerName.includes(searchTermLower);
-      
-      // Buscar por CPF (apenas números) - só busca se houver números no termo
-      let cpfMatch = false;
-      if (searchTermNumbers.length > 0) {
-        const runnerCpf = (reg.runner_cpf || "").replace(/\D/g, "");
-        cpfMatch = runnerCpf.length > 0 && runnerCpf.includes(searchTermNumbers);
-      }
-      
-      return nameMatch || cpfMatch;
-    });
-    
-    setRegistrations(filtered);
   };
 
   const handleConfirmRegistration = async (registrationId: string) => {
@@ -3246,19 +3309,32 @@ export function EventViewEditDialog({
               <div className="flex items-center justify-between">
                 <h3 className="text-lg font-semibold">
                   Total: {allRegistrations.length} inscrições
-                  {searchTerm && ` (${registrations.length} encontradas)`}
+                  {(searchTerm || statusFilter !== "all") && ` (${registrations.length} encontradas)`}
                 </h3>
               </div>
               
-              {/* Search bar */}
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="Buscar por nome ou CPF..."
-                  value={searchTerm}
-                  onChange={(e) => handleSearch(e.target.value)}
-                  className="pl-10"
-                />
+              {/* Search and filter bar */}
+              <div className="flex gap-4">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Buscar por nome ou CPF..."
+                    value={searchTerm}
+                    onChange={(e) => handleSearch(e.target.value)}
+                    className="pl-10"
+                  />
+                </div>
+                <Select value={statusFilter} onValueChange={handleStatusFilter}>
+                  <SelectTrigger className="w-[180px]">
+                    <SelectValue placeholder="Filtrar por status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todas</SelectItem>
+                    <SelectItem value="confirmed">Concluída</SelectItem>
+                    <SelectItem value="pending">Pendente</SelectItem>
+                    <SelectItem value="cancelled">Cancelada</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
 
               {registrations.length === 0 ? (
