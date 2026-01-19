@@ -103,7 +103,8 @@ export const getEvents = async (filters?: {
       COALESCE(reg_stats.registration_count, 0) as registration_count,
       COALESCE(reg_stats.confirmed_registrations, 0) as confirmed_registrations,
       COALESCE(reg_stats.revenue, 0) as revenue,
-      COALESCE(reg_stats.avg_ticket, 0) as avg_ticket
+      COALESCE(reg_stats.avg_ticket, 0) as avg_ticket,
+      COALESCE(reg_stats.platform_fee_revenue, 0) as platform_fee_revenue
     FROM events e
     LEFT JOIN profiles p ON e.organizer_id = p.id
     LEFT JOIN (
@@ -111,8 +112,33 @@ export const getEvents = async (filters?: {
         event_id,
         COUNT(DISTINCT id) as registration_count,
         COUNT(DISTINCT CASE WHEN payment_status = 'paid' THEN id END) as confirmed_registrations,
-        COALESCE(SUM(CASE WHEN payment_status = 'paid' THEN total_amount ELSE 0 END), 0) as revenue,
-        COALESCE(AVG(CASE WHEN payment_status = 'paid' THEN total_amount END), 0) as avg_ticket
+        COALESCE(SUM(
+          CASE WHEN payment_status = 'paid' THEN
+            calculate_value_without_platform_fee(
+              total_amount,
+              get_platform_fee(),
+              get_platform_fee_type()
+            )
+          ELSE 0 END
+        ), 0) as revenue,
+        COALESCE(AVG(
+          CASE WHEN payment_status = 'paid' THEN
+            calculate_value_without_platform_fee(
+              total_amount,
+              get_platform_fee(),
+              get_platform_fee_type()
+            )
+          END
+        ), 0) as avg_ticket,
+        COALESCE(SUM(
+          CASE WHEN payment_status = 'paid' THEN
+            total_amount - calculate_value_without_platform_fee(
+              total_amount,
+              get_platform_fee(),
+              get_platform_fee_type()
+            )
+          ELSE 0 END
+        ), 0) as platform_fee_revenue
       FROM registrations
       GROUP BY event_id
     ) reg_stats ON e.id = reg_stats.event_id
@@ -206,6 +232,7 @@ export const getEvents = async (filters?: {
       confirmed_registrations: parseInt(row.confirmed_registrations) || 0,
       revenue: parseFloat(row.revenue) || 0,
       avg_ticket: parseFloat(row.avg_ticket) || 0,
+      platform_fee_revenue: parseFloat(row.platform_fee_revenue) || 0,
     };
   });
 };

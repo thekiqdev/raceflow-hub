@@ -1,4 +1,5 @@
 import { query } from '../config/database.js';
+import { calculateValueWithoutFee } from '../utils/feeCalculations.js';
 
 /**
  * Get dashboard statistics for an organizer
@@ -147,30 +148,66 @@ export interface OrganizerFinancialSummary {
 }
 
 export const getOrganizerFinancialSummary = async (organizerId: string): Promise<OrganizerFinancialSummary> => {
+  // Get platform fee settings
+  const { getSystemSettings } = await import('./systemSettingsService.js');
+  const settings = await getSystemSettings();
+  const platformFee = settings.platform_fee || 0;
+  const platformFeeType = (settings.platform_fee_type || 'fixed') as 'fixed' | 'percentage';
+
   const result = await query(
     `SELECT 
-      COUNT(DISTINCT r.id) as total_registrations,
-      COUNT(DISTINCT CASE WHEN r.payment_status = 'paid' THEN r.id END) as paid_registrations,
-      COALESCE(SUM(CASE WHEN r.payment_status = 'paid' THEN r.total_amount ELSE 0 END), 0) as total_revenue,
-      COALESCE(SUM(CASE WHEN r.payment_status = 'paid' AND r.payment_method = 'pix' THEN r.total_amount ELSE 0 END), 0) as pix_revenue,
-      COALESCE(SUM(CASE WHEN r.payment_status = 'paid' AND r.payment_method = 'credit_card' THEN r.total_amount ELSE 0 END), 0) as credit_card_revenue,
-      COALESCE(SUM(CASE WHEN r.payment_status = 'paid' AND r.payment_method = 'boleto' THEN r.total_amount ELSE 0 END), 0) as boleto_revenue,
-      COALESCE(SUM(CASE WHEN r.payment_status = 'paid' AND r.kit_id IS NOT NULL THEN r.total_amount ELSE 0 END), 0) as kit_revenue
+      r.id,
+      r.payment_status,
+      r.total_amount,
+      r.payment_method,
+      r.kit_id
     FROM registrations r
     JOIN events e ON r.event_id = e.id
     WHERE e.organizer_id = $1`,
     [organizerId]
   );
 
-  const row = result.rows[0];
+  let totalRevenue = 0;
+  let pixRevenue = 0;
+  let creditCardRevenue = 0;
+  let boletoRevenue = 0;
+  let kitRevenue = 0;
+  let totalRegistrations = result.rows.length;
+  let paidRegistrations = 0;
+
+  result.rows.forEach((row) => {
+    if (row.payment_status === 'paid') {
+      paidRegistrations++;
+      const amountWithoutFee = calculateValueWithoutFee(
+        parseFloat(row.total_amount) || 0,
+        platformFee,
+        platformFeeType
+      );
+      
+      totalRevenue += amountWithoutFee;
+      
+      if (row.payment_method === 'pix') {
+        pixRevenue += amountWithoutFee;
+      } else if (row.payment_method === 'credit_card') {
+        creditCardRevenue += amountWithoutFee;
+      } else if (row.payment_method === 'boleto') {
+        boletoRevenue += amountWithoutFee;
+      }
+      
+      if (row.kit_id) {
+        kitRevenue += amountWithoutFee;
+      }
+    }
+  });
+
   return {
-    totalRevenue: parseFloat(row.total_revenue) || 0,
-    pixRevenue: parseFloat(row.pix_revenue) || 0,
-    creditCardRevenue: parseFloat(row.credit_card_revenue) || 0,
-    boletoRevenue: parseFloat(row.boleto_revenue) || 0,
-    kitRevenue: parseFloat(row.kit_revenue) || 0,
-    totalRegistrations: parseInt(row.total_registrations) || 0,
-    paidRegistrations: parseInt(row.paid_registrations) || 0,
+    totalRevenue,
+    pixRevenue,
+    creditCardRevenue,
+    boletoRevenue,
+    kitRevenue,
+    totalRegistrations,
+    paidRegistrations,
   };
 };
 
@@ -188,31 +225,73 @@ export interface OrganizerEventRevenue {
 }
 
 export const getOrganizerEventRevenues = async (organizerId: string): Promise<OrganizerEventRevenue[]> => {
+  // Get platform fee settings
+  const { getSystemSettings } = await import('./systemSettingsService.js');
+  const settings = await getSystemSettings();
+  const platformFee = settings.platform_fee || 0;
+  const platformFeeType = (settings.platform_fee_type || 'fixed') as 'fixed' | 'percentage';
+
   const result = await query(
     `SELECT 
       e.id as event_id,
       e.title as event_title,
       e.event_date,
-      COUNT(DISTINCT r.id) as registrations,
-      COUNT(DISTINCT CASE WHEN r.payment_status = 'paid' THEN r.id END) as paid_registrations,
-      COALESCE(SUM(CASE WHEN r.payment_status = 'paid' THEN r.total_amount ELSE 0 END), 0) as total_revenue
+      r.id as registration_id,
+      r.payment_status,
+      r.total_amount
     FROM events e
     LEFT JOIN registrations r ON e.id = r.event_id
     WHERE e.organizer_id = $1
-    GROUP BY e.id, e.title, e.event_date
     ORDER BY e.event_date DESC`,
     [organizerId]
   );
 
-  return result.rows.map((row) => ({
-    eventId: row.event_id,
-    eventTitle: row.event_title,
-    eventDate: row.event_date,
-    totalRevenue: parseFloat(row.total_revenue) || 0,
-    registrations: parseInt(row.registrations) || 0,
-    paidRegistrations: parseInt(row.paid_registrations) || 0,
-    avgTicket: parseInt(row.paid_registrations) > 0
-      ? parseFloat(row.total_revenue) / parseInt(row.paid_registrations)
+  // Group by event and calculate revenue without fee
+  const eventMap = new Map<string, {
+    eventId: string;
+    eventTitle: string;
+    eventDate: string;
+    registrations: number;
+    paidRegistrations: number;
+    totalRevenue: number;
+  }>();
+
+  result.rows.forEach((row) => {
+    const eventId = row.event_id;
+    if (!eventMap.has(eventId)) {
+      eventMap.set(eventId, {
+        eventId,
+        eventTitle: row.event_title,
+        eventDate: row.event_date,
+        registrations: 0,
+        paidRegistrations: 0,
+        totalRevenue: 0,
+      });
+    }
+
+    const event = eventMap.get(eventId)!;
+    if (row.registration_id) {
+      event.registrations++;
+      if (row.payment_status === 'paid') {
+        event.paidRegistrations++;
+        event.totalRevenue += calculateValueWithoutFee(
+          parseFloat(row.total_amount) || 0,
+          platformFee,
+          platformFeeType
+        );
+      }
+    }
+  });
+
+  return Array.from(eventMap.values()).map((event) => ({
+    eventId: event.eventId,
+    eventTitle: event.eventTitle,
+    eventDate: event.eventDate,
+    totalRevenue: event.totalRevenue,
+    registrations: event.registrations,
+    paidRegistrations: event.paidRegistrations,
+    avgTicket: event.paidRegistrations > 0
+      ? event.totalRevenue / event.paidRegistrations
       : 0,
   }));
 };

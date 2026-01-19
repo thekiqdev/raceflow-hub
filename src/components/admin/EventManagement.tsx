@@ -89,6 +89,7 @@ const EventManagement = () => {
             registrations: registrationCount,
             revenue,
             avgTicket,
+            platformFeeRevenue: event.platform_fee_revenue || 0,
           };
         });
 
@@ -362,19 +363,20 @@ const EventManagement = () => {
                   <TableHead>Inscrições</TableHead>
                   <TableHead>Faturamento</TableHead>
                   <TableHead>Ticket Médio</TableHead>
+                  <TableHead>Taxa Plataforma</TableHead>
                   <TableHead>Ações</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={10} className="text-center py-8">
+                    <TableCell colSpan={11} className="text-center py-8">
                       <Loader2 className="h-6 w-6 animate-spin mx-auto" />
                     </TableCell>
                   </TableRow>
                 ) : events.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={11} className="text-center py-8 text-muted-foreground">
                       Nenhum evento encontrado
                     </TableCell>
                   </TableRow>
@@ -454,6 +456,9 @@ const EventManagement = () => {
                       <TableCell>{event.registrations}</TableCell>
                       <TableCell>{formatCurrency(event.revenue)}</TableCell>
                       <TableCell>{formatCurrency(event.avgTicket)}</TableCell>
+                      <TableCell className="font-semibold text-primary">
+                        {formatCurrency(event.platformFeeRevenue)}
+                      </TableCell>
                       <TableCell>
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>

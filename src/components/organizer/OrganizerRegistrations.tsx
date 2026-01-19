@@ -39,6 +39,8 @@ import { toast } from "sonner";
 import { useDebounce } from "@/hooks/useDebounce";
 import { createOrganizerGroupLeader } from "@/lib/api/groupLeaders";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { getEnabledModules } from "@/lib/api/systemSettings";
+import { calculateValueWithoutFee } from "@/lib/utils/feeCalculations";
 import type { KitProduct, ProductVariant } from "@/lib/api/eventKits";
 
 const OrganizerRegistrations = () => {
@@ -77,15 +79,30 @@ const OrganizerRegistrations = () => {
   const [selectedRegistration, setSelectedRegistration] = useState<Registration | null>(null);
   const [registrationDetails, setRegistrationDetails] = useState<any>(null);
   const [loadingDetails, setLoadingDetails] = useState(false);
+  const [platformFee, setPlatformFee] = useState<number>(0);
+  const [platformFeeType, setPlatformFeeType] = useState<'fixed' | 'percentage'>('fixed');
 
   const debouncedSearch = useDebounce(searchQuery, 500);
 
   useEffect(() => {
     if (user) {
+      loadPlatformFeeSettings();
       loadEvents();
       loadRegistrations();
     }
   }, [user, debouncedSearch, statusFilter, paymentStatusFilter, eventFilter]);
+
+  const loadPlatformFeeSettings = async () => {
+    try {
+      const response = await getEnabledModules();
+      if (response.success && response.data) {
+        setPlatformFee(response.data.platform_fee || 0);
+        setPlatformFeeType(response.data.platform_fee_type || 'fixed');
+      }
+    } catch (error) {
+      console.error("Error loading platform fee settings:", error);
+    }
+  };
 
   const loadEvents = async () => {
     if (!user) return;
@@ -645,7 +662,15 @@ const OrganizerRegistrations = () => {
                           </div>
                         </TableCell>
                         <TableCell className="text-right font-semibold">
-                          {formatCurrency(parseFloat(String(registration.total_amount || 0)))}
+                          {formatCurrency(
+                            (registration.total_amount || 0) > 0
+                              ? calculateValueWithoutFee(
+                                  parseFloat(String(registration.total_amount || 0)),
+                                  platformFee,
+                                  platformFeeType
+                                )
+                              : parseFloat(String(registration.total_amount || 0))
+                          )}
                         </TableCell>
                         <TableCell>{getStatusBadge(registration.status || "pending")}</TableCell>
                         <TableCell>{getPaymentStatusBadge(registration.payment_status || "pending")}</TableCell>
@@ -1177,7 +1202,17 @@ const OrganizerRegistrations = () => {
                   </div>
                   <div>
                     <Label className="text-sm text-muted-foreground">Valor Total</Label>
-                    <p className="font-medium text-lg">{formatCurrency(parseFloat(String(registrationDetails.total_amount || 0)))}</p>
+                    <p className="font-medium text-lg">
+                      {formatCurrency(
+                        (registrationDetails.total_amount || 0) > 0
+                          ? calculateValueWithoutFee(
+                              parseFloat(String(registrationDetails.total_amount || 0)),
+                              platformFee,
+                              platformFeeType
+                            )
+                          : parseFloat(String(registrationDetails.total_amount || 0))
+                      )}
+                    </p>
                   </div>
                   <div>
                     <Label className="text-sm text-muted-foreground">Status</Label>

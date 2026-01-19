@@ -420,38 +420,37 @@ export const updateFinancialSettings = async (
  * Get financial overview for a specific organizer
  */
 export const getOrganizerFinancialOverview = async (organizerId: string): Promise<FinancialOverview> => {
-  // Total revenue from paid registrations for this organizer's events
+  // Get platform fee settings
+  const { getSystemSettings } = await import('./systemSettingsService.js');
+  const settings = await getSystemSettings();
+  const platformFee = settings.platform_fee || 0;
+  const platformFeeType = (settings.platform_fee_type || 'fixed') as 'fixed' | 'percentage';
+
+  // Get all paid registrations for this organizer's events
   const revenueResult = await query(
-    `SELECT COALESCE(SUM(r.total_amount), 0) as total_revenue
+    `SELECT r.total_amount
      FROM registrations r
      JOIN events e ON r.event_id = e.id
      WHERE r.payment_status = 'paid'
      AND e.organizer_id = $1`,
     [organizerId]
   );
-  const total_revenue = parseFloat(revenueResult.rows[0].total_revenue) || 0;
 
-  // Platform commissions - use platform_fee from system_settings
-  const { getSystemSettings } = await import('./systemSettingsService.js');
-  const settings = await getSystemSettings();
-  
-  let platform_commissions = 0;
-  if (settings.platform_fee && settings.platform_fee > 0) {
-    if (settings.platform_fee_type === 'percentage') {
-      platform_commissions = (total_revenue * settings.platform_fee) / 100;
-    } else {
-      // For fixed fee, we need to count registrations for this organizer
-      const registrationsCountResult = await query(
-        `SELECT COUNT(*) as count 
-         FROM registrations r
-         JOIN events e ON r.event_id = e.id
-         WHERE r.payment_status = 'paid' AND e.organizer_id = $1`,
-        [organizerId]
-      );
-      const registrationsCount = parseInt(registrationsCountResult.rows[0].count) || 0;
-      platform_commissions = registrationsCount * settings.platform_fee;
-    }
-  }
+  // Calculate total revenue without platform fee
+  const { calculateValueWithoutFee } = await import('../utils/feeCalculations.js');
+  let total_revenue = 0;
+  revenueResult.rows.forEach((row) => {
+    total_revenue += calculateValueWithoutFee(
+      parseFloat(row.total_amount) || 0,
+      platformFee,
+      platformFeeType
+    );
+  });
+
+  // Platform commissions are already excluded from total_revenue
+  // So we set it to 0 or calculate the difference for display purposes
+  // For now, we'll set it to 0 since the revenue already excludes the fee
+  const platform_commissions = 0;
 
   // Total withdrawals for this organizer
   const withdrawalsResult = await query(

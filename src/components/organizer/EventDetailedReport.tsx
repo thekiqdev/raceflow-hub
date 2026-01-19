@@ -4,6 +4,8 @@ import { Button } from "@/components/ui/button";
 import { getEventById, getAttributeSelectionStats, AttributeSelectionStats } from "@/lib/api/events";
 import { getRegistrations } from "@/lib/api/registrations";
 import { getModalities, type Modality } from "@/lib/api/modalities";
+import { getEnabledModules } from "@/lib/api/systemSettings";
+import { calculateValueWithoutFee } from "@/lib/utils/feeCalculations";
 import { ArrowLeft, Users, DollarSign, Package, CreditCard, Smartphone, MapPin } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -89,12 +91,28 @@ const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
   const [ageStats, setAgeStats] = useState<{ min: number; max: number; avg: number } | null>(null);
   const [modalities, setModalities] = useState<Modality[]>([]);
   const [modalityStats, setModalityStats] = useState<Map<string, { count: number; revenue: number }>>(new Map());
+  const [platformFee, setPlatformFee] = useState<number>(0);
+  const [platformFeeType, setPlatformFeeType] = useState<'fixed' | 'percentage'>('fixed');
 
   useEffect(() => {
     loadEventDetails();
   }, [eventId]);
 
   const loadEventDetails = async () => {
+    // Load platform fee settings first
+    let currentPlatformFee = 0;
+    let currentPlatformFeeType: 'fixed' | 'percentage' = 'fixed';
+    try {
+      const feeResponse = await getEnabledModules();
+      if (feeResponse.success && feeResponse.data) {
+        currentPlatformFee = feeResponse.data.platform_fee || 0;
+        currentPlatformFeeType = feeResponse.data.platform_fee_type || 'fixed';
+        setPlatformFee(currentPlatformFee);
+        setPlatformFeeType(currentPlatformFeeType);
+      }
+    } catch (error) {
+      console.error("Error loading platform fee settings:", error);
+    }
     try {
       setLoading(true);
 
@@ -144,7 +162,7 @@ const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
 
       setRegistrations(regs);
 
-      // Calculate metrics
+      // Calculate metrics (without platform fee)
       let total = 0;
       let paid = 0;
       let pixTotal = 0;
@@ -153,16 +171,27 @@ const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
       const kitMap = new Map<string, { count: number; revenue: number }>();
 
       regs?.forEach((reg) => {
-        if (reg.payment_status === "paid") {
+        // For revenue calculation, consider "paid" and "convidado" status
+        // The total_amount stored in DB always includes platform fee, so we need to remove it
+        const isPaidOrConvidado = reg.payment_status === "paid" || reg.payment_status === "convidado";
+        const regAmount = Number(reg.total_amount) || 0;
+        
+        if (isPaidOrConvidado && regAmount > 0) {
           paid++;
-          const amount = Number(reg.total_amount);
-          total += amount;
+          const amountWithoutFee = calculateValueWithoutFee(
+            regAmount,
+            currentPlatformFee,
+            currentPlatformFeeType
+          );
+          total += amountWithoutFee;
 
-          // Calculate revenue by payment method
-          if (reg.payment_method === "pix") {
-            pixTotal += amount;
-          } else if (reg.payment_method === "credit_card") {
-            creditCardTotal += amount;
+          // Calculate revenue by payment method (only for paid, not convidado)
+          if (reg.payment_status === "paid") {
+            if (reg.payment_method === "pix") {
+              pixTotal += amountWithoutFee;
+            } else if (reg.payment_method === "credit_card") {
+              creditCardTotal += amountWithoutFee;
+            }
           }
 
           // Category revenue
@@ -170,11 +199,11 @@ const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
           const existing = categoryMap.get(categoryKey);
           if (existing) {
             existing.count++;
-            existing.revenue += Number(reg.total_amount);
+            existing.revenue += amountWithoutFee;
           } else {
             categoryMap.set(categoryKey, {
               count: 1,
-              revenue: Number(reg.total_amount),
+              revenue: amountWithoutFee,
             });
           }
 
@@ -184,11 +213,11 @@ const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
             const existingKit = kitMap.get(kitKey);
             if (existingKit) {
               existingKit.count++;
-              existingKit.revenue += Number(reg.total_amount);
+              existingKit.revenue += amountWithoutFee;
             } else {
               kitMap.set(kitKey, {
                 count: 1,
-                revenue: Number(reg.total_amount),
+                revenue: amountWithoutFee,
               });
             }
           }
@@ -291,10 +320,21 @@ const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
             return regModalityNames.includes(modality.name);
           });
           
-          // Count paid registrations and calculate revenue
-          const paidRegs = modalityRegs.filter((reg) => reg.payment_status === "paid");
+          // Count paid/convidado registrations and calculate revenue (without platform fee)
+          const paidRegs = modalityRegs.filter((reg) => {
+            const isPaidOrConvidado = reg.payment_status === "paid" || reg.payment_status === "convidado";
+            const regAmount = Number(reg.total_amount || 0);
+            return isPaidOrConvidado && regAmount > 0;
+          });
           const count = paidRegs.length;
-          const revenue = paidRegs.reduce((sum, reg) => sum + Number(reg.total_amount || 0), 0);
+          const revenue = paidRegs.reduce((sum, reg) => {
+            const regAmount = Number(reg.total_amount || 0);
+            return sum + calculateValueWithoutFee(
+              regAmount,
+              currentPlatformFee,
+              currentPlatformFeeType
+            );
+          }, 0);
           
           modalityStatsMap.set(modality.id, { count, revenue });
         });
@@ -752,7 +792,11 @@ const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
                   </TableCell>
                   <TableCell>{getPaymentStatusBadge(reg.payment_status)}</TableCell>
                   <TableCell className="text-right font-semibold">
-                    {formatCurrency(Number(reg.total_amount))}
+                    {formatCurrency(
+                      (reg.total_amount || 0) > 0
+                        ? calculateValueWithoutFee(Number(reg.total_amount), platformFee, platformFeeType)
+                        : Number(reg.total_amount)
+                    )}
                   </TableCell>
                   <TableCell className="text-sm">
                     {format(new Date(reg.created_at), "dd/MM/yyyy HH:mm", {

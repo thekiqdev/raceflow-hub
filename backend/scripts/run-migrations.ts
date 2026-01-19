@@ -101,6 +101,8 @@ const migrations = [
   '072_add_route_image_to_modalities.sql',
   '073_create_kit_categories.sql',
   '074_create_registration_product_selections.sql',
+  '075_add_calculate_value_without_fee_function.sql',
+  '076_update_organizer_views_without_fee.sql',
 ];
 
 // Create migrations tracking table

@@ -26,6 +26,14 @@ export interface OrganizerStats {
  * Get all organizers with statistics
  */
 export const getOrganizers = async (searchTerm?: string): Promise<UserWithStats[]> => {
+  // Get platform fee settings
+  const { getSystemSettings } = await import('./systemSettingsService.js');
+  const settings = await getSystemSettings();
+  const platformFee = settings.platform_fee || 0;
+  const platformFeeType = (settings.platform_fee_type || 'fixed') as 'fixed' | 'percentage';
+  const { calculateValueWithoutFee } = await import('../utils/feeCalculations.js');
+
+  // First, get organizers with basic info and events count
   let queryText = `
     SELECT 
       p.id,
@@ -35,14 +43,11 @@ export const getOrganizers = async (searchTerm?: string): Promise<UserWithStats[
       p.phone,
       COALESCE(p.status, 'active') as status,
       p.created_at,
-      COUNT(DISTINCT e.id) as events,
-      COUNT(DISTINCT r.id) as registrations,
-      COALESCE(SUM(CASE WHEN r.payment_status = 'paid' THEN r.total_amount ELSE 0 END), 0) as revenue
+      COUNT(DISTINCT e.id) as events
     FROM profiles p
     JOIN users u ON p.id = u.id
     JOIN user_roles ur ON p.id = ur.user_id
     LEFT JOIN events e ON p.id = e.organizer_id
-    LEFT JOIN registrations r ON e.id = r.event_id
     WHERE ur.role = 'organizer'
   `;
 
@@ -62,19 +67,55 @@ export const getOrganizers = async (searchTerm?: string): Promise<UserWithStats[
     ORDER BY p.full_name
   `;
 
-  const result = await query(queryText, params);
-  return result.rows.map((row) => ({
-    id: row.id,
-    name: row.name,
-    email: row.email,
-    cpf: row.cpf,
-    phone: row.phone,
-    status: row.status || 'active',
-    events: parseInt(row.events) || 0,
-    registrations: parseInt(row.registrations) || 0,
-    revenue: parseFloat(row.revenue) || 0,
-    created_at: row.created_at,
-  }));
+  const organizersResult = await query(queryText, params);
+  
+  // Get registrations for all organizers
+  const organizerIds = organizersResult.rows.map((row: any) => row.id);
+  const registrationsResult = organizerIds.length > 0 ? await query(
+    `SELECT 
+      e.organizer_id,
+      r.id as registration_id,
+      r.payment_status,
+      r.total_amount
+    FROM registrations r
+    JOIN events e ON r.event_id = e.id
+    WHERE e.organizer_id = ANY($1::uuid[])`,
+    [organizerIds]
+  ) : { rows: [] };
+
+  // Group registrations by organizer
+  const organizerStats = new Map<string, { registrations: number; revenue: number }>();
+  registrationsResult.rows.forEach((row) => {
+    const organizerId = row.organizer_id;
+    if (!organizerStats.has(organizerId)) {
+      organizerStats.set(organizerId, { registrations: 0, revenue: 0 });
+    }
+    const stats = organizerStats.get(organizerId)!;
+    stats.registrations++;
+    if (row.payment_status === 'paid') {
+      stats.revenue += calculateValueWithoutFee(
+        parseFloat(row.total_amount) || 0,
+        platformFee,
+        platformFeeType
+      );
+    }
+  });
+
+  return organizersResult.rows.map((row: any) => {
+    const stats = organizerStats.get(row.id) || { registrations: 0, revenue: 0 };
+    return {
+      id: row.id,
+      name: row.name,
+      email: row.email,
+      cpf: row.cpf,
+      phone: row.phone,
+      status: row.status || 'active',
+      events: parseInt(row.events) || 0,
+      registrations: stats.registrations,
+      revenue: stats.revenue,
+      created_at: row.created_at,
+    };
+  });
 };
 
 /**
