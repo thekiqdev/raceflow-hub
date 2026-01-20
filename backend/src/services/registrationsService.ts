@@ -77,6 +77,8 @@ export const getRegistrations = async (filters?: {
       p.birth_date as runner_birth_date,
       p.city as runner_city,
       p.state as runner_state,
+      p.team as runner_team,
+      u.email as runner_email,
       ek.name as kit_name,
       -- Modalidades associadas à categoria (usando subquery)
       (
@@ -117,6 +119,7 @@ export const getRegistrations = async (filters?: {
     LEFT JOIN events e ON r.event_id = e.id
     LEFT JOIN categories c ON r.category_id = c.id
     LEFT JOIN profiles p ON r.runner_id = p.id
+    LEFT JOIN users u ON p.id = u.id
     LEFT JOIN event_kits ek ON r.kit_id = ek.id
     LEFT JOIN coupons cp ON r.coupon_code = cp.code
     LEFT JOIN group_leaders gl ON cp.leader_id = gl.id

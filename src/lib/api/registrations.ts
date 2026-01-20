@@ -171,6 +171,7 @@ export interface CreateRegistrationByLeaderData {
   category_id: string;
   kit_id?: string;
   commission_id?: string; // NOVO: ID da comissão específica (opcional)
+  product_selections?: ProductSelection[];
 }
 
 export const createRegistrationByLeader = async (data: CreateRegistrationByLeaderData) => {

@@ -1866,6 +1866,9 @@ export const exportRegistrationsController = asyncHandler(async (req: AuthReques
     'NUMERO',
     'NOME MINUSCULO',
     'NOME',
+    'CPF',
+    'E-MAIL',
+    'EQUIPE',
     'SEXO',
     'NASCIMENTO',
     'CATEGORIA',
@@ -2003,15 +2006,33 @@ export const exportRegistrationsController = asyncHandler(async (req: AuthReques
     return '';
   };
 
+  // Helper function to format CPF
+  const formatCPF = (cpf: string | null | undefined): string => {
+    if (!cpf) return '';
+    // Remove all non-numeric characters
+    const cleanCpf = cpf.replace(/[^0-9]/g, '');
+    // Format as XXX.XXX.XXX-XX
+    if (cleanCpf.length === 11) {
+      return cleanCpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
+    }
+    return cleanCpf;
+  };
+
   // Process registrations and fetch attributes for each
   const rows = await Promise.all(registrations.map(async (reg: any, index: number) => {
     const runnerName = reg.runner_name || '';
     const runnerNameLower = runnerName.toLowerCase();
     const runnerNameUpper = runnerName.toUpperCase();
+    const runnerCpf = formatCPF(reg.runner_cpf);
+    const runnerEmail = reg.runner_email || '';
+    const runnerTeam = reg.runner_team || '';
     // Debug: logar o valor do gênero para as primeiras 3 inscrições
     if (index < 3) {
       console.log(`🔍 CSV Export - Inscrição ${index + 1}:`, {
         runner_name: runnerName,
+        runner_cpf: runnerCpf,
+        runner_email: runnerEmail,
+        runner_team: runnerTeam,
         runner_gender_raw: reg.runner_gender,
         runner_gender_type: typeof reg.runner_gender,
         runner_gender_formatted: formatGender(reg.runner_gender),
@@ -2036,6 +2057,9 @@ export const exportRegistrationsController = asyncHandler(async (req: AuthReques
       index + 1, // NUMERO (sequential number)
       runnerNameLower, // NOME MINUSCULO
       runnerNameUpper, // NOME
+      runnerCpf, // CPF
+      runnerEmail, // E-MAIL
+      runnerTeam, // EQUIPE
       gender, // SEXO
       birthDate, // NASCIMENTO
       categoryName, // CATEGORIA
@@ -2417,7 +2441,7 @@ export const createRegistrationByLeaderController = asyncHandler(async (req: Aut
     return;
   }
 
-  const { email, event_id, category_id, kit_id, commission_id } = req.body;
+  const { email, event_id, category_id, kit_id, commission_id, product_selections } = req.body;
 
   if (!email || !event_id || !category_id) {
     res.status(400).json({
@@ -2724,6 +2748,7 @@ export const createRegistrationByLeaderController = asyncHandler(async (req: Aut
     total_amount: totalAmount,
     payment_method: 'pix' as const,
     coupon_code: couponCode,
+    product_selections: product_selections || undefined,
   };
 
   console.log('📝 [createRegistrationByLeader] Líder criando inscrição para atleta:', {
