@@ -1931,19 +1931,42 @@ export const exportRegistrationsController = asyncHandler(async (req: AuthReques
   const getProductAttributes = async (registrationId: string): Promise<string> => {
     try {
       const selections = await getRegistrationProductSelections(registrationId);
+      
       if (!selections || selections.length === 0) {
         return '';
       }
       
-      // Group by product and format as "Atributo: Valor"
-      const attributeStrings = selections.map(sel => {
-        return `${sel.attribute_name}: ${sel.attribute_value}`;
+      // Group by product
+      const productGroups = new Map<string, {
+        product_name: string;
+        attributes: Array<{ attribute_name: string; attribute_value: string }>;
+      }>();
+      
+      selections.forEach((sel) => {
+        const productKey = sel.product_id;
+        if (!productGroups.has(productKey)) {
+          productGroups.set(productKey, {
+            product_name: sel.product_name || 'Produto',
+            attributes: [],
+          });
+        }
+        productGroups.get(productKey)!.attributes.push({
+          attribute_name: sel.attribute_name,
+          attribute_value: sel.attribute_value,
+        });
       });
-    
-      // Join multiple attributes with semicolon
-      return attributeStrings.join('; ');
-    } catch (error) {
-      console.error(`Error fetching product selections for registration ${registrationId}:`, error);
+      
+      // Format as "Produto: Atributo1: Valor1; Atributo2: Valor2 | Produto2: ..."
+      const productStrings = Array.from(productGroups.entries()).map(([productId, productData]) => {
+        const attributeStrings = productData.attributes.map(attr => {
+          return `${attr.attribute_name}: ${attr.attribute_value}`;
+        });
+        return `${productData.product_name} (${attributeStrings.join('; ')})`;
+      });
+      
+      return productStrings.join(' | ');
+    } catch (error: any) {
+      console.error(`❌ Error fetching product selections for registration ${registrationId}:`, error.message || error);
       return '';
     }
   };
@@ -2044,6 +2067,16 @@ export const exportRegistrationsController = asyncHandler(async (req: AuthReques
     const kitName = getKitName(reg);
     const kitVariation = getKitVariation(reg);
     const attributes = await getProductAttributes(reg.id);
+    
+    // Debug: logar atributos para as primeiras 3 inscrições
+    if (index < 3) {
+      console.log(`🔍 CSV Export - Atributos Inscrição ${index + 1} (${reg.id}):`, {
+        registration_id: reg.id,
+        attributes_result: attributes,
+        attributes_length: attributes.length,
+      });
+    }
+    
     const modality = getModalityName(reg);
     const registrationDateTime = formatDateTime(reg.created_at);
     const paymentMethod = formatPaymentMethod(reg.payment_method);
