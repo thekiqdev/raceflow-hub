@@ -710,6 +710,324 @@ export const findUserByCpfOrEmail = async (cpf?: string, email?: string) => {
   return null;
 };
 
+/**
+ * Get registrations with missing attribute selections for a user
+ * Returns registrations that have products with variants but missing attribute selections
+ */
+export const getRegistrationsWithMissingAttributes = async (userId: string) => {
+  // Get all active registrations for the user
+  const registrations = await getRegistrations({
+    runner_id: userId,
+    status: 'confirmed',
+  });
+
+  // Also get pending registrations
+  const pendingRegistrations = await getRegistrations({
+    runner_id: userId,
+    status: 'pending',
+  });
+
+  // Combine and filter unique registrations
+  const allRegistrations = [...registrations, ...pendingRegistrations].filter(
+    (reg, index, self) => index === self.findIndex((r) => r.id === reg.id)
+  );
+
+  const result = [];
+
+  for (const registration of allRegistrations) {
+    // Skip if no kit selected
+    if (!registration.kit_id) {
+      continue;
+    }
+
+    // Get all products for this kit that have variants (variant_attributes is not null)
+    // Note: We check variant_attributes instead of type='variable' because products
+    // may have had variations added after creation
+    const productsWithVariants = await query(
+      `SELECT 
+        p.id as product_id,
+        p.name as product_name,
+        p.variant_attributes
+      FROM kit_products p
+      WHERE p.kit_id = $1
+        AND p.variant_attributes IS NOT NULL
+        AND array_length(p.variant_attributes, 1) > 0`,
+      [registration.kit_id]
+    );
+
+    if (productsWithVariants.rows.length === 0) {
+      continue; // No products with variants, skip
+    }
+
+    // For each product with variants, check if all required attributes are selected
+    const productsWithMissingAttributes = [];
+
+    for (const product of productsWithVariants.rows) {
+      const variantAttributes = product.variant_attributes as string[];
+
+      // Get existing selections for this product in this registration
+      const existingSelections = await query(
+        `SELECT DISTINCT attribute_name
+        FROM registration_product_selections
+        WHERE registration_id = $1
+          AND product_id = $2`,
+        [registration.id, product.product_id]
+      );
+
+      const selectedAttributeNames = new Set(
+        existingSelections.rows.map((row) => row.attribute_name)
+      );
+
+      // Check if all required attributes are selected
+      const missingAttributes = variantAttributes.filter(
+        (attrName) => !selectedAttributeNames.has(attrName)
+      );
+
+      if (missingAttributes.length > 0) {
+        // Get available variants for this product
+        const availableVariants = await query(
+          `SELECT 
+            pv.id as variant_id,
+            pv.name as variant_name,
+            pv.price
+          FROM product_variants pv
+          WHERE pv.product_id = $1
+          ORDER BY pv.name`,
+          [product.product_id]
+        );
+
+        // Parse variant names to extract attribute values
+        const variantsWithAttributes = availableVariants.rows.map((variant) => {
+          const variantValues = variant.variant_name.split(' - ').map((v: string) => v.trim());
+          const attributeValues: Record<string, string> = {};
+
+          variantAttributes.forEach((attrName, index) => {
+            if (index < variantValues.length) {
+              attributeValues[attrName] = variantValues[index];
+            }
+          });
+
+          return {
+            variant_id: variant.variant_id,
+            variant_name: variant.variant_name,
+            attribute_values: attributeValues,
+          };
+        });
+
+        productsWithMissingAttributes.push({
+          product_id: product.product_id,
+          product_name: product.product_name,
+          variant_attributes: variantAttributes,
+          available_variants: variantsWithAttributes,
+        });
+      }
+    }
+
+    // If there are products with missing attributes, add to result
+    if (productsWithMissingAttributes.length > 0) {
+      result.push({
+        registration_id: registration.id,
+        event_title: registration.event_title,
+        event_date: registration.event_date,
+        kit_id: registration.kit_id,
+        kit_name: registration.kit_name,
+        products_with_missing_attributes: productsWithMissingAttributes,
+      });
+    }
+  }
+
+  return result;
+};
+
+/**
+ * Complete missing attribute selections for a registration
+ * Saves attribute selections for products that have variants
+ */
+export const completeRegistrationAttributes = async (
+  registrationId: string,
+  userId: string,
+  productSelections: Array<{
+    product_id: string;
+    variant_id?: string;
+    attribute_selections: Record<string, string>; // { attributeName: attributeValue }
+  }>
+) => {
+  // Validate input parameters
+  if (!registrationId || typeof registrationId !== 'string') {
+    throw new Error('Registration ID is required');
+  }
+
+  if (!userId || typeof userId !== 'string') {
+    throw new Error('User ID is required');
+  }
+
+  if (!productSelections || !Array.isArray(productSelections) || productSelections.length === 0) {
+    throw new Error('At least one product selection is required');
+  }
+
+  // Validate UUID format
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!uuidRegex.test(registrationId)) {
+    throw new Error('Invalid registration ID format');
+  }
+
+  if (!uuidRegex.test(userId)) {
+    throw new Error('Invalid user ID format');
+  }
+
+  // Validate product IDs format
+  for (const selection of productSelections) {
+    if (!selection.product_id || !uuidRegex.test(selection.product_id)) {
+      throw new Error(`Invalid product ID format: ${selection.product_id}`);
+    }
+    if (selection.variant_id && !uuidRegex.test(selection.variant_id)) {
+      throw new Error(`Invalid variant ID format: ${selection.variant_id}`);
+    }
+  }
+
+  // Get registration and validate ownership
+  const registration = await getRegistrationById(registrationId);
+  
+  if (!registration) {
+    throw new Error('Registration not found');
+  }
+
+  // Check if user is owner
+  if (registration.runner_id !== userId && registration.registered_by !== userId) {
+    throw new Error('You do not have permission to update this registration');
+  }
+
+  // Check if registration is active (not cancelled)
+  if (registration.status === 'cancelled') {
+    throw new Error('Cannot update attributes for cancelled registration');
+  }
+
+  // Validate that kit exists
+  if (!registration.kit_id) {
+    throw new Error('Registration does not have a kit');
+  }
+
+  // Get kit products to validate product_ids
+  const kitProducts = await query(
+    `SELECT id, name, variant_attributes, type
+    FROM kit_products
+    WHERE kit_id = $1`,
+    [registration.kit_id]
+  );
+
+  const validProductIds = new Set(kitProducts.rows.map((p) => p.id));
+  const productMap = new Map(kitProducts.rows.map((p) => [p.id, p]));
+
+  // Validate all products belong to the kit
+  for (const selection of productSelections) {
+    if (!validProductIds.has(selection.product_id)) {
+      throw new Error(`Product ${selection.product_id} does not belong to the kit of this registration`);
+    }
+
+    const product = productMap.get(selection.product_id);
+    if (!product) continue;
+
+    // If product has variant_attributes, validate all are provided
+    if (product.variant_attributes && Array.isArray(product.variant_attributes) && product.variant_attributes.length > 0) {
+      const requiredAttributes = product.variant_attributes as string[];
+      const providedAttributes = Object.keys(selection.attribute_selections || {});
+
+      // Check if all required attributes are provided
+      const missingAttributes = requiredAttributes.filter(
+        (attr) => !providedAttributes.includes(attr)
+      );
+
+      if (missingAttributes.length > 0) {
+        throw new Error(
+          `Missing required attributes for product ${product.name}: ${missingAttributes.join(', ')}`
+        );
+      }
+
+      // Validate attribute values are valid (exist in available variants)
+      const availableVariants = await query(
+        `SELECT id, name FROM product_variants WHERE product_id = $1`,
+        [selection.product_id]
+      );
+
+      // Get all valid attribute values from variants
+      const validAttributeValues = new Map<string, Set<string>>();
+      availableVariants.rows.forEach((variant) => {
+        const variantValues = variant.name.split(' - ').map((v: string) => v.trim());
+        requiredAttributes.forEach((attrName, index) => {
+          if (index < variantValues.length) {
+            if (!validAttributeValues.has(attrName)) {
+              validAttributeValues.set(attrName, new Set());
+            }
+            validAttributeValues.get(attrName)!.add(variantValues[index]);
+          }
+        });
+      });
+
+      // Validate each provided attribute value
+      for (const [attrName, attrValue] of Object.entries(selection.attribute_selections || {})) {
+        if (!requiredAttributes.includes(attrName)) {
+          throw new Error(`Attribute "${attrName}" is not required for product ${product.name}`);
+        }
+
+        const validValues = validAttributeValues.get(attrName);
+        if (validValues && !validValues.has(attrValue)) {
+          throw new Error(
+            `Invalid value "${attrValue}" for attribute "${attrName}" in product ${product.name}. Valid values: ${Array.from(validValues).join(', ')}`
+          );
+        }
+      }
+
+      // Validate variant_id if provided
+      if (selection.variant_id) {
+        const variantResult = await query(
+          `SELECT name, product_id FROM product_variants WHERE id = $1 AND product_id = $2`,
+          [selection.variant_id, selection.product_id]
+        );
+
+        if (variantResult.rows.length === 0) {
+          throw new Error(`Variant ${selection.variant_id} does not belong to product ${selection.product_id}`);
+        }
+      }
+    }
+  }
+
+  // Delete existing selections for these products (to allow updates)
+  for (const selection of productSelections) {
+    await query(
+      `DELETE FROM registration_product_selections
+       WHERE registration_id = $1 AND product_id = $2`,
+      [registrationId, selection.product_id]
+    );
+  }
+
+  // Save new selections
+  for (const selection of productSelections) {
+    if (selection.attribute_selections && Object.keys(selection.attribute_selections).length > 0) {
+      for (const [attributeName, attributeValue] of Object.entries(selection.attribute_selections)) {
+        await query(
+          `INSERT INTO registration_product_selections 
+           (registration_id, product_id, variant_id, attribute_name, attribute_value)
+           VALUES ($1, $2, $3, $4, $5)`,
+          [
+            registrationId,
+            selection.product_id,
+            selection.variant_id || null,
+            attributeName,
+            attributeValue,
+          ]
+        );
+      }
+    }
+  }
+
+  console.log(`✅ Seleções de atributos completadas para inscrição ${registrationId}`);
+
+  return {
+    success: true,
+    message: 'Attribute selections saved successfully',
+  };
+};
+
 // Transfer registration to another runner
 export const transferRegistration = async (
   registrationId: string,

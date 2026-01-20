@@ -9,6 +9,8 @@ import {
   findUserByEmail,
   transferRegistration,
   cancelRegistration,
+  getRegistrationsWithMissingAttributes,
+  completeRegistrationAttributes,
 } from '../services/registrationsService.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { hasRole } from '../services/userRolesService.js';
@@ -71,6 +73,20 @@ const productSelectionSchema = z.object({
   product_id: z.string().uuid('ID do produto inválido'),
   variant_id: z.string().uuid('ID da variação inválido').optional(),
   attribute_selections: z.record(z.string(), z.string()).optional(),
+});
+
+// Schema for completing registration attributes
+const completeAttributesSchema = z.object({
+  product_selections: z.array(
+    z.object({
+      product_id: z.string().uuid(),
+      variant_id: z.string().uuid().optional(),
+      attribute_selections: z.record(z.string(), z.string()).refine(
+        (val) => Object.keys(val).length > 0,
+        { message: 'At least one attribute selection is required' }
+      ),
+    })
+  ).min(1, { message: 'At least one product selection is required' }),
 });
 
 // Schema for create registration request
@@ -246,6 +262,127 @@ export const getAllRegistrations = asyncHandler(async (req: AuthRequest, res: Re
     success: true,
     data: registrations,
   });
+});
+
+// Get registrations with missing attributes
+export const getRegistrationsWithMissingAttributesController = asyncHandler(async (req: AuthRequest, res: Response) => {
+  if (!req.user) {
+    res.status(401).json({
+      success: false,
+      error: 'Not authenticated',
+      message: 'Usuário não autenticado',
+    });
+    return;
+  }
+
+  try {
+    // Validate user ID format (UUID)
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(req.user.id)) {
+      res.status(400).json({
+        success: false,
+        error: 'Invalid user ID format',
+        message: 'ID de usuário inválido',
+      });
+      return;
+    }
+
+    const registrations = await getRegistrationsWithMissingAttributes(req.user.id);
+
+    res.json({
+      success: true,
+      data: registrations,
+    });
+  } catch (error: any) {
+    console.error('Error getting registrations with missing attributes:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Internal server error',
+      message: error.message || 'Erro ao buscar inscrições com atributos pendentes',
+    });
+  }
+});
+
+// Complete registration attributes
+export const completeRegistrationAttributesController = asyncHandler(async (req: AuthRequest, res: Response) => {
+  if (!req.user) {
+    res.status(401).json({
+      success: false,
+      error: 'Not authenticated',
+    });
+    return;
+  }
+
+  const { id } = req.params;
+
+  // Validate registration ID format (UUID)
+  if (!id || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
+    res.status(400).json({
+      success: false,
+      error: 'Invalid registration ID format',
+      message: 'ID de inscrição inválido',
+    });
+    return;
+  }
+
+  // Validate request body
+  const validation = completeAttributesSchema.safeParse(req.body);
+  if (!validation.success) {
+    res.status(400).json({
+      success: false,
+      error: 'Validation error',
+      message: validation.error.errors[0].message,
+      details: validation.error.errors,
+    });
+    return;
+  }
+
+  try {
+    const result = await completeRegistrationAttributes(
+      id,
+      req.user.id,
+      validation.data.product_selections
+    );
+
+    res.json({
+      success: true,
+      message: result.message,
+    });
+  } catch (error: any) {
+    console.error('Error completing registration attributes:', error);
+    
+    if (error.message === 'Registration not found') {
+      res.status(404).json({
+        success: false,
+        error: 'Registration not found',
+        message: 'Inscrição não encontrada',
+      });
+      return;
+    }
+
+    if (error.message.includes('permission')) {
+      res.status(403).json({
+        success: false,
+        error: 'Forbidden',
+        message: error.message,
+      });
+      return;
+    }
+
+    if (error.message.includes('cancelled')) {
+      res.status(400).json({
+        success: false,
+        error: 'Invalid operation',
+        message: error.message,
+      });
+      return;
+    }
+
+    res.status(400).json({
+      success: false,
+      error: 'Validation error',
+      message: error.message || 'Erro ao salvar seleções de atributos',
+    });
+  }
 });
 
 // Get registration by ID for validation (public endpoint - no authentication required)

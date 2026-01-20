@@ -211,6 +211,48 @@ export const getRegistrationReceipt = async (id: string) => {
   return apiClient.get<Registration>(`/registrations/${id}/receipt`);
 };
 
+// Get registrations with missing attributes
+export interface MissingAttributesRegistration {
+  registration_id: string;
+  event_title: string;
+  event_date: string;
+  kit_id: string;
+  kit_name: string;
+  products_with_missing_attributes: Array<{
+    product_id: string;
+    product_name: string;
+    variant_attributes: string[];
+    available_variants: Array<{
+      variant_id: string;
+      variant_name: string;
+      attribute_values: { [key: string]: string };
+    }>;
+  }>;
+}
+
+export const getRegistrationsWithMissingAttributes = async () => {
+  return apiClient.get<MissingAttributesRegistration[]>("/registrations/missing-attributes");
+};
+
+// Complete registration attributes
+export interface CompleteAttributesData {
+  product_selections: Array<{
+    product_id: string;
+    variant_id?: string;
+    attribute_selections: { [key: string]: string };
+  }>;
+}
+
+export const completeRegistrationAttributes = async (
+  registrationId: string,
+  data: CompleteAttributesData
+) => {
+  return apiClient.post<{ success: boolean; message: string }>(
+    `/registrations/${registrationId}/complete-attributes`,
+    data
+  );
+};
+
 // Export registrations
 export const exportRegistrations = async (filters?: {
   event_id?: string;
