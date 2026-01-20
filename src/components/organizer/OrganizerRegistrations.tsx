@@ -29,6 +29,7 @@ import {
 import { Plus, Search, MoreVertical, Eye, MessageSquare, FileDown, Loader2, UserCog, Mail, ChevronDown, ChevronUp } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { getRegistrations, exportRegistrations, createRegistrationByOrganizer, getRegistrationById, type Registration } from "@/lib/api/registrations";
 import { getEvents, type Event } from "@/lib/api/events";
@@ -45,6 +46,7 @@ import type { KitProduct, ProductVariant } from "@/lib/api/eventKits";
 import { EventSelect } from "@/components/ui/event-select";
 
 const OrganizerRegistrations = () => {
+  const navigate = useNavigate();
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [registrations, setRegistrations] = useState<Registration[]>([]);
@@ -1369,6 +1371,18 @@ const OrganizerRegistrations = () => {
           )}
 
           <DialogFooter>
+            {registrationDetails && (
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setIsDetailsDialogOpen(false);
+                  navigate(`/registration/validate/${registrationDetails.id}`);
+                }}
+              >
+                <Eye className="w-4 h-4 mr-2" />
+                Visualizar Inscrição
+              </Button>
+            )}
             <Button variant="outline" onClick={() => setIsDetailsDialogOpen(false)}>
               Fechar
             </Button>

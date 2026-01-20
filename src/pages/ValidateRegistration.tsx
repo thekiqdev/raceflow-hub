@@ -275,6 +275,39 @@ export default function ValidateRegistration() {
                 <span className="font-medium">{registration.kit_name}</span>
               </div>
             )}
+            {/* Product Attributes */}
+            {registration.product_selections && registration.product_selections.length > 0 && (() => {
+              // Group by product
+              const productGroups = new Map<string, {
+                product_name: string;
+                attributes: Array<{ attribute_name: string; attribute_value: string }>;
+              }>();
+              
+              registration.product_selections.forEach((sel: any) => {
+                const productKey = sel.product_id;
+                if (!productGroups.has(productKey)) {
+                  productGroups.set(productKey, {
+                    product_name: sel.product_name || 'Produto',
+                    attributes: [],
+                  });
+                }
+                productGroups.get(productKey)!.attributes.push({
+                  attribute_name: sel.attribute_name,
+                  attribute_value: sel.attribute_value,
+                });
+              });
+
+              return Array.from(productGroups.entries()).map(([productId, productData]) => (
+                <div key={productId} className="space-y-1">
+                  {productData.attributes.map((attr, index) => (
+                    <div key={index} className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">{attr.attribute_name}:</span>
+                      <span className="font-medium">{attr.attribute_value}</span>
+                    </div>
+                  ))}
+                </div>
+              ));
+            })()}
             <div className="flex justify-between text-sm">
               <span className="text-muted-foreground">Valor:</span>
               <span className="font-medium">{formatPrice(registration.total_amount)}</span>

@@ -72,7 +72,31 @@ CPF: ${registration?.runner_cpf || 'N/A'}
 DADOS DA INSCRIÇÃO:
 Categoria: ${registration?.category_name || 'N/A'} ${registration?.category_distance ? `(${registration.category_distance})` : ''}
 Kit: ${registration?.kit_name || 'Sem kit'}
-Valor: R$ ${registration?.total_amount.toFixed(2).replace('.', ',') || '0,00'}
+${registration?.product_selections && registration.product_selections.length > 0 ? (() => {
+  // Group by product
+  const productGroups = new Map<string, {
+    product_name: string;
+    attributes: Array<{ attribute_name: string; attribute_value: string }>;
+  }>();
+  
+  registration.product_selections.forEach((sel: any) => {
+    const productKey = sel.product_id;
+    if (!productGroups.has(productKey)) {
+      productGroups.set(productKey, {
+        product_name: sel.product_name || 'Produto',
+        attributes: [],
+      });
+    }
+    productGroups.get(productKey)!.attributes.push({
+      attribute_name: sel.attribute_name,
+      attribute_value: sel.attribute_value,
+    });
+  });
+
+  return Array.from(productGroups.entries()).map(([productId, productData]) => {
+    return productData.attributes.map(attr => `${attr.attribute_name}: ${attr.attribute_value}`).join('\n');
+  }).join('\n');
+})() + '\n' : ''}Valor: R$ ${registration?.total_amount.toFixed(2).replace('.', ',') || '0,00'}
 Método de Pagamento: ${registration?.payment_method === 'pix' ? 'PIX' : registration?.payment_method === 'credit_card' ? 'Cartão de Crédito' : registration?.payment_method === 'boleto' ? 'Boleto' : 'N/A'}
 Status: ${registration?.status === 'confirmed' ? 'Confirmada' : registration?.status || 'Pendente'}
 Status do Pagamento: ${registration?.payment_status === 'paid' ? 'Pago' : registration?.payment_status === 'convidado' ? 'Convite' : registration?.payment_status || 'Pendente'}

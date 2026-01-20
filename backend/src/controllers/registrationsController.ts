@@ -262,6 +262,16 @@ export const getRegistrationForValidation = asyncHandler(async (req: Request, re
     return;
   }
 
+  // Get product selections if available
+  let productSelections = null;
+  try {
+    const { getRegistrationProductSelections } = await import('../services/registrationProductSelectionsService.js');
+    productSelections = await getRegistrationProductSelections(id);
+  } catch (error: any) {
+    // Log error but don't fail the request if product selections can't be loaded
+    console.error('⚠️ Erro ao carregar seleções de produtos/variantes:', error.message);
+  }
+
   // Return only public data needed for validation
   res.json({
     success: true,
@@ -282,6 +292,7 @@ export const getRegistrationForValidation = asyncHandler(async (req: Request, re
       runner_name: registration.runner_name,
       runner_cpf: registration.runner_cpf,
       created_at: registration.created_at,
+      product_selections: productSelections || [],
     },
   });
 });

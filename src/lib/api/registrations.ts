@@ -22,6 +22,14 @@ export interface Registration {
   runner_cpf?: string;
   kit_name?: string;
   event_organizer_id?: string;
+  product_selections?: Array<{
+    product_id: string;
+    product_name: string;
+    variant_id: string | null;
+    variant_name: string | null;
+    attribute_name: string;
+    attribute_value: string;
+  }>;
 }
 
 // Credit Card Data Types

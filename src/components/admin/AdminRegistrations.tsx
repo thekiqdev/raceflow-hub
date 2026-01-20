@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -28,13 +28,18 @@ import {
 import { Search, MoreVertical, Eye, FileDown, Loader2 } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { useNavigate } from "react-router-dom";
 import { getRegistrations, exportRegistrations, getRegistrationById, type Registration } from "@/lib/api/registrations";
 import { getEvents, type Event } from "@/lib/api/events";
 import { toast } from "sonner";
 import { useDebounce } from "@/hooks/useDebounce";
+import { getEnabledModules } from "@/lib/api/systemSettings";
+import { calculateValueWithoutFee } from "@/lib/utils/feeCalculations";
+import { Label } from "@/components/ui/label";
 import { EventSelect } from "@/components/ui/event-select";
 
 const AdminRegistrations = () => {
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [registrations, setRegistrations] = useState<Registration[]>([]);
   const [events, setEvents] = useState<Event[]>([]);
@@ -49,13 +54,28 @@ const AdminRegistrations = () => {
   const [selectedRegistration, setSelectedRegistration] = useState<Registration | null>(null);
   const [registrationDetails, setRegistrationDetails] = useState<any>(null);
   const [loadingDetails, setLoadingDetails] = useState(false);
+  const [platformFee, setPlatformFee] = useState<number>(0);
+  const [platformFeeType, setPlatformFeeType] = useState<'fixed' | 'percentage'>('fixed');
 
   const debouncedSearch = useDebounce(searchQuery, 500);
 
   useEffect(() => {
     loadEvents();
     loadRegistrations();
+    loadPlatformFeeSettings();
   }, [debouncedSearch, statusFilter, paymentStatusFilter, eventFilter]);
+
+  const loadPlatformFeeSettings = async () => {
+    try {
+      const modules = await getEnabledModules();
+      if (modules.platformFee) {
+        setPlatformFee(modules.platformFee);
+        setPlatformFeeType(modules.platformFeeType || 'fixed');
+      }
+    } catch (error) {
+      console.error("Error loading platform fee settings:", error);
+    }
+  };
 
   const loadEvents = async () => {
     try {
@@ -436,63 +456,168 @@ const AdminRegistrations = () => {
               <Loader2 className="h-8 w-8 animate-spin text-primary" />
             </div>
           ) : registrationDetails ? (
-            <div className="space-y-4 py-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground">Atleta</p>
-                  <p className="text-sm">{registrationDetails.runner_name || "N/A"}</p>
+            <div className="space-y-6 py-4">
+              {/* Dados do Inscrito */}
+              <div className="space-y-3">
+                <h3 className="text-lg font-semibold border-b pb-2">Dados do Inscrito</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <Label className="text-sm text-muted-foreground">Nome Completo</Label>
+                    <p className="font-medium">{registrationDetails.runner_name || "N/A"}</p>
+                  </div>
+                  <div>
+                    <Label className="text-sm text-muted-foreground">CPF</Label>
+                    <p className="font-medium font-mono">{registrationDetails.runner_cpf ? formatCPF(registrationDetails.runner_cpf) : "N/A"}</p>
+                  </div>
+                  <div>
+                    <Label className="text-sm text-muted-foreground">Email</Label>
+                    <p className="font-medium">{registrationDetails.runner_email || "N/A"}</p>
+                  </div>
+                  <div>
+                    <Label className="text-sm text-muted-foreground">Telefone</Label>
+                    <p className="font-medium">{registrationDetails.runner_phone || "N/A"}</p>
+                  </div>
+                  {registrationDetails.runner_birth_date && (
+                    <div>
+                      <Label className="text-sm text-muted-foreground">Data de Nascimento</Label>
+                      <p className="font-medium">
+                        {format(new Date(registrationDetails.runner_birth_date), "dd/MM/yyyy", { locale: ptBR })}
+                      </p>
+                    </div>
+                  )}
                 </div>
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground">CPF</p>
-                  <p className="text-sm font-mono">{registrationDetails.runner_cpf ? formatCPF(registrationDetails.runner_cpf) : "N/A"}</p>
+              </div>
+
+              {/* Dados da Inscrição */}
+              <div className="space-y-3">
+                <h3 className="text-lg font-semibold border-b pb-2">Dados da Inscrição</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <Label className="text-sm text-muted-foreground">Evento</Label>
+                    <p className="font-medium">{registrationDetails.event_title || "N/A"}</p>
+                  </div>
+                  <div>
+                    <Label className="text-sm text-muted-foreground">Categoria</Label>
+                    <p className="font-medium">
+                      {registrationDetails.category_name || "N/A"}
+                      {registrationDetails.category_distance && ` - ${registrationDetails.category_distance}`}
+                    </p>
+                  </div>
+                  <div>
+                    <Label className="text-sm text-muted-foreground">Tipo de Categoria</Label>
+                    <p className="font-medium capitalize">{registrationDetails.category_type || "N/A"}</p>
+                  </div>
+                  {registrationDetails.modality_names && registrationDetails.modality_names.length > 0 && (
+                    <div>
+                      <Label className="text-sm text-muted-foreground">Modalidade(s)</Label>
+                      <p className="font-medium">{registrationDetails.modality_names.join(', ')}</p>
+                    </div>
+                  )}
+                  <div>
+                    <Label className="text-sm text-muted-foreground">Kit</Label>
+                    <p className="font-medium">{registrationDetails.kit_name || "Sem kit"}</p>
+                  </div>
+                  <div>
+                    <Label className="text-sm text-muted-foreground">Valor Total</Label>
+                    <p className="font-medium text-lg">
+                      {formatCurrency(
+                        (registrationDetails.total_amount || 0) > 0
+                          ? calculateValueWithoutFee(
+                              parseFloat(String(registrationDetails.total_amount || 0)),
+                              platformFee,
+                              platformFeeType
+                            )
+                          : parseFloat(String(registrationDetails.total_amount || 0))
+                      )}
+                    </p>
+                  </div>
+                  <div>
+                    <Label className="text-sm text-muted-foreground">Status</Label>
+                    <div className="mt-1">{getStatusBadge(registrationDetails.status || "pending")}</div>
+                  </div>
+                  <div>
+                    <Label className="text-sm text-muted-foreground">Status do Pagamento</Label>
+                    <div className="mt-1">{getPaymentStatusBadge(registrationDetails.payment_status || "pending")}</div>
+                  </div>
+                  <div>
+                    <Label className="text-sm text-muted-foreground">Data da Inscrição</Label>
+                    <p className="font-medium">
+                      {registrationDetails.created_at
+                        ? format(new Date(registrationDetails.created_at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })
+                        : "N/A"}
+                    </p>
+                  </div>
+                  {registrationDetails.confirmation_code && (
+                    <div>
+                      <Label className="text-sm text-muted-foreground">Código de Confirmação</Label>
+                      <p className="font-medium font-mono">{registrationDetails.confirmation_code}</p>
+                    </div>
+                  )}
                 </div>
+              </div>
+
+              {/* Forma de Pagamento */}
+              <div className="space-y-3">
+                <h3 className="text-lg font-semibold border-b pb-2">Forma de Pagamento</h3>
                 <div>
-                  <p className="text-sm font-medium text-muted-foreground">Email</p>
-                  <p className="text-sm">{registrationDetails.runner_email || "N/A"}</p>
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground">Telefone</p>
-                  <p className="text-sm">{registrationDetails.runner_phone || "N/A"}</p>
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground">Evento</p>
-                  <p className="text-sm">{registrationDetails.event_title || "N/A"}</p>
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground">Modalidade</p>
-                  <p className="text-sm">{registrationDetails.category_name || "N/A"}</p>
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground">Kit</p>
-                  <p className="text-sm">{registrationDetails.kit_name || "Sem kit"}</p>
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground">Status</p>
-                  <div className="mt-1">{getStatusBadge(registrationDetails.status || "pending")}</div>
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground">Status Pagamento</p>
-                  <div className="mt-1">{getPaymentStatusBadge(registrationDetails.payment_status || "pending")}</div>
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground">Valor Total</p>
-                  <p className="text-sm font-semibold">{formatCurrency(parseFloat(String(registrationDetails.total_amount || 0)))}</p>
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground">Data de Inscrição</p>
-                  <p className="text-sm">
-                    {registrationDetails.created_at
-                      ? format(new Date(registrationDetails.created_at), "dd/MM/yyyy HH:mm", { locale: ptBR })
-                      : "N/A"}
+                  <Label className="text-sm text-muted-foreground">Método de Pagamento</Label>
+                  <p className="font-medium">
+                    {registrationDetails.payment_method === 'pix' ? 'PIX' :
+                     registrationDetails.payment_method === 'credit_card' ? 'Cartão de Crédito' :
+                     registrationDetails.payment_method === 'boleto' ? 'Boleto' :
+                     registrationDetails.payment_status === 'convidado' ? 'Convite (Grátis)' :
+                     'N/A'}
                   </p>
                 </div>
-                {registrationDetails.confirmation_code && (
-                  <div>
-                    <p className="text-sm font-medium text-muted-foreground">Código de Confirmação</p>
-                    <p className="text-sm font-mono">{registrationDetails.confirmation_code}</p>
-                  </div>
-                )}
               </div>
+
+              {/* Cupom de Desconto */}
+              {registrationDetails.coupon_code && (
+                <div className="space-y-3">
+                  <h3 className="text-lg font-semibold border-b pb-2">Cupom de Desconto</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <Label className="text-sm text-muted-foreground">Código do Cupom</Label>
+                      <p className="font-medium font-mono">{registrationDetails.coupon_code}</p>
+                    </div>
+                    {registrationDetails.coupon_name && (
+                      <div>
+                        <Label className="text-sm text-muted-foreground">Nome do Cupom</Label>
+                        <p className="font-medium">{registrationDetails.coupon_name}</p>
+                      </div>
+                    )}
+                    {registrationDetails.coupon_type && registrationDetails.coupon_discount_value && (
+                      <div>
+                        <Label className="text-sm text-muted-foreground">Desconto</Label>
+                        <p className="font-medium">
+                          {registrationDetails.coupon_type === 'percentage' 
+                            ? `${registrationDetails.coupon_discount_value}%`
+                            : `R$ ${parseFloat(registrationDetails.coupon_discount_value).toFixed(2).replace('.', ',')}`}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Cupom de Líder */}
+              {registrationDetails.coupon_leader_id && registrationDetails.leader_name && (
+                <div className="space-y-3">
+                  <h3 className="text-lg font-semibold border-b pb-2">Cupom de Líder</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <Label className="text-sm text-muted-foreground">Líder</Label>
+                      <p className="font-medium">{registrationDetails.leader_name}</p>
+                    </div>
+                    {registrationDetails.leader_referral_code && (
+                      <div>
+                        <Label className="text-sm text-muted-foreground">Código de Referência</Label>
+                        <p className="font-medium font-mono">{registrationDetails.leader_referral_code}</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {/* Produto e Variações Selecionadas */}
               {registrationDetails.product_selections && registrationDetails.product_selections.length > 0 && (
@@ -558,6 +683,24 @@ const AdminRegistrations = () => {
               )}
             </div>
           ) : null}
+
+          <DialogFooter>
+            {registrationDetails && (
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setIsDetailsDialogOpen(false);
+                  navigate(`/registration/validate/${registrationDetails.id}`);
+                }}
+              >
+                <Eye className="w-4 h-4 mr-2" />
+                Visualizar Inscrição
+              </Button>
+            )}
+            <Button variant="outline" onClick={() => setIsDetailsDialogOpen(false)}>
+              Fechar
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

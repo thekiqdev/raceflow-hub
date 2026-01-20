@@ -1407,6 +1407,20 @@ export function RegistrationFlow({
         doc.text(`Kit: ${selectedKit.name}`, margin, yPos);
         yPos += 7;
       }
+      // Product Attributes
+      if (selectedKit?.id && selectedProducts.has(selectedKit.id)) {
+        const selection = selectedProducts.get(selectedKit.id);
+        if (selection) {
+          const kitKey = `${selectedKit.id}-${selection.productId}`;
+          const variantSelection = variantSelections.get(kitKey);
+          if (variantSelection && Object.keys(variantSelection).length > 0) {
+            Object.entries(variantSelection).forEach(([attrName, attrValue]) => {
+              doc.text(`${attrName}: ${attrValue}`, margin, yPos);
+              yPos += 7;
+            });
+          }
+        }
+      }
       doc.text(`Valor: R$ ${totalPrice.toFixed(2).replace('.', ',')}`, margin, yPos);
       yPos += 7;
       doc.text(`Status: Confirmada`, margin, yPos);
