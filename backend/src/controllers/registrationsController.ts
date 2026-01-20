@@ -358,6 +358,20 @@ export const completeRegistrationAttributesController = asyncHandler(async (req:
     // Check permissions
     if (!isAdmin) {
       if (isOrganizer) {
+        // Check if organizer edit attributes module is enabled
+        const { getSystemSettings } = await import('../services/systemSettingsService.js');
+        const settings = await getSystemSettings();
+        const organizerEditEnabled = settings.enabled_modules?.organizer_edit_attributes || false;
+        
+        if (!organizerEditEnabled) {
+          res.status(403).json({
+            success: false,
+            error: 'Forbidden',
+            message: 'A edição de atributos pelo organizador está desabilitada',
+          });
+          return;
+        }
+        
         // Organizers can only edit attributes from their own events
         const event = await getEventById(registration.event_id);
         if (!event || event.organizer_id !== req.user.id) {
@@ -499,6 +513,20 @@ export const removeRegistrationAttributesController = asyncHandler(async (req: A
     if (!isAdmin) {
       // Organizers can only remove attributes from their own events
       if (isOrganizer) {
+        // Check if organizer edit attributes module is enabled
+        const { getSystemSettings } = await import('../services/systemSettingsService.js');
+        const settings = await getSystemSettings();
+        const organizerEditEnabled = settings.enabled_modules?.organizer_edit_attributes || false;
+        
+        if (!organizerEditEnabled) {
+          res.status(403).json({
+            success: false,
+            error: 'Forbidden',
+            message: 'A edição de atributos pelo organizador está desabilitada',
+          });
+          return;
+        }
+        
         const event = await getEventById(registration.event_id);
         if (!event || event.organizer_id !== req.user.id) {
           res.status(403).json({

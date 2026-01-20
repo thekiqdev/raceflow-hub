@@ -64,6 +64,7 @@ const SystemSettings = () => {
     transfers: false,
     senior_discount_60_plus: false,
     platform_fees: false,
+    organizer_edit_attributes: false,
   });
 
   const [feesForm, setFeesForm] = useState({
@@ -136,6 +137,7 @@ const SystemSettings = () => {
           transfers: false,
           senior_discount_60_plus: false,
           platform_fees: false,
+          organizer_edit_attributes: false,
         });
 
         setFeesForm({
@@ -894,6 +896,16 @@ const SystemSettings = () => {
                 <Switch 
                   checked={modulesForm.platform_fees || false}
                   onCheckedChange={(checked) => setModulesForm({ ...modulesForm, platform_fees: checked })}
+                />
+              </div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="font-medium">Edição de Atributos pelo Organizador</p>
+                  <p className="text-sm text-muted-foreground">Permitir que organizadores editem atributos de produtos nas inscrições</p>
+                </div>
+                <Switch 
+                  checked={modulesForm.organizer_edit_attributes || false}
+                  onCheckedChange={(checked) => setModulesForm({ ...modulesForm, organizer_edit_attributes: checked })}
                 />
               </div>
               <Button onClick={handleSaveModules} disabled={saving}>

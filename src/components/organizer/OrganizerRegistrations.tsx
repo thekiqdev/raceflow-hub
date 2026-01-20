@@ -84,6 +84,7 @@ const OrganizerRegistrations = () => {
   const [loadingDetails, setLoadingDetails] = useState(false);
   const [platformFee, setPlatformFee] = useState<number>(0);
   const [platformFeeType, setPlatformFeeType] = useState<'fixed' | 'percentage'>('fixed');
+  const [organizerEditAttributesEnabled, setOrganizerEditAttributesEnabled] = useState<boolean>(false);
   
   // Edit mode
   const [isEditMode, setIsEditMode] = useState(false);
@@ -110,6 +111,10 @@ const OrganizerRegistrations = () => {
       if (response.success && response.data) {
         setPlatformFee(response.data.platform_fee || 0);
         setPlatformFeeType(response.data.platform_fee_type || 'fixed');
+        // Check if organizer edit attributes is enabled
+        setOrganizerEditAttributesEnabled(
+          response.data.enabled_modules?.organizer_edit_attributes || false
+        );
       }
     } catch (error) {
       console.error("Error loading platform fee settings:", error);
@@ -1597,16 +1602,18 @@ const OrganizerRegistrations = () => {
                 <div className="space-y-3">
                   <div className="flex items-center justify-between border-b pb-2">
                     <h3 className="text-lg font-semibold">Produto e Variações Selecionadas</h3>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleRemoveAttributes()}
-                      disabled={saving}
-                      className="text-destructive hover:text-destructive"
-                    >
-                      <Trash2 className="w-4 h-4 mr-1" />
-                      Remover Todos os Atributos
-                    </Button>
+                    {organizerEditAttributesEnabled && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleRemoveAttributes()}
+                        disabled={saving}
+                        className="text-destructive hover:text-destructive"
+                      >
+                        <Trash2 className="w-4 h-4 mr-1" />
+                        Remover Todos os Atributos
+                      </Button>
+                    )}
                   </div>
                   <div className="space-y-4">
                     {(() => {
@@ -1749,10 +1756,12 @@ const OrganizerRegistrations = () => {
                   <Eye className="w-4 h-4 mr-2" />
                   Visualizar Inscrição
                 </Button>
-                <Button variant="default" onClick={handleEditClick}>
-                  <Edit2 className="w-4 h-4 mr-2" />
-                  Editar
-                </Button>
+                {organizerEditAttributesEnabled && (
+                  <Button variant="default" onClick={handleEditClick}>
+                    <Edit2 className="w-4 h-4 mr-2" />
+                    Editar
+                  </Button>
+                )}
               </>
             )}
             {registrationDetails && isEditMode && (
