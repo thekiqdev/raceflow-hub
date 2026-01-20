@@ -469,8 +469,25 @@ export const createRegistration = async (data: CreateRegistrationData) => {
   if (data.product_selections && data.product_selections.length > 0) {
     try {
       for (const selection of data.product_selections) {
-        // If variant_id is provided, get variant details to extract attributes
-        if (selection.variant_id) {
+        // Priority 1: If attribute_selections is provided directly, use it (most reliable)
+        if (selection.attribute_selections && Object.keys(selection.attribute_selections).length > 0) {
+          // If attribute_selections is provided directly (for manual registration or when sent from frontend)
+          for (const [attributeName, attributeValue] of Object.entries(selection.attribute_selections)) {
+            await query(
+              `INSERT INTO registration_product_selections 
+               (registration_id, product_id, variant_id, attribute_name, attribute_value)
+               VALUES ($1, $2, $3, $4, $5)`,
+              [
+                registration.id,
+                selection.product_id,
+                selection.variant_id || null,
+                attributeName,
+                attributeValue,
+              ]
+            );
+          }
+        } else if (selection.variant_id) {
+          // Priority 2: If variant_id is provided but no attribute_selections, get variant details to extract attributes
           const variantResult = await query(
             `SELECT name, product_id FROM product_variants WHERE id = $1`,
             [selection.variant_id]
@@ -509,22 +526,6 @@ export const createRegistration = async (data: CreateRegistrationData) => {
                 }
               }
             }
-          }
-        } else if (selection.attribute_selections) {
-          // If attribute_selections is provided directly (for manual registration)
-          for (const [attributeName, attributeValue] of Object.entries(selection.attribute_selections)) {
-            await query(
-              `INSERT INTO registration_product_selections 
-               (registration_id, product_id, variant_id, attribute_name, attribute_value)
-               VALUES ($1, $2, $3, $4, $5)`,
-              [
-                registration.id,
-                selection.product_id,
-                selection.variant_id || null,
-                attributeName,
-                attributeValue,
-              ]
-            );
           }
         }
       }
