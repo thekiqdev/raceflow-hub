@@ -23,7 +23,6 @@ import { getEnabledModules } from "@/lib/api/systemSettings";
 import { createTransferRequest, generateTransferPayment, getTransferRequestById, type TransferRequest } from "@/lib/api/transferRequests";
 import { toast } from "sonner";
 import { PixQrCode } from "@/components/payment/PixQrCode";
-import { MissingAttributesAlert } from "@/components/runner/MissingAttributesAlert";
 import { MissingAttributesModal } from "@/components/runner/MissingAttributesModal";
 
 export function MyRegistrations() {
@@ -551,9 +550,6 @@ export function MyRegistrations() {
 
   return (
     <div className="pb-20">
-      {/* Alerta de atributos pendentes - específico para esta página */}
-      <MissingAttributesAlert onSelectClick={handleSelectAttributes} />
-      
       {/* Header */}
       <div className="bg-gradient-hero p-6">
         <h1 className="text-2xl font-bold text-white mb-2">Minhas Inscrições</h1>

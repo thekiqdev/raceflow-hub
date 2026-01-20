@@ -715,11 +715,15 @@ export const findUserByCpfOrEmail = async (cpf?: string, email?: string) => {
  * Returns registrations that have products with variants but missing attribute selections
  */
 export const getRegistrationsWithMissingAttributes = async (userId: string) => {
+  console.log(`🔍 getRegistrationsWithMissingAttributes - Buscando para userId: ${userId}`);
+  
   // Get all active registrations for the user
   const registrations = await getRegistrations({
     runner_id: userId,
     status: 'confirmed',
   });
+
+  console.log(`🔍 getRegistrationsWithMissingAttributes - Inscrições confirmadas encontradas: ${registrations.length}`);
 
   // Also get pending registrations
   const pendingRegistrations = await getRegistrations({
@@ -727,35 +731,57 @@ export const getRegistrationsWithMissingAttributes = async (userId: string) => {
     status: 'pending',
   });
 
+  console.log(`🔍 getRegistrationsWithMissingAttributes - Inscrições pendentes encontradas: ${pendingRegistrations.length}`);
+
   // Combine and filter unique registrations
   const allRegistrations = [...registrations, ...pendingRegistrations].filter(
     (reg, index, self) => index === self.findIndex((r) => r.id === reg.id)
   );
 
+  console.log(`🔍 getRegistrationsWithMissingAttributes - Total de inscrições únicas: ${allRegistrations.length}`);
+
   const result = [];
 
   for (const registration of allRegistrations) {
+    console.log(`🔍 Processando inscrição ${registration.id} - Status: ${registration.status}, Kit: ${registration.kit_id}`);
+    
     // Skip if no kit selected
     if (!registration.kit_id) {
+      console.log(`⚠️ Inscrição ${registration.id} não tem kit, pulando`);
       continue;
     }
 
     // Get all products for this kit that have variants (variant_attributes is not null)
-    // Note: We check variant_attributes instead of type='variable' because products
-    // may have had variations added after creation
     const productsWithVariants = await query(
       `SELECT 
         p.id as product_id,
         p.name as product_name,
-        p.variant_attributes
+        p.variant_attributes,
+        p.type
       FROM kit_products p
       WHERE p.kit_id = $1
+        AND p.type = 'variable'
         AND p.variant_attributes IS NOT NULL
-        AND array_length(p.variant_attributes, 1) > 0`,
+        AND jsonb_typeof(p.variant_attributes) = 'array'
+        AND jsonb_array_length(p.variant_attributes) > 0`,
       [registration.kit_id]
     );
 
+    console.log(`🔍 Inscrição ${registration.id} - Produtos com variações encontrados: ${productsWithVariants.rows.length}`);
+    
     if (productsWithVariants.rows.length === 0) {
+      // Debug: verificar todos os produtos do kit
+      const allProducts = await query(
+        `SELECT id, name, type, variant_attributes FROM kit_products WHERE kit_id = $1`,
+        [registration.kit_id]
+      );
+      console.log(`🔍 Inscrição ${registration.id} - Todos os produtos do kit:`, allProducts.rows.map(p => ({
+        id: p.id,
+        name: p.name,
+        type: p.type,
+        variant_attributes: p.variant_attributes,
+        has_variants: p.variant_attributes && Array.isArray(p.variant_attributes) && p.variant_attributes.length > 0
+      })));
       continue; // No products with variants, skip
     }
 
@@ -764,6 +790,7 @@ export const getRegistrationsWithMissingAttributes = async (userId: string) => {
 
     for (const product of productsWithVariants.rows) {
       const variantAttributes = product.variant_attributes as string[];
+      console.log(`🔍 Produto ${product.product_name} (${product.product_id}) - Atributos necessários:`, variantAttributes);
 
       // Get existing selections for this product in this registration
       const existingSelections = await query(
@@ -774,6 +801,8 @@ export const getRegistrationsWithMissingAttributes = async (userId: string) => {
         [registration.id, product.product_id]
       );
 
+      console.log(`🔍 Produto ${product.product_name} - Seleções existentes:`, existingSelections.rows.map(r => r.attribute_name));
+
       const selectedAttributeNames = new Set(
         existingSelections.rows.map((row) => row.attribute_name)
       );
@@ -782,6 +811,8 @@ export const getRegistrationsWithMissingAttributes = async (userId: string) => {
       const missingAttributes = variantAttributes.filter(
         (attrName) => !selectedAttributeNames.has(attrName)
       );
+
+      console.log(`🔍 Produto ${product.product_name} - Atributos faltando:`, missingAttributes);
 
       if (missingAttributes.length > 0) {
         // Get available variants for this product
@@ -1025,6 +1056,67 @@ export const completeRegistrationAttributes = async (
   return {
     success: true,
     message: 'Attribute selections saved successfully',
+  };
+};
+
+/**
+ * Remove attribute selections for a registration
+ * This allows the runner to select attributes again
+ * @param registrationId - ID of the registration
+ * @param productIds - Optional array of product IDs to remove attributes from. If not provided, removes all.
+ */
+export const removeRegistrationAttributes = async (
+  registrationId: string,
+  productIds?: string[]
+) => {
+  // Validate registration ID format
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!uuidRegex.test(registrationId)) {
+    throw new Error('Invalid registration ID format');
+  }
+
+  // Get registration to validate it exists
+  const registration = await getRegistrationById(registrationId);
+  if (!registration) {
+    throw new Error('Registration not found');
+  }
+
+  // Check if registration is cancelled
+  if (registration.status === 'cancelled') {
+    throw new Error('Cannot remove attributes for cancelled registration');
+  }
+
+  // Delete attribute selections
+  if (productIds && productIds.length > 0) {
+    // Validate product IDs format
+    for (const productId of productIds) {
+      if (!uuidRegex.test(productId)) {
+        throw new Error(`Invalid product ID format: ${productId}`);
+      }
+    }
+
+    // Delete selections for specific products
+    await query(
+      `DELETE FROM registration_product_selections
+       WHERE registration_id = $1 AND product_id = ANY($2::uuid[])`,
+      [registrationId, productIds]
+    );
+  } else {
+    // Delete all selections for this registration
+    await query(
+      `DELETE FROM registration_product_selections
+       WHERE registration_id = $1`,
+      [registrationId]
+    );
+  }
+
+  console.log(`✅ Atributos removidos da inscrição ${registrationId}${productIds ? ` para produtos: ${productIds.join(', ')}` : ' (todos os produtos)'}`);
+
+  return {
+    success: true,
+    message: productIds && productIds.length > 0
+      ? 'Attribute selections removed for specified products'
+      : 'All attribute selections removed',
   };
 };
 

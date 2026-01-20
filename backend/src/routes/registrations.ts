@@ -18,6 +18,7 @@ import {
   checkExistingRegistrationController,
   getRegistrationsWithMissingAttributesController,
   completeRegistrationAttributesController,
+  removeRegistrationAttributesController,
 } from '../controllers/registrationsController.js';
 import { createTransferRequestController, generateTransferPaymentController, getTransferRequestByIdController } from '../controllers/transferRequestController.js';
 import { getEnabledModulesController } from '../controllers/systemSettingsController.js';
@@ -38,6 +39,7 @@ router.get('/check-existing', checkExistingRegistrationController);
 router.get('/missing-attributes', getRegistrationsWithMissingAttributesController);
 router.get('/', getAllRegistrations);
 router.post('/:id/complete-attributes', completeRegistrationAttributesController);
+router.post('/:id/remove-attributes', removeRegistrationAttributesController);
 router.get('/:id/payment-status', getPaymentStatusController);
 router.post('/:id/generate-payment', generatePaymentController);
 router.get('/:id/receipt', getRegistrationReceiptController);

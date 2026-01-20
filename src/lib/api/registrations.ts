@@ -253,6 +253,21 @@ export const completeRegistrationAttributes = async (
   );
 };
 
+// Remove registration attributes
+export interface RemoveAttributesData {
+  product_ids?: string[];
+}
+
+export const removeRegistrationAttributes = async (
+  registrationId: string,
+  data?: RemoveAttributesData
+) => {
+  return apiClient.post<{ success: boolean; message: string }>(
+    `/registrations/${registrationId}/remove-attributes`,
+    data || {}
+  );
+};
+
 // Export registrations
 export const exportRegistrations = async (filters?: {
   event_id?: string;

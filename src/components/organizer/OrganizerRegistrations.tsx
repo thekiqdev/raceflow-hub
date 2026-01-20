@@ -26,16 +26,16 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Plus, Search, MoreVertical, Eye, MessageSquare, FileDown, Loader2, UserCog, Mail, ChevronDown, ChevronUp } from "lucide-react";
+import { Plus, Search, MoreVertical, Eye, MessageSquare, FileDown, Loader2, UserCog, Mail, ChevronDown, ChevronUp, Edit2, Save, X, Trash2 } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
-import { getRegistrations, exportRegistrations, createRegistrationByOrganizer, getRegistrationById, type Registration } from "@/lib/api/registrations";
+import { getRegistrations, exportRegistrations, createRegistrationByOrganizer, getRegistrationById, updateRegistration, completeRegistrationAttributes, removeRegistrationAttributes, type Registration } from "@/lib/api/registrations";
 import { getEvents, type Event } from "@/lib/api/events";
 import { getModalities, type Modality } from "@/lib/api/modalities";
 import { getCategories, type Category } from "@/lib/api/categories";
-import { getEventKits, type EventKit } from "@/lib/api/eventKits";
+import { getEventKits, type EventKit, type KitProduct } from "@/lib/api/eventKits";
 import { toast } from "sonner";
 import { useDebounce } from "@/hooks/useDebounce";
 import { createOrganizerGroupLeader } from "@/lib/api/groupLeaders";
@@ -84,6 +84,15 @@ const OrganizerRegistrations = () => {
   const [loadingDetails, setLoadingDetails] = useState(false);
   const [platformFee, setPlatformFee] = useState<number>(0);
   const [platformFeeType, setPlatformFeeType] = useState<'fixed' | 'percentage'>('fixed');
+  
+  // Edit mode
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [editingStatus, setEditingStatus] = useState<string>("");
+  const [editingPaymentStatus, setEditingPaymentStatus] = useState<string>("");
+  const [editingProductAttributes, setEditingProductAttributes] = useState<Record<string, Record<string, string>>>({});
+  const [kitProducts, setKitProducts] = useState<KitProduct[]>([]);
+  const [loadingKit, setLoadingKit] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   const debouncedSearch = useDebounce(searchQuery, 500);
 
@@ -346,11 +355,16 @@ const OrganizerRegistrations = () => {
     setSelectedRegistration(registration);
     setIsDetailsDialogOpen(true);
     setLoadingDetails(true);
-    
+    setIsEditMode(false);
+    setEditingProductAttributes({});
+    setKitProducts([]);
+
     try {
       const response = await getRegistrationById(registration.id);
       if (response.success && response.data) {
         setRegistrationDetails(response.data);
+        setEditingStatus(response.data.status || "pending");
+        setEditingPaymentStatus(response.data.payment_status || "pending");
       } else {
         toast.error(response.error || "Erro ao carregar detalhes da inscrição");
       }
@@ -359,6 +373,225 @@ const OrganizerRegistrations = () => {
       toast.error("Erro ao carregar detalhes da inscrição");
     } finally {
       setLoadingDetails(false);
+    }
+  };
+
+  const handleEditClick = async () => {
+    if (!registrationDetails?.kit_id) {
+      toast.error("Esta inscrição não possui kit para editar atributos");
+      setIsEditMode(true);
+      return;
+    }
+
+    setIsEditMode(true);
+    setLoadingKit(true);
+
+    try {
+      // Load kit products with variants
+      const kitsResponse = await getEventKits(registrationDetails.event_id);
+      if (kitsResponse.success && kitsResponse.data) {
+        const kit = kitsResponse.data.find((k) => k.id === registrationDetails.kit_id);
+        if (kit && kit.products) {
+          setKitProducts(kit.products);
+
+          // Initialize editing attributes from existing selections
+          const currentAttributes: Record<string, Record<string, string>> = {};
+          if (registrationDetails.product_selections) {
+            registrationDetails.product_selections.forEach((selection: any) => {
+              if (!currentAttributes[selection.product_id]) {
+                currentAttributes[selection.product_id] = {};
+              }
+              if (selection.attribute_name && selection.attribute_value) {
+                currentAttributes[selection.product_id][selection.attribute_name] = selection.attribute_value;
+              }
+            });
+          }
+          setEditingProductAttributes(currentAttributes);
+        }
+      }
+    } catch (error: any) {
+      console.error("Error loading kit products:", error);
+      toast.error("Erro ao carregar produtos do kit");
+    } finally {
+      setLoadingKit(false);
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setIsEditMode(false);
+    setEditingProductAttributes({});
+    // Reset to original values
+    if (registrationDetails) {
+      setEditingStatus(registrationDetails.status || "pending");
+      setEditingPaymentStatus(registrationDetails.payment_status || "pending");
+    }
+  };
+
+  const handleSaveEdit = async () => {
+    if (!registrationDetails) return;
+
+    setSaving(true);
+
+    try {
+      // Update registration status and payment status
+      const updateData: any = {};
+      if (editingStatus !== registrationDetails.status) {
+        updateData.status = editingStatus;
+      }
+      if (editingPaymentStatus !== registrationDetails.payment_status) {
+        updateData.payment_status = editingPaymentStatus;
+      }
+
+      if (Object.keys(updateData).length > 0) {
+        const updateResponse = await updateRegistration(registrationDetails.id, updateData);
+        if (!updateResponse.success) {
+          toast.error(updateResponse.error || "Erro ao atualizar inscrição");
+          setSaving(false);
+          return;
+        }
+      }
+
+      // Update product attributes if kit exists and has variable products
+      if (registrationDetails.kit_id && kitProducts.length > 0) {
+        const variableProducts = kitProducts.filter((p) => p.type === "variable" && p.variant_attributes && p.variant_attributes.length > 0);
+        
+        if (variableProducts.length > 0) {
+          const productSelections = variableProducts
+            .map((product) => {
+              const attributes = editingProductAttributes[product.id] || {};
+              
+              // Only include products that have at least one attribute selected
+              const hasAttributes = Object.keys(attributes).length > 0 && 
+                Object.values(attributes).some((val) => val && val.trim() !== "");
+              
+              if (!hasAttributes) {
+                return null; // Skip products without attributes
+              }
+              
+              // Find matching variant if all attributes are selected
+              let variantId: string | undefined;
+              if (product.variants && product.variant_attributes) {
+                const selectedValues = product.variant_attributes.map((attr) => attributes[attr] || "").filter(Boolean);
+                if (selectedValues.length === product.variant_attributes.length) {
+                  const variant = product.variants.find((v) => {
+                    const variantValues = v.name.split(" - ").map((v) => v.trim());
+                    return product.variant_attributes!.every((attr, idx) => variantValues[idx] === attributes[attr]);
+                  });
+                  if (variant) {
+                    variantId = variant.id;
+                  }
+                }
+              }
+
+              return {
+                product_id: product.id,
+                variant_id: variantId,
+                attribute_selections: attributes,
+              };
+            })
+            .filter((selection) => selection !== null) as Array<{
+              product_id: string;
+              variant_id?: string;
+              attribute_selections: Record<string, string>;
+            }>;
+
+          // Only update if there are products with attributes selected
+          if (productSelections.length > 0) {
+            const attributesResponse = await completeRegistrationAttributes(
+              registrationDetails.id,
+              {
+                product_selections: productSelections,
+              }
+            );
+            if (!attributesResponse.success) {
+              toast.error(attributesResponse.error || "Erro ao atualizar atributos");
+              setSaving(false);
+              return;
+            }
+          }
+        }
+      }
+
+      toast.success("Inscrição atualizada com sucesso!");
+      
+      // Reload registration details
+      const response = await getRegistrationById(registrationDetails.id);
+      if (response.success && response.data) {
+        setRegistrationDetails(response.data);
+        setEditingStatus(response.data.status || "pending");
+        setEditingPaymentStatus(response.data.payment_status || "pending");
+      }
+      
+      // Reload registrations list
+      loadRegistrations();
+      
+      setIsEditMode(false);
+    } catch (error: any) {
+      console.error("Error saving registration:", error);
+      toast.error(error.message || "Erro ao salvar alterações");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleRemoveAttributes = async (productId?: string) => {
+    if (!registrationDetails) return;
+
+    const confirmMessage = productId
+      ? "Deseja remover os atributos selecionados deste produto? O corredor receberá uma notificação para selecionar novamente."
+      : "Deseja remover todos os atributos selecionados? O corredor receberá uma notificação para selecionar novamente.";
+
+    if (!confirm(confirmMessage)) {
+      return;
+    }
+
+    setSaving(true);
+
+    try {
+      const removeResponse = await removeRegistrationAttributes(
+        registrationDetails.id,
+        productId ? { product_ids: [productId] } : undefined
+      );
+
+      if (!removeResponse.success) {
+        toast.error(removeResponse.error || "Erro ao remover atributos");
+        setSaving(false);
+        return;
+      }
+
+      toast.success("Atributos removidos com sucesso! O corredor receberá uma notificação.");
+
+      // Reload registration details
+      const response = await getRegistrationById(registrationDetails.id);
+      if (response.success && response.data) {
+        setRegistrationDetails(response.data);
+        setEditingStatus(response.data.status || "pending");
+        setEditingPaymentStatus(response.data.payment_status || "pending");
+        
+        // Reset editing attributes if in edit mode
+        if (isEditMode && registrationDetails.kit_id) {
+          const currentAttributes: Record<string, Record<string, string>> = {};
+          if (response.data.product_selections) {
+            response.data.product_selections.forEach((selection: any) => {
+              if (!currentAttributes[selection.product_id]) {
+                currentAttributes[selection.product_id] = {};
+              }
+              if (selection.attribute_name && selection.attribute_value) {
+                currentAttributes[selection.product_id][selection.attribute_name] = selection.attribute_value;
+              }
+            });
+          }
+          setEditingProductAttributes(currentAttributes);
+        }
+      }
+
+      // Reload registrations list
+      loadRegistrations();
+    } catch (error: any) {
+      console.error("Error removing attributes:", error);
+      toast.error(error.message || "Erro ao remover atributos");
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -1215,11 +1448,40 @@ const OrganizerRegistrations = () => {
                   </div>
                   <div>
                     <Label className="text-sm text-muted-foreground">Status</Label>
-                    <div className="mt-1">{getStatusBadge(registrationDetails.status || "pending")}</div>
+                    {isEditMode ? (
+                      <Select value={editingStatus} onValueChange={setEditingStatus}>
+                        <SelectTrigger className="mt-1">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="pending">Pendente</SelectItem>
+                          <SelectItem value="confirmed">Confirmado</SelectItem>
+                          <SelectItem value="cancelled">Cancelado</SelectItem>
+                          <SelectItem value="refund_requested">Reembolso Solicitado</SelectItem>
+                          <SelectItem value="refunded">Reembolsado</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <div className="mt-1">{getStatusBadge(registrationDetails.status || "pending")}</div>
+                    )}
                   </div>
                   <div>
                     <Label className="text-sm text-muted-foreground">Status do Pagamento</Label>
-                    <div className="mt-1">{getPaymentStatusBadge(registrationDetails.payment_status || "pending")}</div>
+                    {isEditMode ? (
+                      <Select value={editingPaymentStatus} onValueChange={setEditingPaymentStatus}>
+                        <SelectTrigger className="mt-1">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="pending">Pendente</SelectItem>
+                          <SelectItem value="paid">Pago</SelectItem>
+                          <SelectItem value="refunded">Reembolsado</SelectItem>
+                          <SelectItem value="failed">Falhou</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <div className="mt-1">{getPaymentStatusBadge(registrationDetails.payment_status || "pending")}</div>
+                    )}
                   </div>
                   <div>
                     <Label className="text-sm text-muted-foreground">Data da Inscrição</Label>
@@ -1238,10 +1500,114 @@ const OrganizerRegistrations = () => {
                 </div>
               </div>
 
-              {/* Produto e Variações Selecionadas */}
-              {registrationDetails.product_selections && registrationDetails.product_selections.length > 0 && (
+              {/* Produto e Variações Selecionadas - Edit Mode */}
+              {isEditMode && registrationDetails.kit_id && (
                 <div className="space-y-3">
-                  <h3 className="text-lg font-semibold border-b pb-2">Produto e Variações Selecionadas</h3>
+                  <h3 className="text-lg font-semibold border-b pb-2">Editar Atributos dos Produtos</h3>
+                  {loadingKit ? (
+                    <div className="flex items-center justify-center py-4">
+                      <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {kitProducts
+                        .filter((p) => p.type === "variable" && p.variant_attributes && p.variant_attributes.length > 0)
+                        .map((product) => {
+                          const currentAttributes = editingProductAttributes[product.id] || {};
+                          const attributeNames = product.variant_attributes || [];
+                          const hasSelectedAttributes = Object.keys(currentAttributes).length > 0 && 
+                            attributeNames.some((attr) => currentAttributes[attr]);
+
+                          return (
+                            <div key={product.id} className="border rounded-lg p-4 bg-muted/50">
+                              <div className="flex items-center justify-between mb-3">
+                                <h4 className="font-semibold text-base">{product.name}</h4>
+                                {hasSelectedAttributes && (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => handleRemoveAttributes(product.id)}
+                                    disabled={saving}
+                                    className="text-destructive hover:text-destructive"
+                                  >
+                                    <Trash2 className="w-4 h-4 mr-1" />
+                                    Remover Atributos
+                                  </Button>
+                                )}
+                              </div>
+                              <div className="space-y-3">
+                                {attributeNames.map((attrName) => {
+                                  // Get available values for this attribute from variants
+                                  const availableValues = new Set<string>();
+                                  if (product.variants) {
+                                    product.variants.forEach((variant) => {
+                                      const variantValues = variant.name.split(" - ").map((v) => v.trim());
+                                      const attrIndex = attributeNames.indexOf(attrName);
+                                      if (attrIndex >= 0 && attrIndex < variantValues.length) {
+                                        availableValues.add(variantValues[attrIndex]);
+                                      }
+                                    });
+                                  }
+
+                                  return (
+                                    <div key={attrName} className="space-y-1">
+                                      <Label className="text-sm">{attrName}</Label>
+                                      <Select
+                                        value={currentAttributes[attrName] || ""}
+                                        onValueChange={(value) => {
+                                          setEditingProductAttributes((prev) => ({
+                                            ...prev,
+                                            [product.id]: {
+                                              ...prev[product.id],
+                                              [attrName]: value,
+                                            },
+                                          }));
+                                        }}
+                                      >
+                                        <SelectTrigger>
+                                          <SelectValue placeholder={`Selecione ${attrName}`} />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          {Array.from(availableValues).map((value) => (
+                                            <SelectItem key={value} value={value}>
+                                              {value}
+                                            </SelectItem>
+                                          ))}
+                                        </SelectContent>
+                                      </Select>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      {kitProducts.filter((p) => p.type === "variable" && p.variant_attributes && p.variant_attributes.length > 0).length === 0 && (
+                        <p className="text-sm text-muted-foreground text-center py-4">
+                          Nenhum produto com variações encontrado neste kit.
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Produto e Variações Selecionadas - View Mode */}
+              {!isEditMode && registrationDetails.product_selections && registrationDetails.product_selections.length > 0 && (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between border-b pb-2">
+                    <h3 className="text-lg font-semibold">Produto e Variações Selecionadas</h3>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleRemoveAttributes()}
+                      disabled={saving}
+                      className="text-destructive hover:text-destructive"
+                    >
+                      <Trash2 className="w-4 h-4 mr-1" />
+                      Remover Todos os Atributos
+                    </Button>
+                  </div>
                   <div className="space-y-4">
                     {(() => {
                       // Group selections by product
@@ -1371,21 +1737,50 @@ const OrganizerRegistrations = () => {
           )}
 
           <DialogFooter>
-            {registrationDetails && (
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setIsDetailsDialogOpen(false);
-                  navigate(`/registration/validate/${registrationDetails.id}`);
-                }}
-              >
-                <Eye className="w-4 h-4 mr-2" />
-                Visualizar Inscrição
+            {registrationDetails && !isEditMode && (
+              <>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setIsDetailsDialogOpen(false);
+                    navigate(`/registration/validate/${registrationDetails.id}`);
+                  }}
+                >
+                  <Eye className="w-4 h-4 mr-2" />
+                  Visualizar Inscrição
+                </Button>
+                <Button variant="default" onClick={handleEditClick}>
+                  <Edit2 className="w-4 h-4 mr-2" />
+                  Editar
+                </Button>
+              </>
+            )}
+            {registrationDetails && isEditMode && (
+              <>
+                <Button variant="outline" onClick={handleCancelEdit} disabled={saving}>
+                  <X className="w-4 h-4 mr-2" />
+                  Cancelar
+                </Button>
+                <Button variant="default" onClick={handleSaveEdit} disabled={saving}>
+                  {saving ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Salvando...
+                    </>
+                  ) : (
+                    <>
+                      <Save className="w-4 h-4 mr-2" />
+                      Salvar
+                    </>
+                  )}
+                </Button>
+              </>
+            )}
+            {!isEditMode && (
+              <Button variant="outline" onClick={() => setIsDetailsDialogOpen(false)}>
+                Fechar
               </Button>
             )}
-            <Button variant="outline" onClick={() => setIsDetailsDialogOpen(false)}>
-              Fechar
-            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

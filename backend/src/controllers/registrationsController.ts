@@ -11,6 +11,7 @@ import {
   cancelRegistration,
   getRegistrationsWithMissingAttributes,
   completeRegistrationAttributes,
+  removeRegistrationAttributes,
 } from '../services/registrationsService.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { hasRole } from '../services/userRolesService.js';
@@ -286,7 +287,9 @@ export const getRegistrationsWithMissingAttributesController = asyncHandler(asyn
       return;
     }
 
+    console.log(`🔍 getRegistrationsWithMissingAttributesController - Buscando para userId: ${req.user.id}`);
     const registrations = await getRegistrationsWithMissingAttributes(req.user.id);
+    console.log(`🔍 getRegistrationsWithMissingAttributesController - Resultado: ${registrations.length} inscrições com atributos pendentes`);
 
     res.json({
       success: true,
@@ -337,9 +340,57 @@ export const completeRegistrationAttributesController = asyncHandler(async (req:
   }
 
   try {
+    // Check if user is admin or organizer
+    const isAdmin = await hasRole(req.user.id, 'admin');
+    const isOrganizer = await hasRole(req.user.id, 'organizer');
+    
+    // Get registration to check permissions
+    const registration = await getRegistrationById(id);
+    if (!registration) {
+      res.status(404).json({
+        success: false,
+        error: 'Registration not found',
+        message: 'Inscrição não encontrada',
+      });
+      return;
+    }
+
+    // Check permissions
+    if (!isAdmin) {
+      if (isOrganizer) {
+        // Organizers can only edit attributes from their own events
+        const event = await getEventById(registration.event_id);
+        if (!event || event.organizer_id !== req.user.id) {
+          res.status(403).json({
+            success: false,
+            error: 'Forbidden',
+            message: 'Você não tem permissão para editar atributos desta inscrição',
+          });
+          return;
+        }
+      } else {
+        // Regular users can only edit their own registrations
+        if (registration.runner_id !== req.user.id && registration.registered_by !== req.user.id) {
+          res.status(403).json({
+            success: false,
+            error: 'Forbidden',
+            message: 'Você não tem permissão para editar atributos desta inscrição',
+          });
+          return;
+        }
+      }
+    }
+    
+    // For admins and organizers, use the registration's runner_id instead of req.user.id
+    // This allows them to edit any registration (admin) or registrations from their events (organizer)
+    let userId = req.user.id;
+    if (isAdmin || isOrganizer) {
+      userId = registration.runner_id || req.user.id;
+    }
+
     const result = await completeRegistrationAttributes(
       id,
-      req.user.id,
+      userId,
       validation.data.product_selections
     );
 
@@ -381,6 +432,154 @@ export const completeRegistrationAttributesController = asyncHandler(async (req:
       success: false,
       error: 'Validation error',
       message: error.message || 'Erro ao salvar seleções de atributos',
+    });
+  }
+});
+
+// Schema for removing registration attributes
+const removeAttributesSchema = z.object({
+  product_ids: z.array(z.string().uuid()).optional(),
+});
+
+/**
+ * POST /api/registrations/:id/remove-attributes
+ * Remove attribute selections from a registration
+ * Allows runner to select attributes again
+ */
+export const removeRegistrationAttributesController = asyncHandler(async (req: AuthRequest, res: Response) => {
+  if (!req.user) {
+    res.status(401).json({
+      success: false,
+      error: 'Not authenticated',
+    });
+    return;
+  }
+
+  const { id } = req.params;
+
+  // Validate registration ID format (UUID)
+  if (!id || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
+    res.status(400).json({
+      success: false,
+      error: 'Invalid registration ID format',
+      message: 'ID de inscrição inválido',
+    });
+    return;
+  }
+
+  // Validate request body
+  const validation = removeAttributesSchema.safeParse(req.body);
+  if (!validation.success) {
+    res.status(400).json({
+      success: false,
+      error: 'Validation error',
+      message: validation.error.errors[0].message,
+      details: validation.error.errors,
+    });
+    return;
+  }
+
+  try {
+    // Check if user is admin or organizer
+    const isAdmin = await hasRole(req.user.id, 'admin');
+    const isOrganizer = await hasRole(req.user.id, 'organizer');
+    
+    // Get registration to check permissions
+    const registration = await getRegistrationById(id);
+    if (!registration) {
+      res.status(404).json({
+        success: false,
+        error: 'Registration not found',
+        message: 'Inscrição não encontrada',
+      });
+      return;
+    }
+
+    // Check permissions
+    if (!isAdmin) {
+      // Organizers can only remove attributes from their own events
+      if (isOrganizer) {
+        const event = await getEventById(registration.event_id);
+        if (!event || event.organizer_id !== req.user.id) {
+          res.status(403).json({
+            success: false,
+            error: 'Forbidden',
+            message: 'Você não tem permissão para remover atributos desta inscrição',
+          });
+          return;
+        }
+      } else {
+        // Regular users cannot remove attributes
+        res.status(403).json({
+          success: false,
+          error: 'Forbidden',
+          message: 'Você não tem permissão para remover atributos',
+        });
+        return;
+      }
+    }
+
+    // Remove attributes
+    const result = await removeRegistrationAttributes(id, validation.data.product_ids);
+
+    // Send notification to runner if attributes were removed
+    if (registration.runner_id) {
+      try {
+        const event = await getEventById(registration.event_id);
+        const runnerEmail = await getUserEmail(registration.runner_id);
+        const runnerName = await getUserName(registration.runner_id);
+
+        if (runnerEmail && event) {
+          await sendNotificationSafely({
+            templateKey: 'registration_attributes_removed',
+            recipient: {
+              email: runnerEmail,
+              name: runnerName || undefined,
+            },
+            variables: {
+              userName: runnerName || 'Atleta',
+              eventTitle: event.title,
+              registrationCode: registration.confirmation_code || '',
+              dashboardUrl: `${process.env.FRONTEND_URL || 'http://localhost:8080'}/runner/dashboard`,
+            },
+          });
+          console.log(`✅ Notificação enviada ao corredor ${registration.runner_id} sobre remoção de atributos`);
+        }
+      } catch (notificationError: any) {
+        // Don't break the flow if notification fails
+        console.error('❌ Erro ao enviar notificação de remoção de atributos:', notificationError);
+      }
+    }
+
+    res.json({
+      success: true,
+      message: result.message,
+    });
+  } catch (error: any) {
+    console.error('Error removing registration attributes:', error);
+    
+    if (error.message === 'Registration not found') {
+      res.status(404).json({
+        success: false,
+        error: 'Registration not found',
+        message: 'Inscrição não encontrada',
+      });
+      return;
+    }
+
+    if (error.message.includes('cancelled')) {
+      res.status(400).json({
+        success: false,
+        error: 'Invalid operation',
+        message: error.message,
+      });
+      return;
+    }
+
+    res.status(400).json({
+      success: false,
+      error: 'Validation error',
+      message: error.message || 'Erro ao remover seleções de atributos',
     });
   }
 });
