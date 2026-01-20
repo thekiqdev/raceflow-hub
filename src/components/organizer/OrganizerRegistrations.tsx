@@ -42,6 +42,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { getEnabledModules } from "@/lib/api/systemSettings";
 import { calculateValueWithoutFee } from "@/lib/utils/feeCalculations";
 import type { KitProduct, ProductVariant } from "@/lib/api/eventKits";
+import { EventSelect } from "@/components/ui/event-select";
 
 const OrganizerRegistrations = () => {
   const { user } = useAuth();
@@ -544,17 +545,13 @@ const OrganizerRegistrations = () => {
                 />
               </div>
 
-              <Select value={eventFilter} onValueChange={setEventFilter}>
-                <SelectTrigger className="w-full sm:w-[200px]">
-                  <SelectValue placeholder="Filtrar por evento" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todos os eventos</SelectItem>
-                  {events.map(event => (
-                    <SelectItem key={event.id} value={event.id}>{event.title}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <EventSelect
+                events={events}
+                value={eventFilter}
+                onValueChange={setEventFilter}
+                placeholder="Filtrar por evento"
+                className="w-full sm:w-[200px]"
+              />
 
               <Select value={statusFilter} onValueChange={setStatusFilter}>
                 <SelectTrigger className="w-full sm:w-[180px]">
