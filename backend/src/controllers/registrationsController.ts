@@ -1968,7 +1968,7 @@ export const exportRegistrationsController = asyncHandler(async (req: AuthReques
       });
       
       // Format as "Produto: Atributo1: Valor1; Atributo2: Valor2 | Produto2: ..."
-      const productStrings = Array.from(productGroups.entries()).map(([productId, productData]) => {
+      const productStrings = Array.from(productGroups.entries()).map(([, productData]) => {
         const attributeStrings = productData.attributes.map(attr => {
           return `${attr.attribute_name}: ${attr.attribute_value}`;
         });
