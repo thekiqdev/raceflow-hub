@@ -74,9 +74,9 @@ export const updateProfile = async (userId: string, data: UpdateProfileData) => 
           paramIndex++;
         }
       } else {
-        fields.push(`${key} = $${paramIndex}`);
-        values.push(value);
-        paramIndex++;
+      fields.push(`${key} = $${paramIndex}`);
+      values.push(value);
+      paramIndex++;
       }
     }
   });

@@ -26,8 +26,10 @@ import {
   deleteLeaderCouponController,
 } from '../controllers/leaderCouponsController.js';
 import {
-  createGroupLeaderController,
-  getAllGroupLeadersController,
+  getOrganizerGroupLeadersController,
+  getAvailableLeadersController,
+  addLeaderToOrganizerController,
+  removeLeaderFromOrganizerController,
   getGroupLeaderByIdController,
   updateGroupLeaderController,
   activateGroupLeaderController,
@@ -72,9 +74,12 @@ router.get('/coupons/:id', getCouponByIdController);
 router.put('/coupons/:id', updateCouponController);
 router.delete('/coupons/:id', deleteCouponController);
 
-// Group Leaders endpoints (organizer can manage leaders for their events)
-router.get('/group-leaders', getAllGroupLeadersController);
-router.post('/group-leaders', createGroupLeaderController);
+// Group Leaders endpoints (organizer can manage leaders created by admin)
+// Note: Organizer cannot create leaders, only admin can
+router.get('/group-leaders', getOrganizerGroupLeadersController);
+router.get('/group-leaders/available', getAvailableLeadersController);
+router.post('/group-leaders/:id/add', addLeaderToOrganizerController);
+router.delete('/group-leaders/:id/remove', removeLeaderFromOrganizerController);
 router.get('/group-leaders/:id', getGroupLeaderByIdController);
 router.put('/group-leaders/:id', updateGroupLeaderController);
 router.post('/group-leaders/:id/activate', activateGroupLeaderController);

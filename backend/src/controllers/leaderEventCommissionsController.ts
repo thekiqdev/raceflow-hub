@@ -271,7 +271,8 @@ export const getLeaderEventCommissionsController = asyncHandler(
       return;
     }
 
-    const commissions = await getLeaderEventCommissions(leaderId);
+    // Filter commissions by organizer - only show commissions for organizer's events
+    const commissions = await getLeaderEventCommissions(leaderId, req.user.id);
 
     res.json({
       success: true,

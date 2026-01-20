@@ -149,7 +149,8 @@ export const getLeaderCouponsController = asyncHandler(
       return;
     }
 
-    const coupons = await getCouponsByLeader(leaderId);
+    // Filter coupons by organizer - only show coupons created by this organizer
+    const coupons = await getCouponsByLeader(leaderId, req.user.id);
 
     res.json({
       success: true,

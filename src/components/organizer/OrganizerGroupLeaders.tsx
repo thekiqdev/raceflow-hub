@@ -10,41 +10,41 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
-import { Search, UserPlus, Edit, Eye, Loader2, CheckCircle, XCircle, Copy, MoreVertical, DollarSign, Ticket } from "lucide-react";
+import { Search, Edit, Eye, Loader2, CheckCircle, XCircle, Copy, MoreVertical, DollarSign, Ticket, UserPlus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import {
   getOrganizerGroupLeaders,
-  createOrganizerGroupLeader,
+  getAvailableLeadersForOrganizer,
+  addLeaderToOrganizer,
+  removeLeaderFromOrganizer,
   updateOrganizerGroupLeader,
   deactivateOrganizerGroupLeader,
   activateOrganizerGroupLeader,
   type GroupLeader,
 } from "@/lib/api/groupLeaders";
-import { GroupLeaderDialog } from "@/components/admin/GroupLeaderDialog";
 import { GroupLeaderDetails } from "@/components/admin/GroupLeaderDetails";
-import { getRegistrations, type Registration } from "@/lib/api/registrations";
-import { useAuth } from "@/contexts/AuthContext";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
-interface UserOption {
-  id: string;
-  name: string;
-  email: string;
-}
 
 export function OrganizerGroupLeaders() {
-  const { user } = useAuth();
   const [leaders, setLeaders] = useState<GroupLeader[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
-  const [dialogOpen, setDialogOpen] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [selectedLeader, setSelectedLeader] = useState<GroupLeader | null>(null);
-  const [editingLeader, setEditingLeader] = useState<GroupLeader | null>(null);
-  const [availableUsers, setAvailableUsers] = useState<UserOption[]>([]);
+  const [addDialogOpen, setAddDialogOpen] = useState(false);
+  const [availableLeaders, setAvailableLeaders] = useState<GroupLeader[]>([]);
+  const [loadingAvailable, setLoadingAvailable] = useState(false);
 
   useEffect(() => {
     loadLeaders();
-    loadAvailableUsers();
   }, []);
 
   const loadLeaders = async () => {
@@ -64,41 +64,11 @@ export function OrganizerGroupLeaders() {
     }
   };
 
-  const loadAvailableUsers = async () => {
-    if (!user) return;
-    
-    try {
-      // Buscar usuários através das inscrições do organizador
-      const response = await getRegistrations({ organizer_id: user.id });
-      if (response.success && response.data) {
-        // Extrair usuários únicos das inscrições
-        const usersMap = new Map<string, UserOption>();
-        response.data.forEach((reg: Registration) => {
-          if (reg.runner_id && reg.runner_name) {
-            if (!usersMap.has(reg.runner_id)) {
-              usersMap.set(reg.runner_id, {
-                id: reg.runner_id,
-                name: reg.runner_name,
-                email: "", // Email não está disponível nas inscrições
-              });
-            }
-          }
-        });
-        setAvailableUsers(Array.from(usersMap.values()));
-      }
-    } catch (error) {
-      console.error("Erro ao carregar usuários:", error);
-    }
-  };
-
-  const handleCreateLeader = () => {
-    setEditingLeader(null);
-    setDialogOpen(true);
-  };
-
   const handleEditLeader = (leader: GroupLeader) => {
-    setEditingLeader(leader);
-    setDialogOpen(true);
+    // Organizador pode apenas editar código de referência e status
+    // Não pode criar novos líderes (apenas admin)
+    setSelectedLeader(leader);
+    setDetailsOpen(true);
   };
 
   const handleViewDetails = (leader: GroupLeader) => {
@@ -126,35 +96,6 @@ export function OrganizerGroupLeaders() {
     }, 100);
   };
 
-  const handleSaveLeader = async (data: { user_id: string; referral_code?: string }) => {
-    try {
-      if (editingLeader) {
-        const updateData: any = {};
-        if (data.referral_code) {
-          updateData.referral_code = data.referral_code;
-        }
-        const response = await updateOrganizerGroupLeader(editingLeader.id, updateData);
-        if (response.success) {
-          toast.success("Líder atualizado com sucesso!");
-          loadLeaders();
-          setDialogOpen(false);
-        } else {
-          toast.error(response.error || "Erro ao atualizar líder");
-        }
-      } else {
-        const response = await createOrganizerGroupLeader(data);
-        if (response.success) {
-          toast.success("Líder criado com sucesso!");
-          loadLeaders();
-          setDialogOpen(false);
-        } else {
-          toast.error(response.error || "Erro ao criar líder");
-        }
-      }
-    } catch (error: any) {
-      toast.error(error.message || "Erro ao salvar líder");
-    }
-  };
 
   const handleToggleActive = async (leader: GroupLeader) => {
     try {
@@ -184,11 +125,64 @@ export function OrganizerGroupLeaders() {
     toast.success("Link copiado para a área de transferência!");
   };
 
+  const handleOpenAddDialog = async () => {
+    setAddDialogOpen(true);
+    setLoadingAvailable(true);
+    try {
+      const response = await getAvailableLeadersForOrganizer();
+      if (response.success && response.data) {
+        setAvailableLeaders(response.data);
+      } else {
+        toast.error(response.error || "Erro ao carregar líderes disponíveis");
+      }
+    } catch (error) {
+      console.error("Erro ao carregar líderes disponíveis:", error);
+      toast.error("Erro ao carregar líderes disponíveis");
+    } finally {
+      setLoadingAvailable(false);
+    }
+  };
+
+  const handleAddLeader = async (leaderId: string) => {
+    try {
+      const response = await addLeaderToOrganizer(leaderId);
+      if (response.success) {
+        toast.success("Líder adicionado com sucesso!");
+        setAddDialogOpen(false);
+        loadLeaders();
+      } else {
+        toast.error(response.error || "Erro ao adicionar líder");
+      }
+    } catch (error: any) {
+      toast.error(error.message || "Erro ao adicionar líder");
+    }
+  };
+
+  const handleRemoveLeader = async (leaderId: string) => {
+    if (!confirm("Tem certeza que deseja remover este líder da sua lista?")) {
+      return;
+    }
+
+    try {
+      const response = await removeLeaderFromOrganizer(leaderId);
+      if (response.success) {
+        toast.success("Líder removido com sucesso!");
+        loadLeaders();
+      } else {
+        toast.error(response.error || "Erro ao remover líder");
+      }
+    } catch (error: any) {
+      toast.error(error.message || "Erro ao remover líder");
+    }
+  };
+
   const filteredLeaders = leaders.filter((leader) => {
     const searchLower = searchTerm.toLowerCase();
     return (
       leader.referral_code.toLowerCase().includes(searchLower) ||
-      leader.user_id.toLowerCase().includes(searchLower)
+      leader.user_id.toLowerCase().includes(searchLower) ||
+      (leader.user_name && leader.user_name.toLowerCase().includes(searchLower)) ||
+      (leader.user_email && leader.user_email.toLowerCase().includes(searchLower))
     );
   });
 
@@ -254,18 +248,18 @@ export function OrganizerGroupLeaders() {
           <div className="flex items-center justify-between">
             <div>
               <CardTitle>Líderes de Grupo</CardTitle>
-              <CardDescription>Lista de todos os líderes cadastrados</CardDescription>
+              <CardDescription>Lista de líderes adicionados à sua lista</CardDescription>
             </div>
-            <Button onClick={handleCreateLeader}>
+            <Button onClick={handleOpenAddDialog}>
               <UserPlus className="mr-2 h-4 w-4" />
-              Novo Líder
+              Adicionar Líder
             </Button>
           </div>
           <div className="flex gap-2 pt-4">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Buscar por código ou ID..."
+                placeholder="Buscar por código, nome ou email..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="pl-10"
@@ -300,7 +294,6 @@ export function OrganizerGroupLeaders() {
                   </TableRow>
                 ) : (
                   filteredLeaders.map((leader) => {
-                    const user = availableUsers.find((u) => u.id === leader.user_id);
                     return (
                       <TableRow key={leader.id}>
                         <TableCell>
@@ -320,16 +313,12 @@ export function OrganizerGroupLeaders() {
                           </div>
                         </TableCell>
                         <TableCell>
-                          {user ? (
-                            <div>
-                              <div className="font-medium">{user.name || "N/A"}</div>
-                              {user.email && (
-                                <div className="text-sm text-muted-foreground">{user.email}</div>
-                              )}
-                            </div>
-                          ) : (
-                            <span className="text-muted-foreground">Carregando...</span>
-                          )}
+                          <div>
+                            <div className="font-medium">{leader.user_name || "N/A"}</div>
+                            {leader.user_email && (
+                              <div className="text-sm text-muted-foreground">{leader.user_email}</div>
+                            )}
+                          </div>
                         </TableCell>
                         <TableCell>
                           <Badge variant={leader.is_active ? "default" : "secondary"}>
@@ -375,6 +364,13 @@ export function OrganizerGroupLeaders() {
                                 <Ticket className="mr-2 h-4 w-4" />
                                 Criar Cupom Exclusivo
                               </DropdownMenuItem>
+                              <DropdownMenuItem 
+                                className="text-destructive"
+                                onClick={() => handleRemoveLeader(leader.id)}
+                              >
+                                <Trash2 className="mr-2 h-4 w-4" />
+                                Remover da Lista
+                              </DropdownMenuItem>
                               <DropdownMenuItem onClick={() => handleToggleActive(leader)}>
                                 {leader.is_active ? (
                                   <>
@@ -402,22 +398,6 @@ export function OrganizerGroupLeaders() {
       </Card>
 
       {/* Dialogs */}
-      <GroupLeaderDialog
-        open={dialogOpen}
-        onOpenChange={setDialogOpen}
-        leader={editingLeader}
-        availableUsers={availableUsers.map(u => ({
-          id: u.id,
-          name: u.name,
-          email: u.email || "",
-          cpf: "",
-          phone: "",
-          status: "active",
-          created_at: "",
-        }))}
-        onSave={handleSaveLeader}
-      />
-
       <GroupLeaderDetails
         open={detailsOpen}
         onOpenChange={setDetailsOpen}
@@ -426,6 +406,60 @@ export function OrganizerGroupLeaders() {
         onCopyLink={handleCopyLink}
         isOrganizer={true}
       />
+
+      {/* Add Leader Dialog */}
+      <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Adicionar Líder</DialogTitle>
+            <DialogDescription>
+              Selecione um líder disponível para adicionar à sua lista
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            {loadingAvailable ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="h-8 w-8 animate-spin" />
+              </div>
+            ) : availableLeaders.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                Nenhum líder disponível. Todos os líderes já foram adicionados.
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {availableLeaders.map((leader) => (
+                  <div
+                    key={leader.id}
+                    className="flex items-center justify-between p-3 border rounded-lg hover:bg-muted/50"
+                  >
+                    <div className="flex-1">
+                      <div className="font-medium">{leader.user_name || "N/A"}</div>
+                      {leader.user_email && (
+                        <div className="text-sm text-muted-foreground">{leader.user_email}</div>
+                      )}
+                      <div className="text-xs text-muted-foreground mt-1">
+                        Código: <code className="font-mono">{leader.referral_code}</code>
+                      </div>
+                    </div>
+                    <Button
+                      onClick={() => handleAddLeader(leader.id)}
+                      size="sm"
+                    >
+                      <UserPlus className="mr-2 h-4 w-4" />
+                      Adicionar
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAddDialogOpen(false)}>
+              Fechar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

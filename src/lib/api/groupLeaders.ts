@@ -10,6 +10,11 @@ export interface GroupLeader {
   total_referrals: number;
   created_at: string;
   updated_at: string;
+  // User information (returned by organizer endpoint)
+  user_name?: string | null;
+  user_email?: string | null;
+  user_cpf?: string | null;
+  user_phone?: string | null;
 }
 
 export interface UserReferral {
@@ -149,6 +154,18 @@ export const getCommissionsByLeader = async (id: string, filters?: {
 // Organizer endpoints
 export const getOrganizerGroupLeaders = async () => {
   return apiClient.get<GroupLeader[]>('/organizer/group-leaders');
+};
+
+export const getAvailableLeadersForOrganizer = async () => {
+  return apiClient.get<GroupLeader[]>('/organizer/group-leaders/available');
+};
+
+export const addLeaderToOrganizer = async (leaderId: string) => {
+  return apiClient.post<{ success: boolean; message: string }>(`/organizer/group-leaders/${leaderId}/add`);
+};
+
+export const removeLeaderFromOrganizer = async (leaderId: string) => {
+  return apiClient.delete<{ success: boolean; message: string }>(`/organizer/group-leaders/${leaderId}/remove`);
 };
 
 export const createOrganizerGroupLeader = async (data: CreateGroupLeaderData) => {

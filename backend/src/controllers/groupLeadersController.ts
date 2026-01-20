@@ -9,6 +9,10 @@ import {
   deactivateGroupLeader,
   activateGroupLeader,
   getAllGroupLeaders,
+  getOrganizerLeaders,
+  getAvailableLeadersForOrganizer,
+  addLeaderToOrganizer,
+  removeLeaderFromOrganizer,
   deleteGroupLeader,
 } from '../services/groupLeadersService.js';
 import { getReferralsByLeader, getReferralStats } from '../services/referralsService.js';
@@ -117,6 +121,143 @@ export const getAllGroupLeadersController = asyncHandler(
       success: true,
       data: leaders,
     });
+  }
+);
+
+/**
+ * GET /api/organizer/group-leaders
+ * Get leaders added by organizer (organizer only)
+ * Returns only leaders that the organizer has added to their list
+ * Note: Organizer role is already verified by requireRole('organizer') middleware in organizerRoutes.ts
+ */
+export const getOrganizerGroupLeadersController = asyncHandler(
+  async (req: AuthRequest, res: Response) => {
+    if (!req.user) {
+      res.status(401).json({
+        success: false,
+        error: 'Not authenticated',
+      });
+      return;
+    }
+
+    const leaders = await getOrganizerLeaders(req.user.id);
+
+    res.json({
+      success: true,
+      data: leaders,
+    });
+  }
+);
+
+/**
+ * GET /api/organizer/group-leaders/available
+ * Get available leaders (not yet added by organizer)
+ * Returns all leaders that the organizer hasn't added yet
+ * Note: Organizer role is already verified by requireRole('organizer') middleware in organizerRoutes.ts
+ */
+export const getAvailableLeadersController = asyncHandler(
+  async (req: AuthRequest, res: Response) => {
+    if (!req.user) {
+      res.status(401).json({
+        success: false,
+        error: 'Not authenticated',
+      });
+      return;
+    }
+
+    const leaders = await getAvailableLeadersForOrganizer(req.user.id);
+
+    res.json({
+      success: true,
+      data: leaders,
+    });
+  }
+);
+
+/**
+ * POST /api/organizer/group-leaders/:id/add
+ * Add leader to organizer's list
+ * Note: Organizer role is already verified by requireRole('organizer') middleware in organizerRoutes.ts
+ */
+export const addLeaderToOrganizerController = asyncHandler(
+  async (req: AuthRequest, res: Response) => {
+    if (!req.user) {
+      res.status(401).json({
+        success: false,
+        error: 'Not authenticated',
+      });
+      return;
+    }
+
+    const { id: leaderId } = req.params;
+
+    try {
+      await addLeaderToOrganizer(req.user.id, leaderId);
+
+      res.json({
+        success: true,
+        message: 'Leader added to organizer list successfully',
+      });
+    } catch (error: any) {
+      if (error.message === 'Leader already added to organizer') {
+        res.status(409).json({
+          success: false,
+          error: 'Conflict',
+          message: error.message,
+        });
+        return;
+      }
+
+      if (error.message === 'Leader not found') {
+        res.status(404).json({
+          success: false,
+          error: 'Not found',
+          message: error.message,
+        });
+        return;
+      }
+
+      throw error;
+    }
+  }
+);
+
+/**
+ * DELETE /api/organizer/group-leaders/:id/remove
+ * Remove leader from organizer's list
+ * Note: Organizer role is already verified by requireRole('organizer') middleware in organizerRoutes.ts
+ */
+export const removeLeaderFromOrganizerController = asyncHandler(
+  async (req: AuthRequest, res: Response) => {
+    if (!req.user) {
+      res.status(401).json({
+        success: false,
+        error: 'Not authenticated',
+      });
+      return;
+    }
+
+    const { id: leaderId } = req.params;
+
+    try {
+      await removeLeaderFromOrganizer(req.user.id, leaderId);
+
+      res.json({
+        success: true,
+        message: 'Leader removed from organizer list successfully',
+      });
+    } catch (error: any) {
+      if (error.message === 'Leader not found in organizer list') {
+        res.status(404).json({
+          success: false,
+          error: 'Not found',
+          message: error.message,
+        });
+        return;
+      }
+
+      throw error;
+    }
   }
 );
 
@@ -421,23 +562,15 @@ export const getCommissionsByLeaderController = asyncHandler(
     
     const { status, start_date, end_date, event_id } = req.query;
 
+    // Filter commissions by organizer if organizer route
+    const organizerId = (isOrganizerRoute && req.user) ? req.user.id : undefined;
+    
     let commissions = await getCommissionsByLeader(leader.id, {
       status: status as 'pending' | 'paid' | 'cancelled' | undefined,
       start_date: start_date as string | undefined,
       end_date: end_date as string | undefined,
       event_id: event_id as string | undefined,
-    });
-
-    // Filter commissions to only show those from organizer's events if organizer route
-    if (isOrganizerRoute && req.user) {
-      const { query } = await import('../config/database.js');
-      const organizerEvents = await query(
-        'SELECT id FROM events WHERE organizer_id = $1',
-        [req.user.id]
-      );
-      const eventIds = organizerEvents.rows.map((row: any) => row.id);
-      commissions = commissions.filter((c: any) => eventIds.includes(c.event_id));
-    }
+    }, organizerId);
 
     res.json({
       success: true,

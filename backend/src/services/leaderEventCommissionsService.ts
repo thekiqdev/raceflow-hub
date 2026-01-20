@@ -46,10 +46,11 @@ export const createLeaderEventCommission = async (
  * Get all event commissions for a leader
  */
 export const getLeaderEventCommissions = async (
-  leaderId: string
+  leaderId: string,
+  organizerId?: string
 ): Promise<LeaderEventCommission[]> => {
-  const result = await query(
-    `SELECT 
+  let queryText = `
+    SELECT 
       lec.id,
       lec.leader_id,
       lec.event_id,
@@ -67,9 +68,18 @@ export const getLeaderEventCommissions = async (
     FROM leader_event_commissions lec
     JOIN events e ON lec.event_id = e.id
     WHERE lec.leader_id = $1
-    ORDER BY e.event_date DESC, e.title ASC`,
-    [leaderId]
-  );
+  `;
+  const params: any[] = [leaderId];
+  
+  // Filter by organizer if provided
+  if (organizerId) {
+    queryText += ' AND e.organizer_id = $2';
+    params.push(organizerId);
+  }
+  
+  queryText += ' ORDER BY e.event_date DESC, e.title ASC';
+  
+  const result = await query(queryText, params);
 
   // Get coupons for each commission
   const commissions = result.rows as LeaderEventCommission[];
@@ -77,7 +87,9 @@ export const getLeaderEventCommissions = async (
   const { getGroupLeaderById } = await import('./groupLeadersService.js');
   const { getRegistrationsByLeaderCoupons } = await import('./leaderRegistrationsService.js');
   
-  const coupons = await getCouponsByLeader(leaderId);
+  // Filter coupons by organizer if organizerId was provided
+  // This ensures that only coupons from the specific organizer are shown
+  const coupons = await getCouponsByLeader(leaderId, organizerId);
   const leader = await getGroupLeaderById(leaderId);
   
   // Enrich commissions with coupon data and progress stats
@@ -386,8 +398,14 @@ export const updateLeaderEventCommission = async (
     try {
       const { getCouponsByLeader } = await import('./couponsService.js');
       const { updateCoupon } = await import('./couponsService.js');
+      const { getEventById } = await import('./eventsService.js');
       
-      const coupons = await getCouponsByLeader(updatedCommission.leader_id);
+      // Get event to find organizer_id for filtering coupons
+      const event = await getEventById(updatedCommission.event_id);
+      const organizerId = event?.organizer_id;
+      
+      // Filter coupons by organizer to ensure we only update the correct coupon
+      const coupons = await getCouponsByLeader(updatedCommission.leader_id, organizerId);
       
       // Find the coupon associated with this commission
       const commissionIdShort = updatedCommission.id.replace(/-/g, '').substring(0, 8).toUpperCase();

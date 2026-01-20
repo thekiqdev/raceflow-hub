@@ -225,11 +225,19 @@ export const getCouponsByOrganizer = async (organizerId: string): Promise<Coupon
 /**
  * Get coupons by leader ID
  */
-export const getCouponsByLeader = async (leaderId: string): Promise<Coupon[]> => {
-  const result = await query(
-    'SELECT * FROM coupons WHERE leader_id = $1 ORDER BY created_at DESC',
-    [leaderId]
-  );
+export const getCouponsByLeader = async (leaderId: string, organizerId?: string): Promise<Coupon[]> => {
+  let queryText = 'SELECT * FROM coupons WHERE leader_id = $1';
+  const params: any[] = [leaderId];
+  
+  // Filter by organizer if provided
+  if (organizerId) {
+    queryText += ' AND organizer_id = $2';
+    params.push(organizerId);
+  }
+  
+  queryText += ' ORDER BY created_at DESC';
+  
+  const result = await query(queryText, params);
   
   const coupons = await Promise.all(
     result.rows.map(async (row) => {

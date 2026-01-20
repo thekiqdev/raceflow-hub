@@ -272,7 +272,8 @@ export interface CommissionFilters {
 
 export const getCommissionsByLeader = async (
   leaderId: string,
-  filters?: CommissionFilters
+  filters?: CommissionFilters,
+  organizerId?: string
 ): Promise<LeaderCommission[]> => {
   let sql = `
     SELECT lc.*, 
@@ -288,6 +289,13 @@ export const getCommissionsByLeader = async (
   
   const values: any[] = [leaderId];
   let paramIndex = 2;
+  
+  // Filter by organizer if provided
+  if (organizerId) {
+    sql += ` AND e.organizer_id = $${paramIndex}`;
+    values.push(organizerId);
+    paramIndex++;
+  }
   
   if (filters) {
     if (filters.status) {

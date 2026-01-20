@@ -103,6 +103,7 @@ const migrations = [
   '074_create_registration_product_selections.sql',
   '075_add_calculate_value_without_fee_function.sql',
   '076_update_organizer_views_without_fee.sql',
+  '077_create_organizer_group_leaders.sql',
 ];
 
 // Create migrations tracking table

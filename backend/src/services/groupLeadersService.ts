@@ -266,6 +266,210 @@ export const getAllGroupLeaders = async (): Promise<GroupLeader[]> => {
 };
 
 /**
+ * Get all group leaders with user information (for organizer)
+ * Returns all leaders created by admin with user details
+ */
+export const getAllGroupLeadersWithUserInfo = async (): Promise<any[]> => {
+  const result = await query(
+    `SELECT 
+      gl.*,
+      p.full_name as user_name,
+      u.email as user_email,
+      p.cpf as user_cpf,
+      p.phone as user_phone
+    FROM group_leaders gl
+    LEFT JOIN profiles p ON gl.user_id = p.id
+    LEFT JOIN users u ON gl.user_id = u.id
+    ORDER BY gl.created_at DESC`
+  );
+  
+  return result.rows.map(row => ({
+    id: row.id,
+    user_id: row.user_id,
+    referral_code: row.referral_code,
+    is_active: row.is_active,
+    commission_percentage: row.commission_percentage,
+    total_earnings: parseFloat(row.total_earnings) || 0,
+    total_referrals: parseInt(row.total_referrals) || 0,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+    user_name: row.user_name || null,
+    user_email: row.user_email || null,
+    user_cpf: row.user_cpf || null,
+    user_phone: row.user_phone || null,
+  }));
+};
+
+/**
+ * Get total earnings for a leader from a specific organizer's events
+ */
+export const getLeaderEarningsByOrganizer = async (leaderId: string, organizerId: string): Promise<number> => {
+  const result = await query(
+    `SELECT COALESCE(SUM(lc.commission_amount), 0) as total
+     FROM leader_commissions lc
+     JOIN events e ON lc.event_id = e.id
+     WHERE lc.leader_id = $1 
+       AND e.organizer_id = $2
+       AND lc.status = 'paid'`,
+    [leaderId, organizerId]
+  );
+  
+  return parseFloat(result.rows[0].total) || 0;
+};
+
+/**
+ * Get leaders added by organizer
+ * Returns only leaders that the organizer has added to their list
+ * Includes earnings calculated only from this organizer's events
+ */
+export const getOrganizerLeaders = async (organizerId: string): Promise<any[]> => {
+  const result = await query(
+    `SELECT 
+      gl.*,
+      p.full_name as user_name,
+      u.email as user_email,
+      p.cpf as user_cpf,
+      p.phone as user_phone,
+      ogl.created_at as added_at
+    FROM organizer_group_leaders ogl
+    JOIN group_leaders gl ON ogl.leader_id = gl.id
+    LEFT JOIN profiles p ON gl.user_id = p.id
+    LEFT JOIN users u ON gl.user_id = u.id
+    WHERE ogl.organizer_id = $1
+    ORDER BY ogl.created_at DESC`,
+    [organizerId]
+  );
+  
+  // Calculate earnings for all leaders from this organizer's events in a single query
+  const leaderIds = result.rows.map(row => row.id);
+  let earningsMap = new Map<string, number>();
+  
+  if (leaderIds.length > 0) {
+    const earningsResult = await query(
+      `SELECT 
+        lc.leader_id,
+        COALESCE(SUM(lc.commission_amount), 0) as total_earnings
+      FROM leader_commissions lc
+      JOIN events e ON lc.event_id = e.id
+      WHERE lc.leader_id = ANY($1::uuid[])
+        AND e.organizer_id = $2
+        AND lc.status = 'paid'
+      GROUP BY lc.leader_id`,
+      [leaderIds, organizerId]
+    );
+    
+    earningsResult.rows.forEach((row: any) => {
+      earningsMap.set(row.leader_id, parseFloat(row.total_earnings) || 0);
+    });
+  }
+  
+  // Map results with earnings
+  return result.rows.map(row => {
+    const organizerEarnings = earningsMap.get(row.id) || 0;
+    
+    return {
+      id: row.id,
+      user_id: row.user_id,
+      referral_code: row.referral_code,
+      is_active: row.is_active,
+      commission_percentage: row.commission_percentage,
+      total_earnings: organizerEarnings, // Earnings only from this organizer
+      total_earnings_all: parseFloat(row.total_earnings) || 0, // Total from all organizers (for reference)
+      total_referrals: parseInt(row.total_referrals) || 0,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+      user_name: row.user_name || null,
+      user_email: row.user_email || null,
+      user_cpf: row.user_cpf || null,
+      user_phone: row.user_phone || null,
+      added_at: row.added_at,
+    };
+  });
+};
+
+/**
+ * Get available leaders (not yet added by organizer)
+ * Returns all leaders that the organizer hasn't added yet
+ */
+export const getAvailableLeadersForOrganizer = async (organizerId: string): Promise<any[]> => {
+  const result = await query(
+    `SELECT 
+      gl.*,
+      p.full_name as user_name,
+      u.email as user_email,
+      p.cpf as user_cpf,
+      p.phone as user_phone
+    FROM group_leaders gl
+    LEFT JOIN profiles p ON gl.user_id = p.id
+    LEFT JOIN users u ON gl.user_id = u.id
+    WHERE gl.id NOT IN (
+      SELECT leader_id 
+      FROM organizer_group_leaders 
+      WHERE organizer_id = $1
+    )
+    ORDER BY gl.created_at DESC`,
+    [organizerId]
+  );
+  
+  return result.rows.map(row => ({
+    id: row.id,
+    user_id: row.user_id,
+    referral_code: row.referral_code,
+    is_active: row.is_active,
+    commission_percentage: row.commission_percentage,
+    total_earnings: parseFloat(row.total_earnings) || 0,
+    total_referrals: parseInt(row.total_referrals) || 0,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+    user_name: row.user_name || null,
+    user_email: row.user_email || null,
+    user_cpf: row.user_cpf || null,
+    user_phone: row.user_phone || null,
+  }));
+};
+
+/**
+ * Add leader to organizer's list
+ */
+export const addLeaderToOrganizer = async (organizerId: string, leaderId: string): Promise<void> => {
+  // Check if already added
+  const existing = await query(
+    'SELECT id FROM organizer_group_leaders WHERE organizer_id = $1 AND leader_id = $2',
+    [organizerId, leaderId]
+  );
+  
+  if (existing.rows.length > 0) {
+    throw new Error('Leader already added to organizer');
+  }
+  
+  // Check if leader exists
+  const leader = await getGroupLeaderById(leaderId);
+  if (!leader) {
+    throw new Error('Leader not found');
+  }
+  
+  // Add relationship
+  await query(
+    'INSERT INTO organizer_group_leaders (organizer_id, leader_id) VALUES ($1, $2)',
+    [organizerId, leaderId]
+  );
+};
+
+/**
+ * Remove leader from organizer's list
+ */
+export const removeLeaderFromOrganizer = async (organizerId: string, leaderId: string): Promise<void> => {
+  const result = await query(
+    'DELETE FROM organizer_group_leaders WHERE organizer_id = $1 AND leader_id = $2',
+    [organizerId, leaderId]
+  );
+  
+  if (result.rowCount === 0) {
+    throw new Error('Leader not found in organizer list');
+  }
+};
+
+/**
  * Increment total referrals count
  */
 export const incrementTotalReferrals = async (leaderId: string): Promise<void> => {
