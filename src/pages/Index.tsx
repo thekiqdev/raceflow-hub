@@ -1,5 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { useNavigate } from "react-router-dom";
 import { MapPin, Calendar, Award, Users, Clock, TrendingUp, BarChart3, MessageSquare, FileText, Wifi, Trophy, Facebook, Instagram, Linkedin } from "lucide-react";
 import heroImage from "@/assets/hero-running.jpg";
@@ -11,6 +12,7 @@ import { Header } from "@/components/Header";
 import { useAuth } from "@/contexts/AuthContext";
 import { getHomePageSettings, updateHomePageSettings } from "@/lib/api/homePageSettings";
 import { getEvents } from "@/lib/api/events";
+import { getEffectiveRegistrationStatus, getRegistrationStatusLabel, getRegistrationStatusVariant } from "@/lib/utils/eventRegistration";
 import { getSystemSettings } from "@/lib/api/systemSettings";
 import { VisualEditorProvider } from "@/contexts/VisualEditorContext";
 import { EditableText } from "@/components/visual-editor/EditableText";
@@ -27,6 +29,10 @@ interface Event {
   banner_url: string | null;
   result_url: string | null;
   status: string;
+  registration_status?: 'not_open' | 'open' | 'closed' | null;
+  registration_start_date?: string | null;
+  registration_end_date?: string | null;
+  registration_auto_mode?: boolean;
 }
 const Index = () => {
   const navigate = useNavigate();
@@ -89,32 +95,49 @@ const Index = () => {
       const allEvents: Event[] = [];
       const now = new Date();
       
-      // Adicionar eventos publicados com inscrição aberta (data futura)
+      // Adicionar eventos publicados com data futura
       if (publishedResponse.success && publishedResponse.data) {
-        const openEvents = publishedResponse.data.filter(event => {
+        const futureEvents = publishedResponse.data.filter(event => {
           const eventDate = new Date(event.event_date);
-          // Apenas eventos com data futura e status que permite inscrição
-          return eventDate >= now && (event.status === 'published' || event.status === 'ongoing');
-        });
-        allEvents.push(...openEvents);
-      }
-      
-      // Adicionar eventos ongoing com inscrição aberta (data futura)
-      if (ongoingResponse.success && ongoingResponse.data) {
-        const openEvents = ongoingResponse.data.filter(event => {
-          const eventDate = new Date(event.event_date);
-          // Apenas eventos com data futura
           return eventDate >= now;
         });
-        allEvents.push(...openEvents);
+        allEvents.push(...futureEvents);
       }
       
-      // Remover duplicatas (já ordenados pelo backend)
+      // Adicionar eventos ongoing com data futura
+      if (ongoingResponse.success && ongoingResponse.data) {
+        const futureEvents = ongoingResponse.data.filter(event => {
+          const eventDate = new Date(event.event_date);
+          return eventDate >= now;
+        });
+        allEvents.push(...futureEvents);
+      }
+      
+      // Remover duplicatas
       const uniqueEvents = Array.from(
         new Map(allEvents.map(event => [event.id, event])).values()
       );
       
-      setUpcomingEvents(uniqueEvents);
+      // Filtrar apenas eventos com inscrições abertas ou em breve
+      const filteredEvents = uniqueEvents.filter(event => {
+        const effectiveStatus = getEffectiveRegistrationStatus(event);
+        return effectiveStatus === 'open' || effectiveStatus === 'not_open';
+      });
+      
+      // Ordenar: primeiro eventos com inscrições abertas, depois em breve
+      const sortedEvents = filteredEvents.sort((a, b) => {
+        const statusA = getEffectiveRegistrationStatus(a);
+        const statusB = getEffectiveRegistrationStatus(b);
+        
+        // 'open' vem antes de 'not_open'
+        if (statusA === 'open' && statusB === 'not_open') return -1;
+        if (statusA === 'not_open' && statusB === 'open') return 1;
+        
+        // Se mesmo status, manter ordem por data
+        return 0;
+      });
+      
+      setUpcomingEvents(sortedEvents);
     } catch (error) {
       console.error("Erro ao carregar eventos:", error);
       toast.error("Erro ao carregar eventos");
@@ -289,7 +312,20 @@ const Index = () => {
                       )}
                     </div>
                     <CardContent className="pt-4">
-                      <h3 className="font-bold text-base mb-2 line-clamp-2">{event.title}</h3>
+                      <div className="flex items-start justify-between gap-2 mb-2">
+                        <h3 className="font-bold text-base line-clamp-2 flex-1">{event.title}</h3>
+                        {(() => {
+                          const effectiveStatus = getEffectiveRegistrationStatus(event);
+                          if (effectiveStatus !== null) {
+                            return (
+                              <Badge variant={getRegistrationStatusVariant(event)} className="text-xs shrink-0">
+                                {getRegistrationStatusLabel(event)}
+                              </Badge>
+                            );
+                          }
+                          return null;
+                        })()}
+                      </div>
                       <div className="flex items-center gap-2 text-xs text-muted-foreground mb-3">
                         <Calendar className="h-3 w-3" />
                         <span>

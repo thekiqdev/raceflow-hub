@@ -26,8 +26,23 @@ export function getEffectiveRegistrationStatus(event: Event): EventRegistrationS
     }
   }
   
-  // Caso contrário, usar status manual
-  return event.registration_status || null;
+  // Se tem status manual, usar ele
+  if (event.registration_status) {
+    return event.registration_status;
+  }
+  
+  // Fallback: se evento é published ou ongoing e não tem registration_status definido,
+  // assumir que inscrições estão abertas (compatibilidade com eventos antigos)
+  if (event.status === 'published' || event.status === 'ongoing') {
+    return 'open';
+  }
+  
+  // Se evento é finished, assumir que inscrições estão encerradas
+  if (event.status === 'finished') {
+    return 'closed';
+  }
+  
+  return null;
 }
 
 /**
