@@ -488,12 +488,14 @@ export const regenerateSlugController = asyncHandler(async (req: AuthRequest, re
       data: updatedEvent,
       message: 'Event slug regenerated successfully',
     });
+    return;
   } catch (error: any) {
     res.status(500).json({
       success: false,
       error: 'Internal server error',
       message: error.message || 'Failed to regenerate event slug',
     });
+    return;
   }
 });
 
@@ -529,11 +531,13 @@ export const regenerateAllSlugsController = asyncHandler(async (req: AuthRequest
       data: { updated_count: updatedCount },
       message: `Successfully regenerated slugs for ${updatedCount} events`,
     });
+    return;
   } catch (error: any) {
     res.status(500).json({
       success: false,
       error: 'Internal server error',
       message: error.message || 'Failed to regenerate slugs',
     });
+    return;
   }
 });
