@@ -16,6 +16,11 @@ import { z } from 'zod';
 const createEventSchema = z.object({
   organizer_id: z.string().uuid('ID do organizador inválido').optional(),
   title: z.string().min(3, 'Título deve ter no mínimo 3 caracteres'),
+  slug: z.string()
+    .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'Slug inválido. Deve conter apenas letras minúsculas, números e hífens, sem hífens consecutivos ou no início/fim')
+    .min(1, 'Slug deve ter no mínimo 1 caractere')
+    .max(100, 'Slug deve ter no máximo 100 caracteres')
+    .optional(),
   description: z.string().optional(),
   event_date: z.string().datetime('Data do evento inválida'),
   location: z.string().min(5, 'Localização é obrigatória'),
@@ -60,6 +65,11 @@ const createEventSchema = z.object({
 const updateEventSchema = z.object({
   organizer_id: z.string().uuid('ID do organizador inválido').optional(),
   title: z.string().min(3, 'Título deve ter no mínimo 3 caracteres').optional(),
+  slug: z.string()
+    .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'Slug inválido. Deve conter apenas letras minúsculas, números e hífens, sem hífens consecutivos ou no início/fim')
+    .min(1, 'Slug deve ter no mínimo 1 caractere')
+    .max(100, 'Slug deve ter no máximo 100 caracteres')
+    .optional(),
   description: z.string().optional(),
   event_date: z.string().datetime('Data do evento inválida').optional(),
   location: z.string().min(5, 'Localização é obrigatória').optional(),

@@ -39,7 +39,8 @@ const App = () => (
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/reset-password" element={<ResetPassword />} />
           <Route path="/events" element={<Events />} />
-          <Route path="/events/:id" element={<EventDetails />} />
+          <Route path="/evento/:slug" element={<EventDetails />} />
+          <Route path="/events/:id" element={<EventDetails />} /> {/* Compatibilidade com UUID */}
           <Route path="/results" element={<Results />} />
           <Route path="/orcamento" element={<Quote />} />
           <Route path="/faq" element={<FAQ />} />

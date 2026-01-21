@@ -19,6 +19,7 @@ import { EditorToolbar } from "@/components/visual-editor/EditorToolbar";
 import { toast } from "sonner";
 interface Event {
   id: string;
+  slug?: string;
   title: string;
   event_date: string;
   city: string;
@@ -274,7 +275,7 @@ const Index = () => {
               const EventCard = () => {
                 const [imageError, setImageError] = useState(false);
                 return (
-                  <Card key={event.id} className="overflow-hidden hover:shadow-xl transition-all hover:-translate-y-1 cursor-pointer" onClick={() => navigate(`/events/${event.id}`)}>
+                  <Card key={event.id} className="overflow-hidden hover:shadow-xl transition-all hover:-translate-y-1 cursor-pointer" onClick={() => navigate(event.slug ? `/evento/${event.slug}` : `/events/${event.id}`)}>
                     <div className="h-48 bg-gradient-hero flex items-center justify-center relative overflow-hidden">
                       {event.banner_url && !imageError ? (
                         <img 
@@ -334,7 +335,7 @@ const Index = () => {
                             className="flex-1 text-xs" 
                             onClick={e => {
                               e.stopPropagation();
-                              navigate(`/events/${event.id}`);
+                              navigate(event.slug ? `/evento/${event.slug}` : `/events/${event.id}`);
                             }}
                           >
                             Inscrever-se

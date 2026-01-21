@@ -334,7 +334,7 @@ const OrganizerEvents = () => {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => navigate(`/events/${event.id}`)}>
+                            <DropdownMenuItem onClick={() => navigate(event.slug ? `/evento/${event.slug}` : `/events/${event.id}`)}>
                               <ExternalLink className="mr-2 h-4 w-4" />
                               Visualizar Evento
                             </DropdownMenuItem>

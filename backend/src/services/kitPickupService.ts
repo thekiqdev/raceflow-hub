@@ -1,4 +1,5 @@
 import { query } from '../config/database.js';
+import { getEventById } from './eventsService.js';
 
 export interface PickupTimeSlot {
   start_time: string; // HH:MM format
@@ -24,9 +25,30 @@ export interface KitPickupLocation {
 }
 
 /**
+ * Helper function to convert event slug or UUID to UUID
+ */
+async function getEventIdFromSlugOrId(eventIdOrSlug: string): Promise<string | null> {
+  // Check if it's already a UUID
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (uuidRegex.test(eventIdOrSlug)) {
+    return eventIdOrSlug;
+  }
+  
+  // If it's a slug, get the event to find the UUID
+  const event = await getEventById(eventIdOrSlug);
+  return event?.id || null;
+}
+
+/**
  * Get all pickup locations for an event
  */
-export const getEventPickupLocations = async (eventId: string): Promise<KitPickupLocation[]> => {
+export const getEventPickupLocations = async (eventIdOrSlug: string): Promise<KitPickupLocation[]> => {
+  // Convert slug to UUID if necessary
+  const eventId = await getEventIdFromSlugOrId(eventIdOrSlug);
+  if (!eventId) {
+    return [];
+  }
+  
   const result = await query(
     `SELECT * FROM kit_pickup_locations 
      WHERE event_id = $1 

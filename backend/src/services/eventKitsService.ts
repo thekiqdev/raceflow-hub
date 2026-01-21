@@ -1,5 +1,6 @@
 import { query } from '../config/database.js';
 import { getKitCategories, associateKitToCategories } from './kitCategoriesService.js';
+import { getEventById } from './eventsService.js';
 
 export interface ProductVariant {
   id: string;
@@ -36,11 +37,31 @@ export interface EventKit {
 }
 
 /**
+ * Helper function to convert event slug or UUID to UUID
+ */
+async function getEventIdFromSlugOrId(eventIdOrSlug: string): Promise<string | null> {
+  // Check if it's already a UUID
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (uuidRegex.test(eventIdOrSlug)) {
+    return eventIdOrSlug;
+  }
+  
+  // If it's a slug, get the event to find the UUID
+  const event = await getEventById(eventIdOrSlug);
+  return event?.id || null;
+}
+
+/**
  * Get all kits for an event with products and variants
- * @param eventId - ID of the event
+ * @param eventIdOrSlug - ID or slug of the event
  * @param categoryId - Optional category ID to filter kits (only kits associated with this category or not associated with any category)
  */
-export const getEventKits = async (eventId: string, categoryId?: string): Promise<EventKit[]> => {
+export const getEventKits = async (eventIdOrSlug: string, categoryId?: string): Promise<EventKit[]> => {
+  // Convert slug to UUID if necessary
+  const eventId = await getEventIdFromSlugOrId(eventIdOrSlug);
+  if (!eventId) {
+    return [];
+  }
   let queryText: string;
   let queryParams: any[];
 

@@ -1,9 +1,11 @@
 import { query } from '../config/database.js';
 import { EventStatus, EventRegistrationStatus, Event } from '../types/index.js';
+import { generateSlug } from '../utils/slug.js';
 
 export interface CreateEventData {
   organizer_id: string;
   title: string;
+  slug?: string; // Opcional - será gerado automaticamente se não fornecido
   description?: string;
   event_date: string;
   location: string;
@@ -26,6 +28,7 @@ export interface CreateEventData {
 export interface UpdateEventData {
   organizer_id?: string;
   title?: string;
+  slug?: string; // Opcional - será gerado automaticamente se título mudar
   description?: string;
   event_date?: string;
   location?: string;
@@ -43,6 +46,87 @@ export interface UpdateEventData {
   pix_disabled_at?: string | null;
   credit_card_enabled?: boolean;
   credit_card_disabled_at?: string | null;
+}
+
+/**
+ * Verifica se uma string é um UUID válido
+ * @param str - String a ser verificada
+ * @returns true se for UUID, false caso contrário
+ */
+function isUUID(str: string): boolean {
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  return uuidRegex.test(str);
+}
+
+/**
+ * Verifica se um slug já existe no banco de dados
+ * @param slug - Slug a ser verificado
+ * @param excludeEventId - ID do evento a ser excluído da verificação (útil na atualização)
+ * @returns true se o slug existe, false caso contrário
+ */
+async function slugExists(slug: string, excludeEventId?: string): Promise<boolean> {
+  // Verificar se coluna slug existe
+  const hasSlugColumn = await checkSlugColumnExists();
+  
+  if (!hasSlugColumn) {
+    return false; // Se não tem coluna, slug não existe
+  }
+  
+  let queryText = 'SELECT COUNT(*) as count FROM events WHERE slug = $1';
+  const params: any[] = [slug];
+  
+  if (excludeEventId) {
+    queryText += ' AND id != $2';
+    params.push(excludeEventId);
+  }
+  
+  const result = await query(queryText, params);
+  return parseInt(result.rows[0].count) > 0;
+}
+
+/**
+ * Garante que um slug seja único, adicionando sufixo numérico se necessário
+ * @param baseSlug - Slug base a ser verificado
+ * @param excludeEventId - ID do evento a ser excluído da verificação (útil na atualização)
+ * @returns Slug único
+ * 
+ * Exemplo:
+ * - Se "teste-inscricao-cancelada" existe, retorna "teste-inscricao-cancelada-1"
+ * - Se "teste-inscricao-cancelada-1" também existe, retorna "teste-inscricao-cancelada-2"
+ * - E assim por diante...
+ */
+async function ensureUniqueSlug(baseSlug: string, excludeEventId?: string): Promise<string> {
+  // Verificar se o slug base já é único
+  const exists = await slugExists(baseSlug, excludeEventId);
+  
+  if (!exists) {
+    return baseSlug;
+  }
+
+  // Tentar adicionar sufixos numéricos até encontrar um único
+  // Começa com 1 (não 2) para seguir o padrão: -1, -2, -3, etc.
+  let counter = 1;
+  let candidateSlug = `${baseSlug}-${counter}`;
+  
+  // Limitar tentativas para evitar loop infinito
+  const maxAttempts = 1000;
+  let attempts = 0;
+
+  while (attempts < maxAttempts) {
+    const candidateExists = await slugExists(candidateSlug, excludeEventId);
+    
+    if (!candidateExists) {
+      return candidateSlug;
+    }
+
+    counter++;
+    candidateSlug = `${baseSlug}-${counter}`;
+    attempts++;
+  }
+
+  // Se não encontrou um slug único após muitas tentativas, adicionar timestamp
+  const timestamp = Date.now();
+  return `${baseSlug}-${timestamp}`;
 }
 
 /**
@@ -69,6 +153,34 @@ export function calculateRegistrationStatus(event: Partial<Event>): EventRegistr
   }
 }
 
+// Cache para verificar se coluna slug existe (evita múltiplas queries)
+let slugColumnExists: boolean | null = null;
+
+/**
+ * Verifica se a coluna slug existe na tabela events
+ */
+async function checkSlugColumnExists(): Promise<boolean> {
+  if (slugColumnExists !== null) {
+    return slugColumnExists;
+  }
+  
+  try {
+    const result = await query(`
+      SELECT column_name 
+      FROM information_schema.columns 
+      WHERE table_schema = 'public' 
+      AND table_name = 'events' 
+      AND column_name = 'slug'
+    `);
+    slugColumnExists = result.rows.length > 0;
+    return slugColumnExists;
+  } catch (error) {
+    console.warn('⚠️ Erro ao verificar coluna slug:', error);
+    slugColumnExists = false;
+    return false;
+  }
+}
+
 // Get all events (with filters and statistics)
 export const getEvents = async (filters?: {
   status?: EventStatus;
@@ -78,12 +190,16 @@ export const getEvents = async (filters?: {
   search?: string;
   order_by_date?: 'asc' | 'desc'; // 'asc' = mais próximo primeiro, 'desc' = mais longe primeiro
 }) => {
+  // Verificar se coluna slug existe
+  const hasSlugColumn = await checkSlugColumnExists();
+  
   // Use a subquery approach to avoid GROUP BY issues
   let queryText = `
     SELECT 
       e.id,
       e.organizer_id,
       e.title,
+      ${hasSlugColumn ? 'e.slug,' : 'NULL::text as slug,'}
       e.description,
       e.event_date,
       e.location,
@@ -237,11 +353,47 @@ export const getEvents = async (filters?: {
   });
 };
 
-// Get event by ID
-export const getEventById = async (eventId: string) => {
+// Get event by ID or slug
+export const getEventById = async (eventIdOrSlug: string) => {
+  // Verificar se coluna slug existe
+  const hasSlugColumn = await checkSlugColumnExists();
+  
+  // Detectar se é UUID ou slug
+  const isId = isUUID(eventIdOrSlug);
+  
+  // Se não tem coluna slug e não é UUID, retornar null
+  if (!hasSlugColumn && !isId) {
+    return null;
+  }
+  
+  // Construir query baseada no tipo (UUID ou slug)
+  const whereClause = isId ? 'e.id = $1' : (hasSlugColumn ? 'e.slug = $1' : 'e.id = $1');
+  
   const result = await query(
     `SELECT 
-      e.*,
+      e.id,
+      e.organizer_id,
+      e.title,
+      ${hasSlugColumn ? 'e.slug,' : 'NULL::text as slug,'}
+      e.description,
+      e.event_date,
+      e.location,
+      e.city,
+      e.state,
+      e.banner_url,
+      e.regulation_url,
+      e.result_url,
+      e.status,
+      e.registration_status,
+      e.registration_start_date,
+      e.registration_end_date,
+      e.registration_auto_mode,
+      e.pix_enabled,
+      e.pix_disabled_at,
+      e.credit_card_enabled,
+      e.credit_card_disabled_at,
+      e.created_at,
+      e.updated_at,
       p.full_name as organizer_name,
       p.logo_url as organizer_logo_url,
       p.organization_name as organizer_organization_name,
@@ -251,8 +403,8 @@ export const getEventById = async (eventId: string) => {
       p.bio as organizer_bio
     FROM events e
     LEFT JOIN profiles p ON e.organizer_id = p.id
-    WHERE e.id = $1`,
-    [eventId]
+    WHERE ${whereClause}`,
+    [eventIdOrSlug]
   );
 
   if (result.rows.length === 0) {
@@ -289,6 +441,21 @@ export const getEventById = async (eventId: string) => {
 export const createEvent = async (data: CreateEventData) => {
   console.log('🔧 createEvent called with:', data);
   
+  // Verificar se coluna slug existe
+  const hasSlugColumn = await checkSlugColumnExists();
+  
+  // Gerar slug automaticamente se não fornecido e coluna existe
+  let slug = data.slug;
+  if (hasSlugColumn) {
+    if (!slug && data.title) {
+      const baseSlug = generateSlug(data.title);
+      slug = await ensureUniqueSlug(baseSlug);
+    } else if (slug) {
+      // Se slug foi fornecido, garantir que seja único
+      slug = await ensureUniqueSlug(slug);
+    }
+  }
+  
   // Se modo automático está ativado, calcular status automaticamente
   let registrationStatus = data.registration_status;
   if (data.registration_auto_mode && data.registration_start_date && data.registration_end_date) {
@@ -302,36 +469,46 @@ export const createEvent = async (data: CreateEventData) => {
     }
   }
   
+  // Construir query dinamicamente baseado na existência da coluna slug
+  const fields = [
+    'organizer_id', 'title',
+    ...(hasSlugColumn ? ['slug'] : []),
+    'description', 'event_date', 'location', 
+    'city', 'state', 'banner_url', 'regulation_url', 'result_url', 'status',
+    'registration_status', 'registration_start_date', 'registration_end_date', 'registration_auto_mode',
+    'pix_enabled', 'pix_disabled_at', 'credit_card_enabled', 'credit_card_disabled_at'
+  ];
+  
+  const values = [
+    data.organizer_id,
+    data.title,
+    ...(hasSlugColumn ? [slug] : []),
+    data.description || null,
+    data.event_date,
+    data.location,
+    data.city,
+    data.state,
+    data.banner_url || null,
+    data.regulation_url || null,
+    data.result_url || null,
+    data.status || 'draft',
+    registrationStatus || null,
+    data.registration_start_date || null,
+    data.registration_end_date || null,
+    data.registration_auto_mode || false,
+    data.pix_enabled !== undefined ? data.pix_enabled : true,
+    data.pix_disabled_at || null,
+    data.credit_card_enabled !== undefined ? data.credit_card_enabled : true,
+    data.credit_card_disabled_at || null,
+  ];
+  
+  const placeholders = values.map((_, i) => `$${i + 1}`).join(', ');
+  
   const result = await query(
-    `INSERT INTO events (
-      organizer_id, title, description, event_date, location, 
-      city, state, banner_url, regulation_url, result_url, status,
-      registration_status, registration_start_date, registration_end_date, registration_auto_mode,
-      pix_enabled, pix_disabled_at, credit_card_enabled, credit_card_disabled_at
-    )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+    `INSERT INTO events (${fields.join(', ')})
+    VALUES (${placeholders})
     RETURNING *`,
-    [
-      data.organizer_id,
-      data.title,
-      data.description || null,
-      data.event_date,
-      data.location,
-      data.city,
-      data.state,
-      data.banner_url || null,
-      data.regulation_url || null,
-      data.result_url || null,
-      data.status || 'draft',
-      registrationStatus || null,
-      data.registration_start_date || null,
-      data.registration_end_date || null,
-      data.registration_auto_mode || false,
-      data.pix_enabled !== undefined ? data.pix_enabled : true,
-      data.pix_disabled_at || null,
-      data.credit_card_enabled !== undefined ? data.credit_card_enabled : true,
-      data.credit_card_disabled_at || null,
-    ]
+    values
   );
 
   console.log('✅ Event inserted, returned rows:', result.rows.length);
@@ -345,6 +522,26 @@ export const createEvent = async (data: CreateEventData) => {
 
 // Update event
 export const updateEvent = async (eventId: string, data: UpdateEventData) => {
+  // Verificar se coluna slug existe
+  const hasSlugColumn = await checkSlugColumnExists();
+  
+  // Se título mudou e slug não foi fornecido explicitamente, gerar novo slug
+  if (hasSlugColumn && data.title && !data.slug) {
+    // Buscar evento atual para comparar título
+    const currentEvent = await getEventById(eventId);
+    if (currentEvent && currentEvent.title !== data.title) {
+      // Título mudou, gerar novo slug
+      const baseSlug = generateSlug(data.title);
+      data.slug = await ensureUniqueSlug(baseSlug, eventId);
+    }
+  } else if (hasSlugColumn && data.slug) {
+    // Se slug foi fornecido explicitamente, garantir que seja único
+    data.slug = await ensureUniqueSlug(data.slug, eventId);
+  } else if (!hasSlugColumn && data.slug) {
+    // Se coluna não existe mas slug foi fornecido, remover do update
+    delete data.slug;
+  }
+  
   // Se modo automático está ativado e datas foram fornecidas, calcular status automaticamente
   if (data.registration_auto_mode && data.registration_start_date && data.registration_end_date) {
     const calculatedStatus = calculateRegistrationStatus({
@@ -396,11 +593,15 @@ export const deleteEvent = async (eventId: string) => {
   return result.rows.length > 0;
 };
 
-// Check if user is organizer of event
-export const isEventOrganizer = async (eventId: string, userId: string): Promise<boolean> => {
+// Check if user is organizer of event (accepts ID or slug)
+export const isEventOrganizer = async (eventIdOrSlug: string, userId: string): Promise<boolean> => {
+  // Detectar se é UUID ou slug
+  const isId = isUUID(eventIdOrSlug);
+  const whereClause = isId ? 'id = $1' : 'slug = $1';
+  
   const result = await query(
-    'SELECT organizer_id FROM events WHERE id = $1 AND organizer_id = $2',
-    [eventId, userId]
+    `SELECT organizer_id FROM events WHERE ${whereClause} AND organizer_id = $2`,
+    [eventIdOrSlug, userId]
   );
   return result.rows.length > 0;
 };

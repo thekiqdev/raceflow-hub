@@ -6,6 +6,7 @@ export interface Event {
   id: string;
   organizer_id: string;
   title: string;
+  slug: string;
   description?: string;
   event_date: string;
   location: string;
@@ -40,6 +41,7 @@ export interface Event {
 
 export interface CreateEventData {
   title: string;
+  slug?: string; // Opcional - será gerado automaticamente se não fornecido
   description?: string;
   event_date: string;
   location: string;
@@ -62,6 +64,7 @@ export interface CreateEventData {
 
 export interface UpdateEventData {
   title?: string;
+  slug?: string; // Opcional - será gerado automaticamente se título mudar
   description?: string;
   event_date?: string;
   location?: string;

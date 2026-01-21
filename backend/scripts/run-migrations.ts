@@ -104,6 +104,8 @@ const migrations = [
   '075_add_calculate_value_without_fee_function.sql',
   '076_update_organizer_views_without_fee.sql',
   '077_create_organizer_group_leaders.sql',
+  '078_add_slug_to_events.sql',
+  '079_make_slug_not_null_in_events.sql',
 ];
 
 // Create migrations tracking table

@@ -227,7 +227,7 @@ export function ExploreEvents() {
           <Card
             key={event.id}
             className="overflow-hidden hover:shadow-lg transition-shadow cursor-pointer"
-            onClick={() => navigate(`/events/${event.id}`)}
+            onClick={() => navigate(event.slug ? `/evento/${event.slug}` : `/events/${event.id}`)}
           >
             <div className="flex">
               <div className="w-28 h-28 flex-shrink-0 bg-gradient-hero relative">

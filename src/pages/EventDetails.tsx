@@ -42,6 +42,7 @@ import {
 
 interface EventDetail {
   id: string;
+  slug: string;
   title: string;
   description: string;
   event_date: string;
@@ -139,7 +140,9 @@ const formatDateUTC = (dateString: string | null | undefined): string => {
 
 const EventDetails = () => {
   const navigate = useNavigate();
-  const { id } = useParams();
+  const { id, slug } = useParams();
+  // Usar slug se disponível, caso contrário usar id (compatibilidade com UUID)
+  const eventIdOrSlug = slug || id;
   const [event, setEvent] = useState<EventDetail | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
   const [modalities, setModalities] = useState<Modality[]>([]);
@@ -165,17 +168,17 @@ const EventDetails = () => {
 
   useEffect(() => {
     const loadEventData = async () => {
-      if (!id) return;
+      if (!eventIdOrSlug) return;
 
       try {
         setLoading(true);
         setOrganizerLogoError(false); // Reset logo error when loading new event
         const [eventResponse, categoriesResponse, kitsResponse, modalitiesResponse] = await Promise.all([
-          getEventById(id),
-          getCategories(id),
-          getEventKits(id),
-          getModalities(id).catch(() => ({ success: true, data: [] })),
-          getEventPickupLocations(id).catch(() => ({ success: true, data: [] })),
+          getEventById(eventIdOrSlug),
+          getCategories(eventIdOrSlug),
+          getEventKits(eventIdOrSlug),
+          getModalities(eventIdOrSlug).catch(() => ({ success: true, data: [] })),
+          getEventPickupLocations(eventIdOrSlug).catch(() => ({ success: true, data: [] })),
         ]);
 
         if (eventResponse.success && eventResponse.data) {
@@ -222,7 +225,7 @@ const EventDetails = () => {
           console.log('📋 Categories loaded:', categoriesResponse.data);
           setCategories(categoriesResponse.data);
           if (categoriesResponse.data.length === 0) {
-            console.warn('⚠️ No categories found for event:', id);
+            console.warn('⚠️ No categories found for event:', eventIdOrSlug);
             console.warn('⚠️ Verifique se o evento tem categorias cadastradas no banco de dados');
           }
         } else {
@@ -248,7 +251,7 @@ const EventDetails = () => {
 
         // Load pickup locations (optional, don't fail if endpoint doesn't exist)
         try {
-          const pickupResponse = await getEventPickupLocations(id);
+          const pickupResponse = await getEventPickupLocations(eventIdOrSlug);
           if (pickupResponse.success && pickupResponse.data) {
             setPickupLocations(pickupResponse.data);
           }
@@ -265,7 +268,7 @@ const EventDetails = () => {
     };
 
     loadEventData();
-  }, [id]);
+  }, [eventIdOrSlug]);
 
   if (loading) {
     return (

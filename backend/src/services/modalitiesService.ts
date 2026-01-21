@@ -1,5 +1,21 @@
 import { query } from '../config/database.js';
 import { Modality, CreateModalityData, UpdateModalityData } from '../types/index.js';
+import { getEventById } from './eventsService.js';
+
+/**
+ * Helper function to convert event slug or UUID to UUID
+ */
+async function getEventIdFromSlugOrId(eventIdOrSlug: string): Promise<string | null> {
+  // Check if it's already a UUID
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (uuidRegex.test(eventIdOrSlug)) {
+    return eventIdOrSlug;
+  }
+  
+  // If it's a slug, get the event to find the UUID
+  const event = await getEventById(eventIdOrSlug);
+  return event?.id || null;
+}
 
 /**
  * Create a new modality
@@ -61,7 +77,13 @@ export const createModality = async (
 /**
  * Get all modalities for an event
  */
-export const getModalitiesByEvent = async (eventId: string): Promise<Modality[]> => {
+export const getModalitiesByEvent = async (eventIdOrSlug: string): Promise<Modality[]> => {
+  // Convert slug to UUID if necessary
+  const eventId = await getEventIdFromSlugOrId(eventIdOrSlug);
+  if (!eventId) {
+    return [];
+  }
+  
   const result = await query(
     `SELECT * FROM modalities
      WHERE event_id = $1

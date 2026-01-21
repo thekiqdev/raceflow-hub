@@ -131,6 +131,7 @@ export interface Event {
   id: string;
   organizer_id: string;
   title: string;
+  slug: string;
   description: string | null;
   event_date: Date;
   location: string;

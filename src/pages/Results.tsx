@@ -12,6 +12,7 @@ import { toast } from "sonner";
 
 interface Event {
   id: string;
+  slug?: string;
   title: string;
   description?: string;
   event_date: string;
@@ -219,7 +220,7 @@ export default function Results() {
                 key={event.id}
                 event={event}
                 onViewResults={handleOpenResults}
-                onCardClick={() => navigate(`/events/${event.id}`)}
+                onCardClick={() => navigate(event.slug ? `/evento/${event.slug}` : `/events/${event.id}`)}
               />
             ))}
           </div>

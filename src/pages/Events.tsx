@@ -14,6 +14,7 @@ import { getEffectiveRegistrationStatus, getRegistrationStatusLabel, getRegistra
 
 interface Event {
   id: string;
+  slug?: string;
   title: string;
   description?: string;
   event_date: string;
@@ -193,7 +194,7 @@ const Events = () => {
                     <CardFooter>
                       <Button 
                         className="w-full"
-                        onClick={() => navigate(`/events/${event.id}`)}
+                        onClick={() => navigate(event.slug ? `/evento/${event.slug}` : `/events/${event.id}`)}
                       >
                         Ver Detalhes
                       </Button>
