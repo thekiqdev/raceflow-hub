@@ -6,6 +6,8 @@ import {
   createEvent,
   updateEvent,
   deleteEvent,
+  regenerateEventSlug,
+  regenerateAllMissingSlugs,
 } from '../services/eventsService.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { hasRole } from '../services/userRolesService.js';
@@ -443,3 +445,95 @@ export const deleteEventController = asyncHandler(async (req: AuthRequest, res: 
   return;
 });
 
+/**
+ * POST /api/events/:id/regenerate-slug
+ * Regenera o slug de um evento específico
+ */
+export const regenerateSlugController = asyncHandler(async (req: AuthRequest, res: Response) => {
+  if (!req.user) {
+    return res.status(401).json({
+      success: false,
+      error: 'Not authenticated',
+    });
+  }
+
+  const { id } = req.params;
+  const event = await getEventById(id);
+
+  if (!event) {
+    res.status(404).json({
+      success: false,
+      error: 'Event not found',
+    });
+    return;
+  }
+
+  const isAdmin = await hasRole(req.user.id, 'admin');
+  const isOrganizer = await hasRole(req.user.id, 'organizer') && event.organizer_id === req.user.id;
+
+  if (!isAdmin && !isOrganizer) {
+    res.status(403).json({
+      success: false,
+      error: 'Forbidden',
+      message: 'You can only regenerate slugs for your own events',
+    });
+    return;
+  }
+
+  try {
+    const updatedEvent = await regenerateEventSlug(id);
+
+    res.json({
+      success: true,
+      data: updatedEvent,
+      message: 'Event slug regenerated successfully',
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      error: 'Internal server error',
+      message: error.message || 'Failed to regenerate event slug',
+    });
+  }
+});
+
+/**
+ * POST /api/events/regenerate-all-slugs
+ * Regenera slugs para todos os eventos que não têm slug
+ * Apenas para administradores
+ */
+export const regenerateAllSlugsController = asyncHandler(async (req: AuthRequest, res: Response) => {
+  if (!req.user) {
+    return res.status(401).json({
+      success: false,
+      error: 'Not authenticated',
+    });
+  }
+
+  const isAdmin = await hasRole(req.user.id, 'admin');
+
+  if (!isAdmin) {
+    res.status(403).json({
+      success: false,
+      error: 'Forbidden',
+      message: 'Only administrators can regenerate all slugs',
+    });
+    return;
+  }
+
+  try {
+    const updatedCount = await regenerateAllMissingSlugs();
+
+    res.json({
+      success: true,
+      data: { updated_count: updatedCount },
+      message: `Successfully regenerated slugs for ${updatedCount} events`,
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      error: 'Internal server error',
+      message: error.message || 'Failed to regenerate slugs',
+    });
+  }
+});

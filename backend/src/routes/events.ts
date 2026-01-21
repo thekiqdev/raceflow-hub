@@ -8,6 +8,8 @@ import {
   createEventController,
   updateEventController,
   deleteEventController,
+  regenerateSlugController,
+  regenerateAllSlugsController,
 } from '../controllers/eventsController.js';
 import { getEventCategoriesController, syncEventCategoriesController } from '../controllers/eventCategoriesController.js';
 import { getEventKitsController, syncEventKitsController, reorderEventKitsController } from '../controllers/eventKitsController.js';
@@ -41,6 +43,10 @@ router.delete('/:id', authenticate, requireEventOwnership('id'), deleteEventCont
 router.post('/:eventId/categories', authenticate, requireEventOwnership('eventId'), syncEventCategoriesController);
 router.post('/:eventId/kits', authenticate, requireEventOwnership('eventId'), syncEventKitsController);
 router.put('/:eventId/kits/reorder', authenticate, requireEventOwnership('eventId'), reorderEventKitsController);
+
+// Slug regeneration routes
+router.post('/:id/regenerate-slug', authenticate, requireEventOwnership('id'), regenerateSlugController);
+router.post('/regenerate-all-slugs', authenticate, requireAnyRole(['admin']), regenerateAllSlugsController);
 
 export default router;
 

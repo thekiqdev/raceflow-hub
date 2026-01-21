@@ -525,18 +525,30 @@ export const updateEvent = async (eventId: string, data: UpdateEventData) => {
   // Verificar se coluna slug existe
   const hasSlugColumn = await checkSlugColumnExists();
   
-  // Se título mudou e slug não foi fornecido explicitamente, gerar novo slug
-  if (hasSlugColumn && data.title && !data.slug) {
-    // Buscar evento atual para comparar título
+  if (hasSlugColumn) {
+    // Buscar evento atual para verificar se tem slug e comparar título
     const currentEvent = await getEventById(eventId);
-    if (currentEvent && currentEvent.title !== data.title) {
-      // Título mudou, gerar novo slug
-      const baseSlug = generateSlug(data.title);
-      data.slug = await ensureUniqueSlug(baseSlug, eventId);
+    
+    if (currentEvent) {
+      // Se slug foi fornecido explicitamente, garantir que seja único
+      if (data.slug) {
+        data.slug = await ensureUniqueSlug(data.slug, eventId);
+      } 
+      // Se não tem slug fornecido, verificar se precisa gerar
+      else if (!data.slug) {
+        const needsSlug = !currentEvent.slug || currentEvent.slug.trim() === '';
+        const titleChanged = data.title && currentEvent.title !== data.title;
+        
+        // Gerar slug se: evento não tem slug OU título mudou
+        if (needsSlug || titleChanged) {
+          const titleToUse = data.title || currentEvent.title;
+          if (titleToUse) {
+            const baseSlug = generateSlug(titleToUse);
+            data.slug = await ensureUniqueSlug(baseSlug, eventId);
+          }
+        }
+      }
     }
-  } else if (hasSlugColumn && data.slug) {
-    // Se slug foi fornecido explicitamente, garantir que seja único
-    data.slug = await ensureUniqueSlug(data.slug, eventId);
   } else if (!hasSlugColumn && data.slug) {
     // Se coluna não existe mas slug foi fornecido, remover do update
     delete data.slug;
@@ -585,6 +597,94 @@ export const updateEvent = async (eventId: string, data: UpdateEventData) => {
   }
 
   return result.rows[0];
+};
+
+/**
+ * Regenera o slug de um evento específico
+ * Útil para eventos que não têm slug ou quando precisa atualizar manualmente
+ * @param eventId - ID do evento
+ * @returns Evento atualizado com novo slug
+ */
+export const regenerateEventSlug = async (eventId: string) => {
+  // Verificar se coluna slug existe
+  const hasSlugColumn = await checkSlugColumnExists();
+  
+  if (!hasSlugColumn) {
+    throw new Error('Slug column does not exist in database');
+  }
+  
+  // Buscar evento atual
+  const currentEvent = await getEventById(eventId);
+  
+  if (!currentEvent) {
+    throw new Error('Event not found');
+  }
+  
+  if (!currentEvent.title) {
+    throw new Error('Event title is required to generate slug');
+  }
+  
+  // Gerar novo slug baseado no título atual
+  const baseSlug = generateSlug(currentEvent.title);
+  const newSlug = await ensureUniqueSlug(baseSlug, eventId);
+  
+  // Atualizar apenas o slug
+  const result = await query(
+    `UPDATE events 
+     SET slug = $1, updated_at = NOW()
+     WHERE id = $2
+     RETURNING *`,
+    [newSlug, eventId]
+  );
+  
+  if (result.rows.length === 0) {
+    throw new Error('Failed to update event slug');
+  }
+  
+  return result.rows[0];
+};
+
+/**
+ * Regenera slugs para todos os eventos que não têm slug
+ * @returns Número de eventos atualizados
+ */
+export const regenerateAllMissingSlugs = async (): Promise<number> => {
+  // Verificar se coluna slug existe
+  const hasSlugColumn = await checkSlugColumnExists();
+  
+  if (!hasSlugColumn) {
+    throw new Error('Slug column does not exist in database');
+  }
+  
+  // Buscar todos os eventos sem slug
+  const eventsWithoutSlug = await query(
+    `SELECT id, title FROM events 
+     WHERE slug IS NULL OR slug = '' OR slug = 'null'`
+  );
+  
+  let updated = 0;
+  
+  for (const event of eventsWithoutSlug.rows) {
+    if (event.title) {
+      try {
+        const baseSlug = generateSlug(event.title);
+        const newSlug = await ensureUniqueSlug(baseSlug, event.id);
+        
+        await query(
+          `UPDATE events 
+           SET slug = $1, updated_at = NOW()
+           WHERE id = $2`,
+          [newSlug, event.id]
+        );
+        
+        updated++;
+      } catch (error) {
+        console.error(`Error generating slug for event ${event.id}:`, error);
+      }
+    }
+  }
+  
+  return updated;
 };
 
 // Delete event
