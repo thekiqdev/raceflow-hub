@@ -158,6 +158,7 @@ export const fixOrganizerRegistrationsController = asyncHandler(async (req: Auth
       logFile: logFileName,
     })}\n\n`);
     res.end();
+    return;
   } catch (error: any) {
     logMessage(`❌ Erro ao executar script: ${error.message}`);
     
@@ -180,5 +181,6 @@ export const fixOrganizerRegistrationsController = asyncHandler(async (req: Auth
       logFile: logFileName,
     })}\n\n`);
     res.end();
+    return;
   }
 });
