@@ -1585,33 +1585,25 @@ export const createRegistrationByOrganizerController = asyncHandler(async (req: 
       return;
   }
 
-  // Calculate total amount
-  let totalAmount = parseFloat(selectedCategory.price.toString()) || 0;
-  
-  if (kit_id) {
-    const { getEventKits } = await import('../services/eventKitsService.js');
-    const kits = await getEventKits(event_id);
-    const kit = kits.find(k => k.id === kit_id);
-    if (kit) {
-      totalAmount += parseFloat(kit.price.toString()) || 0;
-    }
-  }
+  // When organizer creates registration, the value should be zero
+  // because the organizer already received the payment directly from the athlete
+  // This prevents the value from being included in the organizer's withdrawal calculation
+  // since they already received it outside the platform
+  const totalAmount = 0;
 
   // Create registration data
-  // When organizer creates registration, set status as 'confirmed'
-  // If total_amount is 0, set payment_status as 'convidado', otherwise 'paid' (organizer handles payment manually)
-  const paymentStatusValue: PaymentStatus = totalAmount === 0 ? 'convidado' : 'paid';
-  
+  // When organizer creates registration, set as 'confirmed' with 'convidado' status
+  // and 'free_bonus' payment method to indicate it's a free registration created by organizer
   const registrationData = {
     event_id,
     category_id,
     kit_id: kit_id || undefined,
     runner_id: athlete.id,
     registered_by: req.user.id,
-    total_amount: totalAmount,
-    payment_method: 'pix' as const,
+    total_amount: totalAmount, // Always 0 for organizer-created registrations
+    payment_method: 'free_bonus' as const, // Mark as free bonus (invitation) to exclude from revenue
     status: 'confirmed' as const, // Inscrições criadas por organizador vêm como confirmadas
-    payment_status: paymentStatusValue, // Se grátis = convidado, senão = pago (organizador trata pagamento manualmente)
+    payment_status: 'convidado' as const, // Mark as 'convidado' to exclude from revenue calculation
     product_selections: req.body.product_selections || undefined,
   };
 
@@ -1631,109 +1623,14 @@ export const createRegistrationByOrganizerController = asyncHandler(async (req: 
   console.log('✅ Inscrição criada pelo organizador:', {
     id: registration.id,
     total_amount: registration.total_amount,
+    payment_method: registration.payment_method,
+    payment_status: registration.payment_status,
+    note: 'Valor zerado pois organizador já recebeu pagamento diretamente do atleta',
   });
 
-  // Create payment if needed
-  let paymentData: any = null;
-  
-  if (registration.total_amount > 0) {
-    try {
-      const runnerId = athlete.id;
-      
-      // Get user profile and email for Asaas customer
-      const profile = await getProfileByUserId(runnerId);
-      if (!profile) {
-        throw new Error('Perfil do usuário não encontrado');
-      }
-
-      // Get user email from users table
-      const userResult = await query(
-        'SELECT email FROM users WHERE id = $1',
-        [runnerId]
-      );
-      
-      if (userResult.rows.length === 0) {
-        throw new Error('Usuário não encontrado');
-      }
-      
-      const userEmail = userResult.rows[0].email;
-
-      // Prepare customer data for Asaas
-      const customerData = {
-        name: profile.full_name || 'Usuário',
-        email: userEmail,
-        cpfCnpj: profile.cpf?.replace(/\D/g, '') || '',
-        phone: profile.phone?.replace(/\D/g, '') || '',
-        mobilePhone: profile.phone?.replace(/\D/g, '') || '',
-      };
-
-      // Validate or recreate Asaas customer
-      const asaasCustomerId = await validateOrRecreateCustomer(runnerId, customerData);
-
-      // Calculate due date (3 days from now)
-      const dueDate = new Date();
-      dueDate.setDate(dueDate.getDate() + 3);
-      const dueDateString = dueDate.toISOString().split('T')[0];
-
-      // Create payment in Asaas
-      let paymentResult;
-      try {
-        paymentResult = await createPayment(
-          registration.id,
-          asaasCustomerId,
-          {
-            value: registration.total_amount,
-            dueDate: dueDateString,
-            description: `Inscrição - ${event.title}`,
-            billingType: 'PIX',
-            externalReference: registration.confirmation_code || `REG-${registration.id}`,
-          }
-        );
-      } catch (paymentError: any) {
-        if (paymentError.isInvalidCustomer) {
-          console.log('⚠️ Customer inválido detectado, recriando customer e tentando novamente...');
-          
-          await query(
-            'DELETE FROM asaas_customers WHERE user_id = $1',
-            [runnerId]
-          );
-          
-          const customerResult = await createCustomer(runnerId, customerData);
-          const newAsaasCustomerId = customerResult.asaas_customer_id;
-          
-          paymentResult = await createPayment(
-            registration.id,
-            newAsaasCustomerId,
-            {
-              value: registration.total_amount,
-              dueDate: dueDateString,
-              description: `Inscrição - ${event.title}`,
-              billingType: 'PIX',
-              externalReference: registration.confirmation_code || `REG-${registration.id}`,
-            }
-          );
-        } else {
-          throw paymentError;
-        }
-      }
-
-      paymentData = {
-        asaas_payment_id: paymentResult.asaas_payment_id,
-        pix_qr_code: paymentResult.pix_qr_code,
-        pix_qr_code_id: paymentResult.pix_qr_code_id,
-        payment_link: paymentResult.payment_link,
-        status: paymentResult.status,
-        due_date: paymentResult.due_date,
-      };
-    } catch (error: any) {
-      console.error('❌ Erro ao criar pagamento:', error);
-      // Don't fail registration if payment fails
-      paymentData = {
-        error: error.message || 'Erro ao criar pagamento',
-        warning: 'Inscrição criada, mas pagamento não foi processado. Entre em contato com o suporte.',
-      };
-    }
-  }
+  // No payment needed - organizer already received payment directly from athlete
+  // Registration is marked as 'free_bonus' with 'convidado' status to exclude from revenue calculation
+  const paymentData: any = null;
 
   // Send notifications
   await sendRegistrationNotifications(registration, event, registration.runner_id);
