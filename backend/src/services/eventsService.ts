@@ -23,6 +23,7 @@ export interface CreateEventData {
   pix_disabled_at?: string | null;
   credit_card_enabled?: boolean;
   credit_card_disabled_at?: string | null;
+  transfers_enabled?: boolean;
 }
 
 export interface UpdateEventData {
@@ -46,6 +47,7 @@ export interface UpdateEventData {
   pix_disabled_at?: string | null;
   credit_card_enabled?: boolean;
   credit_card_disabled_at?: string | null;
+  transfers_enabled?: boolean;
 }
 
 /**
@@ -213,6 +215,11 @@ export const getEvents = async (filters?: {
       e.registration_start_date,
       e.registration_end_date,
       e.registration_auto_mode,
+      e.pix_enabled,
+      e.pix_disabled_at,
+      e.credit_card_enabled,
+      e.credit_card_disabled_at,
+      e.transfers_enabled,
       e.created_at,
       e.updated_at,
       p.full_name as organizer_name,
@@ -392,6 +399,7 @@ export const getEventById = async (eventIdOrSlug: string) => {
       e.pix_disabled_at,
       e.credit_card_enabled,
       e.credit_card_disabled_at,
+      e.transfers_enabled,
       e.created_at,
       e.updated_at,
       p.full_name as organizer_name,
@@ -476,7 +484,8 @@ export const createEvent = async (data: CreateEventData) => {
     'description', 'event_date', 'location', 
     'city', 'state', 'banner_url', 'regulation_url', 'result_url', 'status',
     'registration_status', 'registration_start_date', 'registration_end_date', 'registration_auto_mode',
-    'pix_enabled', 'pix_disabled_at', 'credit_card_enabled', 'credit_card_disabled_at'
+    'pix_enabled', 'pix_disabled_at', 'credit_card_enabled', 'credit_card_disabled_at',
+    'transfers_enabled'
   ];
   
   const values = [
@@ -500,6 +509,7 @@ export const createEvent = async (data: CreateEventData) => {
     data.pix_disabled_at || null,
     data.credit_card_enabled !== undefined ? data.credit_card_enabled : true,
     data.credit_card_disabled_at || null,
+    data.transfers_enabled !== undefined ? data.transfers_enabled : true,
   ];
   
   const placeholders = values.map((_, i) => `$${i + 1}`).join(', ');

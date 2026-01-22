@@ -106,6 +106,7 @@ const migrations = [
   '077_create_organizer_group_leaders.sql',
   '078_add_slug_to_events.sql',
   '079_make_slug_not_null_in_events.sql',
+  '080_add_transfers_enabled_to_events.sql',
 ];
 
 // Create migrations tracking table

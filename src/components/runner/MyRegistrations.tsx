@@ -322,8 +322,8 @@ export function MyRegistrations() {
   const pendingRegistrations = registrations.filter((r) => 
     r.status !== "cancelled" && r.status !== "transferred" && (r.status === "pending" || r.payment_status === "pending")
   );
-  const cancelledRegistrations = registrations.filter((r) => 
-    r.status === "cancelled" || r.status === "transferred"
+  const transferredRegistrations = registrations.filter((r) => 
+    r.status === "transferred"
   );
 
   const getStatusBadge = (status: string | undefined, paymentStatus: string | undefined) => {
@@ -369,7 +369,9 @@ export function MyRegistrations() {
 
   const RegistrationCard = ({ registration }: { registration: Registration }) => {
     const isUpcoming = registration.event_date && isFuture(new Date(registration.event_date));
+    const eventAllowsTransfers = registration.event_transfers_enabled !== false; // Default to true if null/undefined
     const canTransfer = transfersEnabled && 
+                       eventAllowsTransfers &&
                        registration.status === "confirmed" && 
                        registration.payment_status === "paid" && 
                        registration.status !== "transferred" &&
@@ -380,6 +382,19 @@ export function MyRegistrations() {
 
     return (
       <Card className="overflow-hidden hover:shadow-md transition-shadow">
+        {registration.event_banner_url && (
+          <div className="relative w-full h-32 overflow-hidden bg-muted">
+            <img
+              src={registration.event_banner_url}
+              alt={registration.event_title || 'Evento'}
+              className="w-full h-full object-cover"
+              onError={(e) => {
+                const target = e.target as HTMLImageElement;
+                target.style.display = 'none';
+              }}
+            />
+          </div>
+        )}
         <CardContent className="p-4">
           <div className="flex justify-between items-start mb-3">
             <h3 className="font-semibold text-sm flex-1 pr-2">{registration.event_title || 'Evento'}</h3>
@@ -436,6 +451,7 @@ export function MyRegistrations() {
                   {registration.payment_method === 'pix' ? 'PIX' : 
                    registration.payment_method === 'credit_card' ? 'Cartão' : 
                    registration.payment_method === 'boleto' ? 'Boleto' : 
+                   registration.payment_method === 'free_bonus' ? 'Convite' : 
                    registration.payment_method}
                 </span>
               </div>
@@ -569,7 +585,7 @@ export function MyRegistrations() {
               Pendentes ({pendingRegistrations.length})
             </TabsTrigger>
             <TabsTrigger value="cancelled">
-              Canceladas/Transferidas ({cancelledRegistrations.length})
+              Transferidas ({transferredRegistrations.length})
             </TabsTrigger>
           </TabsList>
 
@@ -585,9 +601,11 @@ export function MyRegistrations() {
                 </CardContent>
               </Card>
             ) : (
-              activeRegistrations.map((reg) => (
-                <RegistrationCard key={reg.id} registration={reg} />
-              ))
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {activeRegistrations.map((reg) => (
+                  <RegistrationCard key={reg.id} registration={reg} />
+                ))}
+              </div>
             )}
           </TabsContent>
 
@@ -600,24 +618,28 @@ export function MyRegistrations() {
                 </CardContent>
               </Card>
             ) : (
-              pendingRegistrations.map((reg) => (
-                <RegistrationCard key={reg.id} registration={reg} />
-              ))
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {pendingRegistrations.map((reg) => (
+                  <RegistrationCard key={reg.id} registration={reg} />
+                ))}
+              </div>
             )}
           </TabsContent>
 
           <TabsContent value="cancelled" className="space-y-4">
-            {cancelledRegistrations.length === 0 ? (
+            {transferredRegistrations.length === 0 ? (
               <Card>
                 <CardContent className="py-12 text-center">
-                  <X className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-                  <p className="text-muted-foreground">Nenhuma inscrição cancelada ou transferida</p>
+                  <RefreshCw className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+                  <p className="text-muted-foreground">Nenhuma inscrição transferida</p>
                 </CardContent>
               </Card>
             ) : (
-              cancelledRegistrations.map((reg) => (
-                <RegistrationCard key={reg.id} registration={reg} />
-              ))
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {transferredRegistrations.map((reg) => (
+                  <RegistrationCard key={reg.id} registration={reg} />
+                ))}
+              </div>
             )}
           </TabsContent>
         </Tabs>

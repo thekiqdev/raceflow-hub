@@ -24,6 +24,7 @@ export interface Event {
   pix_disabled_at?: string | null;
   credit_card_enabled?: boolean | null;
   credit_card_disabled_at?: string | null;
+  transfers_enabled?: boolean | null;
   created_at?: string;
   updated_at?: string;
   organizer_name?: string;
@@ -60,6 +61,7 @@ export interface CreateEventData {
   pix_disabled_at?: string | null;
   credit_card_enabled?: boolean;
   credit_card_disabled_at?: string | null;
+  transfers_enabled?: boolean;
 }
 
 export interface UpdateEventData {
@@ -82,6 +84,7 @@ export interface UpdateEventData {
   pix_disabled_at?: string | null;
   credit_card_enabled?: boolean;
   credit_card_disabled_at?: string | null;
+  transfers_enabled?: boolean;
 }
 
 // Get all events

@@ -73,6 +73,29 @@ export const createTransferRequestController = asyncHandler(async (req: AuthRequ
     return;
   }
 
+  // Check if event allows transfers
+  const { getEventById } = await import('../services/eventsService.js');
+  const event = await getEventById(registration.event_id);
+  
+  if (!event) {
+    res.status(404).json({
+      success: false,
+      error: 'Event not found',
+      message: 'Evento não encontrado',
+    });
+    return;
+  }
+
+  // Check if transfers are enabled for this event
+  if (event.transfers_enabled === false) {
+    res.status(403).json({
+      success: false,
+      error: 'Transfers disabled',
+      message: 'As transferências de inscrições estão desabilitadas para este evento',
+    });
+    return;
+  }
+
   // Check if module is enabled
   const settings = await getSystemSettings();
   if (!settings.enabled_modules?.transfers) {

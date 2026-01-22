@@ -40,6 +40,7 @@ const createEventSchema = z.object({
   pix_disabled_at: z.string().datetime('Data de desabilitação do PIX inválida').nullable().optional(),
   credit_card_enabled: z.boolean().optional(),
   credit_card_disabled_at: z.string().datetime('Data de desabilitação do cartão de crédito inválida').nullable().optional(),
+  transfers_enabled: z.boolean().optional(),
 }).refine((data) => {
   // Se modo automático está ativado, datas são obrigatórias
   if (data.registration_auto_mode === true) {
@@ -89,6 +90,7 @@ const updateEventSchema = z.object({
   pix_disabled_at: z.string().datetime('Data de desabilitação do PIX inválida').nullable().optional(),
   credit_card_enabled: z.boolean().optional(),
   credit_card_disabled_at: z.string().datetime('Data de desabilitação do cartão de crédito inválida').nullable().optional(),
+  transfers_enabled: z.boolean().optional(),
 }).refine((data) => {
   // Se modo automático está ativado, datas são obrigatórias
   if (data.registration_auto_mode === true) {

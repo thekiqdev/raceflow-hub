@@ -66,7 +66,9 @@ export const getRegistrations = async (filters?: {
       r.*,
       e.title as event_title,
       e.event_date,
+      e.banner_url as event_banner_url,
       e.organizer_id as event_organizer_id,
+      e.transfers_enabled as event_transfers_enabled,
       c.name as category_name,
       c.category_type as category_type,
       c.gender as category_gender,
@@ -200,6 +202,9 @@ export const getRegistrations = async (filters?: {
 
   const result = await query(queryText, params);
   
+  // Import getFileUrl to convert file paths to URLs
+  const { getFileUrl } = await import('../middleware/upload.js');
+  
   // Replace status with display_status in the results
   // If this is a transferred registration viewed by the original owner (registered_by),
   // show as 'transferred' instead of 'confirmed'
@@ -215,6 +220,7 @@ export const getRegistrations = async (filters?: {
     return {
       ...row,
       status: finalStatus,
+      event_banner_url: row.event_banner_url ? getFileUrl(row.event_banner_url) : null,
     };
   });
 };
@@ -226,9 +232,11 @@ export const getRegistrationById = async (registrationId: string, viewerId?: str
       r.*,
       e.title as event_title,
       e.event_date,
+      e.banner_url as event_banner_url,
       e.location,
       e.city,
       e.state,
+      e.transfers_enabled as event_transfers_enabled,
       c.name as category_name,
       c.category_type as category_type,
       c.gender as category_gender,
@@ -291,10 +299,14 @@ export const getRegistrationById = async (registrationId: string, viewerId?: str
     return null;
   }
 
+  // Import getFileUrl to convert file paths to URLs
+  const { getFileUrl } = await import('../middleware/upload.js');
+  
   const row = result.rows[0];
   return {
     ...row,
     status: row.display_status || row.status,
+    event_banner_url: row.event_banner_url ? getFileUrl(row.event_banner_url) : null,
   };
 };
 

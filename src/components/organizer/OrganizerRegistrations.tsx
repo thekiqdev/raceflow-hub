@@ -26,7 +26,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Plus, Search, MoreVertical, Eye, MessageSquare, FileDown, Loader2, UserCog, Mail, ChevronDown, ChevronUp, Edit2, Save, X, Trash2 } from "lucide-react";
+import { Plus, Search, MoreVertical, Eye, MessageSquare, FileDown, Loader2, Mail, ChevronDown, ChevronUp, Edit2, Save, X, Trash2 } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { useNavigate } from "react-router-dom";
@@ -38,7 +38,6 @@ import { getCategories, type Category } from "@/lib/api/categories";
 import { getEventKits, type EventKit, type KitProduct } from "@/lib/api/eventKits";
 import { toast } from "sonner";
 import { useDebounce } from "@/hooks/useDebounce";
-import { createOrganizerGroupLeader } from "@/lib/api/groupLeaders";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { getEnabledModules } from "@/lib/api/systemSettings";
 import { calculateValueWithoutFee } from "@/lib/utils/feeCalculations";
@@ -600,34 +599,6 @@ const OrganizerRegistrations = () => {
     }
   };
 
-  const handleConvertToLeader = async (registration: Registration) => {
-    if (!registration.runner_id) {
-      toast.error("Não é possível converter: runner_id não encontrado");
-      return;
-    }
-
-    if (!confirm(`Deseja converter "${registration.runner_name || 'este usuário'}" em líder de grupo?`)) {
-      return;
-    }
-
-    try {
-      const response = await createOrganizerGroupLeader({
-        user_id: registration.runner_id,
-        commission_percentage: null, // Usar percentual global
-      });
-
-      if (response.success) {
-        toast.success("Usuário convertido para líder de grupo com sucesso!");
-        // Opcional: recarregar registros ou navegar para a seção de líderes
-        window.dispatchEvent(new CustomEvent('organizer:navigate-to-section', { detail: 'group-leaders' }));
-      } else {
-        toast.error(response.error || "Erro ao converter para líder de grupo");
-      }
-    } catch (error: any) {
-      console.error("Erro ao converter para líder:", error);
-      toast.error(error.message || "Erro ao converter para líder de grupo");
-    }
-  };
 
   const handleExport = async () => {
     if (!user) return;
@@ -931,10 +902,6 @@ const OrganizerRegistrations = () => {
                               <DropdownMenuItem>
                                 <MessageSquare className="mr-2 h-4 w-4" />
                                 Enviar Mensagem
-                              </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => handleConvertToLeader(registration)}>
-                                <UserCog className="mr-2 h-4 w-4" />
-                                Converter para Líder de Grupo
                               </DropdownMenuItem>
                             </DropdownMenuContent>
                           </DropdownMenu>
@@ -1683,7 +1650,8 @@ const OrganizerRegistrations = () => {
                     {registrationDetails.payment_method === 'pix' ? 'PIX' :
                      registrationDetails.payment_method === 'credit_card' ? 'Cartão de Crédito' :
                      registrationDetails.payment_method === 'boleto' ? 'Boleto' :
-                     registrationDetails.payment_status === 'convidado' ? 'Convite (Grátis)' :
+                     registrationDetails.payment_method === 'free_bonus' ? 'Convite' :
+                     registrationDetails.payment_status === 'convidado' ? 'Convite' :
                      'N/A'}
                   </p>
                 </div>

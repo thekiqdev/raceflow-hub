@@ -590,6 +590,59 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
     }
   }, [open, isAdmin, event?.id, user, toast]);
 
+  // Função para validar campos obrigatórios de cada etapa
+  const validateStep = async (step: string): Promise<boolean> => {
+    const values = form.getValues();
+    
+    if (step === "info") {
+      // Validar campos obrigatórios da aba Informações
+      const fieldsToValidate: (keyof EventFormValues)[] = [
+        "title",
+        "description",
+        "location",
+        "city",
+        "state",
+        "event_date",
+      ];
+      
+      // Trigger validation apenas para os campos desta etapa
+      const result = await form.trigger(fieldsToValidate);
+      
+      if (!result) {
+        // Mostrar toast com erro
+        toast({
+          title: "Campos obrigatórios não preenchidos",
+          description: "Por favor, preencha todos os campos obrigatórios da aba Informações antes de continuar.",
+          variant: "destructive",
+        });
+        return false;
+      }
+      
+      return true;
+    }
+    
+    // Para outras etapas, permitir avançar (pode adicionar validações futuras)
+    return true;
+  };
+
+  // Função para lidar com mudança de aba com validação
+  const handleTabChange = async (newTab: string) => {
+    const tabs = ["info", "modalities", "categories", "kits", "pickup", "payment", "publish"];
+    const currentIndex = tabs.indexOf(activeTab);
+    const newIndex = tabs.indexOf(newTab);
+    
+    // Se está tentando avançar (não retroceder), validar etapa atual
+    if (newIndex > currentIndex) {
+      const isValid = await validateStep(activeTab);
+      if (!isValid) {
+        return; // Não permite mudar de aba se validação falhar
+      }
+    }
+    
+    // Se validação passou ou está retrocedendo, permite mudança
+    setActiveTab(newTab);
+  };
+
   const addModality = () => {
     setModalities([
       ...modalities,
@@ -2023,7 +2076,7 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
               }
             }}
           >
-            <Tabs value={activeTab} onValueChange={setActiveTab}>
+            <Tabs value={activeTab} onValueChange={handleTabChange}>
               <TabsList className="grid w-full grid-cols-7">
                 <TabsTrigger value="info">Informações</TabsTrigger>
                 <TabsTrigger value="modalities">Modalidades</TabsTrigger>
@@ -4094,11 +4147,15 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
                     )}
                     <Button
                       type="button"
-                      onClick={() => {
+                      onClick={async () => {
                         const tabs = ["info", "modalities", "categories", "kits", "pickup", "payment", "publish"];
                         const currentIndex = tabs.indexOf(activeTab);
                         if (currentIndex < tabs.length - 1) {
-                        setActiveTab(tabs[currentIndex + 1]);
+                          // Validar etapa atual antes de avançar
+                          const isValid = await validateStep(activeTab);
+                          if (isValid) {
+                            setActiveTab(tabs[currentIndex + 1]);
+                          }
                         }
                       }}
                     >

@@ -9,19 +9,21 @@ export interface Registration {
   kit_id?: string;
   status?: 'pending' | 'confirmed' | 'cancelled' | 'refund_requested' | 'refunded';
   payment_status?: 'pending' | 'paid' | 'refunded' | 'failed';
-  payment_method?: 'pix' | 'credit_card' | 'boleto';
+  payment_method?: 'pix' | 'credit_card' | 'boleto' | 'free_bonus';
   total_amount: number;
   confirmation_code?: string;
   created_at?: string;
   updated_at?: string;
   event_title?: string;
   event_date?: string;
+  event_banner_url?: string | null;
   category_name?: string;
   category_distance?: string;
   runner_name?: string;
   runner_cpf?: string;
   kit_name?: string;
   event_organizer_id?: string;
+  event_transfers_enabled?: boolean | null;
   product_selections?: Array<{
     product_id: string;
     product_name: string;
@@ -63,7 +65,7 @@ export interface CreateRegistrationData {
   runner_id?: string;
   category_id: string;
   kit_id?: string;
-  payment_method?: 'pix' | 'credit_card' | 'boleto';
+  payment_method?: 'pix' | 'credit_card' | 'boleto' | 'free_bonus';
   total_amount: number;
   coupon_code?: string;
   product_selections?: ProductSelection[];
@@ -75,7 +77,7 @@ export interface CreateRegistrationData {
 export interface UpdateRegistrationData {
   status?: 'pending' | 'confirmed' | 'cancelled' | 'refund_requested' | 'refunded';
   payment_status?: 'pending' | 'paid' | 'refunded' | 'failed';
-  payment_method?: 'pix' | 'credit_card' | 'boleto';
+  payment_method?: 'pix' | 'credit_card' | 'boleto' | 'free_bonus';
 }
 
 // Get registrations

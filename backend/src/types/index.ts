@@ -149,6 +149,7 @@ export interface Event {
   pix_disabled_at: Date | null;
   credit_card_enabled: boolean | null;
   credit_card_disabled_at: Date | null;
+  transfers_enabled: boolean | null;
   created_at: Date | null;
   updated_at: Date | null;
 }

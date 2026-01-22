@@ -27,7 +27,7 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Search, MoreVertical, Edit, Eye, Trash2, BarChart3, Calendar, Loader2, ExternalLink } from "lucide-react";
+import { Plus, Search, MoreVertical, Edit, Eye, Trash2, BarChart3, Calendar, Loader2, ExternalLink, ArrowRightLeft } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { EventFormDialog } from "./EventFormDialog";
@@ -159,6 +159,31 @@ const OrganizerEvents = () => {
       toast.error(error.message || "Erro ao excluir evento");
     } finally {
       setIsDeleting(null);
+    }
+  };
+
+  const handleToggleTransfers = async (event: Event) => {
+    const newValue = !(event.transfers_enabled ?? true);
+    const action = newValue ? "ativar" : "desativar";
+    
+    if (!confirm(`Deseja ${action} as transferências de inscrições para este evento?`)) {
+      return;
+    }
+
+    try {
+      const response = await updateEvent(event.id, {
+        transfers_enabled: newValue,
+      });
+
+      if (!response.success) {
+        throw new Error(response.error || "Erro ao atualizar transferências");
+      }
+
+      toast.success(`Transferências ${newValue ? "ativadas" : "desativadas"} com sucesso!`);
+      loadEvents();
+    } catch (error: any) {
+      console.error("Error toggling transfers:", error);
+      toast.error(error.message || "Erro ao atualizar transferências");
     }
   };
 
@@ -348,6 +373,10 @@ const OrganizerEvents = () => {
                             <DropdownMenuItem onClick={() => setSelectedEventIdForReport(event.id)}>
                               <BarChart3 className="mr-2 h-4 w-4" />
                               Estatísticas
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleToggleTransfers(event)}>
+                              <ArrowRightLeft className="mr-2 h-4 w-4" />
+                              {event.transfers_enabled ?? true ? "Desativar" : "Ativar"} Transferências
                             </DropdownMenuItem>
                             <DropdownMenuItem 
                               className="text-destructive"

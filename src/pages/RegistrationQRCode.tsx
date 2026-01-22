@@ -97,7 +97,7 @@ ${registration?.product_selections && registration.product_selections.length > 0
     return productData.attributes.map(attr => `${attr.attribute_name}: ${attr.attribute_value}`).join('\n');
   }).join('\n');
 })() + '\n' : ''}Valor: R$ ${registration?.total_amount.toFixed(2).replace('.', ',') || '0,00'}
-Método de Pagamento: ${registration?.payment_method === 'pix' ? 'PIX' : registration?.payment_method === 'credit_card' ? 'Cartão de Crédito' : registration?.payment_method === 'boleto' ? 'Boleto' : 'N/A'}
+Método de Pagamento: ${registration?.payment_method === 'pix' ? 'PIX' : registration?.payment_method === 'credit_card' ? 'Cartão de Crédito' : registration?.payment_method === 'boleto' ? 'Boleto' : registration?.payment_method === 'free_bonus' ? 'Convite' : 'N/A'}
 Status: ${registration?.status === 'confirmed' ? 'Confirmada' : registration?.status || 'Pendente'}
 Status do Pagamento: ${registration?.payment_status === 'paid' ? 'Pago' : registration?.payment_status === 'convidado' ? 'Convite' : registration?.payment_status || 'Pendente'}
       `.trim();
@@ -306,6 +306,7 @@ Status do Pagamento: ${registration?.payment_status === 'paid' ? 'Pago' : regist
                   {registration.payment_method === 'pix' ? 'PIX' : 
                    registration.payment_method === 'credit_card' ? 'Cartão de Crédito' : 
                    registration.payment_method === 'boleto' ? 'Boleto' : 
+                   registration.payment_method === 'free_bonus' ? 'Convite' : 
                    registration.payment_method}
                 </span>
               </div>

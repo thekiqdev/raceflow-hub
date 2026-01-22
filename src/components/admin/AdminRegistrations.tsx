@@ -828,7 +828,8 @@ const AdminRegistrations = () => {
                     {registrationDetails.payment_method === 'pix' ? 'PIX' :
                      registrationDetails.payment_method === 'credit_card' ? 'Cartão de Crédito' :
                      registrationDetails.payment_method === 'boleto' ? 'Boleto' :
-                     registrationDetails.payment_status === 'convidado' ? 'Convite (Grátis)' :
+                     registrationDetails.payment_method === 'free_bonus' ? 'Convite' :
+                     registrationDetails.payment_status === 'convidado' ? 'Convite' :
                      'N/A'}
                   </p>
                 </div>
