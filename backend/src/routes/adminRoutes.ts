@@ -115,6 +115,9 @@ import {
   updateDocumentTypeController,
   deleteDocumentTypeController,
 } from '../controllers/documentTypesController.js';
+import {
+  fixOrganizerRegistrationsController,
+} from '../controllers/adminScriptsController.js';
 
 const router = Router();
 
@@ -235,6 +238,9 @@ router.get('/document-types/:id', getDocumentTypeByIdController);
 router.post('/document-types', createDocumentTypeController);
 router.put('/document-types/:id', updateDocumentTypeController);
 router.delete('/document-types/:id', deleteDocumentTypeController);
+
+// Admin Scripts endpoints
+router.post('/scripts/fix-organizer-registrations', fixOrganizerRegistrationsController);
 
 export default router;
 

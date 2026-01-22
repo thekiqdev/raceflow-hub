@@ -14,6 +14,7 @@ import { getSystemSettings, updateSystemSettings, testEmail, type SystemSettings
 import FormConfigurations from "./FormConfigurations";
 import NotificationTemplatesManagement from "./NotificationTemplatesManagement";
 import { DocumentTypesManagement } from "./DocumentTypesManagement";
+import AdvancedSettings from "./AdvancedSettings";
 
 const SystemSettings = () => {
   const [settings, setSettings] = useState<SystemSettingsType | null>(null);
@@ -417,6 +418,7 @@ const SystemSettings = () => {
           <TabsTrigger value="forms">Formulários</TabsTrigger>
           <TabsTrigger value="notification-templates">Templates de Notificação</TabsTrigger>
           <TabsTrigger value="document-types">Documentos</TabsTrigger>
+          <TabsTrigger value="advanced">Avançado</TabsTrigger>
         </TabsList>
 
         <TabsContent value="general" className="space-y-4">
@@ -1044,6 +1046,10 @@ const SystemSettings = () => {
 
         <TabsContent value="document-types" className="space-y-4">
           <DocumentTypesManagement />
+        </TabsContent>
+
+        <TabsContent value="advanced" className="space-y-4">
+          <AdvancedSettings />
         </TabsContent>
       </Tabs>
     </div>

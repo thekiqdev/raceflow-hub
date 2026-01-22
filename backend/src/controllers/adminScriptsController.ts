@@ -1,0 +1,184 @@
+import { Response } from 'express';
+import { AuthRequest } from '../middleware/auth.js';
+import { hasRole } from '../services/userRolesService.js';
+import { query } from '../config/database.js';
+import { asyncHandler } from '../middleware/errorHandler.js';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+/**
+ * POST /api/admin/scripts/fix-organizer-registrations
+ * Executa o script para corrigir inscrições criadas por organizadores
+ * Apenas para administradores
+ */
+export const fixOrganizerRegistrationsController = asyncHandler(async (req: AuthRequest, res: Response) => {
+  if (!req.user) {
+    return res.status(401).json({
+      success: false,
+      error: 'Not authenticated',
+    });
+  }
+
+  const isAdmin = await hasRole(req.user.id, 'admin');
+  if (!isAdmin) {
+    return res.status(403).json({
+      success: false,
+      error: 'Forbidden',
+      message: 'Apenas administradores podem executar este script',
+    });
+  }
+
+  // Configurar headers para streaming de logs
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no'); // Desabilitar buffering do nginx
+
+  const logs: string[] = [];
+  const logMessage = (message: string) => {
+    const timestamp = new Date().toISOString();
+    const logLine = `[${timestamp}] ${message}`;
+    logs.push(logLine);
+    res.write(`data: ${JSON.stringify({ type: 'log', message: logLine })}\n\n`);
+  };
+
+  try {
+    logMessage('🔍 Verificando inscrições criadas por organizadores...\n');
+
+    // Buscar inscrições onde o organizador criou para seu próprio evento
+    const registrations = await query(
+      `SELECT 
+        r.id,
+        r.runner_id,
+        r.event_id,
+        r.registered_by,
+        r.total_amount,
+        r.status,
+        r.payment_status,
+        r.payment_method,
+        e.title as event_title,
+        e.organizer_id,
+        p.full_name as organizer_name
+      FROM registrations r
+      JOIN events e ON r.event_id = e.id
+      LEFT JOIN profiles p ON e.organizer_id = p.id
+      WHERE r.registered_by = e.organizer_id
+        AND r.registered_by != r.runner_id
+        AND (r.total_amount > 0 OR r.payment_status = 'paid' OR r.payment_method != 'free_bonus')
+        AND r.status != 'cancelled'
+      ORDER BY r.created_at DESC`
+    );
+
+    if (registrations.rows.length === 0) {
+      logMessage('✅ Nenhuma inscrição criada por organizador precisa ser corrigida.');
+      res.write(`data: ${JSON.stringify({ type: 'complete', success: true, message: 'Nenhuma inscrição precisa ser corrigida' })}\n\n`);
+      res.end();
+      return;
+    }
+
+    logMessage(`📊 Encontradas ${registrations.rows.length} inscrições para corrigir:\n`);
+
+    let updated = 0;
+    let errors = 0;
+    let totalAmountZeroed = 0;
+
+    for (const reg of registrations.rows) {
+      try {
+        logMessage(`  - Corrigindo inscrição ID ${reg.id}`);
+        logMessage(`    Evento: ${reg.event_title}`);
+        logMessage(`    Organizador: ${reg.organizer_name || reg.organizer_id}`);
+        logMessage(`    Valor atual: R$ ${parseFloat(reg.total_amount || 0).toFixed(2)}`);
+        logMessage(`    Status atual: ${reg.status} / ${reg.payment_status} / ${reg.payment_method}`);
+        logMessage(`    Novo status: confirmed / convidado / free_bonus`);
+        logMessage(`    Novo valor: R$ 0,00`);
+
+        await query(
+          `UPDATE registrations 
+           SET total_amount = 0,
+               payment_method = 'free_bonus',
+               payment_status = 'convidado',
+               status = 'confirmed',
+               updated_at = NOW()
+           WHERE id = $1`,
+          [reg.id]
+        );
+
+        if (parseFloat(reg.total_amount || 0) > 0) {
+          totalAmountZeroed++;
+        }
+
+        logMessage(`    ✅ Corrigida com sucesso!\n`);
+        updated++;
+      } catch (error: any) {
+        logMessage(`    ❌ Erro ao corrigir: ${error.message}\n`);
+        errors++;
+      }
+    }
+
+    const summary = `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📊 Resumo:
+   ✅ Inscrições corrigidas: ${updated}
+   💰 Valores zerados: ${totalAmountZeroed}
+   ❌ Erros: ${errors}
+   📦 Total processado: ${registrations.rows.length}
+
+💡 Nota: As inscrições corrigidas não serão mais incluídas no cálculo de receita/saque
+   do organizador, pois o valor já foi recebido diretamente pelo organizador.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+
+    logMessage(summary);
+
+    // Salvar log em arquivo .txt
+    const logDir = path.join(__dirname, '../../logs');
+    if (!fs.existsSync(logDir)) {
+      fs.mkdirSync(logDir, { recursive: true });
+    }
+
+    const logFileName = `fix-organizer-registrations-${Date.now()}.txt`;
+    const logFilePath = path.join(logDir, logFileName);
+    const fullLog = logs.join('\n') + '\n\n' + summary;
+    
+    fs.writeFileSync(logFilePath, fullLog, 'utf-8');
+
+    logMessage(`📄 Log salvo em: ${logFilePath}`);
+
+    res.write(`data: ${JSON.stringify({ 
+      type: 'complete', 
+      success: true, 
+      summary: {
+        updated,
+        totalAmountZeroed,
+        errors,
+        total: registrations.rows.length,
+      },
+      logFile: logFileName,
+    })}\n\n`);
+    res.end();
+  } catch (error: any) {
+    logMessage(`❌ Erro ao executar script: ${error.message}`);
+    
+    // Salvar log de erro
+    const logDir = path.join(__dirname, '../../logs');
+    if (!fs.existsSync(logDir)) {
+      fs.mkdirSync(logDir, { recursive: true });
+    }
+
+    const logFileName = `fix-organizer-registrations-error-${Date.now()}.txt`;
+    const logFilePath = path.join(logDir, logFileName);
+    const errorLog = logs.join('\n') + '\n\n❌ Erro: ' + error.message;
+    
+    fs.writeFileSync(logFilePath, errorLog, 'utf-8');
+
+    res.write(`data: ${JSON.stringify({ 
+      type: 'error', 
+      success: false, 
+      message: error.message,
+      logFile: logFileName,
+    })}\n\n`);
+    res.end();
+  }
+});
