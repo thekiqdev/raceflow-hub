@@ -22,7 +22,7 @@ import { getProfileByUserId } from '../services/profilesService.js';
 import { query } from '../config/database.js';
 import { sendNotificationSafely, getUserEmail, getUserName, getOrganizerEmail } from '../services/notificationService.js';
 import { z } from 'zod';
-import { EventRegistrationStatus, Event, PaymentStatus } from '../types/index.js';
+import { EventRegistrationStatus, Event } from '../types/index.js';
 import { calculateRegistrationStatus } from '../services/eventsService.js';
 
 /**
