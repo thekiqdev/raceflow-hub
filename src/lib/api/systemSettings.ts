@@ -164,7 +164,23 @@ export const executeFixOrganizerRegistrationsScript = async (
       throw new Error('Não autenticado');
     }
 
-    const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/api/admin/scripts/fix-organizer-registrations`, {
+    // Get API URL using same logic as client.ts
+    const getApiUrl = () => {
+      const envUrl = import.meta.env.VITE_API_URL;
+      
+      if (envUrl && !envUrl.includes('localhost')) {
+        return envUrl;
+      }
+      
+      if (import.meta.env.PROD) {
+        return 'https://cronoteam-crono-back.e758qe.easypanel.host/api';
+      }
+      
+      return 'http://localhost:3001/api';
+    };
+
+    const apiUrl = getApiUrl();
+    const response = await fetch(`${apiUrl}/admin/scripts/fix-organizer-registrations`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,
