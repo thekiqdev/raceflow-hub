@@ -27,7 +27,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { CalendarIcon, Plus, Trash2, Upload, X, ChevronUp, ChevronDown } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { cn, isoToDatetimeLocal, processDatetimeLocalForSave } from "@/lib/utils";
+import { cn, isoToDatetimeLocal, processDatetimeLocalForSave, datetimeLocalToISO } from "@/lib/utils";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -53,7 +53,8 @@ const eventFormSchema = z.object({
   location: z.string().min(5, "Endereço completo é obrigatório"),
   city: z.string().min(2, "Cidade é obrigatória"),
   state: z.string().length(2, "UF deve ter 2 caracteres"),
-  event_date: z.date({ required_error: "Data do evento é obrigatória" }),
+  event_date: z.string().min(1, "Data do evento é obrigatória"),
+  event_time: z.string().optional(),
   banner_url: z.string().optional(),
   regulation_url: z.string().optional(),
   status: z.enum(["draft", "published", "finished"]),
@@ -217,7 +218,8 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
       location: "",
       city: "",
       state: "",
-      event_date: undefined,
+      event_date: "",
+      event_time: "",
       banner_url: "",
       regulation_url: "",
       status: "draft",
@@ -243,7 +245,8 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
           location: "",
           city: "",
           state: "",
-          event_date: undefined,
+          event_date: "",
+          event_time: "",
           banner_url: "",
           regulation_url: "",
           status: "draft",
@@ -279,13 +282,19 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
             
             // Update form with event data
             const autoMode = eventData.registration_auto_mode || false;
+            
+            // Converter event_date para separar data e horário
+            const eventDateTime = eventData.event_date ? isoToDatetimeLocal(eventData.event_date) : "";
+            const [eventDate, eventTime] = eventDateTime ? eventDateTime.split('T') : ["", ""];
+            
             form.reset({
               title: eventData.title || "",
               description: eventData.description || "",
               location: eventData.location || "",
               city: eventData.city || "",
               state: eventData.state || "",
-              event_date: eventData.event_date ? new Date(eventData.event_date) : undefined,
+              event_date: eventDate || "",
+              event_time: eventTime || "",
               banner_url: eventData.banner_url || "",
               regulation_url: eventData.regulation_url || "",
               status: eventData.status || "draft",
@@ -536,7 +545,8 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
           location: "",
           city: "",
           state: "",
-          event_date: undefined,
+          event_date: "",
+          event_time: "",
           banner_url: "",
           regulation_url: "",
           status: "draft",
@@ -1356,6 +1366,25 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
         organizerId = user.id;
       }
 
+      // Combinar data e horário em ISO datetime
+      let eventDateISO: string | null = null;
+      if (values.event_date) {
+        const datetimeLocal = values.event_time 
+          ? `${values.event_date}T${values.event_time}`
+          : `${values.event_date}T00:00`;
+        eventDateISO = datetimeLocalToISO(datetimeLocal);
+      }
+      
+      if (!eventDateISO) {
+        toast({
+          title: "Erro",
+          description: "Data do evento é obrigatória",
+          variant: "destructive",
+        });
+        setIsSubmitting(false);
+        return;
+      }
+
       // Insert or update event
       const eventData = {
         title: values.title,
@@ -1363,7 +1392,7 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
         location: values.location,
         city: values.city,
         state: values.state,
-        event_date: values.event_date.toISOString(),
+        event_date: eventDateISO,
         banner_url: values.banner_url || undefined,
         regulation_url: values.regulation_url || undefined,
         status: values.status,
@@ -2216,30 +2245,45 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
                   )}
                 />
 
-                <FormField
-                  control={form.control}
-                  name="event_date"
-                  render={({ field }) => (
-                    <FormItem className="flex flex-col">
-                      <FormLabel>Data e Hora da Largada</FormLabel>
-                      <FormControl>
-                        <Input
-                          type="datetime-local"
-                          value={field.value ? format(field.value, "yyyy-MM-dd'T'HH:mm") : ""}
-                          onChange={(e) => {
-                            if (e.target.value) {
-                              field.onChange(new Date(e.target.value));
-                            } else {
-                              field.onChange(undefined);
-                            }
-                          }}
-                          className="w-full"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="event_date"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Data da Largada</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="date"
+                            value={field.value || ""}
+                            onChange={(e) => field.onChange(e.target.value)}
+                            className="w-full"
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="event_time"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Horário da Largada</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="time"
+                            value={field.value || ""}
+                            onChange={(e) => field.onChange(e.target.value)}
+                            className="w-full"
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
 
                 <FormField
                   control={form.control}
@@ -4075,9 +4119,14 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
                         <span className="text-muted-foreground">Data:</span>
                         <p className="font-medium">
                           {form.watch("event_date")
-                            ? format(form.watch("event_date"), "PPP", {
-                                locale: ptBR,
-                              })
+                            ? (() => {
+                                const dateStr = form.watch("event_date");
+                                const timeStr = form.watch("event_time") || "00:00";
+                                const dateTime = new Date(`${dateStr}T${timeStr}`);
+                                return format(dateTime, "PPP 'às' HH:mm", {
+                                  locale: ptBR,
+                                });
+                              })()
                             : "Não informada"}
                         </p>
                       </div>
