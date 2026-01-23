@@ -178,20 +178,16 @@ const Index = () => {
         new Map(allEvents.map(event => [event.id, event])).values()
       );
       
-      // Filtrar eventos SEM resultados disponíveis (sem result_url ou result_url vazio)
-      const eventsWithoutResults = uniqueEvents.filter(event => {
-        return !event.result_url || event.result_url.trim() === '';
-      });
+      // Filtrar eventos SEM resultados disponíveis e ordenar por data mais próxima
+      const filteredEvents = uniqueEvents
+        .filter(event => !event.result_url || event.result_url.trim() === '')
+        .sort((a, b) => {
+          const dateA = new Date(a.event_date).getTime();
+          const dateB = new Date(b.event_date).getTime();
+          return dateA - dateB; // Ordenar por data mais próxima primeiro
+        });
       
-      // Ordenar por data mais próxima (ascendente)
-      const sortedEvents = eventsWithoutResults.sort((a, b) => {
-        const dateA = new Date(a.event_date).getTime();
-        const dateB = new Date(b.event_date).getTime();
-        return dateA - dateB;
-      });
-      
-      // Limitar a 6 eventos mais próximos
-      setNextEvents(sortedEvents.slice(0, 6));
+      setNextEvents(filteredEvents);
     } catch (error) {
       console.error("Erro ao carregar próximos eventos:", error);
     }
