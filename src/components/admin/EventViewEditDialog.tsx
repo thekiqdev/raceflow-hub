@@ -20,7 +20,7 @@ import { getOrganizers } from "@/lib/api/userManagement";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, MapPin, Calendar, Users, DollarSign, Search, CheckCircle, Package, MapPin as MapPinIcon, Plus, Trash2, ChevronUp, ChevronDown, X, Ban, AlertTriangle } from "lucide-react";
 import { FileUpload } from "@/components/ui/file-upload";
-import { isoToDatetimeLocal, processDatetimeLocalForSave } from "@/lib/utils";
+import { isoToDatetimeLocal, processDatetimeLocalForSave, datetimeLocalToISO } from "@/lib/utils";
 
 interface EventViewEditDialogProps {
   eventId: string | null;
@@ -62,6 +62,7 @@ export function EventViewEditDialog({
     title: "",
     description: "",
     event_date: "",
+    event_time: "",
     location: "",
     city: "",
     state: "",
@@ -186,10 +187,15 @@ export function EventViewEditDialog({
         setSelectedOrganizerId(eventData.organizer_id);
       }
       
+      // Converter event_date para separar data e horário
+      const eventDateTime = eventData.event_date ? isoToDatetimeLocal(eventData.event_date) : "";
+      const [eventDate, eventTime] = eventDateTime ? eventDateTime.split('T') : ["", ""];
+      
       setFormData({
         title: eventData.title || "",
         description: eventData.description || "",
-        event_date: eventData.event_date || "",
+        event_date: eventDate || "",
+        event_time: eventTime || "",
         location: eventData.location || "",
         city: eventData.city || "",
         state: eventData.state || "",
@@ -679,10 +685,23 @@ export function EventViewEditDialog({
 
     setSaving(true);
     try {
+      // Combinar data e horário em ISO datetime
+      let eventDateISO: string | null = null;
+      if (formData.event_date) {
+        const datetimeLocal = formData.event_time 
+          ? `${formData.event_date}T${formData.event_time}`
+          : `${formData.event_date}T00:00`;
+        eventDateISO = datetimeLocalToISO(datetimeLocal);
+      }
+      
       // Prepare event data with organizer_id if changed
       const eventUpdateData: any = {
         ...formData,
+        event_date: eventDateISO || undefined,
       };
+      
+      // Remover event_time do objeto antes de enviar (não é um campo do backend)
+      delete eventUpdateData.event_time;
       
       // Include organizer_id if it was changed
       // Only update if selectedOrganizerId is set and different from current
@@ -1292,11 +1311,15 @@ export function EventViewEditDialog({
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="grid gap-2">
-                  <Label htmlFor="event_date">Data</Label>
+                  <Label htmlFor="event_date">Data do Evento</Label>
                   {mode === "view" ? (
                     <p className="text-sm flex items-center gap-2">
                       <Calendar className="h-4 w-4" />
-                      {new Date(formData.event_date).toLocaleDateString("pt-BR")}
+                      {formData.event_date && formData.event_time
+                        ? `${new Date(`${formData.event_date}T${formData.event_time}`).toLocaleDateString("pt-BR")} às ${formData.event_time}`
+                        : formData.event_date
+                        ? new Date(`${formData.event_date}T00:00`).toLocaleDateString("pt-BR")
+                        : "-"}
                     </p>
                   ) : (
                     <Input
@@ -1304,6 +1327,23 @@ export function EventViewEditDialog({
                       type="date"
                       value={formData.event_date}
                       onChange={(e) => setFormData({ ...formData, event_date: e.target.value })}
+                    />
+                  )}
+                </div>
+
+                <div className="grid gap-2">
+                  <Label htmlFor="event_time">Horário do Evento</Label>
+                  {mode === "view" ? (
+                    <p className="text-sm flex items-center gap-2">
+                      <Calendar className="h-4 w-4" />
+                      {formData.event_time || "00:00"}
+                    </p>
+                  ) : (
+                    <Input
+                      id="event_time"
+                      type="time"
+                      value={formData.event_time}
+                      onChange={(e) => setFormData({ ...formData, event_time: e.target.value })}
                     />
                   )}
                 </div>
