@@ -39,7 +39,6 @@ const Index = () => {
   const { user } = useAuth();
   const isAdmin = user?.roles?.includes('admin') || false;
   const [upcomingEvents, setUpcomingEvents] = useState<Event[]>([]);
-  const [nextEvents, setNextEvents] = useState<Event[]>([]);
   const [filters, setFilters] = useState<EventFiltersState>({
     city: "",
     month: "",
@@ -72,7 +71,6 @@ const Index = () => {
 
   useEffect(() => {
     loadUpcomingEvents(); // Load events from API when order filter changes
-    loadNextEvents(); // Load next events for the new section
   }, [filters.order_by_date]);
 
   const loadSystemSettings = async () => {
@@ -120,76 +118,29 @@ const Index = () => {
         new Map(allEvents.map(event => [event.id, event])).values()
       );
       
-      // Filtrar apenas eventos com inscrições abertas ou em breve
+      // Incluir eventos com inscrições abertas, em breve e encerradas
       const filteredEvents = uniqueEvents.filter(event => {
         const effectiveStatus = getEffectiveRegistrationStatus(event);
-        return effectiveStatus === 'open' || effectiveStatus === 'not_open';
+        return effectiveStatus === 'open' || effectiveStatus === 'not_open' || effectiveStatus === 'closed';
       });
       
-      // Ordenar: primeiro eventos com inscrições abertas, depois em breve
+      // Ordenar: inscrições abertas, depois em breve, depois encerradas; dentro de cada grupo, por data
       const sortedEvents = filteredEvents.sort((a, b) => {
         const statusA = getEffectiveRegistrationStatus(a);
         const statusB = getEffectiveRegistrationStatus(b);
-        
-        // 'open' vem antes de 'not_open'
-        if (statusA === 'open' && statusB === 'not_open') return -1;
-        if (statusA === 'not_open' && statusB === 'open') return 1;
-        
-        // Se mesmo status, manter ordem por data
-        return 0;
+        const order: Record<string, number> = { open: 0, not_open: 1, closed: 2 };
+        const ia = statusA ? (order[statusA] ?? 3) : 3;
+        const ib = statusB ? (order[statusB] ?? 3) : 3;
+        if (ia !== ib) return ia - ib;
+        const dateA = new Date(a.event_date).getTime();
+        const dateB = new Date(b.event_date).getTime();
+        return filters.order_by_date === 'desc' ? dateB - dateA : dateA - dateB;
       });
       
       setUpcomingEvents(sortedEvents);
     } catch (error) {
       console.error("Erro ao carregar eventos:", error);
       toast.error("Erro ao carregar eventos");
-    }
-  };
-
-  const loadNextEvents = async () => {
-    try {
-      // Buscar eventos publicados e ongoing
-      const publishedResponse = await getEvents({ status: 'published', order_by_date: 'asc' });
-      const ongoingResponse = await getEvents({ status: 'ongoing', order_by_date: 'asc' });
-      
-      const allEvents: Event[] = [];
-      const now = new Date();
-      
-      // Adicionar eventos publicados com data futura
-      if (publishedResponse.success && publishedResponse.data) {
-        const futureEvents = publishedResponse.data.filter(event => {
-          const eventDate = new Date(event.event_date);
-          return eventDate >= now;
-        });
-        allEvents.push(...futureEvents);
-      }
-      
-      // Adicionar eventos ongoing com data futura
-      if (ongoingResponse.success && ongoingResponse.data) {
-        const futureEvents = ongoingResponse.data.filter(event => {
-          const eventDate = new Date(event.event_date);
-          return eventDate >= now;
-        });
-        allEvents.push(...futureEvents);
-      }
-      
-      // Remover duplicatas
-      const uniqueEvents = Array.from(
-        new Map(allEvents.map(event => [event.id, event])).values()
-      );
-      
-      // Filtrar eventos SEM resultados disponíveis e ordenar por data mais próxima
-      const filteredEvents = uniqueEvents
-        .filter(event => !event.result_url || event.result_url.trim() === '')
-        .sort((a, b) => {
-          const dateA = new Date(a.event_date).getTime();
-          const dateB = new Date(b.event_date).getTime();
-          return dateA - dateB; // Ordenar por data mais próxima primeiro
-        });
-      
-      setNextEvents(filteredEvents);
-    } catch (error) {
-      console.error("Erro ao carregar próximos eventos:", error);
     }
   };
 
@@ -435,80 +386,6 @@ const Index = () => {
             })}
           </div>
         </section>
-
-        {/* Next Events Section */}
-        {nextEvents.length > 0 && (
-          <section className="container mx-auto px-4 py-16">
-            <h2 className="text-3xl font-bold mb-8 text-center">Próximos Eventos</h2>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {nextEvents.map(event => {
-                const EventCard = () => {
-                  const [imageError, setImageError] = useState(false);
-                  return (
-                    <Card key={event.id} className="overflow-hidden hover:shadow-xl transition-all hover:-translate-y-1 cursor-pointer" onClick={() => navigate(event.slug ? `/evento/${event.slug}` : `/events/${event.id}`)}>
-                      <div className="h-48 bg-gradient-hero flex items-center justify-center relative overflow-hidden">
-                        {event.banner_url && !imageError ? (
-                          <img 
-                            src={event.banner_url} 
-                            alt={event.title} 
-                            className="w-full h-full object-cover"
-                            onError={() => setImageError(true)}
-                          />
-                        ) : (
-                          <Award className="h-16 w-16 text-white opacity-50" />
-                        )}
-                      </div>
-                      <CardContent className="pt-4">
-                        <div className="flex items-start justify-between gap-2 mb-2">
-                          <h3 className="font-bold text-base line-clamp-2 flex-1">{event.title}</h3>
-                          {(() => {
-                            const effectiveStatus = getEffectiveRegistrationStatus(event);
-                            if (effectiveStatus !== null) {
-                              return (
-                                <Badge variant={getRegistrationStatusVariant(event)} className="text-xs shrink-0">
-                                  {getRegistrationStatusLabel(event)}
-                                </Badge>
-                              );
-                            }
-                            return null;
-                          })()}
-                        </div>
-                        <div className="flex items-center gap-2 text-xs text-muted-foreground mb-3">
-                          <Calendar className="h-3 w-3" />
-                          <span>
-                            {format(new Date(event.event_date), "dd 'de' MMMM 'de' yyyy", {
-                              locale: ptBR
-                            })}
-                          </span>
-                        </div>
-                        <div className="space-y-1 text-xs text-muted-foreground mb-4">
-                          <div className="flex items-center gap-2">
-                            <MapPin className="h-3 w-3" />
-                            <span>
-                              {event.city} - {event.state}
-                            </span>
-                          </div>
-                        </div>
-                        <Button 
-                          size="sm" 
-                          className="w-full text-xs" 
-                          onClick={e => {
-                            e.stopPropagation();
-                            navigate(event.slug ? `/evento/${event.slug}` : `/events/${event.id}`);
-                          }}
-                        >
-                          Ver Detalhes
-                        </Button>
-                      </CardContent>
-                    </Card>
-                  );
-                };
-                return <EventCard key={event.id} />;
-              })}
-            </div>
-          </section>
-        )}
 
         {/* Consultoria Section */}
         <section className="py-16 bg-muted/50">
