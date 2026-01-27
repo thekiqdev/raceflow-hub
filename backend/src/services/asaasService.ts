@@ -132,9 +132,10 @@ export const createCustomer = async (
       console.log('⚠️ Erro ao buscar cliente no Asaas, criando novo:', searchError.message);
     }
 
-    // Create new customer in Asaas
+    // Create new customer in Asaas (notificações desligadas por padrão – Cronoteam envia as próprias)
     console.log('🆕 Criando novo cliente no Asaas...');
-    const response = await asaasClient.post<AsaasCustomerResponse>('/customers', customerData);
+    const payload = { ...customerData, notificationDisabled: customerData.notificationDisabled ?? true };
+    const response = await asaasClient.post<AsaasCustomerResponse>('/customers', payload);
 
     const asaasCustomer = response.data;
 
@@ -186,6 +187,22 @@ export const getCustomerByUserId = async (userId: string): Promise<string | null
   }
 
   return result.rows[0].asaas_customer_id;
+};
+
+/** Atualiza cliente no Asaas para desabilitar notificações de faturas (PUT /customers/{id}). */
+export const updateCustomerNotificationDisabled = async (
+  asaasCustomerId: string
+): Promise<{ ok: boolean; error?: string }> => {
+  const asaasClient = createAsaasClient();
+  try {
+    await asaasClient.put(`/customers/${asaasCustomerId}`, { notificationDisabled: true });
+    return { ok: true };
+  } catch (error: any) {
+    const msg = error.response?.data?.errors
+      ? error.response.data.errors.map((e: any) => e.description).join(', ')
+      : error.message;
+    return { ok: false, error: msg };
+  }
 };
 
 // Validate customer exists in Asaas and recreate if invalid

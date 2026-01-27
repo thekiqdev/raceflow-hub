@@ -117,6 +117,7 @@ import {
 } from '../controllers/documentTypesController.js';
 import {
   fixOrganizerRegistrationsController,
+  disableAsaasNotificationsController,
 } from '../controllers/adminScriptsController.js';
 
 const router = Router();
@@ -241,6 +242,7 @@ router.delete('/document-types/:id', deleteDocumentTypeController);
 
 // Admin Scripts endpoints
 router.post('/scripts/fix-organizer-registrations', fixOrganizerRegistrationsController);
+router.post('/scripts/disable-asaas-notifications', disableAsaasNotificationsController);
 
 export default router;
 

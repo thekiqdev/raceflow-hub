@@ -258,6 +258,101 @@ export const executeFixOrganizerRegistrationsScript = async (
   }
 };
 
+/**
+ * Executa o script para desabilitar notificações de faturas no Asaas (clientes antigos).
+ * Envia PUT notificationDisabled=true para cada cliente na tabela asaas_customers.
+ */
+export const executeDisableAsaasNotificationsScript = async (
+  onLog: (message: string) => void,
+  onComplete: (data: { success: boolean; summary?: { updated?: number; errors?: number; total?: number }; logFile?: string; message?: string }) => void,
+  onError: (error: string) => void
+): Promise<void> => {
+  try {
+    const token = localStorage.getItem('auth_token');
+    if (!token) {
+      throw new Error('Não autenticado');
+    }
+
+    const getApiUrl = () => {
+      const envUrl = import.meta.env.VITE_API_URL;
+      if (envUrl && !envUrl.includes('localhost')) {
+        return envUrl;
+      }
+      if (import.meta.env.PROD) {
+        return 'https://cronoteam-crono-back.e758qe.easypanel.host/api';
+      }
+      return 'http://localhost:3001/api';
+    };
+
+    const apiUrl = getApiUrl();
+    const response = await fetch(`${apiUrl}/admin/scripts/disable-asaas-notifications`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: 'Erro desconhecido' }));
+      throw new Error(errorData.error || errorData.message || 'Erro ao executar script');
+    }
+
+    const reader = response.body?.getReader();
+    const decoder = new TextDecoder();
+    if (!reader) {
+      throw new Error('Resposta do servidor não contém stream de dados');
+    }
+
+    let buffer = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          try {
+            const data = JSON.parse(line.slice(6));
+            if (data.type === 'log') onLog(data.message);
+            else if (data.type === 'complete') {
+              onComplete({
+                success: data.success,
+                summary: data.summary,
+                logFile: data.logFile,
+                message: data.message,
+              });
+            } else if (data.type === 'error') {
+              onError(data.message || 'Erro desconhecido');
+            }
+          } catch (e) {
+            console.error('Erro ao processar linha SSE:', e);
+          }
+        }
+      }
+    }
+
+    if (buffer.startsWith('data: ')) {
+      try {
+        const data = JSON.parse(buffer.slice(6));
+        if (data.type === 'complete') {
+          onComplete({
+            success: data.success,
+            summary: data.summary,
+            logFile: data.logFile,
+            message: data.message,
+          });
+        }
+      } catch (e) {
+        console.error('Erro ao processar buffer final:', e);
+      }
+    }
+  } catch (error: any) {
+    onError(error.message || 'Erro ao executar script');
+  }
+};
+
 
 
 

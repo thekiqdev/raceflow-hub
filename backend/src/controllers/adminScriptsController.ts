@@ -3,6 +3,7 @@ import { AuthRequest } from '../middleware/auth.js';
 import { hasRole } from '../services/userRolesService.js';
 import { query } from '../config/database.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
+import { updateCustomerNotificationDisabled } from '../services/asaasService.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -177,6 +178,132 @@ export const fixOrganizerRegistrationsController = asyncHandler(async (req: Auth
     res.write(`data: ${JSON.stringify({ 
       type: 'error', 
       success: false, 
+      message: error.message,
+      logFile: logFileName,
+    })}\n\n`);
+    res.end();
+    return;
+  }
+});
+
+/**
+ * POST /api/admin/scripts/disable-asaas-notifications
+ * Desabilita notificações de faturas no Asaas para todos os clientes da tabela asaas_customers.
+ * Apenas para administradores.
+ */
+export const disableAsaasNotificationsController = asyncHandler(async (req: AuthRequest, res: Response) => {
+  if (!req.user) {
+    return res.status(401).json({
+      success: false,
+      error: 'Not authenticated',
+    });
+  }
+
+  const isAdmin = await hasRole(req.user.id, 'admin');
+  if (!isAdmin) {
+    return res.status(403).json({
+      success: false,
+      error: 'Forbidden',
+      message: 'Apenas administradores podem executar este script',
+    });
+  }
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+
+  const logs: string[] = [];
+  const logMessage = (message: string) => {
+    const timestamp = new Date().toISOString();
+    const logLine = `[${timestamp}] ${message}`;
+    logs.push(logLine);
+    res.write(`data: ${JSON.stringify({ type: 'log', message: logLine })}\n\n`);
+  };
+
+  try {
+    logMessage('🔍 Buscando clientes Asaas em asaas_customers...\n');
+
+    const rows = await query(
+      'SELECT user_id, asaas_customer_id FROM asaas_customers ORDER BY created_at ASC'
+    );
+
+    if (rows.rows.length === 0) {
+      logMessage('✅ Nenhum cliente Asaas encontrado na base.');
+      res.write(`data: ${JSON.stringify({ type: 'complete', success: true, message: 'Nenhum cliente para atualizar' })}\n\n`);
+      res.end();
+      return;
+    }
+
+    logMessage(`📊 Encontrados ${rows.rows.length} clientes. Enviando PUT notificationDisabled=true para cada um...\n`);
+
+    let updated = 0;
+    let errors = 0;
+
+    for (const row of rows.rows) {
+      try {
+        logMessage(`  - Asaas customer ${row.asaas_customer_id} (user_id: ${row.user_id})`);
+        const result = await updateCustomerNotificationDisabled(row.asaas_customer_id);
+        if (result.ok) {
+          logMessage(`    ✅ Notificações desabilitadas.\n`);
+          updated++;
+        } else {
+          logMessage(`    ❌ Erro: ${result.error}\n`);
+          errors++;
+        }
+        // Pequeno delay para respeitar rate limit da API Asaas
+        await new Promise((r) => setTimeout(r, 300));
+      } catch (err: any) {
+        logMessage(`    ❌ Exceção: ${err.message}\n`);
+        errors++;
+      }
+    }
+
+    const summary = `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📊 Resumo (Desabilitar notificações Asaas):
+   ✅ Atualizados com sucesso: ${updated}
+   ❌ Erros: ${errors}
+   📦 Total processado: ${rows.rows.length}
+
+💡 Os clientes não receberão mais e-mails/SMS de cobrança gerados pelo Asaas.
+   O Cronoteam continua enviando as próprias notificações de inscrição/confirmação.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+
+    logMessage(summary);
+
+    const logDir = path.join(__dirname, '../../logs');
+    if (!fs.existsSync(logDir)) {
+      fs.mkdirSync(logDir, { recursive: true });
+    }
+
+    const logFileName = `disable-asaas-notifications-${Date.now()}.txt`;
+    const logFilePath = path.join(logDir, logFileName);
+    fs.writeFileSync(logFilePath, logs.join('\n') + '\n\n' + summary, 'utf-8');
+
+    logMessage(`📄 Log salvo em: ${logFilePath}`);
+
+    res.write(`data: ${JSON.stringify({
+      type: 'complete',
+      success: true,
+      summary: { updated, errors, total: rows.rows.length },
+      logFile: logFileName,
+    })}\n\n`);
+    res.end();
+    return;
+  } catch (error: any) {
+    logMessage(`❌ Erro ao executar script: ${error.message}`);
+
+    const logDir = path.join(__dirname, '../../logs');
+    if (!fs.existsSync(logDir)) {
+      fs.mkdirSync(logDir, { recursive: true });
+    }
+    const logFileName = `disable-asaas-notifications-error-${Date.now()}.txt`;
+    const logFilePath = path.join(logDir, logFileName);
+    fs.writeFileSync(logFilePath, logs.join('\n') + '\n\n❌ Erro: ' + error.message, 'utf-8');
+
+    res.write(`data: ${JSON.stringify({
+      type: 'error',
+      success: false,
       message: error.message,
       logFile: logFileName,
     })}\n\n`);

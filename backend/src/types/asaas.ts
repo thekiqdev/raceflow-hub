@@ -44,6 +44,8 @@ export interface AsaasCustomerRequest {
   city?: string;
   state?: string;
   externalReference?: string;
+  /** Desabilita todas as notificações de faturas do Asaas para o cliente. Padrão true no Cronoteam. */
+  notificationDisabled?: boolean;
 }
 
 export interface AsaasCustomerResponse {
