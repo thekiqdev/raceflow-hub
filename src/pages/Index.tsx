@@ -94,45 +94,27 @@ const Index = () => {
 
   const loadUpcomingEvents = async () => {
     try {
-      // Buscar eventos publicados e ongoing
-      // Ordenar por data conforme filtro selecionado
       const orderBy = filters.order_by_date || 'asc';
       const publishedResponse = await getEvents({ status: 'published', order_by_date: orderBy });
       const ongoingResponse = await getEvents({ status: 'ongoing', order_by_date: orderBy });
-      
+      const finishedResponse = await getEvents({ status: 'finished', order_by_date: orderBy });
+
       const allEvents: Event[] = [];
-      const now = new Date();
-      
-      // Adicionar eventos publicados com data futura
-      if (publishedResponse.success && publishedResponse.data) {
-        const futureEvents = publishedResponse.data.filter(event => {
-          const eventDate = new Date(event.event_date);
-          return eventDate >= now;
-        });
-        allEvents.push(...futureEvents);
-      }
-      
-      // Adicionar eventos ongoing com data futura
-      if (ongoingResponse.success && ongoingResponse.data) {
-        const futureEvents = ongoingResponse.data.filter(event => {
-          const eventDate = new Date(event.event_date);
-          return eventDate >= now;
-        });
-        allEvents.push(...futureEvents);
-      }
-      
-      // Remover duplicatas
+      if (publishedResponse.success && publishedResponse.data) allEvents.push(...publishedResponse.data);
+      if (ongoingResponse.success && ongoingResponse.data) allEvents.push(...ongoingResponse.data);
+      if (finishedResponse.success && finishedResponse.data) allEvents.push(...finishedResponse.data);
+
       const uniqueEvents = Array.from(
         new Map(allEvents.map(event => [event.id, event])).values()
       );
-      
-      // Incluir eventos com inscrições abertas, em breve e encerradas
+
       const filteredEvents = uniqueEvents.filter(event => {
         const effectiveStatus = getEffectiveRegistrationStatus(event);
         return effectiveStatus === 'open' || effectiveStatus === 'not_open' || effectiveStatus === 'closed';
       });
-      
-      // Ordenar: inscrições abertas, depois em breve, depois encerradas; dentro de cada grupo, por data
+
+      const now = Date.now();
+      // Ordenar: próximos primeiro (futuros por data asc), depois passados (por data desc)
       const sortedEvents = filteredEvents.sort((a, b) => {
         const statusA = getEffectiveRegistrationStatus(a);
         const statusB = getEffectiveRegistrationStatus(b);
@@ -142,9 +124,14 @@ const Index = () => {
         if (ia !== ib) return ia - ib;
         const dateA = new Date(a.event_date).getTime();
         const dateB = new Date(b.event_date).getTime();
-        return filters.order_by_date === 'desc' ? dateB - dateA : dateA - dateB;
+        const aFuture = dateA >= now;
+        const bFuture = dateB >= now;
+        if (aFuture && !bFuture) return -1;
+        if (!aFuture && bFuture) return 1;
+        if (aFuture && bFuture) return filters.order_by_date === 'desc' ? dateB - dateA : dateA - dateB;
+        return filters.order_by_date === 'desc' ? dateA - dateB : dateB - dateA; // passados: mais recente primeiro
       });
-      
+
       setUpcomingEvents(sortedEvents);
     } catch (error) {
       console.error("Erro ao carregar eventos:", error);
@@ -228,10 +215,11 @@ const Index = () => {
     return matchesSearch && matchesCity && matchesMonth && matchesCategory;
   });
 
-  const totalPages = Math.ceil(filteredUpcomingEvents.length / EVENTS_PER_PAGE);
+  const totalPages = Math.max(1, Math.ceil(filteredUpcomingEvents.length / EVENTS_PER_PAGE));
+  const safePage = totalPages > 0 ? Math.min(eventsPage, totalPages - 1) : 0;
   const paginatedEvents = filteredUpcomingEvents.slice(
-    eventsPage * EVENTS_PER_PAGE,
-    (eventsPage + 1) * EVENTS_PER_PAGE
+    safePage * EVENTS_PER_PAGE,
+    (safePage + 1) * EVENTS_PER_PAGE
   );
 
   return (
@@ -402,26 +390,26 @@ const Index = () => {
           </div>
 
           {filteredUpcomingEvents.length > EVENTS_PER_PAGE && (
-            <div className="mt-10 flex items-center justify-center gap-4">
+            <div className="mt-10 flex flex-wrap items-center justify-center gap-4">
               <Button
                 variant="outline"
                 size="lg"
                 className="gap-2"
-                disabled={eventsPage === 0}
+                disabled={safePage === 0}
                 onClick={() => setEventsPage(p => Math.max(0, p - 1))}
               >
                 <ChevronLeft className="h-5 w-5" />
                 Anterior
               </Button>
-              <span className="text-sm text-muted-foreground px-2">
-                Página {eventsPage + 1} de {totalPages}
+              <span className="text-sm text-muted-foreground px-2 text-center">
+                Página {safePage + 1} de {totalPages}
                 <span className="hidden sm:inline"> · {filteredUpcomingEvents.length} eventos</span>
               </span>
               <Button
                 variant="outline"
                 size="lg"
                 className="gap-2"
-                disabled={eventsPage >= totalPages - 1}
+                disabled={safePage >= totalPages - 1}
                 onClick={() => setEventsPage(p => Math.min(totalPages - 1, p + 1))}
               >
                 Próximo
