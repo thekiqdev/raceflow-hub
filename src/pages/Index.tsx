@@ -2,7 +2,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useNavigate } from "react-router-dom";
-import { MapPin, Calendar, Award, Users, Clock, TrendingUp, BarChart3, MessageSquare, FileText, Wifi, Trophy, Facebook, Instagram, Linkedin } from "lucide-react";
+import { MapPin, Calendar, Award, Users, Clock, TrendingUp, BarChart3, MessageSquare, FileText, Wifi, Trophy, Facebook, Instagram, Linkedin, ChevronLeft, ChevronRight } from "lucide-react";
 import heroImage from "@/assets/hero-running.jpg";
 import { useState, useEffect } from "react";
 import { format } from "date-fns";
@@ -34,11 +34,14 @@ interface Event {
   registration_end_date?: string | null;
   registration_auto_mode?: boolean;
 }
+const EVENTS_PER_PAGE = 9;
+
 const Index = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const isAdmin = user?.roles?.includes('admin') || false;
   const [upcomingEvents, setUpcomingEvents] = useState<Event[]>([]);
+  const [eventsPage, setEventsPage] = useState(0);
   const [filters, setFilters] = useState<EventFiltersState>({
     city: "",
     month: "",
@@ -72,6 +75,11 @@ const Index = () => {
   useEffect(() => {
     loadUpcomingEvents(); // Load events from API when order filter changes
   }, [filters.order_by_date]);
+
+  // Voltar à primeira página quando os filtros mudam
+  useEffect(() => {
+    setEventsPage(0);
+  }, [filters]);
 
   const loadSystemSettings = async () => {
     try {
@@ -219,6 +227,13 @@ const Index = () => {
     const matchesCategory = !filters.category || filters.category === "all";
     return matchesSearch && matchesCity && matchesMonth && matchesCategory;
   });
+
+  const totalPages = Math.ceil(filteredUpcomingEvents.length / EVENTS_PER_PAGE);
+  const paginatedEvents = filteredUpcomingEvents.slice(
+    eventsPage * EVENTS_PER_PAGE,
+    (eventsPage + 1) * EVENTS_PER_PAGE
+  );
+
   return (
     <VisualEditorProvider 
       initialContent={pageSettings}
@@ -294,7 +309,7 @@ const Index = () => {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredUpcomingEvents.map(event => {
+            {paginatedEvents.map(event => {
               const EventCard = () => {
                 const [imageError, setImageError] = useState(false);
                 return (
@@ -385,6 +400,35 @@ const Index = () => {
               return <EventCard key={event.id} />;
             })}
           </div>
+
+          {filteredUpcomingEvents.length > EVENTS_PER_PAGE && (
+            <div className="mt-10 flex items-center justify-center gap-4">
+              <Button
+                variant="outline"
+                size="lg"
+                className="gap-2"
+                disabled={eventsPage === 0}
+                onClick={() => setEventsPage(p => Math.max(0, p - 1))}
+              >
+                <ChevronLeft className="h-5 w-5" />
+                Anterior
+              </Button>
+              <span className="text-sm text-muted-foreground px-2">
+                Página {eventsPage + 1} de {totalPages}
+                <span className="hidden sm:inline"> · {filteredUpcomingEvents.length} eventos</span>
+              </span>
+              <Button
+                variant="outline"
+                size="lg"
+                className="gap-2"
+                disabled={eventsPage >= totalPages - 1}
+                onClick={() => setEventsPage(p => Math.min(totalPages - 1, p + 1))}
+              >
+                Próximo
+                <ChevronRight className="h-5 w-5" />
+              </Button>
+            </div>
+          )}
         </section>
 
         {/* Consultoria Section */}
