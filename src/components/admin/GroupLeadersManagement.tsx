@@ -162,10 +162,13 @@ export function GroupLeadersManagement() {
   };
 
   const filteredLeaders = leaders.filter((leader) => {
-    const searchLower = searchTerm.toLowerCase();
+    const searchLower = searchTerm.toLowerCase().trim();
+    if (!searchLower) return true;
     return (
-      leader.referral_code.toLowerCase().includes(searchLower) ||
-      leader.user_id.toLowerCase().includes(searchLower)
+      leader.referral_code?.toLowerCase().includes(searchLower) ||
+      leader.user_id?.toLowerCase().includes(searchLower) ||
+      (leader.user_name && leader.user_name.toLowerCase().includes(searchLower)) ||
+      (leader.user_email && leader.user_email.toLowerCase().includes(searchLower))
     );
   });
 
@@ -242,7 +245,7 @@ export function GroupLeadersManagement() {
             <div className="relative flex-1">
               <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Buscar por código ou ID..."
+                placeholder="Buscar por nome, e-mail ou código..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="pl-10"

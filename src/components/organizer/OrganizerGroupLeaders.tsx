@@ -41,6 +41,7 @@ export function OrganizerGroupLeaders() {
   const [selectedLeader, setSelectedLeader] = useState<GroupLeader | null>(null);
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [availableLeaders, setAvailableLeaders] = useState<GroupLeader[]>([]);
+  const [availableSearchTerm, setAvailableSearchTerm] = useState("");
   const [loadingAvailable, setLoadingAvailable] = useState(false);
 
   useEffect(() => {
@@ -177,10 +178,21 @@ export function OrganizerGroupLeaders() {
   };
 
   const filteredLeaders = leaders.filter((leader) => {
-    const searchLower = searchTerm.toLowerCase();
+    const searchLower = searchTerm.toLowerCase().trim();
+    if (!searchLower) return true;
     return (
-      leader.referral_code.toLowerCase().includes(searchLower) ||
-      leader.user_id.toLowerCase().includes(searchLower) ||
+      leader.referral_code?.toLowerCase().includes(searchLower) ||
+      leader.user_id?.toLowerCase().includes(searchLower) ||
+      (leader.user_name && leader.user_name.toLowerCase().includes(searchLower)) ||
+      (leader.user_email && leader.user_email.toLowerCase().includes(searchLower))
+    );
+  });
+
+  const filteredAvailableLeaders = availableLeaders.filter((leader) => {
+    const searchLower = availableSearchTerm.toLowerCase().trim();
+    if (!searchLower) return true;
+    return (
+      leader.referral_code?.toLowerCase().includes(searchLower) ||
       (leader.user_name && leader.user_name.toLowerCase().includes(searchLower)) ||
       (leader.user_email && leader.user_email.toLowerCase().includes(searchLower))
     );
@@ -408,15 +420,32 @@ export function OrganizerGroupLeaders() {
       />
 
       {/* Add Leader Dialog */}
-      <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
+      <Dialog
+        open={addDialogOpen}
+        onOpenChange={(open) => {
+          setAddDialogOpen(open);
+          if (!open) setAvailableSearchTerm("");
+        }}
+      >
         <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Adicionar Líder</DialogTitle>
             <DialogDescription>
-              Selecione um líder disponível para adicionar à sua lista
+              Selecione um líder disponível para adicionar à sua lista. Busque por nome, e-mail ou código.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
+            {availableLeaders.length > 0 && !loadingAvailable && (
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Buscar por nome, e-mail ou código..."
+                  value={availableSearchTerm}
+                  onChange={(e) => setAvailableSearchTerm(e.target.value)}
+                  className="pl-10"
+                />
+              </div>
+            )}
             {loadingAvailable ? (
               <div className="flex items-center justify-center py-8">
                 <Loader2 className="h-8 w-8 animate-spin" />
@@ -425,9 +454,13 @@ export function OrganizerGroupLeaders() {
               <div className="text-center py-8 text-muted-foreground">
                 Nenhum líder disponível. Todos os líderes já foram adicionados.
               </div>
+            ) : filteredAvailableLeaders.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                Nenhum líder encontrado para &quot;{availableSearchTerm}&quot;
+              </div>
             ) : (
               <div className="space-y-2">
-                {availableLeaders.map((leader) => (
+                {filteredAvailableLeaders.map((leader) => (
                   <div
                     key={leader.id}
                     className="flex items-center justify-between p-3 border rounded-lg hover:bg-muted/50"

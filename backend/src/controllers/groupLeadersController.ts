@@ -8,7 +8,7 @@ import {
   updateGroupLeader,
   deactivateGroupLeader,
   activateGroupLeader,
-  getAllGroupLeaders,
+  getAllGroupLeadersWithUserInfo,
   getOrganizerLeaders,
   getAvailableLeadersForOrganizer,
   addLeaderToOrganizer,
@@ -110,12 +110,12 @@ export const getMyGroupLeaderController = asyncHandler(
 
 /**
  * GET /api/admin/group-leaders
- * Get all group leaders (admin only)
+ * Get all group leaders (admin only), com nome e email para busca
  * Note: Admin role is already verified by requireRole('admin') middleware in adminRoutes.ts
  */
 export const getAllGroupLeadersController = asyncHandler(
   async (_req: AuthRequest, res: Response) => {
-    const leaders = await getAllGroupLeaders();
+    const leaders = await getAllGroupLeadersWithUserInfo();
 
     res.json({
       success: true,

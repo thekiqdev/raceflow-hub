@@ -215,18 +215,15 @@ export const getLeaderEventCommissions = async (
     };
     
     if (coupon && leader) {
-      // Get base URL - prefer port 8080, fallback to first CORS_ORIGIN or API_URL
-      let baseUrl = 'http://localhost:8080';
-      
-      if (process.env.CORS_ORIGIN) {
+      // URL pública do site (ex: https://cronoteam.com.br) para links de cupom
+      let baseUrl = process.env.FRONTEND_URL?.replace(/\/$/, '') || 'http://localhost:8080';
+      if (baseUrl === 'http://localhost:8080' && process.env.CORS_ORIGIN) {
         const origins = process.env.CORS_ORIGIN.split(',').map(o => o.trim());
-        // Prefer origin with port 8080
         const origin8080 = origins.find(o => o.includes(':8080'));
         baseUrl = origin8080 || origins[0];
-      } else if (process.env.API_URL) {
-        baseUrl = process.env.API_URL.replace('/api', '');
+      } else if (baseUrl === 'http://localhost:8080' && process.env.API_URL) {
+        baseUrl = process.env.API_URL.replace(/\/api\/?$/, '');
       }
-      
       enriched.coupon = {
         id: coupon.id,
         code: coupon.code,
