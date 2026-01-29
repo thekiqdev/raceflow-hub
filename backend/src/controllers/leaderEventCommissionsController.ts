@@ -188,7 +188,8 @@ export const createLeaderEventCommissionController = asyncHandler(
               } else if (baseUrl === 'http://localhost:8080' && process.env.API_URL) {
                 baseUrl = process.env.API_URL.replace(/\/api\/?$/, '');
               }
-              return `${baseUrl}/events/${validation.data.event_id}?ref=${leader.referral_code}&cupom=${coupon.code}`;
+              const eventPath = event?.slug ? `/evento/${event.slug}` : `/events/${validation.data.event_id}`;
+              return `${baseUrl}${eventPath}?ref=${leader.referral_code}&cupom=${coupon.code}`;
             })(),
           } : null,
         },

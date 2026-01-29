@@ -64,7 +64,8 @@ export const getLeaderEventCommissions = async (
       lec.updated_at,
       e.title as event_title,
       e.event_date,
-      e.organizer_id
+      e.organizer_id,
+      e.slug as event_slug
     FROM leader_event_commissions lec
     JOIN events e ON lec.event_id = e.id
     WHERE lec.leader_id = $1
@@ -224,10 +225,13 @@ export const getLeaderEventCommissions = async (
       } else if (baseUrl === 'http://localhost:8080' && process.env.API_URL) {
         baseUrl = process.env.API_URL.replace(/\/api\/?$/, '');
       }
+      const eventPath = (commission as any).event_slug
+        ? `/evento/${(commission as any).event_slug}`
+        : `/events/${commission.event_id}`;
       enriched.coupon = {
         id: coupon.id,
         code: coupon.code,
-        link: `${baseUrl}/events/${commission.event_id}?ref=${leader.referral_code}&cupom=${coupon.code}`,
+        link: `${baseUrl}${eventPath}?ref=${leader.referral_code}&cupom=${coupon.code}`,
         discount_value: coupon.discount_value, // Include discount value
         type: coupon.type, // Include coupon type (percentage or fixed)
       };
