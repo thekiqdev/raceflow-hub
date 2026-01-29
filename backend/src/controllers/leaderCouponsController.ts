@@ -1,6 +1,7 @@
 import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
+import { hasRole } from '../services/userRolesService.js';
 import {
   createCoupon,
   getCouponsByLeader,
@@ -11,6 +12,7 @@ import {
   type UpdateCouponData,
 } from '../services/couponsService.js';
 import { getGroupLeaderById } from '../services/groupLeadersService.js';
+import { getEventById } from '../services/eventsService.js';
 import { z } from 'zod';
 
 // Validation schemas
@@ -75,9 +77,23 @@ export const createLeaderCouponController = asyncHandler(
       return;
     }
 
+    const isAdmin = await hasRole(req.user.id, 'admin');
+    let organizerId = req.user.id;
+    if (isAdmin && validation.data.event_ids?.length) {
+      const event = await getEventById(validation.data.event_ids[0]);
+      if (event) organizerId = event.organizer_id;
+    } else if (isAdmin && !validation.data.event_ids?.length) {
+      res.status(400).json({
+        success: false,
+        error: 'Validation Error',
+        message: 'Para criar cupom como admin, informe ao menos um evento (event_ids).',
+      });
+      return;
+    }
+
     try {
       const couponData: CreateCouponData = {
-        organizer_id: req.user.id,
+        organizer_id: organizerId,
         leader_id: leaderId,
         event_ids: validation.data.event_ids || null,
         code: validation.data.code,
@@ -149,8 +165,8 @@ export const getLeaderCouponsController = asyncHandler(
       return;
     }
 
-    // Filter coupons by organizer - only show coupons created by this organizer
-    const coupons = await getCouponsByLeader(leaderId, req.user.id);
+    const isAdmin = await hasRole(req.user.id, 'admin');
+    const coupons = await getCouponsByLeader(leaderId, isAdmin ? undefined : req.user.id);
 
     res.json({
       success: true,
@@ -197,8 +213,8 @@ export const updateLeaderCouponController = asyncHandler(
       return;
     }
 
-    // Verify organizer owns the coupon
-    if (coupon.organizer_id !== req.user.id) {
+    const isAdmin = await hasRole(req.user.id, 'admin');
+    if (!isAdmin && coupon.organizer_id !== req.user.id) {
       res.status(403).json({
         success: false,
         error: 'Forbidden',
@@ -300,8 +316,8 @@ export const deleteLeaderCouponController = asyncHandler(
       return;
     }
 
-    // Verify organizer owns the coupon
-    if (coupon.organizer_id !== req.user.id) {
+    const isAdmin = await hasRole(req.user.id, 'admin');
+    if (!isAdmin && coupon.organizer_id !== req.user.id) {
       res.status(403).json({
         success: false,
         error: 'Forbidden',

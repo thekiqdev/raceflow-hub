@@ -1,6 +1,7 @@
 import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
+import { hasRole } from '../services/userRolesService.js';
 import {
   createLeaderEventCommission,
   getLeaderEventCommissions,
@@ -94,8 +95,8 @@ export const createLeaderEventCommissionController = asyncHandler(
       return;
     }
 
-    // Verify organizer owns the event
-    if (event.organizer_id !== req.user.id) {
+    const isAdmin = await hasRole(req.user.id, 'admin');
+    if (!isAdmin && event.organizer_id !== req.user.id) {
       res.status(403).json({
         success: false,
         error: 'Forbidden',
@@ -103,6 +104,8 @@ export const createLeaderEventCommissionController = asyncHandler(
       });
       return;
     }
+
+    const effectiveOrganizerId = isAdmin ? event.organizer_id : req.user.id;
 
     try {
       const commission = await createLeaderEventCommission({
@@ -134,7 +137,7 @@ export const createLeaderEventCommissionController = asyncHandler(
         // Ensure code is unique
         const { getCouponByCode } = await import('../services/couponsService.js');
         while (attempts < 10) {
-          const existing = await getCouponByCode(couponCode, req.user.id);
+          const existing = await getCouponByCode(couponCode, effectiveOrganizerId);
           if (!existing) {
             break;
           }
@@ -152,7 +155,7 @@ export const createLeaderEventCommissionController = asyncHandler(
           : `Cupom ${leader.referral_code} - ${event.title}`;
         
         coupon = await createCoupon({
-          organizer_id: req.user.id,
+          organizer_id: effectiveOrganizerId,
           leader_id: leaderId,
           event_ids: [validation.data.event_id],
           code: couponCode,
@@ -271,8 +274,11 @@ export const getLeaderEventCommissionsController = asyncHandler(
       return;
     }
 
-    // Filter commissions by organizer - only show commissions for organizer's events
-    const commissions = await getLeaderEventCommissions(leaderId, req.user.id);
+    const isAdmin = await hasRole(req.user.id, 'admin');
+    const commissions = await getLeaderEventCommissions(
+      leaderId,
+      isAdmin ? undefined : req.user.id
+    );
 
     res.json({
       success: true,
@@ -319,9 +325,17 @@ export const updateLeaderEventCommissionController = asyncHandler(
       return;
     }
 
-    // Verify organizer owns the event
     const event = await getEventById(commission.event_id);
-    if (!event || event.organizer_id !== req.user.id) {
+    if (!event) {
+      res.status(404).json({
+        success: false,
+        error: 'Not found',
+        message: 'Evento não encontrado',
+      });
+      return;
+    }
+    const isAdmin = await hasRole(req.user.id, 'admin');
+    if (!isAdmin && event.organizer_id !== req.user.id) {
       res.status(403).json({
         success: false,
         error: 'Forbidden',
@@ -394,7 +408,6 @@ export const deleteLeaderEventCommissionController = asyncHandler(
       return;
     }
 
-    // Verify commission exists and belongs to leader
     const commission = await getLeaderEventCommissionById(commissionId);
     if (!commission || commission.leader_id !== leaderId) {
       res.status(404).json({
@@ -405,9 +418,17 @@ export const deleteLeaderEventCommissionController = asyncHandler(
       return;
     }
 
-    // Verify organizer owns the event
     const event = await getEventById(commission.event_id);
-    if (!event || event.organizer_id !== req.user.id) {
+    if (!event) {
+      res.status(404).json({
+        success: false,
+        error: 'Not found',
+        message: 'Evento não encontrado',
+      });
+      return;
+    }
+    const isAdmin = await hasRole(req.user.id, 'admin');
+    if (!isAdmin && event.organizer_id !== req.user.id) {
       res.status(403).json({
         success: false,
         error: 'Forbidden',
