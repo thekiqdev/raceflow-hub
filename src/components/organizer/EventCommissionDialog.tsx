@@ -116,8 +116,8 @@ export function EventCommissionDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
+      <DialogContent className="max-w-md max-h-[90vh] flex flex-col p-6">
+        <DialogHeader className="flex-shrink-0">
           <DialogTitle>{commission ? "Editar Comissão" : "Criar Comissão por Evento"}</DialogTitle>
           <DialogDescription>
             {commission
@@ -126,7 +126,7 @@ export function EventCommissionDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 py-4">
+        <div className="space-y-4 py-4 overflow-y-auto flex-1 min-h-0">
           <div className="space-y-2">
             <Label htmlFor="name">Nome da Comissão/Bônus</Label>
             <Input
@@ -254,7 +254,7 @@ export function EventCommissionDialog({
           </div>
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="flex-shrink-0">
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
             Cancelar
           </Button>
