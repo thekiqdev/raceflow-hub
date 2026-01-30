@@ -210,3 +210,21 @@ export const getOrganizerCommissionsByLeader = async (id: string, filters?: {
   return apiClient.get<LeaderCommission[]>(endpoint);
 };
 
+/** Progresso de ganho de convite por comissão (evento + regra de X inscrições = 1 convite) */
+export interface LeaderInvitationProgressItem {
+  event_id: string;
+  event_title: string;
+  commission_id: string;
+  commission_name: string | null;
+  required_purchases: number;
+  paid_count: number;
+  invitations_granted: number;
+  /** Inscrições restantes para o próximo convite (0 = já pode ter próximo) */
+  next_convite_in: number;
+}
+
+export const getLeaderInvitationProgress = async (leaderId: string, isOrganizer: boolean = false) => {
+  const base = isOrganizer ? '/organizer' : '/admin';
+  return apiClient.get<LeaderInvitationProgressItem[]>(`${base}/group-leaders/${leaderId}/invitation-progress`);
+};
+

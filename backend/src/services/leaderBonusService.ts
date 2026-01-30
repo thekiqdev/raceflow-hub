@@ -303,3 +303,81 @@ export const recalculateAndRevokeExcessInvitations = async (
   }
   return totalRevoked;
 };
+
+/**
+ * Progress item for invitation bonus: one row per leader_event_commission (invitation or both).
+ */
+export interface LeaderInvitationProgressItem {
+  event_id: string;
+  event_title: string;
+  commission_id: string;
+  commission_name: string | null;
+  required_purchases: number;
+  paid_count: number;
+  invitations_granted: number;
+  /** Inscrições restantes para ganhar o próximo convite (0 = já pode ter próximo) */
+  next_convite_in: number;
+}
+
+/**
+ * Get invitation progress for a leader: for each event commission with bonus_type invitation or both,
+ * returns paid count, invitations granted, and progress toward next convite.
+ */
+export const getLeaderInvitationProgress = async (
+  leaderId: string,
+  organizerId?: string
+): Promise<LeaderInvitationProgressItem[]> => {
+  const { getCouponByEventCommission } = await import('./couponsService.js');
+  let queryText = `SELECT lec.id as commission_id, lec.event_id, lec.name as commission_name, lec.required_purchases, e.title as event_title
+     FROM leader_event_commissions lec
+     JOIN events e ON lec.event_id = e.id
+     WHERE lec.leader_id = $1 AND lec.bonus_type IN ('invitation', 'both')`;
+  const params: any[] = [leaderId];
+  if (organizerId) {
+    queryText += ` AND e.organizer_id = $${params.length + 1}`;
+    params.push(organizerId);
+  }
+  queryText += ` ORDER BY e.title, lec.name`;
+  const bonuses = await query(queryText, params);
+
+  const result: LeaderInvitationProgressItem[] = [];
+
+  for (const row of bonuses.rows) {
+    const required_purchases = parseInt(row.required_purchases, 10) || 1;
+    let couponCode: string | null = null;
+    try {
+      const coupon = await getCouponByEventCommission(leaderId, row.event_id, row.commission_id);
+      if (coupon) couponCode = coupon.code;
+    } catch (_) {}
+
+    const registrations = await getRegistrationsByLeaderCoupons(leaderId, {
+      event_id: row.event_id,
+      payment_status: 'paid',
+      coupon_code: couponCode || undefined,
+    });
+    const paid_count = registrations.length;
+
+    const grantedResult = await query(
+      `SELECT COUNT(*) as count FROM leader_invitations
+       WHERE leader_id = $1 AND event_id = $2 AND commission_id = $3`,
+      [leaderId, row.event_id, row.commission_id]
+    );
+    const invitations_granted = parseInt(grantedResult.rows[0].count, 10) || 0;
+
+    const remainder = paid_count % required_purchases;
+    const next_convite_in = remainder === 0 ? 0 : required_purchases - remainder;
+
+    result.push({
+      event_id: row.event_id,
+      event_title: row.event_title || 'N/A',
+      commission_id: row.commission_id,
+      commission_name: row.commission_name || null,
+      required_purchases,
+      paid_count,
+      invitations_granted,
+      next_convite_in,
+    });
+  }
+
+  return result;
+}

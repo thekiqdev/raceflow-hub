@@ -36,6 +36,7 @@ import {
   deactivateGroupLeaderController,
   getReferralsByLeaderController,
   getCommissionsByLeaderController,
+  getLeaderInvitationProgressController,
 } from '../controllers/groupLeadersController.js';
 import {
   createLeaderEventCommissionController,
@@ -87,6 +88,7 @@ router.post('/group-leaders/:id/activate', activateGroupLeaderController);
 router.delete('/group-leaders/:id', deactivateGroupLeaderController);
 router.get('/group-leaders/:id/referrals', getReferralsByLeaderController);
 router.get('/group-leaders/:id/commissions', getCommissionsByLeaderController);
+router.get('/group-leaders/:id/invitation-progress', getLeaderInvitationProgressController);
 
 // Leader Event Commissions endpoints
 router.get('/events/:eventId/event-commissions', getEventCommissionsByEventController);

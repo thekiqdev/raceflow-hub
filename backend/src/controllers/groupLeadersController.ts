@@ -17,6 +17,7 @@ import {
 } from '../services/groupLeadersService.js';
 import { getReferralsByLeader, getReferralStats } from '../services/referralsService.js';
 import { getCommissionsByLeader } from '../services/commissionsService.js';
+import { getLeaderInvitationProgress } from '../services/leaderBonusService.js';
 // Note: Admin role verification is handled by requireRole('admin') middleware in adminRoutes.ts
 import { z } from 'zod';
 
@@ -575,6 +576,50 @@ export const getCommissionsByLeaderController = asyncHandler(
     res.json({
       success: true,
       data: commissions,
+    });
+  }
+);
+
+/**
+ * GET /api/admin/group-leaders/:id/invitation-progress
+ * GET /api/organizer/group-leaders/:id/invitation-progress
+ * Get invitation bonus progress for a leader (per event commission with invitation/both).
+ */
+export const getLeaderInvitationProgressController = asyncHandler(
+  async (req: AuthRequest, res: Response) => {
+    const { id: leaderId } = req.params;
+    const leader = await getGroupLeaderById(leaderId);
+
+    if (!leader) {
+      res.status(404).json({
+        success: false,
+        error: 'Not found',
+        message: 'Group leader not found',
+      });
+      return;
+    }
+
+    const isOrganizerRoute = req.path?.includes('/organizer/') || req.originalUrl?.includes('/organizer/');
+    let organizerId: string | undefined;
+    if (isOrganizerRoute && req.user) {
+      organizerId = req.user.id;
+      const leaders = await getOrganizerLeaders(req.user.id);
+      const hasLeader = leaders.some((l: any) => l.id === leaderId);
+      if (!hasLeader) {
+        res.status(403).json({
+          success: false,
+          error: 'Forbidden',
+          message: 'Líder não está na sua lista',
+        });
+        return;
+      }
+    }
+
+    const progress = await getLeaderInvitationProgress(leaderId, organizerId);
+
+    res.json({
+      success: true,
+      data: progress,
     });
   }
 );

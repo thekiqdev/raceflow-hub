@@ -86,6 +86,7 @@ import {
   activateGroupLeaderController,
   getReferralsByLeaderController,
   getCommissionsByLeaderController,
+  getLeaderInvitationProgressController,
 } from '../controllers/groupLeadersController.js';
 import {
   getLeaderEventCommissionsController,
@@ -213,6 +214,7 @@ router.delete('/group-leaders/:id/delete', deleteGroupLeaderController);
 router.post('/group-leaders/:id/activate', activateGroupLeaderController);
 router.get('/group-leaders/:id/referrals', getReferralsByLeaderController);
 router.get('/group-leaders/:id/commissions', getCommissionsByLeaderController);
+router.get('/group-leaders/:id/invitation-progress', getLeaderInvitationProgressController);
 router.delete('/commissions/:commissionId', removeCommissionController);
 router.get('/registrations/:registrationId/commission', getRegistrationCommissionController);
 router.get('/events/:eventId/event-commissions', getEventCommissionsByEventController);

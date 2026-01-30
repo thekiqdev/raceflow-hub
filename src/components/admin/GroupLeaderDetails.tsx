@@ -15,8 +15,10 @@ import {
   getCommissionsByLeader,
   getOrganizerReferralsByLeader,
   getOrganizerCommissionsByLeader,
+  getLeaderInvitationProgress,
   type UserReferral, 
-  type LeaderCommission 
+  type LeaderCommission,
+  type LeaderInvitationProgressItem,
 } from "@/lib/api/groupLeaders";
 import { LeaderEventCommissions } from "@/components/organizer/LeaderEventCommissions";
 import { LeaderCoupons } from "@/components/organizer/LeaderCoupons";
@@ -40,8 +42,10 @@ export function GroupLeaderDetails({
 }: GroupLeaderDetailsProps) {
   const [referrals, setReferrals] = useState<UserReferral[]>([]);
   const [commissions, setCommissions] = useState<LeaderCommission[]>([]);
+  const [invitationProgress, setInvitationProgress] = useState<LeaderInvitationProgressItem[]>([]);
   const [loadingReferrals, setLoadingReferrals] = useState(false);
   const [loadingCommissions, setLoadingCommissions] = useState(false);
+  const [loadingInvitationProgress, setLoadingInvitationProgress] = useState(false);
   const [activeTab, setActiveTab] = useState("overview");
   const [eventSearchTerm, setEventSearchTerm] = useState("");
   const [userSearchTerm, setUserSearchTerm] = useState<Record<string, string>>({});
@@ -50,6 +54,7 @@ export function GroupLeaderDetails({
     if (open && leader) {
       loadReferrals();
       loadCommissions();
+      loadInvitationProgress();
     }
   }, [open, leader]);
 
@@ -104,6 +109,22 @@ export function GroupLeaderDetails({
       toast.error("Erro ao carregar comissões");
     } finally {
       setLoadingCommissions(false);
+    }
+  };
+
+  const loadInvitationProgress = async () => {
+    if (!leader) return;
+
+    setLoadingInvitationProgress(true);
+    try {
+      const response = await getLeaderInvitationProgress(leader.id, isOrganizer);
+      if (response.success && response.data) {
+        setInvitationProgress(response.data);
+      }
+    } catch (error) {
+      console.error("Erro ao carregar progresso de convites:", error);
+    } finally {
+      setLoadingInvitationProgress(false);
     }
   };
 
@@ -258,6 +279,7 @@ export function GroupLeaderDetails({
             <TabsTrigger value="overview">Visão Geral</TabsTrigger>
             <TabsTrigger value="referrals">Referências ({referrals.length})</TabsTrigger>
             <TabsTrigger value="commissions">Comissões ({commissions.length})</TabsTrigger>
+            <TabsTrigger value="invitation-progress">Progresso de Convites ({invitationProgress.length})</TabsTrigger>
             <TabsTrigger value="event-commissions">Comissões por Evento</TabsTrigger>
             <TabsTrigger value="coupons">Cupons Exclusivos</TabsTrigger>
           </TabsList>
@@ -586,6 +608,74 @@ export function GroupLeaderDetails({
                     })}
                   </Accordion>
                 )}
+              </div>
+            )}
+          </TabsContent>
+
+          <TabsContent value="invitation-progress" className="space-y-4">
+            {loadingInvitationProgress ? (
+              <div className="flex items-center justify-center h-64">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              </div>
+            ) : invitationProgress.length === 0 ? (
+              <Card>
+                <CardContent className="py-12 text-center">
+                  <p className="text-muted-foreground">Nenhuma comissão com bônus de convite configurada</p>
+                  <p className="text-sm text-muted-foreground mt-1">Configure comissões tipo &quot;Convite&quot; ou &quot;Comissão + Convite&quot; na aba Comissões por Evento</p>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="space-y-4">
+                <p className="text-sm text-muted-foreground">
+                  Regra: a cada X inscrições pagas com o cupom do líder, ele ganha 1 convite (inscrição grátis) no evento.
+                </p>
+                <div className="grid gap-4">
+                  {invitationProgress.map((item) => (
+                    <Card key={item.commission_id}>
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-base">{item.event_title}</CardTitle>
+                        <CardDescription>
+                          {item.commission_name || "Comissão"} • {item.required_purchases} inscrições pagas = 1 convite
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent className="space-y-2">
+                        <div className="flex flex-wrap gap-4 text-sm">
+                          <div>
+                            <span className="text-muted-foreground">Inscrições pagas:</span>{" "}
+                            <span className="font-medium">{item.paid_count}</span>
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground">Convites já ganhos:</span>{" "}
+                            <span className="font-medium">{item.invitations_granted}</span>
+                          </div>
+                          <div>
+                            {item.next_convite_in === 0 ? (
+                              <span className="text-green-600 font-medium">Próximo convite já disponível</span>
+                            ) : (
+                              <>
+                                <span className="text-muted-foreground">Próximo convite em:</span>{" "}
+                                <span className="font-medium">{item.next_convite_in} inscrições pagas</span>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                        <div className="h-2 rounded-full bg-muted overflow-hidden">
+                          <div
+                            className="h-full bg-primary rounded-full transition-all"
+                            style={{
+                              width: `${item.next_convite_in === 0 ? 100 : ((item.required_purchases - item.next_convite_in) / item.required_purchases) * 100}%`,
+                            }}
+                          />
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          {item.next_convite_in === 0
+                            ? "Próximo convite já disponível (atingiu a cota)"
+                            : `Progresso: ${item.required_purchases - item.next_convite_in}/${item.required_purchases} para o próximo convite`}
+                        </p>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
               </div>
             )}
           </TabsContent>
