@@ -26,12 +26,13 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Plus, Search, MoreVertical, Eye, MessageSquare, FileDown, Loader2, Mail, ChevronDown, ChevronUp, Edit2, Save, X, Trash2 } from "lucide-react";
+import { Plus, Search, MoreVertical, Eye, MessageSquare, FileDown, Loader2, Mail, ChevronDown, ChevronUp, Edit2, Save, X, Trash2, Link2 } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
-import { getRegistrations, exportRegistrations, createRegistrationByOrganizer, getRegistrationById, updateRegistration, completeRegistrationAttributes, removeRegistrationAttributes, type Registration } from "@/lib/api/registrations";
+import { getRegistrations, exportRegistrations, createRegistrationByOrganizer, getRegistrationById, updateRegistration, completeRegistrationAttributes, removeRegistrationAttributes, attachRegistrationToCommission, getRegistrationCommission, detachCommission, type Registration, type RegistrationCommissionInfo } from "@/lib/api/registrations";
+import { getEventCommissionsByEvent, type EventCommissionOption } from "@/lib/api/leaderEventCommissions";
 import { getEvents, type Event } from "@/lib/api/events";
 import { getModalities, type Modality } from "@/lib/api/modalities";
 import { getCategories, type Category } from "@/lib/api/categories";
@@ -93,6 +94,16 @@ const OrganizerRegistrations = () => {
   const [kitProducts, setKitProducts] = useState<KitProduct[]>([]);
   const [loadingKit, setLoadingKit] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  // Atrelar inscrição a comissão (cupom criado após a compra)
+  const [isAttachCommissionDialogOpen, setIsAttachCommissionDialogOpen] = useState(false);
+  const [registrationForAttach, setRegistrationForAttach] = useState<Registration | null>(null);
+  const [eventCommissionsForAttach, setEventCommissionsForAttach] = useState<EventCommissionOption[]>([]);
+  const [selectedCommissionIdForAttach, setSelectedCommissionIdForAttach] = useState<string>("");
+  const [loadingAttachCommissions, setLoadingAttachCommissions] = useState(false);
+  const [attaching, setAttaching] = useState(false);
+  const [currentAttachCommission, setCurrentAttachCommission] = useState<RegistrationCommissionInfo | null>(null);
+  const [detachingCommission, setDetachingCommission] = useState(false);
 
   const debouncedSearch = useDebounce(searchQuery, 500);
 
@@ -377,6 +388,85 @@ const OrganizerRegistrations = () => {
       toast.error("Erro ao carregar detalhes da inscrição");
     } finally {
       setLoadingDetails(false);
+    }
+  };
+
+  const handleOpenAttachCommission = async (registration: Registration) => {
+    setRegistrationForAttach(registration);
+    setSelectedCommissionIdForAttach("");
+    setEventCommissionsForAttach([]);
+    setCurrentAttachCommission(null);
+    setIsAttachCommissionDialogOpen(true);
+    setLoadingAttachCommissions(true);
+    try {
+      const [commissionsResponse, currentCommResponse] = await Promise.all([
+        getEventCommissionsByEvent(registration.event_id, false),
+        getRegistrationCommission(registration.id),
+      ]);
+      if (commissionsResponse.success && commissionsResponse.data) {
+        const list = (commissionsResponse.data || []).filter((ec) => ec.bonus_type !== "invitation");
+        setEventCommissionsForAttach(list);
+        if (list.length > 0) setSelectedCommissionIdForAttach(list[0].id);
+      } else {
+        toast.error(commissionsResponse.error || "Erro ao carregar comissões");
+      }
+      if (currentCommResponse.success && currentCommResponse.data) {
+        setCurrentAttachCommission(currentCommResponse.data);
+      } else {
+        setCurrentAttachCommission(null);
+      }
+    } catch (error: any) {
+      console.error("Error loading attach commission data:", error);
+      toast.error("Erro ao carregar dados");
+      setCurrentAttachCommission(null);
+    } finally {
+      setLoadingAttachCommissions(false);
+    }
+  };
+
+  const handleDetachCommission = async () => {
+    if (!registrationForAttach) return;
+    if (!confirm("Remover o atrelamento atual? O valor será descontado do total do líder. Depois você poderá escolher outra comissão.")) return;
+    setDetachingCommission(true);
+    try {
+      const response = await detachCommission(registrationForAttach.id);
+      if (response.success) {
+        toast.success((response as any).message || "Atrelamento removido");
+        setCurrentAttachCommission(null);
+        loadRegistrations();
+      } else {
+        toast.error(response.message || response.error || "Erro ao remover atrelamento");
+      }
+    } catch (error: any) {
+      console.error("Error detaching commission:", error);
+      toast.error(error?.response?.data?.message || error.message || "Erro ao remover atrelamento");
+    } finally {
+      setDetachingCommission(false);
+    }
+  };
+
+  const handleConfirmAttachCommission = async () => {
+    if (!registrationForAttach || !selectedCommissionIdForAttach) return;
+    setAttaching(true);
+    try {
+      const response = await attachRegistrationToCommission(registrationForAttach.id, {
+        leader_event_commission_id: selectedCommissionIdForAttach,
+      });
+      if (response.success) {
+        toast.success("Inscrição atrelada à comissão com sucesso");
+        setIsAttachCommissionDialogOpen(false);
+        setRegistrationForAttach(null);
+        setSelectedCommissionIdForAttach("");
+        setEventCommissionsForAttach([]);
+        loadRegistrations();
+      } else {
+        toast.error(response.message || response.error || "Erro ao atrelar comissão");
+      }
+    } catch (error: any) {
+      console.error("Error attaching commission:", error);
+      toast.error(error?.response?.data?.message || error.message || "Erro ao atrelar comissão");
+    } finally {
+      setAttaching(false);
     }
   };
 
@@ -899,6 +989,12 @@ const OrganizerRegistrations = () => {
                                 <Eye className="mr-2 h-4 w-4" />
                                 Ver Detalhes
                               </DropdownMenuItem>
+                              {registration.payment_status === "paid" && (
+                                <DropdownMenuItem onClick={() => handleOpenAttachCommission(registration)}>
+                                  <Link2 className="mr-2 h-4 w-4" />
+                                  Atrelar a comissão
+                                </DropdownMenuItem>
+                              )}
                               <DropdownMenuItem>
                                 <MessageSquare className="mr-2 h-4 w-4" />
                                 Enviar Mensagem
@@ -915,6 +1011,101 @@ const OrganizerRegistrations = () => {
           )}
         </CardContent>
       </Card>
+
+      {/* Atrelar inscrição a comissão (cupom criado após a compra) - só cupons de líderes do evento da compra */}
+      <Dialog open={isAttachCommissionDialogOpen} onOpenChange={setIsAttachCommissionDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Atrelar inscrição a comissão</DialogTitle>
+            <DialogDescription>
+              Escolha a comissão por evento à qual esta inscrição (já paga) será atrelada. Só aparecem cupons de líderes atrelados a este evento.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            {loadingAttachCommissions ? (
+              <div className="flex items-center justify-center py-6">
+                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+              </div>
+            ) : eventCommissionsForAttach.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                Nenhuma comissão por evento para este evento. Crie uma em Líderes de grupo → comissões por evento.
+              </p>
+            ) : (
+              <>
+                {registrationForAttach?.event_title && (
+                  <div className="rounded-md bg-muted/50 px-3 py-2 text-sm">
+                    <span className="text-muted-foreground">Evento da compra: </span>
+                    <span className="font-medium">{registrationForAttach.event_title}</span>
+                  </div>
+                )}
+                {currentAttachCommission && (
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30 p-3 space-y-2 text-sm">
+                    <div className="font-medium text-foreground">Inscrição já atrelada a</div>
+                    <div><span className="text-muted-foreground">Líder:</span> {currentAttachCommission.leader_name || currentAttachCommission.leader_referral_code || "—"}</div>
+                    <div><span className="text-muted-foreground">Comissão:</span> {currentAttachCommission.commission_percentage}% • {formatCurrency(currentAttachCommission.commission_amount || 0)}</div>
+                    <div><span className="text-muted-foreground">Status:</span> {currentAttachCommission.status === "paid" ? "Pago" : currentAttachCommission.status === "pending" ? "Pendente" : "Cancelado"}</div>
+                    <Button variant="destructive" size="sm" onClick={handleDetachCommission} disabled={detachingCommission}>
+                      {detachingCommission ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                      Remover atrelamento
+                    </Button>
+                    <p className="text-xs text-muted-foreground">Remova o atrelamento atual para escolher outra comissão.</p>
+                  </div>
+                )}
+                <Label>Comissão por evento (líder • % • nome)</Label>
+                <Select
+                  value={selectedCommissionIdForAttach}
+                  onValueChange={setSelectedCommissionIdForAttach}
+                  disabled={!!currentAttachCommission}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione uma comissão" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {eventCommissionsForAttach.map((ec) => (
+                      <SelectItem key={ec.id} value={ec.id}>
+                        <span className="font-medium">{ec.leader_name || ec.leader_referral_code}</span>
+                        <span className="text-muted-foreground"> • {ec.commission_percentage}%</span>
+                        {ec.name ? <span className="text-muted-foreground"> • {ec.name}</span> : null}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {selectedCommissionIdForAttach && (() => {
+                  const ec = eventCommissionsForAttach.find((c) => c.id === selectedCommissionIdForAttach);
+                  if (!ec) return null;
+                  return (
+                    <div className="rounded-lg border bg-muted/30 p-3 space-y-2 text-sm">
+                      <div className="font-medium text-foreground">Detalhes da comissão selecionada</div>
+                      <div><span className="text-muted-foreground">Evento:</span> {ec.event_title || registrationForAttach?.event_title || "—"}</div>
+                      <div><span className="text-muted-foreground">Líder:</span> {ec.leader_name || ec.leader_referral_code}</div>
+                      <div><span className="text-muted-foreground">Comissão:</span> {ec.commission_percentage}%</div>
+                      {ec.name && <div><span className="text-muted-foreground">Nome:</span> {ec.name}</div>}
+                    </div>
+                  );
+                })()}
+              </>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsAttachCommissionDialogOpen(false)} disabled={attaching}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleConfirmAttachCommission}
+              disabled={!!currentAttachCommission || attaching || loadingAttachCommissions || eventCommissionsForAttach.length === 0 || !selectedCommissionIdForAttach}
+            >
+              {attaching ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Atrelando...
+                </>
+              ) : (
+                "Atrelar"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Register Athlete Dialog */}
       <Dialog open={isRegisterDialogOpen} onOpenChange={setIsRegisterDialogOpen}>

@@ -16,11 +16,15 @@ import {
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { hasRole } from '../services/userRolesService.js';
 import { getEventById } from '../services/eventsService.js';
+import { getGroupLeaderById } from '../services/groupLeadersService.js';
 import { getCategoryById } from '../services/categoriesService.js';
 import { createCustomer, createPayment, createCreditCardPayment, getPaymentByRegistrationId, validateOrRecreateCustomer } from '../services/asaasService.js';
 import { getProfileByUserId } from '../services/profilesService.js';
 import { query } from '../config/database.js';
 import { sendNotificationSafely, getUserEmail, getUserName, getOrganizerEmail } from '../services/notificationService.js';
+import { getLeaderEventCommissionById } from '../services/leaderEventCommissionsService.js';
+import { getCouponByEventCommission } from '../services/couponsService.js';
+import { createCommission, getCommissionByRegistrationId, adminCancelCommission } from '../services/commissionsService.js';
 import { z } from 'zod';
 import { EventRegistrationStatus, Event } from '../types/index.js';
 import { calculateRegistrationStatus } from '../services/eventsService.js';
@@ -2081,6 +2085,247 @@ export const updateRegistrationController = asyncHandler(async (req: AuthRequest
     success: true,
     data: updatedRegistration,
     message: 'Registration updated successfully',
+  });
+});
+
+/**
+ * POST /api/registrations/:id/attach-commission
+ * Atrela uma inscrição (já paga) a uma comissão por evento. Aplica a comissão correspondente.
+ * Organizador do evento ou admin.
+ */
+export const attachRegistrationToCommissionController = asyncHandler(async (req: AuthRequest, res: Response) => {
+  if (!req.user) {
+    res.status(401).json({ success: false, error: 'Not authenticated' });
+    return;
+  }
+
+  const { id: registrationId } = req.params;
+  const body = req.body as { leader_event_commission_id?: string };
+
+  const leaderEventCommissionId = body?.leader_event_commission_id;
+  if (!leaderEventCommissionId || typeof leaderEventCommissionId !== 'string') {
+    res.status(400).json({
+      success: false,
+      error: 'Validation Error',
+      message: 'leader_event_commission_id é obrigatório',
+    });
+    return;
+  }
+
+  const registration = await getRegistrationById(registrationId);
+  if (!registration) {
+    res.status(404).json({ success: false, error: 'Not found', message: 'Inscrição não encontrada' });
+    return;
+  }
+
+  if (registration.payment_status !== 'paid') {
+    res.status(400).json({
+      success: false,
+      error: 'Bad Request',
+      message: 'Só é possível atrelar comissão em inscrições já pagas',
+    });
+    return;
+  }
+
+  const event = await getEventById(registration.event_id);
+  if (!event) {
+    res.status(404).json({ success: false, error: 'Not found', message: 'Evento não encontrado' });
+    return;
+  }
+
+  const isAdmin = await hasRole(req.user.id, 'admin');
+  const isEventOrganizer = event.organizer_id === req.user.id;
+  if (!isAdmin && !isEventOrganizer) {
+    res.status(403).json({
+      success: false,
+      error: 'Forbidden',
+      message: 'Apenas o organizador do evento ou um administrador podem atrelar comissão',
+    });
+    return;
+  }
+
+  const commission = await getLeaderEventCommissionById(leaderEventCommissionId);
+  if (!commission) {
+    res.status(404).json({ success: false, error: 'Not found', message: 'Comissão por evento não encontrada' });
+    return;
+  }
+
+  if (commission.event_id !== registration.event_id) {
+    res.status(400).json({
+      success: false,
+      error: 'Bad Request',
+      message: 'A comissão não é do mesmo evento da inscrição',
+    });
+    return;
+  }
+
+  if (commission.bonus_type === 'invitation') {
+    res.status(400).json({
+      success: false,
+      error: 'Bad Request',
+      message: 'Não é possível atrelar a uma comissão apenas de convite; escolha uma comissão com percentual',
+    });
+    return;
+  }
+
+  const coupon = await getCouponByEventCommission(commission.leader_id, commission.event_id, commission.id);
+  if (!coupon) {
+    res.status(400).json({
+      success: false,
+      error: 'Bad Request',
+      message: 'Esta comissão não possui cupom associado',
+    });
+    return;
+  }
+
+  const existingCommission = await query(
+    'SELECT id FROM leader_commissions WHERE registration_id = $1 AND leader_id = $2',
+    [registrationId, commission.leader_id]
+  );
+  if (existingCommission.rows.length > 0) {
+    res.status(400).json({
+      success: false,
+      error: 'Conflict',
+      message: 'Esta inscrição já está atrelada a uma comissão',
+    });
+    return;
+  }
+
+  await updateRegistration(registrationId, { coupon_code: coupon.code });
+
+  let createdCommission;
+  try {
+    createdCommission = await createCommission({
+      leader_id: commission.leader_id,
+      registration_id: registrationId,
+      referred_user_id: registration.runner_id,
+      event_id: registration.event_id,
+      registration_amount: parseFloat(String(registration.total_amount || 0)) || 0,
+    });
+  } catch (err: any) {
+    if (err.message?.includes('already exists')) {
+      res.status(400).json({
+        success: false,
+        error: 'Conflict',
+        message: 'Esta inscrição já está atrelada a uma comissão',
+      });
+      return;
+    }
+    throw err;
+  }
+
+  const updatedRegistration = await getRegistrationById(registrationId);
+
+  res.status(200).json({
+    success: true,
+    data: {
+      registration: updatedRegistration,
+      commission: createdCommission,
+    },
+    message: 'Inscrição atrelada à comissão com sucesso',
+  });
+});
+
+/**
+ * GET /api/registrations/:id/commission
+ * Retorna a comissão vinculada a esta inscrição (se houver). Organizador do evento ou admin.
+ */
+export const getRegistrationCommissionController = asyncHandler(async (req: AuthRequest, res: Response) => {
+  if (!req.user) {
+    res.status(401).json({ success: false, error: 'Not authenticated' });
+    return;
+  }
+
+  const { id: registrationId } = req.params;
+  const registration = await getRegistrationById(registrationId);
+  if (!registration) {
+    res.status(404).json({ success: false, error: 'Not found', message: 'Inscrição não encontrada' });
+    return;
+  }
+
+  const event = await getEventById(registration.event_id);
+  if (!event) {
+    res.status(404).json({ success: false, error: 'Not found', message: 'Evento não encontrado' });
+    return;
+  }
+
+  const isAdmin = await hasRole(req.user.id, 'admin');
+  const isEventOrganizer = event.organizer_id === req.user.id;
+  if (!isAdmin && !isEventOrganizer) {
+    res.status(403).json({
+      success: false,
+      error: 'Forbidden',
+      message: 'Sem permissão para ver comissão desta inscrição',
+    });
+    return;
+  }
+
+  const commission = await getCommissionByRegistrationId(registrationId);
+  if (!commission) {
+    res.status(404).json({ success: false, error: 'Not found', message: 'Nenhuma comissão vinculada a esta inscrição' });
+    return;
+  }
+
+  const leader = await getGroupLeaderById(commission.leader_id);
+  const profile = leader ? await getProfileByUserId(leader.user_id) : null;
+  const leaderName = profile?.full_name || leader?.referral_code || null;
+
+  res.status(200).json({
+    success: true,
+    data: {
+      ...commission,
+      leader_name: leaderName,
+      leader_referral_code: leader?.referral_code ?? null,
+    },
+  });
+});
+
+/**
+ * POST /api/registrations/:id/detach-commission
+ * Remove o atrelamento da comissão desta inscrição (organizador do evento ou admin). Permite atrelar a outra.
+ */
+export const detachRegistrationCommissionController = asyncHandler(async (req: AuthRequest, res: Response) => {
+  if (!req.user) {
+    res.status(401).json({ success: false, error: 'Not authenticated' });
+    return;
+  }
+
+  const { id: registrationId } = req.params;
+  const registration = await getRegistrationById(registrationId);
+  if (!registration) {
+    res.status(404).json({ success: false, error: 'Not found', message: 'Inscrição não encontrada' });
+    return;
+  }
+
+  const event = await getEventById(registration.event_id);
+  if (!event) {
+    res.status(404).json({ success: false, error: 'Not found', message: 'Evento não encontrado' });
+    return;
+  }
+
+  const isAdmin = await hasRole(req.user.id, 'admin');
+  const isEventOrganizer = event.organizer_id === req.user.id;
+  if (!isAdmin && !isEventOrganizer) {
+    res.status(403).json({
+      success: false,
+      error: 'Forbidden',
+      message: 'Apenas o organizador do evento ou um administrador podem remover o atrelamento',
+    });
+    return;
+  }
+
+  const commission = await getCommissionByRegistrationId(registrationId);
+  if (!commission) {
+    res.status(404).json({ success: false, error: 'Not found', message: 'Nenhuma comissão vinculada a esta inscrição' });
+    return;
+  }
+
+  const cancelled = await adminCancelCommission(commission.id);
+
+  res.status(200).json({
+    success: true,
+    data: cancelled,
+    message: 'Atrelamento removido. Você pode selecionar outra comissão.',
   });
 });
 

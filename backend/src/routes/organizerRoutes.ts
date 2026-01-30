@@ -40,6 +40,7 @@ import {
 import {
   createLeaderEventCommissionController,
   getLeaderEventCommissionsController,
+  getEventCommissionsByEventController,
   updateLeaderEventCommissionController,
   deleteLeaderEventCommissionController,
 } from '../controllers/leaderEventCommissionsController.js';
@@ -88,6 +89,7 @@ router.get('/group-leaders/:id/referrals', getReferralsByLeaderController);
 router.get('/group-leaders/:id/commissions', getCommissionsByLeaderController);
 
 // Leader Event Commissions endpoints
+router.get('/events/:eventId/event-commissions', getEventCommissionsByEventController);
 router.get('/group-leaders/:id/event-commissions', getLeaderEventCommissionsController);
 router.post('/group-leaders/:id/event-commissions', createLeaderEventCommissionController);
 router.put('/group-leaders/:id/event-commissions/:commissionId', updateLeaderEventCommissionController);

@@ -193,6 +193,41 @@ export const updateRegistration = async (id: string, data: UpdateRegistrationDat
   return apiClient.put<Registration>(`/registrations/${id}`, data);
 };
 
+// Attach registration to a leader event commission (organizer or admin). Applies the commission.
+export const attachRegistrationToCommission = async (
+  registrationId: string,
+  body: { leader_event_commission_id: string }
+) => {
+  return apiClient.post<{ registration: Registration; commission: any }>(
+    `/registrations/${registrationId}/attach-commission`,
+    body
+  );
+};
+
+// Commission linked to a registration (with leader info) - for attach popup
+export interface RegistrationCommissionInfo {
+  id: string;
+  leader_id: string;
+  registration_id: string;
+  event_id: string;
+  commission_amount: number;
+  commission_percentage: number;
+  registration_amount: number;
+  status: string;
+  leader_name?: string | null;
+  leader_referral_code?: string | null;
+}
+
+// Get commission linked to this registration (organizer of event or admin). For attach popup.
+export const getRegistrationCommission = async (registrationId: string) => {
+  return apiClient.get<RegistrationCommissionInfo>(`/registrations/${registrationId}/commission`);
+};
+
+// Detach commission from this registration (organizer of event or admin). Allows attaching another.
+export const detachCommission = async (registrationId: string) => {
+  return apiClient.post<{ data: any; message: string }>(`/registrations/${registrationId}/detach-commission`, {});
+};
+
 // Transfer registration to another runner by CPF or email
 export const transferRegistration = async (id: string, cpf?: string, email?: string) => {
   return apiClient.put<Registration>(`/registrations/${id}/transfer`, { cpf, email });

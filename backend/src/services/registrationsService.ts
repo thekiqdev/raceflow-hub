@@ -49,6 +49,8 @@ export interface UpdateRegistrationData {
   status?: RegistrationStatus;
   payment_status?: PaymentStatus;
   payment_method?: PaymentMethod;
+  /** Permite atrelar inscrição a um cupom/comissão por evento (ex.: cupom criado após a compra) */
+  coupon_code?: string | null;
 }
 
 // Get registrations with filters

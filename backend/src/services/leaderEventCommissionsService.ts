@@ -43,6 +43,36 @@ export const createLeaderEventCommission = async (
 };
 
 /**
+ * Get all leader event commissions for a given event (organizer's event).
+ * Used e.g. when attaching a registration to a commission - list commissions to choose from.
+ */
+export const getLeaderEventCommissionsByEvent = async (
+  eventId: string,
+  organizerId: string
+): Promise<any[]> => {
+  const result = await query(
+    `SELECT 
+      lec.id,
+      lec.leader_id,
+      lec.event_id,
+      lec.name,
+      lec.commission_percentage,
+      COALESCE(lec.bonus_type, 'commission') as bonus_type,
+      gl.referral_code as leader_referral_code,
+      p.full_name as leader_name,
+      e.title as event_title
+    FROM leader_event_commissions lec
+    JOIN events e ON lec.event_id = e.id
+    JOIN group_leaders gl ON lec.leader_id = gl.id
+    LEFT JOIN profiles p ON gl.user_id = p.id
+    WHERE lec.event_id = $1 AND e.organizer_id = $2
+    ORDER BY gl.referral_code, lec.name`,
+    [eventId, organizerId]
+  );
+  return result.rows;
+};
+
+/**
  * Get all event commissions for a leader
  */
 export const getLeaderEventCommissions = async (

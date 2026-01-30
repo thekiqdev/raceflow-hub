@@ -6,6 +6,9 @@ import {
   getRegistrationForValidation,
   createRegistrationController,
   updateRegistrationController,
+  attachRegistrationToCommissionController,
+  getRegistrationCommissionController,
+  detachRegistrationCommissionController,
   exportRegistrationsController,
   transferRegistrationController,
   cancelRegistrationController,
@@ -48,6 +51,9 @@ router.post('/', createRegistrationController);
 router.post('/organizer/register-athlete', createRegistrationByOrganizerController);
 router.post('/leader/register-athlete', createRegistrationByLeaderController);
 router.put('/:id', updateRegistrationController);
+router.post('/:id/attach-commission', attachRegistrationToCommissionController);
+router.get('/:id/commission', getRegistrationCommissionController);
+router.post('/:id/detach-commission', detachRegistrationCommissionController);
 router.put('/:id/transfer', transferRegistrationController);
 router.put('/:id/cancel', cancelRegistrationController);
 router.delete('/:id', deleteRegistrationController);

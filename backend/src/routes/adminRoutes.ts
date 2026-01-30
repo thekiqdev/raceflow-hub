@@ -89,6 +89,7 @@ import {
 } from '../controllers/groupLeadersController.js';
 import {
   getLeaderEventCommissionsController,
+  getEventCommissionsByEventController,
   createLeaderEventCommissionController,
   updateLeaderEventCommissionController,
   deleteLeaderEventCommissionController,
@@ -119,6 +120,7 @@ import {
   fixOrganizerRegistrationsController,
   disableAsaasNotificationsController,
 } from '../controllers/adminScriptsController.js';
+import { removeCommissionController, getRegistrationCommissionController } from '../controllers/adminCommissionsController.js';
 
 const router = Router();
 
@@ -211,6 +213,9 @@ router.delete('/group-leaders/:id/delete', deleteGroupLeaderController);
 router.post('/group-leaders/:id/activate', activateGroupLeaderController);
 router.get('/group-leaders/:id/referrals', getReferralsByLeaderController);
 router.get('/group-leaders/:id/commissions', getCommissionsByLeaderController);
+router.delete('/commissions/:commissionId', removeCommissionController);
+router.get('/registrations/:registrationId/commission', getRegistrationCommissionController);
+router.get('/events/:eventId/event-commissions', getEventCommissionsByEventController);
 
 // Leader Event Commissions endpoints (admin)
 router.get('/group-leaders/:id/event-commissions', getLeaderEventCommissionsController);

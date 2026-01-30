@@ -52,6 +52,24 @@ export const getLeaderEventCommissions = async (leaderId: string, isAdmin: boole
   return apiClient.get<LeaderEventCommission[]>(`${basePath}/group-leaders/${leaderId}/event-commissions`);
 };
 
+// Get all leader event commissions for an event (organizer). Used when attaching a registration to a commission.
+export interface EventCommissionOption {
+  id: string;
+  leader_id: string;
+  event_id: string;
+  name: string | null;
+  commission_percentage: number;
+  bonus_type: string;
+  leader_referral_code: string;
+  leader_name: string | null;
+  event_title?: string | null;
+}
+
+export const getEventCommissionsByEvent = async (eventId: string, isAdmin: boolean = false) => {
+  const basePath = isAdmin ? '/admin' : '/organizer';
+  return apiClient.get<EventCommissionOption[]>(`${basePath}/events/${eventId}/event-commissions`);
+};
+
 // Get my event commissions (leader endpoint)
 export const getMyEventCommissions = async () => {
   return apiClient.get<LeaderEventCommission[]>('/group-leaders/me/event-commissions');

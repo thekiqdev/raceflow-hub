@@ -347,6 +347,22 @@ export const getCommissionById = async (commissionId: string): Promise<LeaderCom
 };
 
 /**
+ * Get commission by registration ID (for admin: show commission linked to a registration)
+ */
+export const getCommissionByRegistrationId = async (registrationId: string): Promise<LeaderCommission | null> => {
+  const result = await query(
+    'SELECT * FROM leader_commissions WHERE registration_id = $1 ORDER BY created_at DESC LIMIT 1',
+    [registrationId]
+  );
+  
+  if (result.rows.length === 0) {
+    return null;
+  }
+  
+  return result.rows[0] as LeaderCommission;
+};
+
+/**
  * Update commission status
  */
 export const updateCommissionStatus = async (
@@ -417,3 +433,29 @@ export const cancelCommission = async (commissionId: string): Promise<LeaderComm
   return updateCommissionStatus(commissionId, 'cancelled');
 };
 
+/**
+ * Admin-only: remove (cancel) a commission regardless of status (pending or paid).
+ * Subtracts the amount from leader total earnings and optionally clears coupon_code on the registration.
+ */
+export const adminCancelCommission = async (commissionId: string): Promise<LeaderCommission> => {
+  const commission = await getCommissionById(commissionId);
+  
+  if (!commission) {
+    throw new Error('Commission not found');
+  }
+  
+  // Subtract from leader total earnings (for both pending and paid)
+  await addToTotalEarnings(commission.leader_id, -commission.commission_amount);
+  
+  const updated = await updateCommissionStatus(commissionId, 'cancelled');
+  
+  // Opcional: desatrelar cupom da inscrição para refletir que não está mais atrelada
+  if (commission.registration_id) {
+    await query(
+      'UPDATE registrations SET coupon_code = NULL WHERE id = $1',
+      [commission.registration_id]
+    );
+  }
+  
+  return updated;
+};

@@ -5,6 +5,7 @@ import { hasRole } from '../services/userRolesService.js';
 import {
   createLeaderEventCommission,
   getLeaderEventCommissions,
+  getLeaderEventCommissionsByEvent,
   getLeaderEventCommissionById,
   updateLeaderEventCommission,
   deleteLeaderEventCommission,
@@ -237,6 +238,40 @@ export const getMyEventCommissionsController = asyncHandler(
     }
 
     const commissions = await getLeaderEventCommissions(leader.id);
+
+    res.json({
+      success: true,
+      data: commissions,
+    });
+  }
+);
+
+/**
+ * GET /api/organizer/events/:eventId/event-commissions
+ * List all leader event commissions for an event (organizer's event). Used e.g. when attaching a registration to a commission.
+ */
+export const getEventCommissionsByEventController = asyncHandler(
+  async (req: AuthRequest, res: Response) => {
+    if (!req.user) {
+      res.status(401).json({ success: false, error: 'Not authenticated' });
+      return;
+    }
+
+    const { eventId } = req.params;
+    const event = await getEventById(eventId);
+    if (!event) {
+      res.status(404).json({ success: false, error: 'Not found', message: 'Evento não encontrado' });
+      return;
+    }
+
+    const isAdmin = await hasRole(req.user.id, 'admin');
+    if (!isAdmin && event.organizer_id !== req.user.id) {
+      res.status(403).json({ success: false, error: 'Forbidden', message: 'Sem permissão para este evento' });
+      return;
+    }
+
+    const organizerId = event.organizer_id;
+    const commissions = await getLeaderEventCommissionsByEvent(eventId, organizerId);
 
     res.json({
       success: true,
