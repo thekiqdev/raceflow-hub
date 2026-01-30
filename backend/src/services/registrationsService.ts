@@ -186,6 +186,12 @@ export const getRegistrations = async (filters?: {
     params.push(`%${filters.search}%`);
   }
 
+  // Excluir inscrições que são convite (bônus) e cujo convite expirou – não aparecem na lista do evento
+  conditions.push(`NOT EXISTS (
+    SELECT 1 FROM leader_invitations li
+    WHERE li.bonus_registration_id = r.id AND li.status = 'expired'
+  )`);
+
   if (conditions.length > 0) {
     queryText += ' WHERE ' + conditions.join(' AND ');
   }
@@ -322,76 +328,82 @@ export const createRegistration = async (data: CreateRegistrationData) => {
     throw new Error('Categoria não encontrada');
   }
 
-  // Get runner profile to validate eligibility
-  const runnerProfile = await query(
-    `SELECT id, birth_date, gender FROM profiles WHERE id = $1`,
-    [data.runner_id]
-  );
+  const isInviteSlot = data.payment_method === 'free_bonus';
+  // Convites (free_bonus) não exigem validação de perfil/idade/gênero do líder
+  if (!isInviteSlot) {
+    const runnerProfile = await query(
+      `SELECT id, birth_date, gender FROM profiles WHERE id = $1`,
+      [data.runner_id]
+    );
 
-  if (runnerProfile.rows.length === 0) {
-    throw new Error('Perfil do corredor não encontrado');
-  }
-
-  const runner = runnerProfile.rows[0];
-
-  // Validate age (if category has min_age or max_age requirement)
-  const birthDate = new Date(runner.birth_date);
-  const today = new Date();
-  const age = today.getFullYear() - birthDate.getFullYear();
-  const monthDiff = today.getMonth() - birthDate.getMonth();
-  const dayDiff = today.getDate() - birthDate.getDate();
-  
-  const actualAge = monthDiff < 0 || (monthDiff === 0 && dayDiff < 0) ? age - 1 : age;
-  
-  // Validate min_age
-  if (category.min_age !== null && category.min_age > 0) {
-    if (actualAge < category.min_age) {
-      throw new Error(`Idade mínima para esta categoria é ${category.min_age} anos. Você tem ${actualAge} anos.`);
+    if (runnerProfile.rows.length === 0) {
+      throw new Error('Perfil do corredor não encontrado');
     }
-  }
-  
-  // Validate max_age
-  if (category.max_age !== null && category.max_age > 0) {
-    if (actualAge > category.max_age) {
-      throw new Error(`Idade máxima para esta categoria é ${category.max_age} anos. Você tem ${actualAge} anos.`);
-    }
-  }
 
-  // Validate gender (if category has gender restriction)
-  if (category.gender !== 'ambos') {
-    const runnerGender = runner.gender?.toLowerCase();
-    const categoryGender = category.gender.toLowerCase();
+    const runner = runnerProfile.rows[0];
+
+    // Validate age (if category has min_age or max_age requirement)
+    const birthDate = new Date(runner.birth_date);
+    const today = new Date();
+    const age = today.getFullYear() - birthDate.getFullYear();
+    const monthDiff = today.getMonth() - birthDate.getMonth();
+    const dayDiff = today.getDate() - birthDate.getDate();
     
-    // Map common gender values
-    const genderMap: { [key: string]: string } = {
-      'm': 'masculino',
-      'masculino': 'masculino',
-      'f': 'feminino',
-      'feminino': 'feminino',
-      'o': 'ambos',
-      'outro': 'ambos',
-    };
+    const actualAge = monthDiff < 0 || (monthDiff === 0 && dayDiff < 0) ? age - 1 : age;
     
-    const normalizedRunnerGender = genderMap[runnerGender || ''] || 'ambos';
+    // Validate min_age
+    if (category.min_age !== null && category.min_age > 0) {
+      if (actualAge < category.min_age) {
+        throw new Error(`Idade mínima para esta categoria é ${category.min_age} anos. Você tem ${actualAge} anos.`);
+      }
+    }
     
-    if (normalizedRunnerGender !== categoryGender && normalizedRunnerGender !== 'ambos') {
-      throw new Error(`Esta categoria é exclusiva para ${categoryGender === 'masculino' ? 'homens' : 'mulheres'}.`);
+    // Validate max_age
+    if (category.max_age !== null && category.max_age > 0) {
+      if (actualAge > category.max_age) {
+        throw new Error(`Idade máxima para esta categoria é ${category.max_age} anos. Você tem ${actualAge} anos.`);
+      }
+    }
+
+    // Validate gender (if category has gender restriction)
+    if (category.gender !== 'ambos') {
+      const runnerGender = runner.gender?.toLowerCase();
+      const categoryGender = category.gender.toLowerCase();
+      
+      // Map common gender values
+      const genderMap: { [key: string]: string } = {
+        'm': 'masculino',
+        'masculino': 'masculino',
+        'f': 'feminino',
+        'feminino': 'feminino',
+        'o': 'ambos',
+        'outro': 'ambos',
+      };
+      
+      const normalizedRunnerGender = genderMap[runnerGender || ''] || 'ambos';
+      
+      if (normalizedRunnerGender !== categoryGender && normalizedRunnerGender !== 'ambos') {
+        throw new Error(`Esta categoria é exclusiva para ${categoryGender === 'masculino' ? 'homens' : 'mulheres'}.`);
+      }
     }
   }
 
   // Verificar se o corredor já tem uma inscrição ativa neste evento
-  const existingRegistration = await query(
-    `SELECT id, status, payment_status FROM registrations 
-     WHERE event_id = $1 AND runner_id = $2 AND status != 'cancelled'`,
-    [data.event_id, data.runner_id]
-  );
+  // Exceção: convites (free_bonus) podem ser criados mesmo se o líder já tiver inscrição (são vagas para ele distribuir)
+  if (!isInviteSlot) {
+    const existingRegistration = await query(
+      `SELECT id, status, payment_status FROM registrations 
+       WHERE event_id = $1 AND runner_id = $2 AND status != 'cancelled'`,
+      [data.event_id, data.runner_id]
+    );
 
-  if (existingRegistration.rows.length > 0) {
-    throw new Error('Você já possui uma inscrição ativa neste evento. Cada corredor pode se inscrever apenas uma vez por evento.');
+    if (existingRegistration.rows.length > 0) {
+      throw new Error('Você já possui uma inscrição ativa neste evento. Cada corredor pode se inscrever apenas uma vez por evento.');
+    }
   }
 
-  // Check max_participants if set
-  if (category.max_participants !== null && category.max_participants > 0) {
+  // Check max_participants if set (convites free_bonus não contam no limite)
+  if (!isInviteSlot && category.max_participants !== null && category.max_participants > 0) {
     const currentRegistrations = await query(
       `SELECT COUNT(*) as count FROM registrations 
        WHERE category_id = $1 AND status != 'cancelled'`,
@@ -596,23 +608,14 @@ export const createRegistration = async (data: CreateRegistrationData) => {
           
           console.log(`✅ Comissão criada para líder ${leaderId} na inscrição ${registration.id}`);
         } catch (commissionError: any) {
-          // If no commission is configured (invitation type only) or amount is 0, just check for bonuses
+          // If no commission is configured (invitation type only) or amount is 0, trigger invitation bonus check
           if (commissionError.message.includes('No commission configured') || 
-              commissionError.message.includes('invitation type only')) {
-            console.log(`ℹ️ Tipo de bônus é apenas 'invitation', verificando bônus de convite...`);
-            // Check for invitation bonuses even if no commission was created
+              commissionError.message.includes('invitation type only') ||
+              commissionError.message.includes('must be greater than 0')) {
+            console.log(`ℹ️ Disparando verificação de bônus de convite (cupom/referência)...`);
             try {
-              const { checkAllInvitationBonuses } = await import('./leaderBonusService.js');
-              await checkAllInvitationBonuses(leaderId, data.event_id);
-            } catch (bonusError: any) {
-              console.error('❌ Erro ao verificar bônus de convite:', bonusError.message);
-            }
-          } else if (commissionError.message.includes('must be greater than 0')) {
-            console.log(`ℹ️ Valor da comissão é 0, verificando apenas bônus de convite...`);
-            // Check for invitation bonuses even if commission amount is 0
-            try {
-              const { checkAllInvitationBonuses } = await import('./leaderBonusService.js');
-              await checkAllInvitationBonuses(leaderId, data.event_id);
+              const { triggerInvitationBonusAfterPaidWithCoupon } = await import('./leaderBonusService.js');
+              await triggerInvitationBonusAfterPaidWithCoupon(leaderId, data.event_id, data.coupon_code || null);
             } catch (bonusError: any) {
               console.error('❌ Erro ao verificar bônus de convite:', bonusError.message);
             }

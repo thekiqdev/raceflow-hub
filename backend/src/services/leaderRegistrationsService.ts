@@ -56,7 +56,7 @@ export const getRegistrationsByLeaderCoupons = async (
       -- Registrations with leader's coupons
       (r.coupon_code IS NOT NULL AND EXISTS (
         SELECT 1 FROM coupons cp 
-        WHERE cp.code = r.coupon_code AND cp.leader_id = $1
+        WHERE UPPER(TRIM(cp.code)) = UPPER(TRIM(r.coupon_code)) AND cp.leader_id = $1
       ))
       OR
       -- Registrations by users referred by the leader
@@ -76,13 +76,17 @@ export const getRegistrationsByLeaderCoupons = async (
   }
   
   if (filters?.coupon_code) {
-    conditions.push(`r.coupon_code = $${params.length + 1}`);
+    conditions.push(`r.coupon_code IS NOT NULL AND UPPER(TRIM(r.coupon_code)) = UPPER(TRIM($${params.length + 1}))`);
     params.push(filters.coupon_code);
   }
   
   if (filters?.payment_status) {
     conditions.push(`r.payment_status = $${params.length + 1}`);
     params.push(filters.payment_status);
+    // Para contagem de "compras pagas" (bônus de convite), não contar inscrições canceladas
+    if (filters.payment_status === 'paid') {
+      conditions.push(`r.status != 'cancelled'`);
+    }
   }
   // Removed default filter - now shows all registrations (pending, paid, cancelled)
   
@@ -154,7 +158,7 @@ export const getRegistrationCountByLeaderCoupons = async (
       -- Registrations with leader's coupons
       (r.coupon_code IS NOT NULL AND EXISTS (
         SELECT 1 FROM coupons cp 
-        WHERE cp.code = r.coupon_code AND cp.leader_id = $1
+        WHERE UPPER(TRIM(cp.code)) = UPPER(TRIM(r.coupon_code)) AND cp.leader_id = $1
       ))
       OR
       -- Registrations by users referred by the leader
@@ -174,7 +178,7 @@ export const getRegistrationCountByLeaderCoupons = async (
   }
   
   if (filters?.coupon_code) {
-    conditions.push(`r.coupon_code = $${params.length + 1}`);
+    conditions.push(`r.coupon_code IS NOT NULL AND UPPER(TRIM(r.coupon_code)) = UPPER(TRIM($${params.length + 1}))`);
     params.push(filters.coupon_code);
   }
   

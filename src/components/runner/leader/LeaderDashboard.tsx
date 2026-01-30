@@ -719,10 +719,10 @@ export function LeaderDashboard() {
                Links de Eventos ({eventCommissions.length})
              </TabsTrigger>
              <TabsTrigger value="purchases" className="flex-1 min-w-[calc(50%-0.375rem)] md:min-w-0 md:flex-none text-xs md:text-sm px-2 md:px-3 py-2 whitespace-nowrap">
-               Compras ({couponRegistrations.length})
+               Compras ({couponRegistrations.filter((r) => r.status !== "cancelled").length})
              </TabsTrigger>
              <TabsTrigger value="invitations" className="flex-1 min-w-[calc(50%-0.375rem)] md:min-w-0 md:flex-none text-xs md:text-sm px-2 md:px-3 py-2 whitespace-nowrap">
-               Convites ({invitations.filter(i => i.status === 'available').length})
+               Convites ({invitations.filter((i) => i.status !== "expired").length})
              </TabsTrigger>
            </TabsList>
 
@@ -1005,7 +1005,7 @@ export function LeaderDashboard() {
               <div className="flex items-center justify-center h-32">
                 <Loader2 className="h-6 w-6 animate-spin text-primary" />
               </div>
-            ) : couponRegistrations.length === 0 ? (
+            ) : couponRegistrations.filter((r) => r.status !== "cancelled").length === 0 ? (
               <Card>
                 <CardContent className="py-12 text-center">
                   <Users className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
@@ -1019,7 +1019,9 @@ export function LeaderDashboard() {
               </Card>
             ) : (
               <div className="space-y-4">
-                {couponRegistrations.map((registration) => (
+                {couponRegistrations
+                  .filter((registration) => registration.status !== "cancelled")
+                  .map((registration) => (
                   <Card key={registration.id}>
                     <CardContent className="p-6">
                       <div className="flex items-start justify-between mb-4">
@@ -1252,7 +1254,7 @@ export function LeaderDashboard() {
               <div className="flex items-center justify-center h-64">
                 <Loader2 className="h-8 w-8 animate-spin text-primary" />
               </div>
-            ) : invitations.length === 0 ? (
+            ) : invitations.filter((i) => i.status !== "expired").length === 0 ? (
               <Card>
                 <CardContent className="py-12 text-center">
                   <Gift className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
@@ -1387,6 +1389,17 @@ export function LeaderDashboard() {
                         ))}
                     </div>
                   </div>
+                )}
+
+                {/* Se tem convites (não expirados) mas nenhum disponível para enviar, mostrar mensagem */}
+                {invitations.filter((i) => i.status !== "expired").length > 0 && invitations.filter(i => i.status === 'available').length === 0 && (
+                  <Card className="border-dashed">
+                    <CardContent className="py-6 text-center">
+                      <p className="text-sm text-muted-foreground">
+                        No momento você não tem convites disponíveis para enviar. Novos convites são gerados quando as metas de inscrições pagas com seu cupom forem atingidas.
+                      </p>
+                    </CardContent>
+                  </Card>
                 )}
               </div>
             )}

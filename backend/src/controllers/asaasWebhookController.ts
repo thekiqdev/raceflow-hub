@@ -731,7 +731,7 @@ async function processWebhookEvent(
         const { getUserReferral } = await import('../services/referralsService.js');
         const { getCouponByCodeOnly } = await import('../services/couponsService.js');
         const { createCommission } = await import('../services/commissionsService.js');
-        const { checkAllInvitationBonuses } = await import('../services/leaderBonusService.js');
+        const { triggerInvitationBonusAfterPaidWithCoupon } = await import('../services/leaderBonusService.js');
         
         const registration = await query(
           'SELECT runner_id, event_id, total_amount, coupon_code FROM registrations WHERE id = $1',
@@ -786,21 +786,20 @@ async function processWebhookEvent(
                 });
                 console.log(`✅ Comissão criada para líder ${leaderId} na inscrição ${registrationId}`);
               } catch (commissionError: any) {
-                // If no commission is configured (invitation type only) or amount is 0, just check for bonuses
+                // If no commission is configured (invitation type only) or amount is 0, trigger bonus check
                 if (commissionError.message.includes('No commission configured') || 
                     commissionError.message.includes('invitation type only')) {
-                  console.log(`ℹ️ Tipo de bônus é apenas 'invitation', verificando bônus de convite...`);
-                  await checkAllInvitationBonuses(leaderId, eventId);
+                  console.log(`ℹ️ Tipo de bônus é apenas 'invitation', disparando verificação de convite...`);
+                  await triggerInvitationBonusAfterPaidWithCoupon(leaderId, eventId, couponCode);
                 } else if (commissionError.message.includes('must be greater than 0')) {
-                  console.log(`ℹ️ Valor da comissão é 0, verificando apenas bônus de convite...`);
-                  await checkAllInvitationBonuses(leaderId, eventId);
+                  console.log(`ℹ️ Valor da comissão é 0, disparando verificação de convite...`);
+                  await triggerInvitationBonusAfterPaidWithCoupon(leaderId, eventId, couponCode);
                 } else {
                   console.error('❌ Erro ao criar comissão:', commissionError.message);
                 }
               }
             } else {
-              // Commission already exists, check for bonuses only if commission type includes invitations
-              // First, check what commission type is configured for this event
+              // Commission already exists, trigger invitation bonus check (comissão do cupom usado)
               const commissionTypeCheck = await query(
                 `SELECT bonus_type FROM leader_event_commissions 
                  WHERE leader_id = $1 AND event_id = $2 
@@ -810,7 +809,7 @@ async function processWebhookEvent(
               );
               
               if (commissionTypeCheck.rows.length > 0) {
-                await checkAllInvitationBonuses(leaderId, eventId);
+                await triggerInvitationBonusAfterPaidWithCoupon(leaderId, eventId, couponCode);
                 console.log(`✅ Verificação de bônus executada para líder ${leaderId}`);
               } else {
                 console.log(`ℹ️ Tipo de comissão é apenas 'commission', não verificando bônus de convite`);
@@ -846,6 +845,32 @@ async function processWebhookEvent(
         [registrationId]
       );
       console.log(`🔄 Inscrição ${registrationId} estornada`);
+      // Automação: ao estornar, revogar convites em excesso do líder
+      try {
+        const regRow = await query(
+          'SELECT event_id, coupon_code FROM registrations WHERE id = $1',
+          [registrationId]
+        );
+        if (regRow.rows.length > 0) {
+          const { getCommissionByRegistrationId } = await import('../services/commissionsService.js');
+          const { getCouponByCodeOnly } = await import('../services/couponsService.js');
+          const { recalculateAndRevokeExcessInvitations } = await import('../services/leaderBonusService.js');
+          const reg = regRow.rows[0];
+          let leaderId: string | null = null;
+          const commission = await getCommissionByRegistrationId(registrationId);
+          if (commission) leaderId = commission.leader_id;
+          else if (reg.coupon_code) {
+            const coupon = await getCouponByCodeOnly(reg.coupon_code);
+            if (coupon?.leader_id) leaderId = coupon.leader_id;
+          }
+          if (leaderId) {
+            await recalculateAndRevokeExcessInvitations(leaderId, reg.event_id);
+            console.log(`✅ Convites em excesso revogados para líder ${leaderId} (evento ${reg.event_id})`);
+          }
+        }
+      } catch (revokeErr: any) {
+        console.error('❌ [PAYMENT_REFUNDED] Erro ao revogar convites em excesso:', revokeErr.message);
+      }
       break;
 
     case 'PAYMENT_UPDATED':
@@ -867,7 +892,7 @@ async function processWebhookEvent(
           const { getUserReferral } = await import('../services/referralsService.js');
           const { getCouponByCodeOnly } = await import('../services/couponsService.js');
           const { createCommission } = await import('../services/commissionsService.js');
-          const { checkAllInvitationBonuses } = await import('../services/leaderBonusService.js');
+          const { triggerInvitationBonusAfterPaidWithCoupon } = await import('../services/leaderBonusService.js');
           
           const registration = await query(
             'SELECT runner_id, event_id, total_amount, coupon_code FROM registrations WHERE id = $1',
@@ -912,17 +937,25 @@ async function processWebhookEvent(
               
               if (existingCommission.rows.length === 0) {
                 // Create commission (this will also check for invitation bonuses)
-                await createCommission({
-                  leader_id: leaderId,
-                  registration_id: registrationId,
-                  referred_user_id: runnerId,
-                  event_id: eventId,
-                  registration_amount: parseFloat(reg.total_amount) || 0,
-                });
-                console.log(`✅ Comissão criada para líder ${leaderId} na inscrição ${registrationId}`);
+                try {
+                  await createCommission({
+                    leader_id: leaderId,
+                    registration_id: registrationId,
+                    referred_user_id: runnerId,
+                    event_id: eventId,
+                    registration_amount: parseFloat(reg.total_amount) || 0,
+                  });
+                  console.log(`✅ Comissão criada para líder ${leaderId} na inscrição ${registrationId}`);
+                } catch (commissionError: any) {
+                  if (commissionError.message.includes('No commission configured') || 
+                      commissionError.message.includes('invitation type only') ||
+                      commissionError.message.includes('must be greater than 0')) {
+                    await triggerInvitationBonusAfterPaidWithCoupon(leaderId, eventId, couponCode);
+                  } else {
+                    console.error('❌ Erro ao criar comissão:', commissionError.message);
+                  }
+                }
               } else {
-                // Commission already exists, check for bonuses only if commission type includes invitations
-                // First, check what commission type is configured for this event
                 const commissionTypeCheck = await query(
                   `SELECT bonus_type FROM leader_event_commissions 
                    WHERE leader_id = $1 AND event_id = $2 
@@ -932,7 +965,7 @@ async function processWebhookEvent(
                 );
                 
                 if (commissionTypeCheck.rows.length > 0) {
-                  await checkAllInvitationBonuses(leaderId, eventId);
+                  await triggerInvitationBonusAfterPaidWithCoupon(leaderId, eventId, couponCode);
                   console.log(`✅ Verificação de bônus executada para líder ${leaderId}`);
                 } else {
                   console.log(`ℹ️ Tipo de comissão é apenas 'commission', não verificando bônus de convite`);

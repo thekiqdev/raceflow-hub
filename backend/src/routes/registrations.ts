@@ -9,6 +9,7 @@ import {
   attachRegistrationToCommissionController,
   getRegistrationCommissionController,
   detachRegistrationCommissionController,
+  changeRegistrationCommissionController,
   exportRegistrationsController,
   transferRegistrationController,
   cancelRegistrationController,
@@ -54,6 +55,7 @@ router.put('/:id', updateRegistrationController);
 router.post('/:id/attach-commission', attachRegistrationToCommissionController);
 router.get('/:id/commission', getRegistrationCommissionController);
 router.post('/:id/detach-commission', detachRegistrationCommissionController);
+router.post('/:id/change-commission', changeRegistrationCommissionController);
 router.put('/:id/transfer', transferRegistrationController);
 router.put('/:id/cancel', cancelRegistrationController);
 router.delete('/:id', deleteRegistrationController);

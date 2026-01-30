@@ -122,6 +122,7 @@ import {
   disableAsaasNotificationsController,
 } from '../controllers/adminScriptsController.js';
 import { removeCommissionController, getRegistrationCommissionController } from '../controllers/adminCommissionsController.js';
+import { getLeaderCouponRegistrationsController } from '../controllers/leaderRegistrationsController.js';
 
 const router = Router();
 
@@ -215,6 +216,7 @@ router.post('/group-leaders/:id/activate', activateGroupLeaderController);
 router.get('/group-leaders/:id/referrals', getReferralsByLeaderController);
 router.get('/group-leaders/:id/commissions', getCommissionsByLeaderController);
 router.get('/group-leaders/:id/invitation-progress', getLeaderInvitationProgressController);
+router.get('/group-leaders/:id/coupon-registrations', getLeaderCouponRegistrationsController);
 router.delete('/commissions/:commissionId', removeCommissionController);
 router.get('/registrations/:registrationId/commission', getRegistrationCommissionController);
 router.get('/events/:eventId/event-commissions', getEventCommissionsByEventController);

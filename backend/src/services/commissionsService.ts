@@ -136,16 +136,14 @@ export const createCommission = async (
   // If commission config found and it's invitation type only, don't create commission
   if (commissionConfig && commissionConfig.bonus_type === 'invitation') {
     console.log(`ℹ️ [createCommission] Cupom pertence a comissão do tipo 'invitation', pulando criação de comissão`);
-    // Still check for invitation bonuses
     try {
-      const { checkAllInvitationBonuses } = await import('./leaderBonusService.js');
+      const { triggerInvitationBonusAfterPaidWithCoupon } = await import('./leaderBonusService.js');
       const registration = await query(
         'SELECT payment_status FROM registrations WHERE id = $1',
         [data.registration_id]
       );
-      
       if (registration.rows.length > 0 && registration.rows[0].payment_status === 'paid') {
-        await checkAllInvitationBonuses(data.leader_id, data.event_id);
+        await triggerInvitationBonusAfterPaidWithCoupon(data.leader_id, data.event_id, couponCode);
       }
     } catch (bonusError: any) {
       console.error('❌ [createCommission] Erro ao verificar bônus:', bonusError.message);
@@ -156,16 +154,14 @@ export const createCommission = async (
   // If no commission config exists (only 'invitation' type), don't create commission
   if (!commissionConfig) {
     console.log(`ℹ️ [createCommission] Nenhuma configuração de comissão encontrada (apenas tipo 'invitation'), pulando criação de comissão`);
-    // Still check for invitation bonuses
     try {
-      const { checkAllInvitationBonuses } = await import('./leaderBonusService.js');
+      const { triggerInvitationBonusAfterPaidWithCoupon } = await import('./leaderBonusService.js');
       const registration = await query(
         'SELECT payment_status FROM registrations WHERE id = $1',
         [data.registration_id]
       );
-      
       if (registration.rows.length > 0 && registration.rows[0].payment_status === 'paid') {
-        await checkAllInvitationBonuses(data.leader_id, data.event_id);
+        await triggerInvitationBonusAfterPaidWithCoupon(data.leader_id, data.event_id, couponCode);
       }
     } catch (bonusError: any) {
       console.error('❌ [createCommission] Erro ao verificar bônus:', bonusError.message);
@@ -194,9 +190,10 @@ export const createCommission = async (
     throw new Error('Commission amount must be greater than 0');
   }
   
-  // Check if commission already exists for this registration
+  // Check if an active (non-cancelled) commission already exists for this registration
   const existingCommission = await query(
-    'SELECT id FROM leader_commissions WHERE registration_id = $1 AND leader_id = $2',
+    `SELECT id FROM leader_commissions 
+     WHERE registration_id = $1 AND leader_id = $2 AND status IN ('pending', 'paid')`,
     [data.registration_id, data.leader_id]
   );
   
@@ -282,9 +279,11 @@ export const getCommissionsByLeader = async (
            p.full_name as referred_user_name
     FROM leader_commissions lc
     JOIN events e ON lc.event_id = e.id
+    JOIN registrations r ON lc.registration_id = r.id AND (r.status IS NULL OR r.status != 'cancelled')
     JOIN users u ON lc.referred_user_id = u.id
     LEFT JOIN profiles p ON u.id = p.id
     WHERE lc.leader_id = $1
+    AND lc.status IN ('pending', 'paid')
   `;
   
   const values: any[] = [leaderId];
@@ -349,9 +348,12 @@ export const getCommissionById = async (commissionId: string): Promise<LeaderCom
 /**
  * Get commission by registration ID (for admin: show commission linked to a registration)
  */
+/** Retorna a comissão ativa (pending ou paid) vinculada à inscrição. Canceladas são ignoradas para permitir novo atrelamento. */
 export const getCommissionByRegistrationId = async (registrationId: string): Promise<LeaderCommission | null> => {
   const result = await query(
-    'SELECT * FROM leader_commissions WHERE registration_id = $1 ORDER BY created_at DESC LIMIT 1',
+    `SELECT * FROM leader_commissions 
+     WHERE registration_id = $1 AND status IN ('pending', 'paid') 
+     ORDER BY created_at DESC LIMIT 1`,
     [registrationId]
   );
   

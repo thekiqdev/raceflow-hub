@@ -155,9 +155,11 @@ export const getCouponById = async (couponId: string): Promise<Coupon | null> =>
  * Get coupon by code (without organizer ID - useful for finding leader coupons)
  */
 export const getCouponByCodeOnly = async (code: string): Promise<Coupon | null> => {
+  const normalized = (code || '').trim().toUpperCase();
+  if (!normalized) return null;
   const result = await query(
-    'SELECT * FROM coupons WHERE code = $1',
-    [code.toUpperCase().trim()]
+    'SELECT * FROM coupons WHERE UPPER(TRIM(code)) = $1',
+    [normalized]
   );
   
   if (result.rows.length === 0) {

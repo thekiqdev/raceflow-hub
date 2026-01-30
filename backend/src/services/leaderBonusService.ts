@@ -30,45 +30,20 @@ export const checkAndGrantInvitationBonus = async (
     return { granted: false };
   }
 
+  const { getCouponByEventCommission } = await import('./couponsService.js');
+
   // Check each bonus configuration to see if we need to grant new bonuses
   for (const bonus of invitationBonuses.rows) {
     console.log(`🔍 [checkAndGrantInvitationBonus] Processando bônus config: id=${bonus.id}, required_purchases=${bonus.required_purchases}, bonus_type=${bonus.bonus_type}`);
     
-    // NOVO: Buscar o cupom específico desta comissão para contar apenas inscrições que usaram este cupom
     let couponCode: string | null = null;
     try {
-      const { getCouponsByLeader } = await import('./couponsService.js');
-      const coupons = await getCouponsByLeader(leaderId);
-      const commissionIdShort = bonus.id.replace(/-/g, '').substring(0, 8).toUpperCase();
-      
-      // Encontrar cupom que contém o ID da comissão no código
-      console.log(`🔍 [checkAndGrantInvitationBonus] Buscando cupom para comissão ${bonus.id} (ID curto: ${commissionIdShort})`);
-      console.log(`🔍 [checkAndGrantInvitationBonus] Total de cupons do líder: ${coupons.length}`);
-      
-      const matchingCoupon = coupons.find((c) => {
-        const matchesEvent = c.event_ids?.includes(eventId) || c.event_id === eventId;
-        if (!matchesEvent) {
-          console.log(`   ⏭️ Cupom ${c.code} não corresponde ao evento ${eventId}`);
-          return false;
-        }
-        if (c.code && c.code.includes(commissionIdShort)) {
-          console.log(`   ✅ Cupom ${c.code} contém o ID da comissão ${commissionIdShort}`);
-          return true;
-        }
-        if (bonus.name && c.name && c.name.includes(bonus.name)) {
-          console.log(`   ✅ Cupom ${c.code} corresponde ao nome da comissão "${bonus.name}"`);
-          return true;
-        }
-        console.log(`   ⏭️ Cupom ${c.code} não corresponde (ID: ${c.code?.includes(commissionIdShort) ? 'sim' : 'não'}, Nome: ${bonus.name && c.name && c.name.includes(bonus.name) ? 'sim' : 'não'})`);
-        return false;
-      });
-      
-      if (matchingCoupon) {
-        couponCode = matchingCoupon.code;
-        console.log(`🎫 [checkAndGrantInvitationBonus] ✅ Cupom encontrado para comissão ${bonus.id}: ${couponCode}`);
+      const coupon = await getCouponByEventCommission(leaderId, eventId, bonus.id);
+      if (coupon?.code) {
+        couponCode = coupon.code;
+        console.log(`🎫 [checkAndGrantInvitationBonus] Cupom para comissão ${bonus.id}: ${couponCode}`);
       } else {
-        console.log(`ℹ️ [checkAndGrantInvitationBonus] ⚠️ Nenhum cupom encontrado para comissão ${bonus.id}, contando todas as inscrições do evento`);
-        console.log(`   📋 Cupons disponíveis: ${coupons.map(c => c.code).join(', ')}`);
+        console.log(`ℹ️ [checkAndGrantInvitationBonus] Nenhum cupom para comissão ${bonus.id}, contando todas as inscrições pagas do líder no evento`);
       }
     } catch (couponError: any) {
       console.log(`⚠️ [checkAndGrantInvitationBonus] Erro ao buscar cupom: ${couponError.message}`);
@@ -84,14 +59,20 @@ export const checkAndGrantInvitationBonus = async (
     const paidCount = registrations.length;
     console.log(`🔍 [checkAndGrantInvitationBonus] Comissão ${bonus.id}, Cupom ${couponCode || 'N/A'}: ${paidCount} compras pagas`);
     
-    // Count how many times this bonus has already been granted for this specific bonus config
-    // NOVO: Contar apenas convites associados a esta comissão específica usando commission_id
-    let timesGranted = 0;
+    const requiredPurchases = bonus.required_purchases != null && bonus.required_purchases >= 1
+      ? bonus.required_purchases
+      : 1;
+    if (requiredPurchases !== (bonus.required_purchases ?? 0)) {
+      console.log(`⚠️ [checkAndGrantInvitationBonus] required_purchases inválido (${bonus.required_purchases}), usando 1`);
+    }
     
-    // Contar convites já concedidos para esta comissão específica
+    // Count how many times this bonus has already been granted (só convites válidos: available, sent, used).
+    // Convites expirados NÃO contam - assim geramos novo convite quando a meta está batida e o único convite foi revogado.
+    let timesGranted = 0;
     const grantedCount = await query(
       `SELECT COUNT(*) as count FROM leader_invitations 
-       WHERE leader_id = $1 AND event_id = $2 AND commission_id = $3`,
+       WHERE leader_id = $1 AND event_id = $2 AND commission_id = $3 
+       AND status IN ('available', 'sent', 'used')`,
       [leaderId, eventId, bonus.id]
     );
     timesGranted = parseInt(grantedCount.rows[0].count) || 0;
@@ -100,9 +81,9 @@ export const checkAndGrantInvitationBonus = async (
     
     // Calculate how many bonuses should have been granted by now
     // Each time we reach required_purchases, we get a new bonus
-    const expectedBonuses = Math.floor(paidCount / bonus.required_purchases);
+    const expectedBonuses = Math.floor(paidCount / requiredPurchases);
     
-    console.log(`🔍 [checkAndGrantInvitationBonus] Bônus config: required_purchases=${bonus.required_purchases}, paidCount=${paidCount}, expectedBonuses=${expectedBonuses}, timesGranted=${timesGranted}`);
+    console.log(`🔍 [checkAndGrantInvitationBonus] Bônus config: required_purchases=${requiredPurchases}, paidCount=${paidCount}, expectedBonuses=${expectedBonuses}, timesGranted=${timesGranted}`);
     
     // If we need to grant more bonuses, grant all pending bonuses
     if (expectedBonuses > timesGranted) {
@@ -175,11 +156,11 @@ export const checkAndGrantInvitationBonus = async (
 
           console.log(`✅ Bônus de inscrição grátis concedido para líder ${leaderId} no evento ${eventId} (${bonusesGranted} bônus(es) concedido(s) nesta iteração)`);
           
-          // Re-fetch count to ensure we're up to date (in case of concurrent grants)
-          // NOVO: Recontar apenas convites desta comissão específica
+          // Re-fetch count (só convites válidos: available, sent, used)
           const updatedGrantedCount = await query(
             `SELECT COUNT(*) as count FROM leader_invitations 
-             WHERE leader_id = $1 AND event_id = $2 AND commission_id = $3`,
+             WHERE leader_id = $1 AND event_id = $2 AND commission_id = $3 
+             AND status IN ('available', 'sent', 'used')`,
             [leaderId, eventId, bonus.id]
           );
           timesGranted = parseInt(updatedGrantedCount.rows[0].count) || 0;
@@ -214,6 +195,59 @@ export const checkAndGrantInvitationBonus = async (
 };
 
 /**
+ * Obtém o ID da comissão (leader_event_commission) cujo cupom corresponde ao código informado.
+ * Usado para disparar a verificação de convite na comissão correta quando um pagamento é confirmado com cupom.
+ */
+export const getCommissionIdByCouponCode = async (
+  leaderId: string,
+  eventId: string,
+  couponCode: string
+): Promise<string | null> => {
+  if (!couponCode || !couponCode.trim()) return null;
+  const { getCouponByEventCommission } = await import('./couponsService.js');
+  const normalizedInput = couponCode.trim().toUpperCase();
+  const bonuses = await query(
+    `SELECT id FROM leader_event_commissions 
+     WHERE leader_id = $1 AND event_id = $2 
+     AND bonus_type IN ('invitation', 'both')
+     ORDER BY created_at ASC`,
+    [leaderId, eventId]
+  );
+  for (const row of bonuses.rows) {
+    try {
+      const coupon = await getCouponByEventCommission(leaderId, eventId, row.id);
+      if (coupon?.code && coupon.code.trim().toUpperCase() === normalizedInput) {
+        return row.id;
+      }
+    } catch (_) {}
+  }
+  return null;
+};
+
+/**
+ * Dispara a verificação de bônus de convite quando uma inscrição paga usou cupom de líder.
+ * Chama checkInvitationBonusForCommission para a comissão desse cupom e depois checkAllInvitationBonuses para todas.
+ */
+export const triggerInvitationBonusAfterPaidWithCoupon = async (
+  leaderId: string,
+  eventId: string,
+  couponCode: string | null
+): Promise<void> => {
+  try {
+    if (couponCode?.trim()) {
+      const commissionId = await getCommissionIdByCouponCode(leaderId, eventId, couponCode);
+      if (commissionId) {
+        console.log(`🎁 [triggerInvitationBonusAfterPaidWithCoupon] Disparando verificação para comissão ${commissionId} (cupom usado na compra)`);
+        await checkInvitationBonusForCommission(leaderId, eventId, commissionId);
+      }
+    }
+    await checkAllInvitationBonuses(leaderId, eventId);
+  } catch (err: any) {
+    console.error('❌ [triggerInvitationBonusAfterPaidWithCoupon] Erro:', err.message);
+  }
+};
+
+/**
  * Check all invitation bonuses for a leader after a new paid registration
  */
 export const checkAllInvitationBonuses = async (
@@ -236,6 +270,125 @@ export const checkAllInvitationBonuses = async (
 };
 
 /**
+ * Verifica e aplica/revoga bônus de convite para uma comissão específica.
+ * Usado após troca de cupom ou atrelar inscrição, para garantir que a contagem
+ * já inclui a inscrição recém-atualizada e que convites sejam gerados ou revogados conforme a meta.
+ */
+export const checkInvitationBonusForCommission = async (
+  leaderId: string,
+  eventId: string,
+  commissionId: string
+): Promise<{ granted: number; revoked: number }> => {
+  const { getLeaderEventCommissionById } = await import('./leaderEventCommissionsService.js');
+  const { getCouponByEventCommission } = await import('./couponsService.js');
+
+  const commission = await getLeaderEventCommissionById(commissionId);
+  if (!commission || !['invitation', 'both'].includes(commission.bonus_type || '')) {
+    return { granted: 0, revoked: 0 };
+  }
+
+  const bonus = commission as { id: string; required_purchases: number | null };
+  let couponCode: string | null = null;
+  try {
+    const coupon = await getCouponByEventCommission(leaderId, eventId, bonus.id);
+    if (coupon?.code) couponCode = coupon.code;
+  } catch (_) {}
+
+  const registrations = await getRegistrationsByLeaderCoupons(leaderId, {
+    event_id: eventId,
+    payment_status: 'paid',
+    coupon_code: couponCode || undefined,
+  });
+  const paidCount = registrations.length;
+  const requiredPurchases = bonus.required_purchases != null && bonus.required_purchases >= 1
+    ? bonus.required_purchases
+    : 1;
+  const expectedBonuses = Math.floor(paidCount / requiredPurchases);
+
+  // Contar só convites válidos (available, sent, used); expirados não contam para evitar bloquear novo convite
+  const grantedResult = await query(
+    `SELECT COUNT(*) as count FROM leader_invitations 
+     WHERE leader_id = $1 AND event_id = $2 AND commission_id = $3 
+     AND status IN ('available', 'sent', 'used')`,
+    [leaderId, eventId, bonus.id]
+  );
+  let timesGranted = parseInt(grantedResult.rows[0].count) || 0;
+
+  console.log(`🎁 [checkInvitationBonusForCommission] Comissão ${bonus.id}: paidCount=${paidCount}, required=${requiredPurchases}, expectedBonuses=${expectedBonuses}, timesGranted=${timesGranted}`);
+
+  let granted = 0;
+  if (expectedBonuses > timesGranted) {
+    const leader = await getGroupLeaderById(leaderId);
+    const event = await getEventById(eventId);
+    if (!leader || !event) return { granted: 0, revoked: 0 };
+
+    const categories = await query(
+      `SELECT id FROM categories 
+       WHERE event_id = $1 ORDER BY is_default DESC, price ASC, created_at ASC LIMIT 1`,
+      [eventId]
+    );
+    if (categories.rows.length === 0) return { granted: 0, revoked: 0 };
+    const defaultCategory = categories.rows[0];
+
+    const bonusesToGrant = expectedBonuses - timesGranted;
+    let attempts = 0;
+    const maxAttempts = bonusesToGrant + 5;
+    while (timesGranted < expectedBonuses && attempts < maxAttempts) {
+      attempts++;
+      try {
+        const freeRegistration = await createRegistration({
+          event_id: eventId,
+          runner_id: leader.user_id,
+          registered_by: leader.user_id,
+          category_id: defaultCategory.id,
+          payment_method: 'free_bonus' as any,
+          total_amount: 0,
+        });
+        const { createInvitationFromBonus } = await import('./leaderInvitationsService.js');
+        await createInvitationFromBonus(leaderId, freeRegistration.id, eventId, bonus.id);
+        granted++;
+        const updated = await query(
+          `SELECT COUNT(*) as count FROM leader_invitations 
+           WHERE leader_id = $1 AND event_id = $2 AND commission_id = $3 
+           AND status IN ('available', 'sent', 'used')`,
+          [leaderId, eventId, bonus.id]
+        );
+        timesGranted = parseInt(updated.rows[0].count) || 0;
+      } catch (err: any) {
+        console.error(`❌ [checkInvitationBonusForCommission] Erro ao conceder convite:`, err.message);
+        break;
+      }
+    }
+    if (granted > 0) {
+      console.log(`✅ [checkInvitationBonusForCommission] Concedidos ${granted} convite(s) para comissão ${bonus.id}`);
+    }
+  }
+
+  let revoked = 0;
+  if (timesGranted > expectedBonuses) {
+    const toRevoke = timesGranted - expectedBonuses;
+    const toRevokeIds = await query(
+      `SELECT id FROM leader_invitations 
+       WHERE leader_id = $1 AND event_id = $2 AND commission_id = $3 AND status = 'available'
+       ORDER BY created_at DESC LIMIT $4`,
+      [leaderId, eventId, bonus.id, toRevoke]
+    );
+    for (const row of toRevokeIds.rows) {
+      await query(
+        `UPDATE leader_invitations SET status = 'expired', updated_at = NOW() WHERE id = $1`,
+        [row.id]
+      );
+      revoked++;
+    }
+    if (revoked > 0) {
+      console.log(`🔄 [checkInvitationBonusForCommission] Revogados ${revoked} convite(s) em excesso para comissão ${bonus.id}`);
+    }
+  }
+
+  return { granted, revoked };
+};
+
+/**
  * Recalculate invitation bonuses for a leader/event and revoke excess (e.g. when a registration is detached).
  * Used when removing atrelamento so the old leader's bonus count decreases.
  */
@@ -252,17 +405,13 @@ export const recalculateAndRevokeExcessInvitations = async (
     [leaderId, eventId]
   );
 
+  const { getCouponByEventCommission } = await import('./couponsService.js');
+
   for (const bonus of invitationBonuses.rows) {
     let couponCode: string | null = null;
     try {
-      const { getCouponsByLeader } = await import('./couponsService.js');
-      const coupons = await getCouponsByLeader(leaderId);
-      const commissionIdShort = bonus.id.replace(/-/g, '').substring(0, 8).toUpperCase();
-      const matchingCoupon = coupons.find((c: any) => {
-        const matchesEvent = c.event_ids?.includes(eventId) || c.event_id === eventId;
-        return matchesEvent && c.code && c.code.includes(commissionIdShort);
-      });
-      if (matchingCoupon) couponCode = matchingCoupon.code;
+      const coupon = await getCouponByEventCommission(leaderId, eventId, bonus.id);
+      if (coupon?.code) couponCode = coupon.code;
     } catch (_) {}
 
     const registrations = await getRegistrationsByLeaderCoupons(leaderId, {
@@ -340,6 +489,16 @@ export const getLeaderInvitationProgress = async (
   queryText += ` ORDER BY e.title, lec.name`;
   const bonuses = await query(queryText, params);
 
+  // Acionador: ao carregar o progresso, tentar conceder convites pendentes (ex.: meta batida mas convite não gerado)
+  const uniqueEventIds = [...new Set(bonuses.rows.map((r: any) => r.event_id))] as string[];
+  for (const eventId of uniqueEventIds) {
+    try {
+      await checkAndGrantInvitationBonus(leaderId, eventId);
+    } catch (syncErr: any) {
+      console.error(`❌ [getLeaderInvitationProgress] Erro ao sincronizar convites para evento ${eventId}:`, syncErr.message);
+    }
+  }
+
   const result: LeaderInvitationProgressItem[] = [];
 
   for (const row of bonuses.rows) {
@@ -357,9 +516,11 @@ export const getLeaderInvitationProgress = async (
     });
     const paid_count = registrations.length;
 
+    // Exibir só convites válidos (available, sent, used); expirados não entram em "Convites ganhos"
     const grantedResult = await query(
       `SELECT COUNT(*) as count FROM leader_invitations
-       WHERE leader_id = $1 AND event_id = $2 AND commission_id = $3`,
+       WHERE leader_id = $1 AND event_id = $2 AND commission_id = $3
+       AND status IN ('available', 'sent', 'used')`,
       [leaderId, row.event_id, row.commission_id]
     );
     const invitations_granted = parseInt(grantedResult.rows[0].count, 10) || 0;

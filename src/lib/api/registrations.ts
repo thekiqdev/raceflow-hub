@@ -228,6 +228,17 @@ export const detachCommission = async (registrationId: string) => {
   return apiClient.post<{ data: any; message: string }>(`/registrations/${registrationId}/detach-commission`, {});
 };
 
+// Change coupon/commission on this registration (organizer or admin). Subtracts old bonus and applies new.
+export const changeRegistrationCommission = async (
+  registrationId: string,
+  body: { leader_event_commission_id: string }
+) => {
+  return apiClient.post<{ data: { registration: Registration; commission: any }; message: string }>(
+    `/registrations/${registrationId}/change-commission`,
+    body
+  );
+};
+
 // Transfer registration to another runner by CPF or email
 export const transferRegistration = async (id: string, cpf?: string, email?: string) => {
   return apiClient.put<Registration>(`/registrations/${id}/transfer`, { cpf, email });

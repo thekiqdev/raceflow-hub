@@ -406,7 +406,7 @@ const OrganizerRegistrations = () => {
       if (commissionsResponse.success && commissionsResponse.data) {
         const list = commissionsResponse.data || [];
         setEventCommissionsForAttach(list);
-        if (list.length > 0) setSelectedCommissionIdForAttach(list[0].id);
+        // Não pré-selecionar: deixar o usuário escolher explicitamente (evita sempre mostrar o mesmo líder)
       } else {
         toast.error(commissionsResponse.error || "Erro ao carregar comissões");
       }

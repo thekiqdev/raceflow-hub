@@ -7,7 +7,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-import { Copy, ExternalLink, Loader2, CheckCircle, XCircle, Search } from "lucide-react";
+import { Copy, ExternalLink, Loader2, CheckCircle, XCircle, Search, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { 
   type GroupLeader, 
@@ -20,8 +20,20 @@ import {
   type LeaderCommission,
   type LeaderInvitationProgressItem,
 } from "@/lib/api/groupLeaders";
+import { getLeaderCouponRegistrations, getAdminLeaderCouponRegistrations } from "@/lib/api/leaderRegistrations";
+import type { LeaderRegistration } from "@/lib/api/leaderRegistrations";
+import { getEventCommissionsByEvent, type EventCommissionOption } from "@/lib/api/leaderEventCommissions";
+import { changeRegistrationCommission } from "@/lib/api/registrations";
 import { LeaderEventCommissions } from "@/components/organizer/LeaderEventCommissions";
 import { LeaderCoupons } from "@/components/organizer/LeaderCoupons";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
 
 interface GroupLeaderDetailsProps {
   open: boolean;
@@ -43,18 +55,25 @@ export function GroupLeaderDetails({
   const [referrals, setReferrals] = useState<UserReferral[]>([]);
   const [commissions, setCommissions] = useState<LeaderCommission[]>([]);
   const [invitationProgress, setInvitationProgress] = useState<LeaderInvitationProgressItem[]>([]);
+  const [purchases, setPurchases] = useState<LeaderRegistration[]>([]);
   const [loadingReferrals, setLoadingReferrals] = useState(false);
   const [loadingCommissions, setLoadingCommissions] = useState(false);
   const [loadingInvitationProgress, setLoadingInvitationProgress] = useState(false);
+  const [loadingPurchases, setLoadingPurchases] = useState(false);
   const [activeTab, setActiveTab] = useState("overview");
   const [eventSearchTerm, setEventSearchTerm] = useState("");
   const [userSearchTerm, setUserSearchTerm] = useState<Record<string, string>>({});
+  const [registrationForChangeCoupon, setRegistrationForChangeCoupon] = useState<LeaderRegistration | null>(null);
+  const [eventCommissionsForCoupon, setEventCommissionsForCoupon] = useState<EventCommissionOption[]>([]);
+  const [selectedCommissionIdForChange, setSelectedCommissionIdForChange] = useState<string>("");
+  const [changingCoupon, setChangingCoupon] = useState(false);
 
   useEffect(() => {
     if (open && leader) {
       loadReferrals();
       loadCommissions();
       loadInvitationProgress();
+      loadPurchases();
     }
   }, [open, leader]);
 
@@ -125,6 +144,65 @@ export function GroupLeaderDetails({
       console.error("Erro ao carregar progresso de convites:", error);
     } finally {
       setLoadingInvitationProgress(false);
+    }
+  };
+
+  const loadPurchases = async () => {
+    if (!leader) return;
+
+    setLoadingPurchases(true);
+    try {
+      const response = isOrganizer
+        ? await getLeaderCouponRegistrations(leader.id)
+        : await getAdminLeaderCouponRegistrations(leader.id);
+      if (response.success) {
+        const list = Array.isArray(response.data) ? response.data : (response as any).data ?? [];
+        setPurchases(list);
+      }
+    } catch (error) {
+      console.error("Erro ao carregar compras:", error);
+      toast.error("Erro ao carregar compras");
+    } finally {
+      setLoadingPurchases(false);
+    }
+  };
+
+  const handleOpenChangeCoupon = async (reg: LeaderRegistration) => {
+    setRegistrationForChangeCoupon(reg);
+    setSelectedCommissionIdForChange("");
+    try {
+      const response = await getEventCommissionsByEvent(reg.event_id, !isOrganizer);
+      if (response.success && response.data) {
+        const list = Array.isArray(response.data) ? response.data : [];
+        const forLeader = list.filter((c: EventCommissionOption) => c.leader_id === leader?.id);
+        setEventCommissionsForCoupon(forLeader);
+      }
+    } catch (error) {
+      console.error("Erro ao carregar comissões do evento:", error);
+      toast.error("Erro ao carregar comissões");
+    }
+  };
+
+  const handleConfirmChangeCoupon = async () => {
+    if (!registrationForChangeCoupon || !selectedCommissionIdForChange) return;
+    setChangingCoupon(true);
+    try {
+      const response = await changeRegistrationCommission(registrationForChangeCoupon.id, {
+        leader_event_commission_id: selectedCommissionIdForChange,
+      });
+      if (response.success) {
+        toast.success((response as any).message || "Cupom trocado com sucesso");
+        setRegistrationForChangeCoupon(null);
+        loadPurchases();
+        loadInvitationProgress();
+      } else {
+        toast.error((response as any).message || (response as any).error || "Erro ao trocar cupom");
+      }
+    } catch (error: any) {
+      console.error("Erro ao trocar cupom:", error);
+      toast.error(error?.response?.data?.message || error.message || "Erro ao trocar cupom");
+    } finally {
+      setChangingCoupon(false);
     }
   };
 
@@ -267,6 +345,7 @@ export function GroupLeaderDetails({
   if (!leader) return null;
 
   return (
+    <>
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
@@ -280,6 +359,7 @@ export function GroupLeaderDetails({
             <TabsTrigger value="referrals">Referências ({referrals.length})</TabsTrigger>
             <TabsTrigger value="commissions">Comissões ({commissions.length})</TabsTrigger>
             <TabsTrigger value="invitation-progress">Progresso de Convites ({invitationProgress.length})</TabsTrigger>
+            <TabsTrigger value="purchases">Compras ({purchases.length})</TabsTrigger>
             <TabsTrigger value="event-commissions">Comissões por Evento</TabsTrigger>
             <TabsTrigger value="coupons">Cupons Exclusivos</TabsTrigger>
           </TabsList>
@@ -680,6 +760,79 @@ export function GroupLeaderDetails({
             )}
           </TabsContent>
 
+          <TabsContent value="purchases" className="space-y-4">
+            {loadingPurchases ? (
+              <div className="flex items-center justify-center h-64">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              </div>
+            ) : purchases.length === 0 ? (
+              <Card>
+                <CardContent className="py-12 text-center">
+                  <p className="text-muted-foreground">Nenhuma compra com cupom deste líder</p>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm text-muted-foreground">
+                    Inscrições realizadas com cupons do líder
+                  </p>
+                  <Button variant="outline" size="sm" onClick={loadPurchases} disabled={loadingPurchases}>
+                    <RefreshCw className={`h-4 w-4 mr-1 ${loadingPurchases ? "animate-spin" : ""}`} />
+                    Atualizar
+                  </Button>
+                </div>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Evento</TableHead>
+                      <TableHead>Participante</TableHead>
+                      <TableHead>Valor</TableHead>
+                      <TableHead>Status pagamento</TableHead>
+                      <TableHead>Cupom</TableHead>
+                      <TableHead>Data</TableHead>
+                      <TableHead className="text-right">Ações</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {purchases.map((reg) => (
+                      <TableRow key={reg.id}>
+                        <TableCell>
+                          <div className="font-medium">{reg.event_title}</div>
+                        </TableCell>
+                        <TableCell>
+                          <div>
+                            <div className="font-medium">{reg.runner_name || "—"}</div>
+                            <div className="text-xs text-muted-foreground">{reg.runner_email}</div>
+                          </div>
+                        </TableCell>
+                        <TableCell>{formatCurrency(reg.total_amount ?? 0)}</TableCell>
+                        <TableCell>
+                          <Badge variant={reg.payment_status === "paid" ? "default" : reg.payment_status === "pending" ? "secondary" : "outline"}>
+                            {reg.payment_status === "paid" ? "Pago" : reg.payment_status === "pending" ? "Pendente" : "Cancelado"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="font-mono text-xs">{reg.coupon_code || "—"}</TableCell>
+                        <TableCell>{reg.created_at ? formatDate(reg.created_at) : "—"}</TableCell>
+                        <TableCell className="text-right">
+                          {reg.payment_status === "paid" && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleOpenChangeCoupon(reg)}
+                            >
+                              Trocar cupom
+                            </Button>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </TabsContent>
+
           <TabsContent value="event-commissions" className="space-y-4">
             {leader && <LeaderEventCommissions leaderId={leader.id} isAdmin={!isOrganizer} />}
           </TabsContent>
@@ -690,6 +843,65 @@ export function GroupLeaderDetails({
         </Tabs>
       </DialogContent>
     </Dialog>
+
+    {/* Modal Trocar cupom */}
+    <Dialog open={!!registrationForChangeCoupon} onOpenChange={(open) => !open && setRegistrationForChangeCoupon(null)}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Trocar cupom da inscrição</DialogTitle>
+          <DialogDescription>
+            {registrationForChangeCoupon && (
+              <>
+                Inscrição: {registrationForChangeCoupon.runner_name || registrationForChangeCoupon.runner_email} • {registrationForChangeCoupon.event_title}
+                <br />
+                Cupom atual: <code className="text-xs bg-muted px-1">{registrationForChangeCoupon.coupon_code || "—"}</code>
+              </>
+            )}
+          </DialogDescription>
+        </DialogHeader>
+        {registrationForChangeCoupon && (
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>Novo cupom (comissão por evento do líder + evento)</Label>
+              <Select
+                value={selectedCommissionIdForChange}
+                onValueChange={setSelectedCommissionIdForChange}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione uma comissão/cupom" />
+                </SelectTrigger>
+                <SelectContent>
+                  {eventCommissionsForCoupon.map((ec) => (
+                    <SelectItem key={ec.id} value={ec.id}>
+                      <span className="font-medium">{ec.name || ec.leader_referral_code}</span>
+                      <span className="text-muted-foreground"> • {ec.commission_percentage}%</span>
+                      {ec.bonus_type === "invitation" && <span className="text-muted-foreground"> • Convite</span>}
+                      {ec.bonus_type === "both" && <span className="text-muted-foreground"> • Comissão + Convite</span>}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                O bônus do cupom anterior será subtraído e o do novo cupom será aplicado.
+              </p>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setRegistrationForChangeCoupon(null)} disabled={changingCoupon}>
+                Cancelar
+              </Button>
+              <Button
+                onClick={handleConfirmChangeCoupon}
+                disabled={!selectedCommissionIdForChange || changingCoupon}
+              >
+                {changingCoupon ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                Trocar cupom
+              </Button>
+            </div>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+    </>
   );
 }
 

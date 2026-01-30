@@ -25,7 +25,7 @@ import { sendNotificationSafely, getUserEmail, getUserName, getOrganizerEmail } 
 import { getLeaderEventCommissionById } from '../services/leaderEventCommissionsService.js';
 import { getCouponByEventCommission, getCouponByCodeOnly } from '../services/couponsService.js';
 import { createCommission, getCommissionByRegistrationId, adminCancelCommission } from '../services/commissionsService.js';
-import { checkAllInvitationBonuses, recalculateAndRevokeExcessInvitations } from '../services/leaderBonusService.js';
+import { checkAllInvitationBonuses, checkInvitationBonusForCommission, recalculateAndRevokeExcessInvitations } from '../services/leaderBonusService.js';
 import { z } from 'zod';
 import { EventRegistrationStatus, Event } from '../types/index.js';
 import { calculateRegistrationStatus } from '../services/eventsService.js';
@@ -1984,93 +1984,69 @@ export const updateRegistrationController = asyncHandler(async (req: AuthRequest
         }
         
         if (leaderId) {
-          // NOVO: Se a inscrição tem cupom, verificar se a comissão associada é apenas 'invitation'
-          // Se for, não criar comissão, apenas verificar bônus
-          if (reg.coupon_code) {
-            try {
-              const { getCouponByCodeOnly } = await import('../services/couponsService.js');
-              const coupon = await getCouponByCodeOnly(reg.coupon_code);
-              if (coupon && coupon.leader_id === leaderId) {
-                // Buscar comissão associada a este cupom específico
-                const commissionIdShort = coupon.code.replace(/[^0-9A-Z]/g, '').substring(4, 12); // Extrair ID da comissão do código do cupom
-                const commissionResult = await query(
-                  `SELECT id, bonus_type FROM leader_event_commissions 
-                   WHERE leader_id = $1 AND event_id = $2
-                   AND REPLACE(UPPER(id::text), '-', '') LIKE '%' || $3 || '%'`,
-                  [leaderId, reg.event_id, commissionIdShort]
-                );
-                if (commissionResult.rows.length > 0) {
-                  const bonusType = commissionResult.rows[0].bonus_type;
-                  console.log(`🎯 [updateRegistrationController] Comissão específica encontrada pelo cupom: ${commissionResult.rows[0].id} (tipo: ${bonusType})`);
-                  
-                  // Se for apenas 'invitation', não criar comissão, apenas verificar bônus
-                  if (bonusType === 'invitation') {
-                    console.log(`🎁 [updateRegistrationController] Comissão é apenas 'invitation', verificando bônus de convite...`);
-                    const { checkAllInvitationBonuses } = await import('../services/leaderBonusService.js');
-                    await checkAllInvitationBonuses(leaderId, reg.event_id);
-                    // Não criar comissão para tipo 'invitation', mas continuar o fluxo
-                    // (não usar return aqui, pois ainda precisa processar outras coisas)
-                  } else {
-                    // Se não for apenas 'invitation', criar comissão normalmente abaixo
-                  }
-                }
-              }
-            } catch (couponError: any) {
-              console.log(`ℹ️ [updateRegistrationController] Erro ao buscar comissão específica pelo cupom: ${couponError.message}`);
-            }
-          }
-          
-          // Create commission (this will also check for invitation bonuses)
-          // Skip if bonus type is 'invitation' only (already handled above)
+          // Buscar comissão pelo cupom: cupom contém REFERRAL_CODE + primeiros 8 chars do UUID da comissão
           let shouldCreateCommission = true;
           if (reg.coupon_code) {
             try {
               const { getCouponByCodeOnly } = await import('../services/couponsService.js');
               const coupon = await getCouponByCodeOnly(reg.coupon_code);
               if (coupon && coupon.leader_id === leaderId) {
-                const commissionIdShort = coupon.code.replace(/[^0-9A-Z]/g, '').substring(4, 12);
-                const commissionResult = await query(
+                const couponCodeUpper = (coupon.code || '').replace(/-/g, '').toUpperCase();
+                const commissionsForLeader = await query(
                   `SELECT id, bonus_type FROM leader_event_commissions 
-                   WHERE leader_id = $1 AND event_id = $2
-                   AND REPLACE(UPPER(id::text), '-', '') LIKE '%' || $3 || '%'`,
-                  [leaderId, reg.event_id, commissionIdShort]
+                   WHERE leader_id = $1 AND event_id = $2`,
+                  [leaderId, reg.event_id]
                 );
-                if (commissionResult.rows.length > 0 && commissionResult.rows[0].bonus_type === 'invitation') {
-                  // Already handled above, skip commission creation
-                  shouldCreateCommission = false;
+                for (const row of commissionsForLeader.rows) {
+                  const commissionIdShort = (row.id || '').replace(/-/g, '').substring(0, 8).toUpperCase();
+                  if (commissionIdShort && couponCodeUpper.includes(commissionIdShort)) {
+                    if (row.bonus_type === 'invitation') {
+                      shouldCreateCommission = false;
+                      console.log(`🎯 [updateRegistrationController] Comissão apenas 'invitation' - verificando bônus de convite`);
+                    }
+                    break;
+                  }
                 }
               }
             } catch (couponError: any) {
-              // Continue with commission creation if coupon check fails
+              console.log(`ℹ️ [updateRegistrationController] Erro ao buscar comissão pelo cupom: ${couponError.message}`);
             }
           }
-          
+
           if (shouldCreateCommission) {
             try {
               const { createCommission } = await import('../services/commissionsService.js');
-            await createCommission({
-              leader_id: leaderId,
-              registration_id: id,
-              referred_user_id: reg.runner_id,
-              event_id: reg.event_id,
-              registration_amount: parseFloat(reg.total_amount) || 0,
-            });
-            console.log(`✅ [updateRegistrationController] Comissão criada para líder ${leaderId} na inscrição ${id}`);
-          } catch (commissionError: any) {
-            // If no commission is configured (invitation type only) or amount is 0, just check for bonuses
-            if (commissionError.message.includes('No commission configured') || 
-                commissionError.message.includes('invitation type only')) {
-              console.log(`ℹ️ [updateRegistrationController] Tipo de bônus é apenas 'invitation', verificando bônus de convite...`);
-              const { checkAllInvitationBonuses } = await import('../services/leaderBonusService.js');
-              await checkAllInvitationBonuses(leaderId, reg.event_id);
-            } else if (commissionError.message.includes('must be greater than 0')) {
-              console.log(`ℹ️ [updateRegistrationController] Valor da comissão é 0, verificando apenas bônus de convite...`);
-              const { checkAllInvitationBonuses } = await import('../services/leaderBonusService.js');
-              await checkAllInvitationBonuses(leaderId, reg.event_id);
-            } else {
-              console.error('❌ [updateRegistrationController] Erro ao criar comissão:', commissionError.message);
+              await createCommission({
+                leader_id: leaderId,
+                registration_id: id,
+                referred_user_id: reg.runner_id,
+                event_id: reg.event_id,
+                registration_amount: parseFloat(reg.total_amount) || 0,
+              });
+              console.log(`✅ [updateRegistrationController] Comissão criada para líder ${leaderId} na inscrição ${id}`);
+            } catch (commissionError: any) {
+              if (commissionError.message.includes('No commission configured') ||
+                  commissionError.message.includes('invitation type only')) {
+                console.log(`ℹ️ [updateRegistrationController] Tipo 'invitation' only - verificando bônus de convite`);
+                const { checkAllInvitationBonuses } = await import('../services/leaderBonusService.js');
+                await checkAllInvitationBonuses(leaderId, reg.event_id);
+              } else if (commissionError.message.includes('must be greater than 0')) {
+                console.log(`ℹ️ [updateRegistrationController] Valor 0 - verificando bônus de convite`);
+                const { checkAllInvitationBonuses } = await import('../services/leaderBonusService.js');
+                await checkAllInvitationBonuses(leaderId, reg.event_id);
+              } else {
+                console.error('❌ [updateRegistrationController] Erro ao criar comissão:', commissionError.message);
+              }
             }
           }
+
+          // Sempre rechecar bônus de convite quando pagamento é confirmado e há líder (meta pode ter sido batida)
+          try {
+            const { checkAllInvitationBonuses } = await import('../services/leaderBonusService.js');
+            await checkAllInvitationBonuses(leaderId, reg.event_id);
+            console.log(`🎁 [updateRegistrationController] Verificação de convites executada para líder ${leaderId}`);
+          } catch (bonusErr: any) {
+            console.error('❌ [updateRegistrationController] Erro ao verificar convites:', bonusErr.message);
           }
         } else {
           console.log(`ℹ️ [updateRegistrationController] Nenhum líder associado (sem referência e cupom não pertence a líder)`);
@@ -2171,15 +2147,6 @@ export const attachRegistrationToCommissionController = asyncHandler(async (req:
   }
 
   const existingMoneyCommission = await getCommissionByRegistrationId(registrationId);
-  if (existingMoneyCommission && existingMoneyCommission.leader_id === commission.leader_id) {
-    res.status(400).json({
-      success: false,
-      error: 'Conflict',
-      message: 'Esta inscrição já está atrelada a uma comissão',
-    });
-    return;
-  }
-
   const currentCouponCode = (registration.coupon_code || '').trim().toUpperCase();
   const newCouponCode = (coupon.code || '').trim().toUpperCase();
 
@@ -2199,23 +2166,35 @@ export const attachRegistrationToCommissionController = asyncHandler(async (req:
     return;
   }
 
-  if (currentCouponCode && currentCouponCode !== newCouponCode) {
-    const oldCoupon = await getCouponByCodeOnly(registration.coupon_code!);
-    const oldLeaderId = oldCoupon?.leader_id;
+  if (currentCouponCode !== newCouponCode) {
     if (existingMoneyCommission) {
+      const oldLeaderId = existingMoneyCommission.leader_id;
       await adminCancelCommission(existingMoneyCommission.id);
-    } else {
+      // Limpar cupom antes de recalcular para que a contagem do líder antigo não inclua esta inscrição
       await updateRegistration(registrationId, { coupon_code: null });
-    }
-    if (oldLeaderId) {
       await recalculateAndRevokeExcessInvitations(oldLeaderId, registration.event_id);
+    } else if (currentCouponCode) {
+      const oldCoupon = await getCouponByCodeOnly(registration.coupon_code!);
+      const oldLeaderId = oldCoupon?.leader_id;
+      await updateRegistration(registrationId, { coupon_code: null });
+      if (oldLeaderId) {
+        await recalculateAndRevokeExcessInvitations(oldLeaderId, registration.event_id);
+      }
     }
   }
 
   await updateRegistration(registrationId, { coupon_code: coupon.code });
 
+  // Verificação explícita da comissão específica: gera ou revoga convites conforme a meta
+  if (commission.bonus_type === 'invitation' || commission.bonus_type === 'both') {
+    try {
+      await checkInvitationBonusForCommission(commission.leader_id, registration.event_id, commission.id);
+    } catch (bonusErr: any) {
+      console.error('❌ [attach-commission] Erro ao verificar bônus de convite:', bonusErr.message);
+    }
+  }
+
   if (commission.bonus_type === 'invitation') {
-    await checkAllInvitationBonuses(commission.leader_id, registration.event_id);
     const updatedRegistration = await getRegistrationById(registrationId);
     res.status(200).json({
       success: true,
@@ -2228,7 +2207,7 @@ export const attachRegistrationToCommissionController = asyncHandler(async (req:
     return;
   }
 
-  let createdCommission;
+  let createdCommission: any = null;
   try {
     createdCommission = await createCommission({
       leader_id: commission.leader_id,
@@ -2246,7 +2225,29 @@ export const attachRegistrationToCommissionController = asyncHandler(async (req:
       });
       return;
     }
+    // Inscrição com valor 0 (convite/organizador): não cria comissão em dinheiro, bônus de convite já verificado acima
+    if (commission.bonus_type === 'both' && (err.message?.includes('greater than 0') || err.message?.includes('amount must be'))) {
+      const updatedRegistration = await getRegistrationById(registrationId);
+      res.status(200).json({
+        success: true,
+        data: {
+          registration: updatedRegistration,
+          commission: null,
+        },
+        message: 'Inscrição atrelada. Comissão em dinheiro não aplicável (valor 0). Bônus de convite verificado.',
+      });
+      return;
+    }
     throw err;
+  }
+
+  // Garantir que bônus de convite seja verificado quando a comissão é "both" (comissão em dinheiro criada)
+  if (commission.bonus_type === 'both') {
+    try {
+      await checkInvitationBonusForCommission(commission.leader_id, registration.event_id, commission.id);
+    } catch (bonusErr: any) {
+      console.error('❌ [attach] Erro ao verificar bônus de convite após atrelar:', bonusErr.message);
+    }
   }
 
   const updatedRegistration = await getRegistrationById(registrationId);
@@ -2395,6 +2396,9 @@ export const detachRegistrationCommissionController = asyncHandler(async (req: A
     const eventId = commission.event_id;
     const cancelled = await adminCancelCommission(commission.id);
     result.cancelled = cancelled;
+    // Limpar cupom antes de recalcular para que a contagem do líder antigo não inclua esta inscrição
+    await updateRegistration(registrationId, { coupon_code: null });
+    result.coupon_cleared = true;
     await recalculateAndRevokeExcessInvitations(oldLeaderId, eventId);
   } else if (registration.coupon_code) {
     const oldCoupon = await getCouponByCodeOnly(registration.coupon_code);
@@ -2413,6 +2417,194 @@ export const detachRegistrationCommissionController = asyncHandler(async (req: A
     success: true,
     data: result,
     message: 'Atrelamento removido. Você pode selecionar outra comissão.',
+  });
+});
+
+/**
+ * POST /api/registrations/:id/change-commission
+ * Troca o cupom/comissão atrelada a uma inscrição (já paga). Subtrai bônus do cupom antigo e aplica o novo.
+ * Organizador do evento ou admin.
+ */
+export const changeRegistrationCommissionController = asyncHandler(async (req: AuthRequest, res: Response) => {
+  if (!req.user) {
+    res.status(401).json({ success: false, error: 'Not authenticated' });
+    return;
+  }
+
+  const { id: registrationId } = req.params;
+  const body = req.body as { leader_event_commission_id?: string };
+
+  const leaderEventCommissionId = body?.leader_event_commission_id;
+  if (!leaderEventCommissionId || typeof leaderEventCommissionId !== 'string') {
+    res.status(400).json({
+      success: false,
+      error: 'Validation Error',
+      message: 'leader_event_commission_id é obrigatório',
+    });
+    return;
+  }
+
+  const registration = await getRegistrationById(registrationId);
+  if (!registration) {
+    res.status(404).json({ success: false, error: 'Not found', message: 'Inscrição não encontrada' });
+    return;
+  }
+
+  if (registration.payment_status !== 'paid') {
+    res.status(400).json({
+      success: false,
+      error: 'Bad Request',
+      message: 'Só é possível trocar cupom em inscrições já pagas',
+    });
+    return;
+  }
+
+  const event = await getEventById(registration.event_id);
+  if (!event) {
+    res.status(404).json({ success: false, error: 'Not found', message: 'Evento não encontrado' });
+    return;
+  }
+
+  const isAdmin = await hasRole(req.user.id, 'admin');
+  const isEventOrganizer = event.organizer_id === req.user.id;
+  if (!isAdmin && !isEventOrganizer) {
+    res.status(403).json({
+      success: false,
+      error: 'Forbidden',
+      message: 'Apenas o organizador do evento ou um administrador podem trocar o cupom',
+    });
+    return;
+  }
+
+  const commission = await getLeaderEventCommissionById(leaderEventCommissionId);
+  if (!commission) {
+    res.status(404).json({ success: false, error: 'Not found', message: 'Comissão por evento não encontrada' });
+    return;
+  }
+
+  if (commission.event_id !== registration.event_id) {
+    res.status(400).json({
+      success: false,
+      error: 'Bad Request',
+      message: 'A comissão não é do mesmo evento da inscrição',
+    });
+    return;
+  }
+
+  const coupon = await getCouponByEventCommission(commission.leader_id, commission.event_id, commission.id);
+  if (!coupon) {
+    res.status(400).json({
+      success: false,
+      error: 'Bad Request',
+      message: 'Esta comissão não possui cupom associado',
+    });
+    return;
+  }
+
+  const currentCouponCode = (registration.coupon_code || '').trim().toUpperCase();
+  const newCouponCode = (coupon.code || '').trim().toUpperCase();
+
+  if (currentCouponCode === newCouponCode) {
+    const updatedRegistration = await getRegistrationById(registrationId);
+    res.status(200).json({
+      success: true,
+      data: { registration: updatedRegistration, commission: null },
+      message: 'Inscrição já está com este cupom',
+    });
+    return;
+  }
+
+  const existingMoneyCommission = await getCommissionByRegistrationId(registrationId);
+  if (existingMoneyCommission) {
+    const oldLeaderId = existingMoneyCommission.leader_id;
+    await adminCancelCommission(existingMoneyCommission.id);
+    // Limpar cupom antes de recalcular para que a contagem do líder antigo não inclua esta inscrição
+    await updateRegistration(registrationId, { coupon_code: null });
+    await recalculateAndRevokeExcessInvitations(oldLeaderId, registration.event_id);
+  } else if (currentCouponCode) {
+    const oldCoupon = await getCouponByCodeOnly(registration.coupon_code!);
+    const oldLeaderId = oldCoupon?.leader_id;
+    await updateRegistration(registrationId, { coupon_code: null });
+    if (oldLeaderId) {
+      await recalculateAndRevokeExcessInvitations(oldLeaderId, registration.event_id);
+    }
+  }
+
+  await updateRegistration(registrationId, { coupon_code: coupon.code });
+
+  // Verificação explícita da comissão específica após troca: gera ou revoga convites conforme a meta
+  if (commission.bonus_type === 'invitation' || commission.bonus_type === 'both') {
+    try {
+      await checkInvitationBonusForCommission(commission.leader_id, registration.event_id, commission.id);
+    } catch (bonusErr: any) {
+      console.error('❌ [change-commission] Erro ao verificar bônus de convite:', bonusErr.message);
+    }
+  }
+
+  if (commission.bonus_type === 'invitation') {
+    const updatedRegistration = await getRegistrationById(registrationId);
+    res.status(200).json({
+      success: true,
+      data: {
+        registration: updatedRegistration,
+        commission: null,
+      },
+      message: 'Cupom trocado. Bônus de convite aplicado conforme a nova comissão.',
+    });
+    return;
+  }
+
+  let createdCommission: any = null;
+  try {
+    createdCommission = await createCommission({
+      leader_id: commission.leader_id,
+      registration_id: registrationId,
+      referred_user_id: registration.runner_id,
+      event_id: registration.event_id,
+      registration_amount: parseFloat(String(registration.total_amount || 0)) || 0,
+    });
+  } catch (err: any) {
+    if (err.message?.includes('already exists')) {
+      res.status(400).json({
+        success: false,
+        error: 'Conflict',
+        message: 'Esta inscrição já está atrelada a esta comissão',
+      });
+      return;
+    }
+    // Inscrição com valor 0 (convite/organizador): não cria comissão em dinheiro, bônus de convite já verificado acima
+    if (commission.bonus_type === 'both' && (err.message?.includes('greater than 0') || err.message?.includes('amount must be'))) {
+      const updatedRegistration = await getRegistrationById(registrationId);
+      res.status(200).json({
+        success: true,
+        data: {
+          registration: updatedRegistration,
+          commission: null,
+        },
+        message: 'Cupom trocado. Comissão em dinheiro não aplicável (valor 0). Bônus de convite verificado.',
+      });
+      return;
+    }
+    throw err;
+  }
+
+  // Garantir que bônus de convite seja verificado quando a comissão é "both" (comissão em dinheiro criada)
+  if (commission.bonus_type === 'both') {
+    try {
+      await checkInvitationBonusForCommission(commission.leader_id, registration.event_id, commission.id);
+    } catch (bonusErr: any) {
+      console.error('❌ [change-commission] Erro ao verificar bônus de convite após trocar cupom:', bonusErr.message);
+    }
+  }
+
+  const updatedRegistration = await getRegistrationById(registrationId);
+  res.status(200).json({
+    success: true,
+    data: {
+      registration: updatedRegistration,
+      commission: createdCommission,
+    },
+    message: 'Cupom trocado com sucesso',
   });
 });
 
@@ -2943,6 +3135,23 @@ export const cancelRegistrationController = asyncHandler(async (req: AuthRequest
       return;
     }
 
+    // Automação: ao excluir inscrição, revogar convites em excesso do líder (se a inscrição era do cupom dele)
+    let leaderIdForRevoke: string | null = null;
+    const commission = await getCommissionByRegistrationId(id);
+    if (commission) {
+      leaderIdForRevoke = commission.leader_id;
+    } else if (registration.coupon_code) {
+      const coupon = await getCouponByCodeOnly(registration.coupon_code);
+      if (coupon?.leader_id) leaderIdForRevoke = coupon.leader_id;
+    }
+    if (leaderIdForRevoke) {
+      try {
+        await recalculateAndRevokeExcessInvitations(leaderIdForRevoke, registration.event_id);
+      } catch (revokeErr: any) {
+        console.error('❌ [cancelRegistration] Erro ao revogar convites em excesso:', revokeErr.message);
+      }
+    }
+
     res.json({
       success: true,
       data: cancelledRegistration,
@@ -3003,6 +3212,16 @@ export const deleteRegistrationController = asyncHandler(async (req: AuthRequest
     return;
   }
 
+  // Antes de excluir: obter líder para revogar convites em excesso depois
+  let leaderIdForRevoke: string | null = null;
+  const commission = await getCommissionByRegistrationId(id);
+  if (commission) leaderIdForRevoke = commission.leader_id;
+  else if (registration.coupon_code) {
+    const coupon = await getCouponByCodeOnly(registration.coupon_code);
+    if (coupon?.leader_id) leaderIdForRevoke = coupon.leader_id;
+  }
+  const eventIdForRevoke = registration.event_id;
+
   // Delete registration
   try {
     const { deleteRegistration } = await import('../services/registrationsService.js');
@@ -3015,6 +3234,15 @@ export const deleteRegistrationController = asyncHandler(async (req: AuthRequest
         message: 'A inscrição não foi encontrada ou já foi excluída',
       });
       return;
+    }
+
+    // Automação: ao excluir inscrição, revogar convites em excesso do líder
+    if (leaderIdForRevoke) {
+      try {
+        await recalculateAndRevokeExcessInvitations(leaderIdForRevoke, eventIdForRevoke);
+      } catch (revokeErr: any) {
+        console.error('❌ [deleteRegistration] Erro ao revogar convites em excesso:', revokeErr.message);
+      }
     }
 
     res.json({

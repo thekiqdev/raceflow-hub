@@ -45,6 +45,7 @@ import {
   updateLeaderEventCommissionController,
   deleteLeaderEventCommissionController,
 } from '../controllers/leaderEventCommissionsController.js';
+import { getLeaderCouponRegistrationsController } from '../controllers/leaderRegistrationsController.js';
 
 const router = Router();
 
@@ -89,6 +90,7 @@ router.delete('/group-leaders/:id', deactivateGroupLeaderController);
 router.get('/group-leaders/:id/referrals', getReferralsByLeaderController);
 router.get('/group-leaders/:id/commissions', getCommissionsByLeaderController);
 router.get('/group-leaders/:id/invitation-progress', getLeaderInvitationProgressController);
+router.get('/group-leaders/:id/coupon-registrations', getLeaderCouponRegistrationsController);
 
 // Leader Event Commissions endpoints
 router.get('/events/:eventId/event-commissions', getEventCommissionsByEventController);
