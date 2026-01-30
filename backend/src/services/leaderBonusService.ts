@@ -365,7 +365,13 @@ export const getLeaderInvitationProgress = async (
     const invitations_granted = parseInt(grantedResult.rows[0].count, 10) || 0;
 
     const remainder = paid_count % required_purchases;
-    const next_convite_in = remainder === 0 ? 0 : required_purchases - remainder;
+    // Só marcar "próximo convite disponível" (0) quando já atingiu pelo menos um múltiplo (ex.: 20, 40...)
+    const next_convite_in =
+      paid_count === 0
+        ? required_purchases
+        : remainder === 0
+          ? 0
+          : required_purchases - remainder;
 
     result.push({
       event_id: row.event_id,
