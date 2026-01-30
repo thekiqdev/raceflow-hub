@@ -404,7 +404,7 @@ const OrganizerRegistrations = () => {
         getRegistrationCommission(registration.id),
       ]);
       if (commissionsResponse.success && commissionsResponse.data) {
-        const list = (commissionsResponse.data || []).filter((ec) => ec.bonus_type !== "invitation");
+        const list = commissionsResponse.data || [];
         setEventCommissionsForAttach(list);
         if (list.length > 0) setSelectedCommissionIdForAttach(list[0].id);
       } else {
@@ -453,7 +453,7 @@ const OrganizerRegistrations = () => {
         leader_event_commission_id: selectedCommissionIdForAttach,
       });
       if (response.success) {
-        toast.success("Inscrição atrelada à comissão com sucesso");
+        toast.success((response as any).message || "Inscrição atrelada à comissão com sucesso");
         setIsAttachCommissionDialogOpen(false);
         setRegistrationForAttach(null);
         setSelectedCommissionIdForAttach("");
@@ -1042,8 +1042,14 @@ const OrganizerRegistrations = () => {
                   <div className="rounded-lg border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30 p-3 space-y-2 text-sm">
                     <div className="font-medium text-foreground">Inscrição já atrelada a</div>
                     <div><span className="text-muted-foreground">Líder:</span> {currentAttachCommission.leader_name || currentAttachCommission.leader_referral_code || "—"}</div>
-                    <div><span className="text-muted-foreground">Comissão:</span> {currentAttachCommission.commission_percentage}% • {formatCurrency(currentAttachCommission.commission_amount || 0)}</div>
-                    <div><span className="text-muted-foreground">Status:</span> {currentAttachCommission.status === "paid" ? "Pago" : currentAttachCommission.status === "pending" ? "Pendente" : "Cancelado"}</div>
+                    {(currentAttachCommission as any).bonus_type === "invitation" ? (
+                      <div><span className="text-muted-foreground">Tipo:</span> Bônus de convite (sem valor em dinheiro)</div>
+                    ) : (
+                      <>
+                        <div><span className="text-muted-foreground">Comissão:</span> {currentAttachCommission.commission_percentage}% • {formatCurrency(currentAttachCommission.commission_amount || 0)}</div>
+                        <div><span className="text-muted-foreground">Status:</span> {currentAttachCommission.status === "paid" ? "Pago" : currentAttachCommission.status === "pending" ? "Pendente" : "Cancelado"}</div>
+                      </>
+                    )}
                     <Button variant="destructive" size="sm" onClick={handleDetachCommission} disabled={detachingCommission}>
                       {detachingCommission ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
                       Remover atrelamento
@@ -1073,12 +1079,29 @@ const OrganizerRegistrations = () => {
                 {selectedCommissionIdForAttach && (() => {
                   const ec = eventCommissionsForAttach.find((c) => c.id === selectedCommissionIdForAttach);
                   if (!ec) return null;
+                  const isInvitation = ec.bonus_type === "invitation";
+                  const isBoth = ec.bonus_type === "both";
+                  const reqPurchases = ec.required_purchases;
                   return (
                     <div className="rounded-lg border bg-muted/30 p-3 space-y-2 text-sm">
                       <div className="font-medium text-foreground">Detalhes da comissão selecionada</div>
                       <div><span className="text-muted-foreground">Evento:</span> {ec.event_title || registrationForAttach?.event_title || "—"}</div>
                       <div><span className="text-muted-foreground">Líder:</span> {ec.leader_name || ec.leader_referral_code}</div>
-                      <div><span className="text-muted-foreground">Comissão:</span> {ec.commission_percentage}%</div>
+                      {isInvitation ? (
+                        <>
+                          <div><span className="text-muted-foreground">Tipo:</span> Bônus de convite</div>
+                          {reqPurchases != null && reqPurchases > 0 && (
+                            <div><span className="text-muted-foreground">Inscrições pagas para ganhar 1 convite:</span> {reqPurchases}</div>
+                          )}
+                        </>
+                      ) : isBoth ? (
+                        <>
+                          <div><span className="text-muted-foreground">Comissão:</span> {ec.commission_percentage}%</div>
+                          <div><span className="text-muted-foreground">Bônus de convite:</span> sim{reqPurchases != null && reqPurchases > 0 ? ` (${reqPurchases} inscrições pagas para ganhar 1 convite)` : ""}</div>
+                        </>
+                      ) : (
+                        <div><span className="text-muted-foreground">Comissão:</span> {ec.commission_percentage}%</div>
+                      )}
                       {ec.name && <div><span className="text-muted-foreground">Nome:</span> {ec.name}</div>}
                     </div>
                   );

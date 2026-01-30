@@ -58,6 +58,7 @@ export const getLeaderEventCommissionsByEvent = async (
       lec.name,
       lec.commission_percentage,
       COALESCE(lec.bonus_type, 'commission') as bonus_type,
+      lec.required_purchases,
       gl.referral_code as leader_referral_code,
       p.full_name as leader_name,
       e.title as event_title

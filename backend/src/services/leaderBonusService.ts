@@ -234,3 +234,72 @@ export const checkAllInvitationBonuses = async (
     console.error('❌ [checkAllInvitationBonuses] Stack:', error.stack);
   }
 };
+
+/**
+ * Recalculate invitation bonuses for a leader/event and revoke excess (e.g. when a registration is detached).
+ * Used when removing atrelamento so the old leader's bonus count decreases.
+ */
+export const recalculateAndRevokeExcessInvitations = async (
+  leaderId: string,
+  eventId: string
+): Promise<number> => {
+  let totalRevoked = 0;
+  const invitationBonuses = await query(
+    `SELECT * FROM leader_event_commissions 
+     WHERE leader_id = $1 AND event_id = $2 
+     AND bonus_type IN ('invitation', 'both')
+     ORDER BY required_purchases ASC`,
+    [leaderId, eventId]
+  );
+
+  for (const bonus of invitationBonuses.rows) {
+    let couponCode: string | null = null;
+    try {
+      const { getCouponsByLeader } = await import('./couponsService.js');
+      const coupons = await getCouponsByLeader(leaderId);
+      const commissionIdShort = bonus.id.replace(/-/g, '').substring(0, 8).toUpperCase();
+      const matchingCoupon = coupons.find((c: any) => {
+        const matchesEvent = c.event_ids?.includes(eventId) || c.event_id === eventId;
+        return matchesEvent && c.code && c.code.includes(commissionIdShort);
+      });
+      if (matchingCoupon) couponCode = matchingCoupon.code;
+    } catch (_) {}
+
+    const registrations = await getRegistrationsByLeaderCoupons(leaderId, {
+      event_id: eventId,
+      payment_status: 'paid',
+      coupon_code: couponCode || undefined,
+    });
+    const paidCount = registrations.length;
+    const expectedBonuses = Math.floor(paidCount / bonus.required_purchases);
+
+    const grantedResult = await query(
+      `SELECT COUNT(*) as count FROM leader_invitations 
+       WHERE leader_id = $1 AND event_id = $2 AND commission_id = $3`,
+      [leaderId, eventId, bonus.id]
+    );
+    const granted = parseInt(grantedResult.rows[0].count) || 0;
+
+    if (granted > expectedBonuses) {
+      const toRevoke = granted - expectedBonuses;
+      const toRevokeIds = await query(
+        `SELECT id FROM leader_invitations 
+         WHERE leader_id = $1 AND event_id = $2 AND commission_id = $3 AND status = 'available'
+         ORDER BY created_at DESC
+         LIMIT $4`,
+        [leaderId, eventId, bonus.id, toRevoke]
+      );
+      for (const row of toRevokeIds.rows) {
+        await query(
+          `UPDATE leader_invitations SET status = 'expired', updated_at = NOW() WHERE id = $1`,
+          [row.id]
+        );
+        totalRevoked++;
+      }
+      if (toRevoke > 0) {
+        console.log(`🔄 [recalculateAndRevokeExcessInvitations] Líder ${leaderId} evento ${eventId}: revogados ${toRevoke} convite(s) em excesso`);
+      }
+    }
+  }
+  return totalRevoked;
+};

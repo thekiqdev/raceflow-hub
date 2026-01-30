@@ -196,7 +196,7 @@ const AdminRegistrations = () => {
         getRegistrationCommissionForAttach(registration.id),
       ]);
       if (commissionsResponse.success && commissionsResponse.data) {
-        const list = (commissionsResponse.data || []).filter((ec) => ec.bonus_type !== "invitation");
+        const list = commissionsResponse.data || [];
         setEventCommissionsForAttach(list);
         if (list.length > 0) setSelectedCommissionIdForAttach(list[0].id);
       } else {
@@ -264,19 +264,25 @@ const AdminRegistrations = () => {
 
   const handleRemoveCommission = async () => {
     if (!registrationCommission || !selectedRegistration) return;
-    if (!confirm("Tem certeza que deseja remover esta comissão? O valor será descontado do total do líder.")) return;
+    const isInvitationOnly = (registrationCommission as any).bonus_type === "invitation" || !registrationCommission.id;
+    const message = isInvitationOnly
+      ? "Remover o atrelamento ao bônus de convite? O líder terá os convites recalculados."
+      : "Tem certeza que deseja remover esta comissão? O valor será descontado do total do líder.";
+    if (!confirm(message)) return;
     setRemovingCommission(true);
     try {
-      const response = await removeCommission(registrationCommission.id);
+      const response = isInvitationOnly
+        ? await detachCommission(selectedRegistration.id)
+        : await removeCommission(registrationCommission.id);
       if (response.success) {
-        toast.success("Comissão removida com sucesso");
+        toast.success((response as any).message || "Comissão removida com sucesso");
         setRegistrationCommission(null);
         if (registrationDetails?.coupon_code) {
           const refetch = await getRegistrationById(selectedRegistration.id);
           if (refetch.success && refetch.data) setRegistrationDetails(refetch.data);
         }
       } else {
-        toast.error(response.message || response.error || "Erro ao remover comissão");
+        toast.error((response as any).message || (response as any).error || "Erro ao remover comissão");
       }
     } catch (error: any) {
       console.error("Error removing commission:", error);
@@ -869,12 +875,29 @@ const AdminRegistrations = () => {
                 {selectedCommissionIdForAttach && (() => {
                   const ec = eventCommissionsForAttach.find((c) => c.id === selectedCommissionIdForAttach);
                   if (!ec) return null;
+                  const isInvitation = ec.bonus_type === "invitation";
+                  const isBoth = ec.bonus_type === "both";
+                  const reqPurchases = ec.required_purchases;
                   return (
                     <div className="rounded-lg border bg-muted/30 p-3 space-y-2 text-sm">
                       <div className="font-medium text-foreground">Detalhes da comissão selecionada</div>
                       <div><span className="text-muted-foreground">Evento:</span> {ec.event_title || registrationForAttach?.event_title || "—"}</div>
                       <div><span className="text-muted-foreground">Líder:</span> {ec.leader_name || ec.leader_referral_code}</div>
-                      <div><span className="text-muted-foreground">Comissão:</span> {ec.commission_percentage}%</div>
+                      {isInvitation ? (
+                        <>
+                          <div><span className="text-muted-foreground">Tipo:</span> Bônus de convite</div>
+                          {reqPurchases != null && reqPurchases > 0 && (
+                            <div><span className="text-muted-foreground">Inscrições pagas para ganhar 1 convite:</span> {reqPurchases}</div>
+                          )}
+                        </>
+                      ) : isBoth ? (
+                        <>
+                          <div><span className="text-muted-foreground">Comissão:</span> {ec.commission_percentage}%</div>
+                          <div><span className="text-muted-foreground">Bônus de convite:</span> sim{reqPurchases != null && reqPurchases > 0 ? ` (${reqPurchases} inscrições pagas para ganhar 1 convite)` : ""}</div>
+                        </>
+                      ) : (
+                        <div><span className="text-muted-foreground">Comissão:</span> {ec.commission_percentage}%</div>
+                      )}
                       {ec.name && <div><span className="text-muted-foreground">Nome:</span> {ec.name}</div>}
                     </div>
                   );
@@ -1051,20 +1074,27 @@ const AdminRegistrations = () => {
               {registrationCommission && (
                 <div className="space-y-3">
                   <h3 className="text-lg font-semibold border-b pb-2">Comissão gerada</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {(registrationCommission as any).bonus_type === "invitation" ? (
                     <div>
-                      <Label className="text-sm text-muted-foreground">Valor da comissão</Label>
-                      <p className="font-medium">{formatCurrency(registrationCommission.commission_amount || 0)}</p>
+                      <Label className="text-sm text-muted-foreground">Tipo</Label>
+                      <p className="font-medium">Bônus de convite (sem valor em dinheiro)</p>
                     </div>
-                    <div>
-                      <Label className="text-sm text-muted-foreground">Status</Label>
-                      <div className="mt-1">
-                        {registrationCommission.status === "paid" && <Badge variant="default">Pago</Badge>}
-                        {registrationCommission.status === "pending" && <Badge variant="secondary">Pendente</Badge>}
-                        {registrationCommission.status === "cancelled" && <Badge variant="outline">Cancelado</Badge>}
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <Label className="text-sm text-muted-foreground">Valor da comissão</Label>
+                        <p className="font-medium">{formatCurrency(registrationCommission.commission_amount || 0)}</p>
+                      </div>
+                      <div>
+                        <Label className="text-sm text-muted-foreground">Status</Label>
+                        <div className="mt-1">
+                          {registrationCommission.status === "paid" && <Badge variant="default">Pago</Badge>}
+                          {registrationCommission.status === "pending" && <Badge variant="secondary">Pendente</Badge>}
+                          {registrationCommission.status === "cancelled" && <Badge variant="outline">Cancelado</Badge>}
+                        </div>
                       </div>
                     </div>
-                  </div>
+                  )}
                   <Button variant="destructive" size="sm" onClick={handleRemoveCommission} disabled={removingCommission}>
                     {removingCommission ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
                     Remover comissão

@@ -23,8 +23,9 @@ import { getProfileByUserId } from '../services/profilesService.js';
 import { query } from '../config/database.js';
 import { sendNotificationSafely, getUserEmail, getUserName, getOrganizerEmail } from '../services/notificationService.js';
 import { getLeaderEventCommissionById } from '../services/leaderEventCommissionsService.js';
-import { getCouponByEventCommission } from '../services/couponsService.js';
+import { getCouponByEventCommission, getCouponByCodeOnly } from '../services/couponsService.js';
 import { createCommission, getCommissionByRegistrationId, adminCancelCommission } from '../services/commissionsService.js';
+import { checkAllInvitationBonuses, recalculateAndRevokeExcessInvitations } from '../services/leaderBonusService.js';
 import { z } from 'zod';
 import { EventRegistrationStatus, Event } from '../types/index.js';
 import { calculateRegistrationStatus } from '../services/eventsService.js';
@@ -2159,15 +2160,6 @@ export const attachRegistrationToCommissionController = asyncHandler(async (req:
     return;
   }
 
-  if (commission.bonus_type === 'invitation') {
-    res.status(400).json({
-      success: false,
-      error: 'Bad Request',
-      message: 'Não é possível atrelar a uma comissão apenas de convite; escolha uma comissão com percentual',
-    });
-    return;
-  }
-
   const coupon = await getCouponByEventCommission(commission.leader_id, commission.event_id, commission.id);
   if (!coupon) {
     res.status(400).json({
@@ -2178,11 +2170,8 @@ export const attachRegistrationToCommissionController = asyncHandler(async (req:
     return;
   }
 
-  const existingCommission = await query(
-    'SELECT id FROM leader_commissions WHERE registration_id = $1 AND leader_id = $2',
-    [registrationId, commission.leader_id]
-  );
-  if (existingCommission.rows.length > 0) {
+  const existingMoneyCommission = await getCommissionByRegistrationId(registrationId);
+  if (existingMoneyCommission && existingMoneyCommission.leader_id === commission.leader_id) {
     res.status(400).json({
       success: false,
       error: 'Conflict',
@@ -2191,7 +2180,53 @@ export const attachRegistrationToCommissionController = asyncHandler(async (req:
     return;
   }
 
+  const currentCouponCode = (registration.coupon_code || '').trim().toUpperCase();
+  const newCouponCode = (coupon.code || '').trim().toUpperCase();
+
+  if (currentCouponCode && currentCouponCode === newCouponCode) {
+    if (commission.bonus_type === 'invitation' || commission.bonus_type === 'both') {
+      await checkAllInvitationBonuses(commission.leader_id, registration.event_id);
+    }
+    const updatedRegistration = await getRegistrationById(registrationId);
+    res.status(200).json({
+      success: true,
+      data: {
+        registration: updatedRegistration,
+        commission: existingMoneyCommission ?? null,
+      },
+      message: 'Inscrição já estava atrelada a esta comissão',
+    });
+    return;
+  }
+
+  if (currentCouponCode && currentCouponCode !== newCouponCode) {
+    const oldCoupon = await getCouponByCodeOnly(registration.coupon_code!);
+    const oldLeaderId = oldCoupon?.leader_id;
+    if (existingMoneyCommission) {
+      await adminCancelCommission(existingMoneyCommission.id);
+    } else {
+      await updateRegistration(registrationId, { coupon_code: null });
+    }
+    if (oldLeaderId) {
+      await recalculateAndRevokeExcessInvitations(oldLeaderId, registration.event_id);
+    }
+  }
+
   await updateRegistration(registrationId, { coupon_code: coupon.code });
+
+  if (commission.bonus_type === 'invitation') {
+    await checkAllInvitationBonuses(commission.leader_id, registration.event_id);
+    const updatedRegistration = await getRegistrationById(registrationId);
+    res.status(200).json({
+      success: true,
+      data: {
+        registration: updatedRegistration,
+        commission: null,
+      },
+      message: 'Inscrição atrelada ao bônus de convite com sucesso',
+    });
+    return;
+  }
 
   let createdCommission;
   try {
@@ -2260,22 +2295,60 @@ export const getRegistrationCommissionController = asyncHandler(async (req: Auth
     return;
   }
 
-  const commission = await getCommissionByRegistrationId(registrationId);
-  if (!commission) {
+  let commission = await getCommissionByRegistrationId(registrationId);
+  let leaderId: string;
+  let leaderName: string | null = null;
+  let leaderReferralCode: string | null = null;
+  let bonusType = 'commission';
+
+  if (commission) {
+    leaderId = commission.leader_id;
+    const leader = await getGroupLeaderById(commission.leader_id);
+    const profile = leader ? await getProfileByUserId(leader.user_id) : null;
+    leaderName = profile?.full_name || leader?.referral_code || null;
+    leaderReferralCode = leader?.referral_code ?? null;
+  } else if (registration.coupon_code) {
+    const coupon = await getCouponByCodeOnly(registration.coupon_code);
+    if (!coupon?.leader_id) {
+      res.status(404).json({ success: false, error: 'Not found', message: 'Nenhuma comissão vinculada a esta inscrição' });
+      return;
+    }
+    const eventIds = coupon.event_ids || (coupon.event_id ? [coupon.event_id] : []);
+    const belongsToEvent = eventIds.includes(registration.event_id);
+    if (!belongsToEvent) {
+      res.status(404).json({ success: false, error: 'Not found', message: 'Nenhuma comissão vinculada a esta inscrição' });
+      return;
+    }
+    leaderId = coupon.leader_id;
+    const leader = await getGroupLeaderById(coupon.leader_id);
+    const profile = leader ? await getProfileByUserId(leader.user_id) : null;
+    leaderName = profile?.full_name || leader?.referral_code || null;
+    leaderReferralCode = leader?.referral_code ?? null;
+    bonusType = 'invitation';
+    commission = {
+      id: null,
+      leader_id: leaderId,
+      registration_id: registrationId,
+      event_id: registration.event_id,
+      commission_amount: null,
+      commission_percentage: 0,
+      status: null,
+      created_at: null,
+      updated_at: null,
+      referred_user_id: null,
+    } as any;
+  } else {
     res.status(404).json({ success: false, error: 'Not found', message: 'Nenhuma comissão vinculada a esta inscrição' });
     return;
   }
-
-  const leader = await getGroupLeaderById(commission.leader_id);
-  const profile = leader ? await getProfileByUserId(leader.user_id) : null;
-  const leaderName = profile?.full_name || leader?.referral_code || null;
 
   res.status(200).json({
     success: true,
     data: {
       ...commission,
       leader_name: leaderName,
-      leader_referral_code: leader?.referral_code ?? null,
+      leader_referral_code: leaderReferralCode,
+      bonus_type: bonusType,
     },
   });
 });
@@ -2315,16 +2388,30 @@ export const detachRegistrationCommissionController = asyncHandler(async (req: A
   }
 
   const commission = await getCommissionByRegistrationId(registrationId);
-  if (!commission) {
+  let result: { cancelled?: any; coupon_cleared?: boolean } = {};
+
+  if (commission) {
+    const oldLeaderId = commission.leader_id;
+    const eventId = commission.event_id;
+    const cancelled = await adminCancelCommission(commission.id);
+    result.cancelled = cancelled;
+    await recalculateAndRevokeExcessInvitations(oldLeaderId, eventId);
+  } else if (registration.coupon_code) {
+    const oldCoupon = await getCouponByCodeOnly(registration.coupon_code);
+    const oldLeaderId = oldCoupon?.leader_id;
+    await updateRegistration(registrationId, { coupon_code: null });
+    result.coupon_cleared = true;
+    if (oldLeaderId) {
+      await recalculateAndRevokeExcessInvitations(oldLeaderId, registration.event_id);
+    }
+  } else {
     res.status(404).json({ success: false, error: 'Not found', message: 'Nenhuma comissão vinculada a esta inscrição' });
     return;
   }
 
-  const cancelled = await adminCancelCommission(commission.id);
-
   res.status(200).json({
     success: true,
-    data: cancelled,
+    data: result,
     message: 'Atrelamento removido. Você pode selecionar outra comissão.',
   });
 });

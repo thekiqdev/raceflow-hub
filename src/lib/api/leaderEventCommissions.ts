@@ -60,6 +60,7 @@ export interface EventCommissionOption {
   name: string | null;
   commission_percentage: number;
   bonus_type: string;
+  required_purchases?: number | null;
   leader_referral_code: string;
   leader_name: string | null;
   event_title?: string | null;
