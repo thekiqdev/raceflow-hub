@@ -40,6 +40,7 @@ const createAdminSchema = z.object({
 
 const updateProfileSchema = z.object({
   full_name: z.union([z.string().min(1), z.literal('')]).optional(),
+  email: z.union([z.string().email('E-mail inválido'), z.literal('')]).optional(),
   phone: z.union([z.string().min(1), z.literal('')]).optional(),
   gender: z.enum(['M', 'F', 'O']).optional().nullable(),
   birth_date: z.union([z.string(), z.literal('')]).optional(),
@@ -455,6 +456,24 @@ export const updateUserProfileController = async (
     const data = validation.data;
     
     console.log('📝 Update profile request:', { id, data });
+    
+    // Update email (users table) if provided – only for admin
+    if (data.email !== undefined && data.email !== null && data.email.trim() !== '') {
+      const newEmail = data.email.trim().toLowerCase();
+      const existingEmail = await query(
+        'SELECT id FROM users WHERE LOWER(TRIM(email)) = $1 AND id != $2',
+        [newEmail, id]
+      );
+      if (existingEmail.rows.length > 0) {
+        res.status(400).json({
+          success: false,
+          error: 'Email already registered',
+          message: 'Este e-mail já está cadastrado para outro usuário',
+        });
+        return;
+      }
+      await query('UPDATE users SET email = $1, updated_at = NOW() WHERE id = $2', [newEmail, id]);
+    }
     
     // Filter out empty strings and prepare profile data
     const profileData: any = {};

@@ -177,6 +177,9 @@ export function UserProfileDialog({
       if (formData.full_name && formData.full_name.trim() !== '') {
         updateData.full_name = formData.full_name;
       }
+      if (formData.email && formData.email.trim() !== '') {
+        updateData.email = formData.email.trim();
+      }
       if (formData.cpf && formData.cpf.trim() !== '') {
         updateData.cpf = formData.cpf;
       }
@@ -347,9 +350,13 @@ export function UserProfileDialog({
                 <Label htmlFor="email">Email</Label>
                 <Input
                   id="email"
+                  type="email"
                   value={formData.email}
-                  disabled
-                  className="bg-muted"
+                  onChange={(e) =>
+                    setFormData({ ...formData, email: e.target.value.trim() })
+                  }
+                  disabled={!isEditing}
+                  className={!isEditing ? "bg-muted" : ""}
                 />
               </div>
 

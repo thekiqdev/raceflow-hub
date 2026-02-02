@@ -227,4 +227,3 @@ export const getLeaderInvitationProgress = async (leaderId: string, isOrganizer:
   const base = isOrganizer ? '/organizer' : '/admin';
   return apiClient.get<LeaderInvitationProgressItem[]>(`${base}/group-leaders/${leaderId}/invitation-progress`);
 };
-

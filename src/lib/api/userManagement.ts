@@ -165,6 +165,7 @@ export const getUserProfileById = async (userId: string): Promise<{
  */
 export const updateUserProfile = async (userId: string, data: {
   full_name?: string;
+  email?: string;
   phone?: string;
   gender?: string;
   birth_date?: string;
