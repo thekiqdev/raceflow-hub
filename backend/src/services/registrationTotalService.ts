@@ -48,7 +48,7 @@ function calculateAge(birthDate: Date): number {
 export async function calculateRegistrationTotal(
   params: CalculateRegistrationTotalParams
 ): Promise<CalculateRegistrationTotalResult> {
-  const { eventId, categoryId, kitId, modalityId, batchId, couponCode, runnerId } = params;
+  const { eventId, categoryId, kitId, batchId, couponCode, runnerId } = params;
 
   let categoryPrice = 0;
   let kitPrice = 0;
