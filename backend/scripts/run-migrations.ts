@@ -115,6 +115,7 @@ const migrations = [
   '086_add_platform_fee_amount_to_registrations.sql',
   '088_organizer_views_valor_liquido.sql',
   '089_admin_dashboard_stats_platform_fees.sql',
+  '090_backfill_registrations_modality_id.sql',
 ];
 
 // Create migrations tracking table

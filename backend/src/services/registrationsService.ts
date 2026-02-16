@@ -253,8 +253,11 @@ export const getRegistrations = async (filters?: {
     }
     const pendingDifferenceAmount = pendingMap[row.id] ?? 0;
     const amountPaid = totalPaidMap[row.id] ?? 0;
+    // Fallback: inscrições antigas sem modality_id mostram a primeira modalidade da categoria
+    const modalityName = row.modality_name || (row.modality_names && row.modality_names[0]) || null;
     return {
       ...row,
+      modality_name: modalityName,
       status: finalStatus,
       event_banner_url: row.event_banner_url ? getFileUrl(row.event_banner_url) : null,
       pending_difference_amount: pendingDifferenceAmount,
@@ -351,8 +354,11 @@ export const getRegistrationById = async (registrationId: string, viewerId?: str
     getTotalPaidForRegistration(registrationId),
     getSystemSettings(),
   ]);
+  // Fallback: inscrições antigas sem modality_id mostram a primeira modalidade da categoria
+  const modalityName = row.modality_name || (row.modality_names && row.modality_names[0]) || null;
   return {
     ...row,
+    modality_name: modalityName,
     status: row.display_status || row.status,
     event_banner_url: row.event_banner_url ? getFileUrl(row.event_banner_url) : null,
     pending_difference_amount: pendingDifferenceAmount,
