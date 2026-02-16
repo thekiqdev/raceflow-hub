@@ -71,6 +71,7 @@ const SystemSettings = () => {
   const [feesForm, setFeesForm] = useState({
     platform_fee: 0,
     platform_fee_type: 'fixed' as 'fixed' | 'percentage',
+    registration_edit_fee: 0,
     withdrawal_fee: 0,
     withdrawal_fee_type: 'fixed' as 'fixed' | 'percentage',
   });
@@ -144,6 +145,7 @@ const SystemSettings = () => {
         setFeesForm({
           platform_fee: data.platform_fee || 0,
           platform_fee_type: data.platform_fee_type || 'fixed',
+          registration_edit_fee: data.registration_edit_fee ?? 0,
           withdrawal_fee: data.withdrawal_fee || 0,
           withdrawal_fee_type: data.withdrawal_fee_type || 'fixed',
         });
@@ -372,6 +374,7 @@ const SystemSettings = () => {
       const response = await updateSystemSettings({
         platform_fee: feesForm.platform_fee,
         platform_fee_type: feesForm.platform_fee_type,
+        registration_edit_fee: feesForm.registration_edit_fee,
         withdrawal_fee: feesForm.withdrawal_fee,
         withdrawal_fee_type: feesForm.withdrawal_fee_type,
       });
@@ -1002,6 +1005,28 @@ const SystemSettings = () => {
                     />
                     <p className="text-sm text-muted-foreground mt-1">
                       Taxa cobrada dos organizadores ao realizar saques
+                    </p>
+                  </div>
+                </div>
+
+                <Separator />
+
+                {/* Taxa de Atualização - Cobrada ao editar inscrição */}
+                <div className="space-y-4">
+                  <div>
+                    <Label htmlFor="registration_edit_fee">Taxa de Atualização (R$)</Label>
+                    <Input
+                      id="registration_edit_fee"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={feesForm.registration_edit_fee}
+                      onChange={(e) => setFeesForm({ ...feesForm, registration_edit_fee: parseFloat(e.target.value) || 0 })}
+                      placeholder="0.00"
+                      className="mt-1"
+                    />
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Taxa fixa cobrada quando o admin edita uma inscrição e o valor é alterado (ex.: troca de categoria/kit).
                     </p>
                   </div>
                 </div>

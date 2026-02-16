@@ -237,29 +237,26 @@ export const getEvents = async (filters?: {
         COUNT(DISTINCT CASE WHEN payment_status = 'paid' THEN id END) as confirmed_registrations,
         COALESCE(SUM(
           CASE WHEN payment_status = 'paid' THEN
-            calculate_value_without_platform_fee(
-              total_amount,
-              get_platform_fee(),
-              get_platform_fee_type()
-            )
+            CASE WHEN (COALESCE(platform_fee_amount, 0) + COALESCE(registration_edit_fee_amount, 0)) > 0
+              THEN (total_amount - COALESCE(platform_fee_amount, 0) - COALESCE(registration_edit_fee_amount, 0))
+              ELSE calculate_value_without_platform_fee(total_amount, get_platform_fee(), get_platform_fee_type())
+            END
           ELSE 0 END
         ), 0) as revenue,
         COALESCE(AVG(
           CASE WHEN payment_status = 'paid' THEN
-            calculate_value_without_platform_fee(
-              total_amount,
-              get_platform_fee(),
-              get_platform_fee_type()
-            )
+            CASE WHEN (COALESCE(platform_fee_amount, 0) + COALESCE(registration_edit_fee_amount, 0)) > 0
+              THEN (total_amount - COALESCE(platform_fee_amount, 0) - COALESCE(registration_edit_fee_amount, 0))
+              ELSE calculate_value_without_platform_fee(total_amount, get_platform_fee(), get_platform_fee_type())
+            END
           END
         ), 0) as avg_ticket,
         COALESCE(SUM(
           CASE WHEN payment_status = 'paid' THEN
-            total_amount - calculate_value_without_platform_fee(
-              total_amount,
-              get_platform_fee(),
-              get_platform_fee_type()
-            )
+            CASE WHEN (COALESCE(platform_fee_amount, 0) + COALESCE(registration_edit_fee_amount, 0)) > 0
+              THEN (COALESCE(platform_fee_amount, 0) + COALESCE(registration_edit_fee_amount, 0))
+              ELSE (total_amount - calculate_value_without_platform_fee(total_amount, get_platform_fee(), get_platform_fee_type()))
+            END
           ELSE 0 END
         ), 0) as platform_fee_revenue
       FROM registrations

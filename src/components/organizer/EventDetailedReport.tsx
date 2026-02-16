@@ -40,6 +40,15 @@ interface RegistrationDetail {
   runner_state?: string;
   category_name?: string;
   modality_names?: string[]; // Modalidades associadas à categoria
+  /** Modalidade escolhida na inscrição (uma por inscrição). */
+  modality_id?: string | null;
+  modality_name?: string | null;
+  /** OK Etapa 1: Taxa da plataforma na inscrição inicial (R$). */
+  platform_fee_amount?: number;
+  /** OK Etapa 1: Taxa de atualização na edição (R$). */
+  registration_edit_fee_amount?: number;
+  /** OK Etapa 1: Nome do kit (API retorna ek.name as kit_name). */
+  kit_name?: string | null;
   // Para compatibilidade com código existente
   profiles?: {
     full_name: string;
@@ -132,7 +141,7 @@ const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
         throw new Error("Erro ao carregar inscrições");
       }
 
-      // Transform API response to match expected format
+      // Transform API response to match expected format (OK Etapa 1: platform_fee_amount, registration_edit_fee_amount, kit_name)
       const regs: RegistrationDetail[] = regsResponse.data.map((reg: any) => ({
         id: reg.id,
         runner_id: reg.runner_id,
@@ -147,8 +156,12 @@ const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
         runner_city: reg.runner_city,
         runner_state: reg.runner_state,
         category_name: reg.category_name,
-        modality_names: reg.modality_names || [], // Add modality names from API
-        // Para compatibilidade com código existente
+        modality_names: reg.modality_names || [],
+        modality_id: reg.modality_id ?? null,
+        modality_name: reg.modality_name ?? null,
+        platform_fee_amount: reg.platform_fee_amount != null ? Number(reg.platform_fee_amount) : undefined,
+        registration_edit_fee_amount: reg.registration_edit_fee_amount != null ? Number(reg.registration_edit_fee_amount) : undefined,
+        kit_name: reg.kit_name ?? null,
         profiles: reg.runner_name ? {
           full_name: reg.runner_name,
           cpf: "", // CPF não vem na API por segurança
@@ -157,12 +170,20 @@ const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
           name: reg.category_name,
           distance: "", // Distance não vem na resposta atual
         } : undefined,
-        event_kits: null, // Kits não vêm na resposta atual
+        event_kits: reg.kit_name ? { name: reg.kit_name } : null,
       }));
 
       setRegistrations(regs);
 
-      // Calculate metrics (without platform fee)
+      // OK Etapa 3: Receita só com "paid"; valor líquido (getValorLiquido). Convidado não entra na receita.
+      const getValorLiquidoHere = (r: RegistrationDetail): number => {
+        const t = Number(r.total_amount) || 0;
+        const pf = Number(r.platform_fee_amount) || 0;
+        const ef = Number(r.registration_edit_fee_amount) || 0;
+        if (pf > 0 || ef > 0) return Math.round((t - pf - ef) * 100) / 100;
+        return calculateValueWithoutFee(t, currentPlatformFee, currentPlatformFeeType);
+      };
+
       let total = 0;
       let paid = 0;
       let pixTotal = 0;
@@ -171,54 +192,38 @@ const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
       const kitMap = new Map<string, { count: number; revenue: number }>();
 
       regs?.forEach((reg) => {
-        // For revenue calculation, consider "paid" and "convidado" status
-        // The total_amount stored in DB always includes platform fee, so we need to remove it
-        const isPaidOrConvidado = reg.payment_status === "paid" || reg.payment_status === "convidado";
+        const isPaid = reg.payment_status === "paid";
         const regAmount = Number(reg.total_amount) || 0;
-        
-        if (isPaidOrConvidado && regAmount > 0) {
-          paid++;
-          const amountWithoutFee = calculateValueWithoutFee(
-            regAmount,
-            currentPlatformFee,
-            currentPlatformFeeType
-          );
-          total += amountWithoutFee;
 
-          // Calculate revenue by payment method (only for paid, not convidado)
-          if (reg.payment_status === "paid") {
-            if (reg.payment_method === "pix") {
-              pixTotal += amountWithoutFee;
-            } else if (reg.payment_method === "credit_card") {
-              creditCardTotal += amountWithoutFee;
-            }
+        if (isPaid && regAmount > 0) {
+          paid++;
+          const valorLiquido = getValorLiquidoHere(reg);
+          total += valorLiquido;
+
+          if (reg.payment_method === "pix") {
+            pixTotal += valorLiquido;
+          } else if (reg.payment_method === "credit_card") {
+            creditCardTotal += valorLiquido;
           }
 
-          // Category revenue
           const categoryKey = reg.event_categories?.name || reg.category_name || "Sem categoria";
           const existing = categoryMap.get(categoryKey);
           if (existing) {
             existing.count++;
-            existing.revenue += amountWithoutFee;
+            existing.revenue += valorLiquido;
           } else {
-            categoryMap.set(categoryKey, {
-              count: 1,
-              revenue: amountWithoutFee,
-            });
+            categoryMap.set(categoryKey, { count: 1, revenue: valorLiquido });
           }
 
-          // Kit revenue
-          if (reg.event_kits || reg.kit_id) {
-            const kitKey = reg.event_kits?.name || "Kit";
+          // OK Etapa 4: agrupar por nome real do kit (só incluir quando houver kit)
+          if (reg.kit_id || reg.kit_name) {
+            const kitKey = reg.kit_name || reg.event_kits?.name || "Kit";
             const existingKit = kitMap.get(kitKey);
             if (existingKit) {
               existingKit.count++;
-              existingKit.revenue += amountWithoutFee;
+              existingKit.revenue += valorLiquido;
             } else {
-              kitMap.set(kitKey, {
-                count: 1,
-                revenue: amountWithoutFee,
-              });
+              kitMap.set(kitKey, { count: 1, revenue: valorLiquido });
             }
           }
         }
@@ -313,28 +318,13 @@ const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
         const modalityStatsMap = new Map<string, { count: number; revenue: number }>();
         
         modalitiesResponse.data.forEach((modality) => {
-          // Filter registrations where modality_names includes this modality's name
-          const modalityRegs = regs.filter((reg) => {
-            // Check if the registration's category has this modality
-            const regModalityNames = reg.modality_names || [];
-            return regModalityNames.includes(modality.name);
-          });
+          // Contar inscrição apenas na modalidade em que está (modality_id), não em todas as modalidades da categoria
+          const modalityRegs = regs.filter((reg) => reg.modality_id === modality.id);
           
-          // Count paid/convidado registrations and calculate revenue (without platform fee)
-          const paidRegs = modalityRegs.filter((reg) => {
-            const isPaidOrConvidado = reg.payment_status === "paid" || reg.payment_status === "convidado";
-            const regAmount = Number(reg.total_amount || 0);
-            return isPaidOrConvidado && regAmount > 0;
-          });
+          // OK Etapa 3: só "paid"; valor líquido (convidado não entra na receita)
+          const paidRegs = modalityRegs.filter((reg) => reg.payment_status === "paid" && (Number(reg.total_amount) || 0) > 0);
           const count = paidRegs.length;
-          const revenue = paidRegs.reduce((sum, reg) => {
-            const regAmount = Number(reg.total_amount || 0);
-            return sum + calculateValueWithoutFee(
-              regAmount,
-              currentPlatformFee,
-              currentPlatformFeeType
-            );
-          }, 0);
+          const revenue = paidRegs.reduce((sum, reg) => sum + getValorLiquidoHere(reg), 0);
           
           modalityStatsMap.set(modality.id, { count, revenue });
         });
@@ -347,6 +337,21 @@ const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
     } finally {
       setLoading(false);
     }
+  };
+
+  /** OK Etapa 2: Valor líquido do organizador (total - taxas). Alinhado ao backend. */
+  const getValorLiquido = (
+    reg: RegistrationDetail,
+    platformFee: number,
+    platformFeeType: 'fixed' | 'percentage'
+  ): number => {
+    const total = Number(reg.total_amount) || 0;
+    const pf = Number(reg.platform_fee_amount) || 0;
+    const ef = Number(reg.registration_edit_fee_amount) || 0;
+    if (pf > 0 || ef > 0) {
+      return Math.round((total - pf - ef) * 100) / 100;
+    }
+    return calculateValueWithoutFee(total, platformFee, platformFeeType);
   };
 
   const formatCurrency = (value: number) => {
@@ -772,7 +777,7 @@ const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
                     )}
                   </TableCell>
                   <TableCell>
-                    {reg.event_kits?.name || (reg.kit_id ? "Kit" : "-")}
+                    {reg.kit_name || reg.event_kits?.name || (reg.kit_id ? "Kit" : "-")}
                   </TableCell>
                   <TableCell>
                     {reg.payment_method === "pix" && (
@@ -792,11 +797,11 @@ const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
                   </TableCell>
                   <TableCell>{getPaymentStatusBadge(reg.payment_status)}</TableCell>
                   <TableCell className="text-right font-semibold">
-                    {formatCurrency(
-                      (reg.total_amount || 0) > 0
-                        ? calculateValueWithoutFee(Number(reg.total_amount), platformFee, platformFeeType)
-                        : Number(reg.total_amount)
-                    )}
+                    {(() => {
+                      if (reg.payment_status === "convidado") return "R$ 0,00";
+                      const v = getValorLiquido(reg, platformFee, platformFeeType);
+                      return v === 0 ? "R$ 0,00" : formatCurrency(v);
+                    })()}
                   </TableCell>
                   <TableCell className="text-sm">
                     {format(new Date(reg.created_at), "dd/MM/yyyy HH:mm", {

@@ -107,6 +107,14 @@ const migrations = [
   '078_add_slug_to_events.sql',
   '079_make_slug_not_null_in_events.sql',
   '080_add_transfers_enabled_to_events.sql',
+  '081_add_modality_id_to_registrations.sql',
+  '082_add_registration_edit_fee.sql',
+  '083_add_category_batch_id_to_registrations.sql',
+  '084_create_registration_amount_adjustments.sql',
+  '085_add_partially_paid_payment_status.sql',
+  '086_add_platform_fee_amount_to_registrations.sql',
+  '088_organizer_views_valor_liquido.sql',
+  '089_admin_dashboard_stats_platform_fees.sql',
 ];
 
 // Create migrations tracking table

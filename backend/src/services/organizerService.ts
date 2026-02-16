@@ -160,7 +160,9 @@ export const getOrganizerFinancialSummary = async (organizerId: string): Promise
       r.payment_status,
       r.total_amount,
       r.payment_method,
-      r.kit_id
+      r.kit_id,
+      r.platform_fee_amount,
+      r.registration_edit_fee_amount
     FROM registrations r
     JOIN events e ON r.event_id = e.id
     WHERE e.organizer_id = $1`,
@@ -178,24 +180,25 @@ export const getOrganizerFinancialSummary = async (organizerId: string): Promise
   result.rows.forEach((row) => {
     if (row.payment_status === 'paid') {
       paidRegistrations++;
-      const amountWithoutFee = calculateValueWithoutFee(
-        parseFloat(row.total_amount) || 0,
-        platformFee,
-        platformFeeType
-      );
-      
-      totalRevenue += amountWithoutFee;
-      
+      const total = parseFloat(row.total_amount) || 0;
+      const pf = parseFloat(row.platform_fee_amount) || 0;
+      const ef = parseFloat(row.registration_edit_fee_amount) || 0;
+      const valorLiquido = (pf > 0 || ef > 0)
+        ? Math.round((total - pf - ef) * 100) / 100
+        : calculateValueWithoutFee(total, platformFee, platformFeeType);
+
+      totalRevenue += valorLiquido;
+
       if (row.payment_method === 'pix') {
-        pixRevenue += amountWithoutFee;
+        pixRevenue += valorLiquido;
       } else if (row.payment_method === 'credit_card') {
-        creditCardRevenue += amountWithoutFee;
+        creditCardRevenue += valorLiquido;
       } else if (row.payment_method === 'boleto') {
-        boletoRevenue += amountWithoutFee;
+        boletoRevenue += valorLiquido;
       }
-      
+
       if (row.kit_id) {
-        kitRevenue += amountWithoutFee;
+        kitRevenue += valorLiquido;
       }
     }
   });
@@ -238,7 +241,9 @@ export const getOrganizerEventRevenues = async (organizerId: string): Promise<Or
       e.event_date,
       r.id as registration_id,
       r.payment_status,
-      r.total_amount
+      r.total_amount,
+      r.platform_fee_amount,
+      r.registration_edit_fee_amount
     FROM events e
     LEFT JOIN registrations r ON e.id = r.event_id
     WHERE e.organizer_id = $1
@@ -246,7 +251,7 @@ export const getOrganizerEventRevenues = async (organizerId: string): Promise<Or
     [organizerId]
   );
 
-  // Group by event and calculate revenue without fee
+  // Group by event and calculate revenue as valor líquido (OK Etapa 3)
   const eventMap = new Map<string, {
     eventId: string;
     eventTitle: string;
@@ -274,11 +279,13 @@ export const getOrganizerEventRevenues = async (organizerId: string): Promise<Or
       event.registrations++;
       if (row.payment_status === 'paid') {
         event.paidRegistrations++;
-        event.totalRevenue += calculateValueWithoutFee(
-          parseFloat(row.total_amount) || 0,
-          platformFee,
-          platformFeeType
-        );
+        const total = parseFloat(row.total_amount) || 0;
+        const pf = parseFloat(row.platform_fee_amount) || 0;
+        const ef = parseFloat(row.registration_edit_fee_amount) || 0;
+        const valorLiquido = (pf > 0 || ef > 0)
+          ? Math.round((total - pf - ef) * 100) / 100
+          : calculateValueWithoutFee(total, platformFee, platformFeeType);
+        event.totalRevenue += valorLiquido;
       }
     }
   });

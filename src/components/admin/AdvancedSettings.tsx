@@ -5,7 +5,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Loader2, Play, Download, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
-import { executeFixOrganizerRegistrationsScript, executeDisableAsaasNotificationsScript } from "@/lib/api/systemSettings";
+import { executeFixOrganizerRegistrationsScript, executeDisableAsaasNotificationsScript, executeBackfillPlatformFeeAmountScript } from "@/lib/api/systemSettings";
 
 const AdvancedSettings = () => {
   const [isRunning, setIsRunning] = useState(false);
@@ -33,6 +33,14 @@ const AdvancedSettings = () => {
   const [hasErrorAsaas, setHasErrorAsaas] = useState(false);
   const logsEndRefAsaas = useRef<HTMLDivElement>(null);
 
+  // OK Etapa 6: Backfill platform_fee_amount em inscrições antigas
+  const [isRunningBackfill, setIsRunningBackfill] = useState(false);
+  const [logsBackfill, setLogsBackfill] = useState<string[]>([]);
+  const [summaryBackfill, setSummaryBackfill] = useState<{ updated?: number; total?: number; errors?: number } | null>(null);
+  const [logFileBackfill, setLogFileBackfill] = useState<string | null>(null);
+  const [hasErrorBackfill, setHasErrorBackfill] = useState(false);
+  const logsEndRefBackfill = useRef<HTMLDivElement>(null);
+
   // Auto-scroll para o final dos logs
   useEffect(() => {
     if (logsEndRef.current) {
@@ -44,6 +52,11 @@ const AdvancedSettings = () => {
       logsEndRefAsaas.current.scrollIntoView({ behavior: 'smooth' });
     }
   }, [logsAsaas]);
+  useEffect(() => {
+    if (logsEndRefBackfill.current) {
+      logsEndRefBackfill.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [logsBackfill]);
 
   const handleExecuteScript = async () => {
     if (isRunning) return;
@@ -139,6 +152,55 @@ const AdvancedSettings = () => {
     const a = document.createElement('a');
     a.href = url;
     a.download = logFileAsaas || `disable-asaas-notifications-${Date.now()}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast.success("Log baixado com sucesso!");
+  };
+
+  const handleExecuteBackfillScript = async () => {
+    if (isRunningBackfill) return;
+    setIsRunningBackfill(true);
+    setLogsBackfill([]);
+    setSummaryBackfill(null);
+    setLogFileBackfill(null);
+    setHasErrorBackfill(false);
+    const newLogs: string[] = [];
+    await executeBackfillPlatformFeeAmountScript(
+      (message: string) => {
+        newLogs.push(message);
+        setLogsBackfill([...newLogs]);
+      },
+      (data) => {
+        setIsRunningBackfill(false);
+        if (data.success) {
+          setSummaryBackfill(data.summary ?? null);
+          setLogFileBackfill(data.logFile ?? null);
+          toast.success(data.message || "Backfill executado com sucesso!");
+        } else {
+          setHasErrorBackfill(true);
+          toast.error(data.message || "Erro ao executar backfill");
+        }
+      },
+      (error: string) => {
+        setIsRunningBackfill(false);
+        setHasErrorBackfill(true);
+        newLogs.push(`❌ Erro: ${error}`);
+        setLogsBackfill([...newLogs]);
+        toast.error(error);
+      }
+    );
+  };
+
+  const handleDownloadLogBackfill = () => {
+    if (!logsBackfill.length) return;
+    const logContent = logsBackfill.join('\n');
+    const blob = new Blob([logContent], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = logFileBackfill || `backfill-platform-fee-amount-${Date.now()}.txt`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -319,6 +381,92 @@ const AdvancedSettings = () => {
                       </div>
                     ))}
                     <div ref={logsEndRefAsaas} />
+                  </div>
+                </ScrollArea>
+              </CardContent>
+            </Card>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* OK Etapa 6: Atualizar taxa da plataforma em inscrições antigas */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Atualizar taxa da plataforma em inscrições antigas</CardTitle>
+          <CardDescription>
+            Preenche o campo &quot;taxa da plataforma (inscrição)&quot; em inscrições que ainda não têm esse valor.
+            Usa a configuração atual de taxa para estimar o valor. Idempotente: pode ser executado mais de uma vez.
+            Recomendado após ativar as novas regras de taxas (OK Etapa 1).
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex gap-2">
+            <Button
+              onClick={handleExecuteBackfillScript}
+              disabled={isRunningBackfill}
+              className="flex items-center gap-2"
+            >
+              {isRunningBackfill ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Executando...
+                </>
+              ) : (
+                <>
+                  <Play className="h-4 w-4" />
+                  Executar
+                </>
+              )}
+            </Button>
+            {logsBackfill.length > 0 && (
+              <Button
+                onClick={handleDownloadLogBackfill}
+                variant="outline"
+                className="flex items-center gap-2"
+              >
+                <Download className="h-4 w-4" />
+                Baixar log
+              </Button>
+            )}
+          </div>
+          {summaryBackfill && (
+            <Alert>
+              <CheckCircle2 className="h-4 w-4" />
+              <AlertDescription>
+                <div className="space-y-1">
+                  <p className="font-semibold">Backfill concluído com sucesso!</p>
+                  <div className="text-sm space-y-1">
+                    <p>✅ Inscrições atualizadas: {summaryBackfill.updated ?? 0}</p>
+                    {logFileBackfill && (
+                      <p className="text-muted-foreground mt-2">Log salvo no servidor: {logFileBackfill}</p>
+                    )}
+                  </div>
+                </div>
+              </AlertDescription>
+            </Alert>
+          )}
+          {hasErrorBackfill && (
+            <Alert variant="destructive">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertDescription>
+                Ocorreu um erro ao executar o backfill. Verifique os logs abaixo.
+              </AlertDescription>
+            </Alert>
+          )}
+          {logsBackfill.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm">Logs – Backfill taxa da plataforma</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ScrollArea className="h-[500px] w-full rounded-md border p-4 bg-muted/50 font-mono text-sm">
+                  <div>
+                    {logsBackfill.map((log, index) => (
+                      <div key={index} className="mb-1 whitespace-pre-wrap">
+                        {log}
+                      </div>
+                    ))}
+                    <div ref={logsEndRefBackfill} />
                   </div>
                 </ScrollArea>
               </CardContent>

@@ -120,6 +120,7 @@ import {
 import {
   fixOrganizerRegistrationsController,
   disableAsaasNotificationsController,
+  backfillPlatformFeeAmountController,
 } from '../controllers/adminScriptsController.js';
 import { removeCommissionController, getRegistrationCommissionController } from '../controllers/adminCommissionsController.js';
 import { getLeaderCouponRegistrationsController } from '../controllers/leaderRegistrationsController.js';
@@ -252,6 +253,7 @@ router.delete('/document-types/:id', deleteDocumentTypeController);
 // Admin Scripts endpoints
 router.post('/scripts/fix-organizer-registrations', fixOrganizerRegistrationsController);
 router.post('/scripts/disable-asaas-notifications', disableAsaasNotificationsController);
+router.post('/scripts/backfill-platform-fee-amount', backfillPlatformFeeAmountController);
 
 export default router;
 

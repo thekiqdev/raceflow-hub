@@ -265,8 +265,10 @@ export const createPayment = async (
     description: string;
     billingType: AsaasBillingType;
     externalReference?: string;
-  }
+  },
+  options?: { setAsRegistrationPaymentId?: boolean }
 ): Promise<CreatePaymentResult> => {
+  const setAsRegistrationPaymentId = options?.setAsRegistrationPaymentId !== false;
   const asaasClient = createAsaasClient();
 
   try {
@@ -462,11 +464,13 @@ export const createPayment = async (
       ]
     );
 
-    // Update registration with asaas_payment_id
-    await query(
-      'UPDATE registrations SET asaas_payment_id = $1 WHERE id = $2',
-      [asaasPayment.id, registrationId]
-    );
+    // Update registration with asaas_payment_id (omit when creating 2nd charge for difference)
+    if (setAsRegistrationPaymentId) {
+      await query(
+        'UPDATE registrations SET asaas_payment_id = $1 WHERE id = $2',
+        [asaasPayment.id, registrationId]
+      );
+    }
 
     return {
       asaas_payment_id: asaasPayment.id,
@@ -938,6 +942,197 @@ export const getPaymentByRegistrationId = async (
   }
 
   return result.rows[0];
+};
+
+/** Soma do valor já pago para uma inscrição (todos os pagamentos com status pago). */
+export const getTotalPaidForRegistration = async (
+  registrationId: string
+): Promise<number> => {
+  const result = await query(
+    `SELECT COALESCE(SUM(value), 0)::numeric AS total_paid
+     FROM asaas_payments
+     WHERE registration_id = $1 AND status IN ('CONFIRMED', 'RECEIVED', 'RECEIVED_IN_CASH', 'MANUAL_CONFIRMED')`,
+    [registrationId]
+  );
+  return parseFloat(result.rows[0]?.total_paid || '0') || 0;
+};
+
+/**
+ * Valor já pago para efeito organizador (total pago − taxa inicial da plataforma).
+ * OK Etapa 2: usado no cálculo da diferença a cobrar na edição, para não incluir a taxa inicial.
+ */
+export const getAmountPaidForOrganizer = async (
+  registrationId: string
+): Promise<number> => {
+  const [paidResult, regResult] = await Promise.all([
+    query(
+      `SELECT COALESCE(SUM(value), 0)::numeric AS total_paid
+       FROM asaas_payments
+       WHERE registration_id = $1 AND status IN ('CONFIRMED', 'RECEIVED', 'RECEIVED_IN_CASH', 'MANUAL_CONFIRMED')`,
+      [registrationId]
+    ),
+    query(
+      `SELECT COALESCE(platform_fee_amount, 0)::numeric AS platform_fee_amount FROM registrations WHERE id = $1`,
+      [registrationId]
+    ),
+  ]);
+  const totalPaid = parseFloat(paidResult.rows[0]?.total_paid || '0') || 0;
+  const platformFeeAmount = parseFloat(regResult.rows[0]?.platform_fee_amount || '0') || 0;
+  const forOrganizer = Math.max(0, totalPaid - platformFeeAmount);
+  return Math.round(forOrganizer * 100) / 100;
+};
+
+/** Soma do valor já pago por inscrição (para listagem). */
+export const getTotalPaidForRegistrationIds = async (
+  registrationIds: string[]
+): Promise<Record<string, number>> => {
+  if (registrationIds.length === 0) return {};
+  const result = await query(
+    `SELECT registration_id, COALESCE(SUM(value), 0)::numeric AS total_paid
+     FROM asaas_payments
+     WHERE registration_id = ANY($1::uuid[]) AND status IN ('CONFIRMED', 'RECEIVED', 'RECEIVED_IN_CASH', 'MANUAL_CONFIRMED')
+     GROUP BY registration_id`,
+    [registrationIds]
+  );
+  const map: Record<string, number> = {};
+  for (const id of registrationIds) map[id] = 0;
+  for (const row of result.rows) {
+    map[row.registration_id] = parseFloat(row.total_paid || '0') || 0;
+  }
+  return map;
+};
+
+/** Cobranças pendentes da inscrição (para cancelar ao editar valor). */
+export const getPendingPaymentsForRegistration = async (
+  registrationId: string
+): Promise<Array<{ asaas_payment_id: string }>> => {
+  const result = await query(
+    `SELECT asaas_payment_id FROM asaas_payments
+     WHERE registration_id = $1 AND status IN ('PENDING', 'OVERDUE')`,
+    [registrationId]
+  );
+  return result.rows;
+};
+
+/** Soma do valor das cobranças pendentes (diferença a pagar). Para expor na API (Etapa 10). */
+export const getPendingDifferenceAmountForRegistration = async (
+  registrationId: string
+): Promise<number> => {
+  const result = await query(
+    `SELECT COALESCE(SUM(value), 0)::numeric AS total
+     FROM asaas_payments
+     WHERE registration_id = $1 AND status IN ('PENDING', 'OVERDUE')`,
+    [registrationId]
+  );
+  return parseFloat(result.rows[0]?.total || '0') || 0;
+};
+
+/** Soma das cobranças pendentes por registration_id (para listagem). */
+export const getPendingDifferenceAmountsForRegistrationIds = async (
+  registrationIds: string[]
+): Promise<Record<string, number>> => {
+  if (registrationIds.length === 0) return {};
+  const result = await query(
+    `SELECT registration_id, COALESCE(SUM(value), 0)::numeric AS total
+     FROM asaas_payments
+     WHERE registration_id = ANY($1::uuid[]) AND status IN ('PENDING', 'OVERDUE')
+     GROUP BY registration_id`,
+    [registrationIds]
+  );
+  const map: Record<string, number> = {};
+  for (const id of registrationIds) map[id] = 0;
+  for (const row of result.rows) {
+    map[row.registration_id] = parseFloat(row.total || '0') || 0;
+  }
+  return map;
+};
+
+/** Última cobrança pendente da inscrição (para o corredor pagar diferença). Retorna pix_qr_code, value, due_date. */
+export const getLatestPendingPaymentForRegistration = async (
+  registrationId: string
+): Promise<{ pix_qr_code: string | null; value: number; due_date: string } | null> => {
+  const full = await getLatestPendingPaymentWithIdForRegistration(registrationId);
+  if (!full) return null;
+  return { pix_qr_code: full.pix_qr_code, value: full.value, due_date: full.due_date };
+};
+
+/** Última cobrança pendente com asaas_payment_id (para verificar status no Asaas antes de exibir PIX). */
+export const getLatestPendingPaymentWithIdForRegistration = async (
+  registrationId: string
+): Promise<{ asaas_payment_id: string; pix_qr_code: string | null; value: number; due_date: string } | null> => {
+  const result = await query(
+    `SELECT asaas_payment_id, pix_qr_code, value, due_date FROM asaas_payments
+     WHERE registration_id = $1 AND status IN ('PENDING', 'OVERDUE')
+     ORDER BY created_at DESC LIMIT 1`,
+    [registrationId]
+  );
+  if (result.rows.length === 0) return null;
+  const row = result.rows[0];
+  const dueDate = row.due_date instanceof Date ? row.due_date.toISOString().slice(0, 10) : String(row.due_date || '');
+  return {
+    asaas_payment_id: row.asaas_payment_id,
+    pix_qr_code: row.pix_qr_code || null,
+    value: parseFloat(row.value) || 0,
+    due_date: dueDate,
+  };
+};
+
+/** Marca cobrança como paga manualmente (admin recebeu em dinheiro/transferência). */
+export const markPaymentAsManualConfirmed = async (asaasPaymentId: string): Promise<void> => {
+  await query(
+    `UPDATE asaas_payments 
+     SET status = 'MANUAL_CONFIRMED', payment_date = CURRENT_DATE, updated_at = NOW()
+     WHERE asaas_payment_id = $1`,
+    [asaasPaymentId]
+  );
+};
+
+/**
+ * Atualiza payment_status da inscrição com base na soma dos pagamentos.
+ * Regra: payment_status = 'paid' quando getTotalPaidForRegistration(id) ≥ total_amount.
+ * Usado pelo webhook Asaas e quando admin confirma pagamento manual (Etapa 9b).
+ */
+export const syncRegistrationPaymentStatus = async (
+  registrationId: string
+): Promise<void> => {
+  const totalPaid = await getTotalPaidForRegistration(registrationId);
+  const regResult = await query(
+    'SELECT total_amount, payment_status, status FROM registrations WHERE id = $1',
+    [registrationId]
+  );
+  if (regResult.rows.length === 0) return;
+  const totalAmount = parseFloat(regResult.rows[0].total_amount) || 0;
+  const currentPaymentStatus = regResult.rows[0].payment_status;
+  const isFullyPaid = totalAmount <= 0 || totalPaid >= totalAmount - 0.005;
+  if (isFullyPaid) {
+    await query(
+      `UPDATE registrations SET payment_status = 'paid', status = 'confirmed', updated_at = NOW() WHERE id = $1`,
+      [registrationId]
+    );
+  } else {
+    if (currentPaymentStatus !== 'refunded' && currentPaymentStatus !== 'failed') {
+      await query(
+        `UPDATE registrations SET payment_status = 'pending', updated_at = NOW() WHERE id = $1`,
+        [registrationId]
+      );
+    }
+  }
+};
+
+/** Remove a cobrança apenas no Asaas (não altera nosso banco). Usado após confirmar pagamento manual (manter MANUAL_CONFIRMED no banco). */
+export const deletePaymentInAsaasOnly = async (asaasPaymentId: string): Promise<void> => {
+  const asaasClient = createAsaasClient();
+  try {
+    const paymentResponse = await asaasClient.get(`/payments/${asaasPaymentId}`);
+    const payment = paymentResponse.data as { status?: string };
+    if (payment.status === 'CONFIRMED' || payment.status === 'RECEIVED' || payment.status === 'RECEIVED_IN_CASH') {
+      return; // já pago, não deletar
+    }
+    await asaasClient.delete(`/payments/${asaasPaymentId}`);
+  } catch (err: any) {
+    if (err.response?.status === 404) return;
+    throw err;
+  }
 };
 
 // Cancel payment in Asaas

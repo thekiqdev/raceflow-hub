@@ -33,8 +33,12 @@ export interface CreateRegistrationData {
   registered_by: string;
   category_id: string;
   kit_id?: string;
+  /** Modalidade escolhida na inscrição (deve ser da categoria) */
+  modality_id?: string | null;
   payment_method?: PaymentMethod;
   total_amount: number;
+  /** Taxa da plataforma aplicada na inscrição inicial (R$). OK Etapa 1. */
+  platform_fee_amount?: number;
   coupon_code?: string;
   status?: RegistrationStatus; // Optional status (used when organizer creates registration)
   payment_status?: PaymentStatus; // Optional payment_status (used when organizer creates registration)
@@ -51,6 +55,18 @@ export interface UpdateRegistrationData {
   payment_method?: PaymentMethod;
   /** Permite atrelar inscrição a um cupom/comissão por evento (ex.: cupom criado após a compra) */
   coupon_code?: string | null;
+  /** Categoria da inscrição (admin/organizador podem alterar) */
+  category_id?: string;
+  /** Kit da inscrição (admin/organizador podem alterar; null = sem kit) */
+  kit_id?: string | null;
+  /** Modalidade da inscrição (admin/organizador podem alterar; deve ser da categoria; null = não definida) */
+  modality_id?: string | null;
+  /** Lote da categoria (admin escolhe na edição; usado para preço) */
+  category_batch_id?: string | null;
+  /** Valor total recalculado na edição (quando category/kit/batch mudam) */
+  total_amount?: number;
+  /** Taxa de atualização aplicada na edição quando o valor muda (R$). OK Etapa 1. */
+  registration_edit_fee_amount?: number;
 }
 
 // Get registrations with filters
@@ -84,6 +100,8 @@ export const getRegistrations = async (filters?: {
       p.team as runner_team,
       u.email as runner_email,
       ek.name as kit_name,
+      -- Modalidade selecionada na inscrição
+      (SELECT m_sel.name FROM modalities m_sel WHERE m_sel.id = r.modality_id) as modality_name,
       -- Modalidades associadas à categoria (usando subquery)
       (
         SELECT COALESCE(
@@ -210,25 +228,39 @@ export const getRegistrations = async (filters?: {
 
   const result = await query(queryText, params);
   
-  // Import getFileUrl to convert file paths to URLs
+  // Import getFileUrl, payment helpers and system settings (taxa de atualização)
   const { getFileUrl } = await import('../middleware/upload.js');
-  
+  const { getPendingDifferenceAmountsForRegistrationIds, getTotalPaidForRegistrationIds } = await import('./asaasService.js');
+  const { getSystemSettings } = await import('./systemSettingsService.js');
+  const ids = result.rows.map((r: any) => r.id);
+  const [pendingMap, totalPaidMap, settings] = await Promise.all([
+    getPendingDifferenceAmountsForRegistrationIds(ids),
+    getTotalPaidForRegistrationIds(ids),
+    getSystemSettings(),
+  ]);
+  const registrationEditFee = settings.registration_edit_fee ?? 0;
+
   // Replace status with display_status in the results
   // If this is a transferred registration viewed by the original owner (registered_by),
   // show as 'transferred' instead of 'confirmed'
-  return result.rows.map(row => {
+  return result.rows.map((row: any) => {
     let finalStatus = row.display_status || row.status;
-    
+
     // If filtering by runner_id and this is a transferred registration
     // where the runner_id filter matches registered_by, show as 'transferred'
     if (filters?.runner_id && row.is_transferred && row.registered_by === filters.runner_id) {
       finalStatus = 'transferred';
     }
-    
+    const pendingDifferenceAmount = pendingMap[row.id] ?? 0;
+    const amountPaid = totalPaidMap[row.id] ?? 0;
     return {
       ...row,
       status: finalStatus,
       event_banner_url: row.event_banner_url ? getFileUrl(row.event_banner_url) : null,
+      pending_difference_amount: pendingDifferenceAmount,
+      has_pending_difference: pendingDifferenceAmount > 0.005,
+      amount_paid: amountPaid,
+      registration_edit_fee: registrationEditFee,
     };
   });
 };
@@ -258,6 +290,7 @@ export const getRegistrationById = async (registrationId: string, viewerId?: str
         ARRAY_AGG(DISTINCT m.name) FILTER (WHERE m.name IS NOT NULL),
         ARRAY[]::TEXT[]
       ) as modality_names,
+      (SELECT m_sel.name FROM modalities m_sel WHERE m_sel.id = r.modality_id) as modality_name,
       p.full_name as runner_name,
       p.cpf as runner_cpf,
       p.phone as runner_phone,
@@ -307,14 +340,25 @@ export const getRegistrationById = async (registrationId: string, viewerId?: str
     return null;
   }
 
-  // Import getFileUrl to convert file paths to URLs
+  // Import getFileUrl, payment helpers and system settings (taxa de atualização)
   const { getFileUrl } = await import('../middleware/upload.js');
-  
+  const { getPendingDifferenceAmountForRegistration, getTotalPaidForRegistration } = await import('./asaasService.js');
+  const { getSystemSettings } = await import('./systemSettingsService.js');
+
   const row = result.rows[0];
+  const [pendingDifferenceAmount, amountPaid, settings] = await Promise.all([
+    getPendingDifferenceAmountForRegistration(registrationId),
+    getTotalPaidForRegistration(registrationId),
+    getSystemSettings(),
+  ]);
   return {
     ...row,
     status: row.display_status || row.status,
     event_banner_url: row.event_banner_url ? getFileUrl(row.event_banner_url) : null,
+    pending_difference_amount: pendingDifferenceAmount,
+    has_pending_difference: pendingDifferenceAmount > 0.005,
+    amount_paid: amountPaid,
+    registration_edit_fee: settings.registration_edit_fee ?? 0,
   };
 };
 
@@ -385,6 +429,19 @@ export const createRegistration = async (data: CreateRegistrationData) => {
       if (normalizedRunnerGender !== categoryGender && normalizedRunnerGender !== 'ambos') {
         throw new Error(`Esta categoria é exclusiva para ${categoryGender === 'masculino' ? 'homens' : 'mulheres'}.`);
       }
+    }
+  }
+
+  // Validate modality_id when provided: must be linked to category and belong to event
+  if (data.modality_id) {
+    const modCheck = await query(
+      `SELECT 1 FROM modalities m
+       INNER JOIN category_modalities cm ON cm.modality_id = m.id AND cm.category_id = $2
+       WHERE m.id = $1 AND m.event_id = $3`,
+      [data.modality_id, data.category_id, data.event_id]
+    );
+    if (modCheck.rows.length === 0) {
+      throw new Error('Modalidade inválida ou não pertence à categoria selecionada.');
     }
   }
 
@@ -462,12 +519,15 @@ export const createRegistration = async (data: CreateRegistrationData) => {
   const paymentStatus = data.payment_status || (data.payment_method === 'free_bonus' ? 'convidado' : 'pending');
   const registrationStatus = data.status || (data.payment_method === 'free_bonus' ? 'confirmed' : 'pending');
 
+  const platformFeeAmount = data.platform_fee_amount != null ? Number(data.platform_fee_amount) : 0;
+
   const result = await query(
     `INSERT INTO registrations (
-      event_id, runner_id, registered_by, category_id, kit_id,
-      payment_method, total_amount, confirmation_code, status, payment_status, coupon_code
+      event_id, runner_id, registered_by, category_id, kit_id, modality_id,
+      payment_method, total_amount, platform_fee_amount, registration_edit_fee_amount,
+      confirmation_code, status, payment_status, coupon_code
     )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 0, $10, $11, $12, $13)
     RETURNING *`,
     [
       data.event_id,
@@ -475,8 +535,10 @@ export const createRegistration = async (data: CreateRegistrationData) => {
       data.registered_by,
       data.category_id,
       data.kit_id || null,
+      data.modality_id ?? null,
       data.payment_method || null,
       data.total_amount,
+      platformFeeAmount,
       confirmationCode,
       registrationStatus,
       paymentStatus,

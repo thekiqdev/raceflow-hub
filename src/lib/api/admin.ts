@@ -13,6 +13,12 @@ export interface DashboardStats {
   total_commissions: number;
   finished_events: number;
   revenue_change_percentage?: number;
+  /** OK Etapa 4: Taxa de inscrição (soma em inscrições pagas) */
+  platform_fee_revenue?: number;
+  /** OK Etapa 4: Taxa de atualização (soma em inscrições pagas) */
+  registration_edit_fee_revenue?: number;
+  /** OK Etapa 4: Total taxas da plataforma */
+  total_platform_fees?: number;
 }
 
 export interface ChartDataPoint {

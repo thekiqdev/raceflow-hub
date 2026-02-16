@@ -18,7 +18,7 @@ import { hasRole } from '../services/userRolesService.js';
 import { getEventById } from '../services/eventsService.js';
 import { getGroupLeaderById } from '../services/groupLeadersService.js';
 import { getCategoryById } from '../services/categoriesService.js';
-import { createCustomer, createPayment, createCreditCardPayment, getPaymentByRegistrationId, validateOrRecreateCustomer } from '../services/asaasService.js';
+import { createCustomer, createPayment, createCreditCardPayment, getPaymentByRegistrationId, getTotalPaidForRegistration, getAmountPaidForOrganizer, getPendingPaymentsForRegistration, getPaymentStatus as getAsaasPaymentStatus, markPaymentAsManualConfirmed, deletePaymentInAsaasOnly, syncRegistrationPaymentStatus, cancelPayment, validateOrRecreateCustomer } from '../services/asaasService.js';
 import { getProfileByUserId } from '../services/profilesService.js';
 import { query } from '../config/database.js';
 import { sendNotificationSafely, getUserEmail, getUserName, getOrganizerEmail } from '../services/notificationService.js';
@@ -101,6 +101,7 @@ const createRegistrationSchema = z.object({
   runner_id: z.string().uuid('ID do corredor inválido').optional(),
   category_id: z.string().uuid('ID da categoria inválido'),
   kit_id: z.string().uuid('ID do kit inválido').optional(),
+  modality_id: z.string().uuid('ID da modalidade inválido').optional().nullable(),
   payment_method: z.enum(['pix', 'credit_card', 'boleto']).optional(),
   total_amount: z.number().min(0, 'Valor total deve ser maior ou igual a zero'),
   coupon_code: z.string().optional(),
@@ -656,6 +657,7 @@ export const getRegistrationForValidation = asyncHandler(async (req: Request, re
       state: registration.state,
       category_name: registration.category_name,
       category_distance: registration.category_distance,
+      modality_name: registration.modality_name,
       kit_name: registration.kit_name,
       total_amount: registration.total_amount,
       runner_name: registration.runner_name,
@@ -976,10 +978,27 @@ export const createRegistrationController = asyncHandler(async (req: AuthRequest
     }
   }
 
+  // OK Etapa 1: Calcular platform_fee_amount (taxa da plataforma na inscrição inicial)
+  let platformFeeAmount = 0;
+  const totalAmount = Number(validation.data.total_amount) || 0;
+  if (totalAmount > 0) {
+    const { getSystemSettings } = await import('../services/systemSettingsService.js');
+    const { calculateValueWithoutFee } = await import('../utils/feeCalculations.js');
+    const settings = await getSystemSettings();
+    const platformFeesEnabled = settings.enabled_modules?.platform_fees === true;
+    const platformFee = Number(settings.platform_fee) || 0;
+    const platformFeeType = (settings.platform_fee_type as 'fixed' | 'percentage') || 'fixed';
+    if (platformFeesEnabled && platformFee > 0) {
+      const valueWithoutFee = calculateValueWithoutFee(totalAmount, platformFee, platformFeeType);
+      platformFeeAmount = Math.round((totalAmount - valueWithoutFee) * 100) / 100;
+    }
+  }
+
   const registrationData = {
     ...validation.data,
     registered_by: req.user.id,
     runner_id: validation.data.runner_id || req.user.id,
+    platform_fee_amount: platformFeeAmount,
   };
 
   // Verificar se o corredor já tem uma inscrição ativa neste evento
@@ -1877,6 +1896,183 @@ export const getPaymentStatusController = asyncHandler(async (req: AuthRequest, 
   });
 });
 
+/**
+ * GET /api/registrations/:id/pending-difference-payment
+ * Retorna PIX da cobrança pendente da diferença (após edição). Apenas o corredor dono da inscrição.
+ * Antes de retornar o PIX, verifica no Asaas se o pagamento já foi confirmado (além do webhook).
+ */
+export const getPendingDifferencePaymentController = asyncHandler(async (req: AuthRequest, res: Response) => {
+  if (!req.user) {
+    res.status(401).json({ success: false, error: 'Not authenticated' });
+    return;
+  }
+  const { id } = req.params;
+  const registration = await getRegistrationById(id);
+  if (!registration) {
+    res.status(404).json({ success: false, error: 'Registration not found' });
+    return;
+  }
+  const isOwner = registration.runner_id === req.user.id || registration.registered_by === req.user.id;
+  if (!isOwner) {
+    res.status(403).json({
+      success: false,
+      error: 'Forbidden',
+      message: 'Apenas o corredor dono da inscrição pode acessar o pagamento da diferença.',
+    });
+    return;
+  }
+  const { getLatestPendingPaymentWithIdForRegistration } = await import('../services/asaasService.js');
+  const pending = await getLatestPendingPaymentWithIdForRegistration(id);
+  if (!pending) {
+    res.status(404).json({
+      success: false,
+      error: 'No pending payment',
+      message: 'Não há cobrança pendente para esta inscrição.',
+    });
+    return;
+  }
+  // Verificar no Asaas se o pagamento já foi confirmado (além do webhook)
+  try {
+    const asaasStatus = await getAsaasPaymentStatus(pending.asaas_payment_id);
+    const status = asaasStatus.status as string;
+    if (status === 'CONFIRMED' || status === 'RECEIVED' || status === 'RECEIVED_IN_CASH') {
+      console.log(`✅ Pagamento da diferença já confirmado no Asaas (${pending.asaas_payment_id}). Sincronizando inscrição ${id}.`);
+      await syncRegistrationPaymentStatus(id);
+      return res.json({
+        success: true,
+        data: { already_paid: true },
+        message: 'Pagamento já foi confirmado.',
+      });
+    }
+  } catch (err: any) {
+    console.warn('⚠️ Erro ao consultar Asaas no pending-difference-payment (continuando com PIX):', err.message);
+  }
+  return res.json({
+    success: true,
+    data: {
+      pix_qr_code: pending.pix_qr_code,
+      value: pending.value,
+      due_date: pending.due_date,
+    },
+  });
+});
+
+/**
+ * POST /api/registrations/:id/verify-payment
+ * Corredor solicita verificação manual no Asaas se o pagamento foi realizado (PIX inicial ou diferença).
+ * Consulta o Asaas e, se pago, sincroniza a inscrição.
+ */
+export const verifyPaymentController = asyncHandler(async (req: AuthRequest, res: Response) => {
+  if (!req.user) {
+    res.status(401).json({ success: false, error: 'Not authenticated' });
+    return;
+  }
+  const { id } = req.params;
+  const registration = await getRegistrationById(id);
+  if (!registration) {
+    res.status(404).json({ success: false, error: 'Registration not found' });
+    return;
+  }
+  const isOwner = registration.runner_id === req.user.id || registration.registered_by === req.user.id;
+  if (!isOwner) {
+    res.status(403).json({
+      success: false,
+      error: 'Forbidden',
+      message: 'Apenas o corredor dono da inscrição pode verificar o pagamento.',
+    });
+    return;
+  }
+  const { getLatestPendingPaymentWithIdForRegistration } = await import('../services/asaasService.js');
+  const pending = await getLatestPendingPaymentWithIdForRegistration(id);
+  if (pending) {
+    try {
+      const asaasStatus = await getAsaasPaymentStatus(pending.asaas_payment_id);
+      const status = asaasStatus.status as string;
+      if (status === 'CONFIRMED' || status === 'RECEIVED' || status === 'RECEIVED_IN_CASH') {
+        await syncRegistrationPaymentStatus(id);
+        return res.json({
+          success: true,
+          payment_verified: true,
+          message: 'Pagamento confirmado no Asaas. Inscrição atualizada.',
+        });
+      }
+    } catch (err: any) {
+      console.warn('⚠️ Erro ao consultar Asaas em verify-payment (cobrança pendente):', err.message);
+    }
+  } else {
+    const payment = await getPaymentByRegistrationId(id);
+    if (payment?.asaas_payment_id && (payment.status === 'PENDING' || payment.status === 'OVERDUE')) {
+      try {
+        const asaasStatus = await getAsaasPaymentStatus(payment.asaas_payment_id);
+        const status = asaasStatus.status as string;
+        if (status === 'CONFIRMED' || status === 'RECEIVED' || status === 'RECEIVED_IN_CASH') {
+          await syncRegistrationPaymentStatus(id);
+          return res.json({
+            success: true,
+            payment_verified: true,
+            message: 'Pagamento confirmado no Asaas. Inscrição atualizada.',
+          });
+        }
+      } catch (err: any) {
+        console.warn('⚠️ Erro ao consultar Asaas em verify-payment (pagamento inicial):', err.message);
+      }
+    }
+  }
+  return res.json({
+    success: true,
+    payment_verified: false,
+    message: 'Pagamento ainda não identificado no Asaas. Tente novamente em instantes ou aguarde a confirmação automática.',
+  });
+});
+
+/**
+ * POST /api/registrations/:id/confirm-difference-payment
+ * Admin confirma que recebeu o pagamento da diferença manualmente (ex.: dinheiro). Apenas admin.
+ * Marca cobrança pendente como MANUAL_CONFIRMED, invalida PIX no Asaas e sincroniza payment_status.
+ */
+export const confirmDifferencePaymentController = asyncHandler(async (req: AuthRequest, res: Response) => {
+  if (!req.user) {
+    res.status(401).json({ success: false, error: 'Not authenticated' });
+    return;
+  }
+  const isAdmin = await hasRole(req.user.id, 'admin');
+  if (!isAdmin) {
+    res.status(403).json({
+      success: false,
+      error: 'Forbidden',
+      message: 'Apenas administradores podem confirmar pagamento da diferença manualmente.',
+    });
+    return;
+  }
+  const { id } = req.params;
+  const registration = await getRegistrationById(id);
+  if (!registration) {
+    res.status(404).json({ success: false, error: 'Registration not found' });
+    return;
+  }
+  const pendingList = await getPendingPaymentsForRegistration(id);
+  if (pendingList.length === 0) {
+    res.json({ success: true, message: 'Nenhuma cobrança pendente; já confirmado ou inexistente.' });
+    return;
+  }
+  for (const p of pendingList) {
+    try {
+      const asaasStatus = await getAsaasPaymentStatus(p.asaas_payment_id);
+      const status = asaasStatus?.status as string | undefined;
+      if (status === 'CONFIRMED' || status === 'RECEIVED' || status === 'RECEIVED_IN_CASH') {
+        continue;
+      }
+      await markPaymentAsManualConfirmed(p.asaas_payment_id);
+      await deletePaymentInAsaasOnly(p.asaas_payment_id);
+    } catch (err: any) {
+      await markPaymentAsManualConfirmed(p.asaas_payment_id).catch(() => {});
+      await deletePaymentInAsaasOnly(p.asaas_payment_id).catch(() => {});
+    }
+  }
+  await syncRegistrationPaymentStatus(id);
+  res.json({ success: true, message: 'Pagamento da diferença confirmado.' });
+});
+
 // Update registration
 export const updateRegistrationController = asyncHandler(async (req: AuthRequest, res: Response) => {
   if (!req.user) {
@@ -1926,7 +2122,224 @@ export const updateRegistrationController = asyncHandler(async (req: AuthRequest
   const paymentJustConfirmed = !wasPaid && willBePaid;
   const statusJustConfirmed = !wasConfirmed && willBeConfirmed;
 
-  const updatedRegistration = await updateRegistration(id, req.body);
+  // Allowlist: only these fields can be updated via this endpoint
+  const allowedKeys = ['status', 'payment_status', 'payment_method', 'coupon_code', 'category_id', 'kit_id', 'modality_id', 'category_batch_id'] as const;
+  const updatePayload: Record<string, unknown> = {};
+  for (const key of allowedKeys) {
+    if (req.body[key] !== undefined) {
+      updatePayload[key] = req.body[key];
+    }
+  }
+  // API pode enviar batch_id como alias de category_batch_id
+  if (req.body.batch_id !== undefined) {
+    updatePayload.category_batch_id = req.body.batch_id;
+  }
+
+  // Validate category_id belongs to the registration's event (admin/organizer only)
+  if (updatePayload.category_id !== undefined) {
+    const categoryId = updatePayload.category_id as string;
+    const catCheck = await query(
+      'SELECT id FROM categories WHERE id = $1 AND event_id = $2',
+      [categoryId, registration.event_id]
+    );
+    if (catCheck.rows.length === 0) {
+      res.status(400).json({
+        success: false,
+        error: 'Categoria inválida ou não pertence ao evento desta inscrição.',
+      });
+      return;
+    }
+  }
+
+  // Validate kit_id belongs to the registration's event (null = sem kit)
+  if (updatePayload.kit_id !== undefined) {
+    const kitId = updatePayload.kit_id as string | null;
+    if (kitId !== null) {
+      const kitCheck = await query(
+        'SELECT id FROM event_kits WHERE id = $1 AND event_id = $2',
+        [kitId, registration.event_id]
+      );
+      if (kitCheck.rows.length === 0) {
+        res.status(400).json({
+          success: false,
+          error: 'Kit inválido ou não pertence ao evento desta inscrição.',
+        });
+        return;
+      }
+    }
+  }
+
+  // Validate modality_id: must belong to event and be linked to (new or current) category
+  if (updatePayload.modality_id !== undefined) {
+    const modalityId = updatePayload.modality_id as string | null;
+    if (modalityId !== null) {
+      const categoryIdForModality = (updatePayload.category_id as string) || registration.category_id;
+      const modCheck = await query(
+        `SELECT m.id FROM modalities m
+         INNER JOIN category_modalities cm ON cm.modality_id = m.id AND cm.category_id = $2
+         WHERE m.id = $1 AND m.event_id = $3`,
+        [modalityId, categoryIdForModality, registration.event_id]
+      );
+      if (modCheck.rows.length === 0) {
+        res.status(400).json({
+          success: false,
+          error: 'Modalidade inválida ou não pertence à categoria/evento desta inscrição.',
+        });
+        return;
+      }
+    }
+  }
+
+  // Validate category_batch_id: must exist and belong to (new or current) category
+  const effectiveCategoryId = (updatePayload.category_id as string) || registration.category_id;
+  if (updatePayload.category_batch_id !== undefined) {
+    const batchId = updatePayload.category_batch_id as string | null;
+    if (batchId !== null) {
+      const batchCheck = await query(
+        'SELECT id, category_id FROM category_batches WHERE id = $1 AND category_id = $2',
+        [batchId, effectiveCategoryId]
+      );
+      if (batchCheck.rows.length === 0) {
+        res.status(400).json({
+          success: false,
+          error: 'Lote inválido ou não pertence à categoria desta inscrição.',
+        });
+        return;
+      }
+    }
+  }
+
+  // Recalcular total e aplicar taxa de atualização quando categoria/kit/modalidade/lote mudam
+  const priceRelatedKeys = ['category_id', 'kit_id', 'modality_id', 'category_batch_id'];
+  const anyPriceChange = priceRelatedKeys.some((k) => updatePayload[k] !== undefined);
+  let newTotalForOrganizer: number | undefined; // usado no bloco de pagamento para diferença a cobrar (sem taxa de inscrição de novo)
+  if (anyPriceChange) {
+    const { calculateRegistrationTotal } = await import('../services/registrationTotalService.js');
+    const { getSystemSettings } = await import('../services/systemSettingsService.js');
+    const categoryId = (updatePayload.category_id as string) ?? registration.category_id;
+    const kitId = updatePayload.kit_id !== undefined ? (updatePayload.kit_id as string | null) : (registration.kit_id ?? null);
+    const modalityId = updatePayload.modality_id !== undefined ? (updatePayload.modality_id as string | null) : (registration.modality_id ?? null);
+    const batchId = updatePayload.category_batch_id !== undefined ? (updatePayload.category_batch_id as string | null) : (registration.category_batch_id ?? null) ?? null;
+    const calculation = await calculateRegistrationTotal({
+      eventId: registration.event_id,
+      categoryId,
+      kitId,
+      modalityId,
+      batchId: batchId || undefined,
+      couponCode: registration.coupon_code || undefined,
+      runnerId: registration.runner_id,
+    });
+    const oldTotal = parseFloat(String(registration.total_amount)) || 0;
+    const settings = await getSystemSettings();
+    const updateFee = settings.registration_edit_fee ?? 0;
+    // Novo total para organizador (sem taxa de inscrição) + taxa de atualização; não cobrar taxa de inscrição de novo na diferença
+    const newSubtotalForOrganizer = calculation.amountAfterDiscounts;
+    const valueChanged = Math.abs(newSubtotalForOrganizer - (oldTotal - (parseFloat(String(registration.platform_fee_amount)) || 0))) >= 0.01;
+    const appliedUpdateFee = valueChanged ? updateFee : 0;
+    newTotalForOrganizer = Math.round((newSubtotalForOrganizer + appliedUpdateFee) * 100) / 100;
+    // total_amount na inscrição = valor total (taxa plataforma original + novo valor organizador + taxa atualização) para exibição correta
+    const platformFeeAmount = parseFloat(String(registration.platform_fee_amount)) || 0;
+    const newTotalAmount = Math.round((platformFeeAmount + newSubtotalForOrganizer + appliedUpdateFee) * 100) / 100;
+    updatePayload.total_amount = newTotalAmount;
+    updatePayload.category_batch_id = batchId ?? null;
+    // OK Etapa 1: Persistir taxa de atualização quando aplicada
+    if (appliedUpdateFee > 0) {
+      updatePayload.registration_edit_fee_amount = appliedUpdateFee;
+    }
+  }
+
+  if (Object.keys(updatePayload).length === 0) {
+    res.status(400).json({
+      success: false,
+      error: 'Nenhum campo válido para atualização.',
+    });
+    return;
+  }
+
+  const updatedRegistration = await updateRegistration(id, updatePayload as any);
+
+  // Ao confirmar pagamento manualmente (admin marca como pago), marcar cobranças pendentes como MANUAL_CONFIRMED
+  // para que pending_difference_amount fique 0 e não apareça "Pagamento da diferença pendente" indevidamente
+  if (paymentJustConfirmed) {
+    try {
+      const pendingList = await getPendingPaymentsForRegistration(id);
+      for (const p of pendingList) {
+        try {
+          await markPaymentAsManualConfirmed(p.asaas_payment_id);
+          await deletePaymentInAsaasOnly(p.asaas_payment_id);
+        } catch (err: any) {
+          await markPaymentAsManualConfirmed(p.asaas_payment_id).catch(() => {});
+        }
+      }
+    } catch (err: any) {
+      console.error('[updateRegistrationController] Erro ao marcar cobranças como confirmadas:', err?.message);
+    }
+  }
+
+  // Etapa 5 + OK Etapa 2: regras de pagamento quando o valor foi alterado na edição (usa valor já pago para organizador, sem taxa inicial)
+  if (anyPriceChange && typeof updatePayload.total_amount === 'number' && newTotalForOrganizer !== undefined) {
+    let amountPaid = await getTotalPaidForRegistration(id);
+    let amountPaidForOrganizer = await getAmountPaidForOrganizer(id);
+    const oldTotal = parseFloat(String(registration.total_amount)) || 0;
+    if (amountPaid === 0 && registration.payment_status === 'paid' && oldTotal > 0) {
+      amountPaid = oldTotal;
+      const pf = parseFloat(String(registration.platform_fee_amount)) || 0;
+      amountPaidForOrganizer = Math.round((oldTotal - pf) * 100) / 100;
+    }
+    try {
+      if (newTotalForOrganizer > amountPaidForOrganizer) {
+        const pendingPayments = await getPendingPaymentsForRegistration(id);
+        for (const row of pendingPayments) {
+          try {
+            await cancelPayment(row.asaas_payment_id);
+          } catch (cancelErr: any) {
+            console.error(`[updateRegistrationController] Erro ao cancelar cobrança ${row.asaas_payment_id}:`, cancelErr.message);
+          }
+        }
+        const differenceToCharge = Math.round((newTotalForOrganizer - amountPaidForOrganizer) * 100) / 100;
+        if (differenceToCharge >= 0.01) {
+          const customerRow = await query(
+            'SELECT asaas_customer_id FROM asaas_customers WHERE user_id = $1',
+            [registration.runner_id]
+          );
+          if (customerRow.rows.length > 0) {
+            const dueDate = new Date();
+            dueDate.setDate(dueDate.getDate() + 7);
+            const dueDateStr = dueDate.toISOString().slice(0, 10);
+            await createPayment(
+              id,
+              customerRow.rows[0].asaas_customer_id,
+              {
+                value: differenceToCharge,
+                dueDate: dueDateStr,
+                description: amountPaidForOrganizer > 0 ? 'Complemento - Alteração da inscrição' : 'Inscrição - Alteração',
+                billingType: 'PIX',
+                externalReference: updatedRegistration.confirmation_code || undefined,
+              },
+              { setAsRegistrationPaymentId: amountPaid === 0 }
+            );
+          } else {
+            console.warn(`[updateRegistrationController] Runner ${registration.runner_id} sem asaas_customer_id; não foi criada cobrança da diferença.`);
+          }
+          // Sempre marcar como "pago parcialmente" quando há diferença a cobrar (inscrição confirmada manualmente ou não), para exibir "Pagamento da diferença pendente" e "Pagar diferença"
+          await query(
+            `UPDATE registrations SET payment_status = 'partially_paid', updated_at = NOW() WHERE id = $1`,
+            [id]
+          );
+        }
+      } else if (newTotalForOrganizer < amountPaidForOrganizer) {
+        const oldTotalReg = parseFloat(String(registration.total_amount)) || 0;
+        await query(
+          `INSERT INTO registration_amount_adjustments (registration_id, old_total, new_total, adjustment_type, notes, created_by)
+           VALUES ($1, $2, $3, 'refund_pending', $4, $5)`,
+          [id, oldTotalReg, newTotalForOrganizer, 'Reembolso manual pendente (edição reduziu o valor).', req.user?.id ?? null]
+        );
+      }
+    } catch (paymentRuleError: any) {
+      console.error('[updateRegistrationController] Erro ao aplicar regras de pagamento:', paymentRuleError.message);
+      // Não falha a edição; apenas loga
+    }
+  }
 
   // Send notifications if registration was just confirmed (by payment or status)
   if (paymentJustConfirmed || statusJustConfirmed) {
@@ -2062,6 +2475,103 @@ export const updateRegistrationController = asyncHandler(async (req: AuthRequest
     success: true,
     data: updatedRegistration,
     message: 'Registration updated successfully',
+  });
+});
+
+/**
+ * POST /api/registrations/:id/preview-edit
+ * Pré-visualização da edição: retorna novos valores (total, diferença a cobrar/reembolsar).
+ * Apenas admin ou organizador do evento.
+ */
+export const previewRegistrationEditController = asyncHandler(async (req: AuthRequest, res: Response) => {
+  if (!req.user) {
+    res.status(401).json({ success: false, error: 'Not authenticated' });
+    return;
+  }
+
+  const { id } = req.params;
+  const registration = await getRegistrationById(id);
+  if (!registration) {
+    res.status(404).json({ success: false, error: 'Registration not found' });
+    return;
+  }
+
+  const isAdmin = await hasRole(req.user.id, 'admin');
+  const isOrganizer = await hasRole(req.user.id, 'organizer');
+  let isEventOrganizer = false;
+  if (isOrganizer) {
+    const event = await getEventById(registration.event_id);
+    isEventOrganizer = event?.organizer_id === req.user.id;
+  }
+  if (!isAdmin && !isEventOrganizer) {
+    res.status(403).json({
+      success: false,
+      error: 'Forbidden',
+      message: 'Apenas admin ou organizador do evento podem visualizar a pré-visualização',
+    });
+    return;
+  }
+
+  const body = req.body as {
+    category_id?: string;
+    kit_id?: string | null;
+    modality_id?: string | null;
+    batch_id?: string | null;
+  };
+  const categoryId = body.category_id ?? registration.category_id;
+  const kitId = body.kit_id !== undefined ? body.kit_id : (registration.kit_id ?? null);
+  const modalityId = body.modality_id !== undefined ? body.modality_id : (registration.modality_id ?? null);
+  const batchId = body.batch_id !== undefined ? body.batch_id : null;
+
+  const { calculateRegistrationTotal } = await import('../services/registrationTotalService.js');
+  const { getSystemSettings } = await import('../services/systemSettingsService.js');
+
+  const calculation = await calculateRegistrationTotal({
+    eventId: registration.event_id,
+    categoryId,
+    kitId,
+    modalityId,
+    batchId: batchId || undefined,
+    couponCode: registration.coupon_code || undefined,
+    runnerId: registration.runner_id,
+  });
+
+  const oldTotal = parseFloat(String(registration.total_amount)) || 0;
+  const settings = await getSystemSettings();
+  const updateFee = settings.registration_edit_fee ?? 0;
+  // Valor para organizador da nova seleção (sem taxa de inscrição); não cobrar taxa de inscrição de novo na edição
+  const newSubtotalForOrganizer = calculation.amountAfterDiscounts;
+  const valueChanged = Math.abs(newSubtotalForOrganizer - (oldTotal - (parseFloat(String(registration.platform_fee_amount)) || 0))) >= 0.01;
+  const appliedUpdateFee = valueChanged ? updateFee : 0;
+  const newTotalForOrganizer = Math.round((newSubtotalForOrganizer + appliedUpdateFee) * 100) / 100;
+  const platformFeeAmount = parseFloat(String(registration.platform_fee_amount)) || 0;
+  const newTotalAmount = Math.round((platformFeeAmount + newSubtotalForOrganizer + appliedUpdateFee) * 100) / 100;
+
+  // OK Etapa 2: diferença com base no valor já pago para organizador (total pago − taxa inicial)
+  let amountPaid = await getTotalPaidForRegistration(id);
+  let amountPaidForOrganizer = await getAmountPaidForOrganizer(id);
+  // Fallback: inscrição marcada como paga (ex.: confirmação manual) sem lançamento em asaas_payments
+  if (amountPaid === 0 && registration.payment_status === 'paid' && oldTotal > 0) {
+    amountPaid = oldTotal;
+    const pf = parseFloat(String(registration.platform_fee_amount)) || 0;
+    amountPaidForOrganizer = Math.round((oldTotal - pf) * 100) / 100;
+  }
+
+  const differenceToPay = Math.max(0, Math.round((newTotalForOrganizer - amountPaidForOrganizer) * 100) / 100);
+  const differenceToRefund = Math.max(0, Math.round((amountPaidForOrganizer - newTotalForOrganizer) * 100) / 100);
+
+  res.json({
+    success: true,
+    data: {
+      old_total: oldTotal,
+      new_subtotal: newSubtotalForOrganizer,
+      update_fee: appliedUpdateFee,
+      new_total: newTotalAmount,
+      amount_paid: amountPaid,
+      amount_paid_for_organizer: amountPaidForOrganizer,
+      difference_to_pay: differenceToPay,
+      difference_to_refund: differenceToRefund,
+    },
   });
 });
 
@@ -3625,6 +4135,21 @@ export const createRegistrationByLeaderController = asyncHandler(async (req: Aut
     return;
   }
 
+  // OK Etapa 1: Calcular platform_fee_amount para inscrição criada por líder
+  let leaderPlatformFeeAmount = 0;
+  if (totalAmount > 0) {
+    const { getSystemSettings } = await import('../services/systemSettingsService.js');
+    const { calculateValueWithoutFee } = await import('../utils/feeCalculations.js');
+    const settings = await getSystemSettings();
+    const platformFeesEnabled = settings.enabled_modules?.platform_fees === true;
+    const platformFee = Number(settings.platform_fee) || 0;
+    const platformFeeType = (settings.platform_fee_type as 'fixed' | 'percentage') || 'fixed';
+    if (platformFeesEnabled && platformFee > 0) {
+      const valueWithoutFee = calculateValueWithoutFee(totalAmount, platformFee, platformFeeType);
+      leaderPlatformFeeAmount = Math.round((totalAmount - valueWithoutFee) * 100) / 100;
+    }
+  }
+
   // Create registration data
   const registrationData = {
     event_id,
@@ -3633,6 +4158,7 @@ export const createRegistrationByLeaderController = asyncHandler(async (req: Aut
     runner_id: athlete.id,
     registered_by: req.user.id,
     total_amount: totalAmount,
+    platform_fee_amount: leaderPlatformFeeAmount,
     payment_method: 'pix' as const,
     coupon_code: couponCode,
     product_selections: product_selections || undefined,

@@ -16,6 +16,9 @@ import {
   deleteRegistrationController,
   getRegistrationReceiptController,
   getPaymentStatusController,
+  getPendingDifferencePaymentController,
+  verifyPaymentController,
+  confirmDifferencePaymentController,
   generatePaymentController,
   createRegistrationByOrganizerController,
   createRegistrationByLeaderController,
@@ -23,6 +26,7 @@ import {
   getRegistrationsWithMissingAttributesController,
   completeRegistrationAttributesController,
   removeRegistrationAttributesController,
+  previewRegistrationEditController,
 } from '../controllers/registrationsController.js';
 import { createTransferRequestController, generateTransferPaymentController, getTransferRequestByIdController } from '../controllers/transferRequestController.js';
 import { getEnabledModulesController } from '../controllers/systemSettingsController.js';
@@ -45,9 +49,13 @@ router.get('/', getAllRegistrations);
 router.post('/:id/complete-attributes', completeRegistrationAttributesController);
 router.post('/:id/remove-attributes', removeRegistrationAttributesController);
 router.get('/:id/payment-status', getPaymentStatusController);
+router.get('/:id/pending-difference-payment', getPendingDifferencePaymentController);
+router.post('/:id/verify-payment', verifyPaymentController);
+router.post('/:id/confirm-difference-payment', confirmDifferencePaymentController);
 router.post('/:id/generate-payment', generatePaymentController);
 router.get('/:id/receipt', getRegistrationReceiptController);
 router.get('/:id', getRegistration);
+router.post('/:id/preview-edit', previewRegistrationEditController);
 router.post('/', createRegistrationController);
 router.post('/organizer/register-athlete', createRegistrationByOrganizerController);
 router.post('/leader/register-athlete', createRegistrationByLeaderController);

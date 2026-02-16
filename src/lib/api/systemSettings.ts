@@ -29,6 +29,7 @@ export interface SystemSettings {
   transfer_fee?: number;
   platform_fee?: number;
   platform_fee_type?: 'fixed' | 'percentage';
+  registration_edit_fee?: number;
   withdrawal_fee?: number;
   withdrawal_fee_type?: 'fixed' | 'percentage';
   leader_commission_percentage?: number;
@@ -73,6 +74,7 @@ export interface UpdateSystemSettingsData {
   transfer_fee?: number;
   platform_fee?: number;
   platform_fee_type?: 'fixed' | 'percentage';
+  registration_edit_fee?: number;
   withdrawal_fee?: number;
   leader_commission_percentage?: number;
   maintenance_mode?: boolean;
@@ -303,6 +305,89 @@ export const executeDisableAsaasNotificationsScript = async (
     if (!reader) {
       throw new Error('Resposta do servidor não contém stream de dados');
     }
+
+    let buffer = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          try {
+            const data = JSON.parse(line.slice(6));
+            if (data.type === 'log') onLog(data.message);
+            else if (data.type === 'complete') {
+              onComplete({
+                success: data.success,
+                summary: data.summary,
+                logFile: data.logFile,
+                message: data.message,
+              });
+            } else if (data.type === 'error') {
+              onError(data.message || 'Erro desconhecido');
+            }
+          } catch (e) {
+            console.error('Erro ao processar linha SSE:', e);
+          }
+        }
+      }
+    }
+
+    if (buffer.startsWith('data: ')) {
+      try {
+        const data = JSON.parse(buffer.slice(6));
+        if (data.type === 'complete') {
+          onComplete({
+            success: data.success,
+            summary: data.summary,
+            logFile: data.logFile,
+            message: data.message,
+          });
+        }
+      } catch (e) {
+        console.error('Erro ao processar buffer final:', e);
+      }
+    }
+  } catch (error: any) {
+    onError(error.message || 'Erro ao executar script');
+  }
+};
+
+/**
+ * OK Etapa 6: Executa o backfill de platform_fee_amount em inscrições antigas.
+ * Preenche a taxa da plataforma (inscrição) usando a configuração atual.
+ */
+export const executeBackfillPlatformFeeAmountScript = async (
+  onLog: (message: string) => void,
+  onComplete: (data: { success: boolean; summary?: { updated?: number; total?: number; errors?: number }; logFile?: string; message?: string }) => void,
+  onError: (error: string) => void
+): Promise<void> => {
+  try {
+    const token = localStorage.getItem('auth_token');
+    if (!token) throw new Error('Não autenticado');
+
+    const getApiUrl = () => {
+      const envUrl = import.meta.env.VITE_API_URL;
+      if (envUrl && !envUrl.includes('localhost')) return envUrl;
+      if (import.meta.env.PROD) return 'https://cronoteam-crono-back.e758qe.easypanel.host/api';
+      return 'http://localhost:3001/api';
+    };
+
+    const response = await fetch(`${getApiUrl()}/admin/scripts/backfill-platform-fee-amount`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: 'Erro desconhecido' }));
+      throw new Error(errorData.error || errorData.message || 'Erro ao executar script');
+    }
+
+    const reader = response.body?.getReader();
+    const decoder = new TextDecoder();
+    if (!reader) throw new Error('Resposta do servidor não contém stream de dados');
 
     let buffer = '';
     while (true) {

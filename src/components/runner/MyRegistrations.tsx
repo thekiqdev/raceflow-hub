@@ -18,7 +18,7 @@ import { Calendar, MapPin, QrCode, RefreshCw, X, Loader2, AlertCircle, Download,
 import { format, isFuture } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { useAuth } from "@/contexts/AuthContext";
-import { getRegistrations, transferRegistration, cancelRegistration, getPaymentStatus, generatePayment, type Registration } from "@/lib/api/registrations";
+import { getRegistrations, transferRegistration, cancelRegistration, getPaymentStatus, generatePayment, getPendingDifferencePayment, verifyPayment, type Registration } from "@/lib/api/registrations";
 import { getEnabledModules } from "@/lib/api/systemSettings";
 import { createTransferRequest, generateTransferPayment, getTransferRequestById, type TransferRequest } from "@/lib/api/transferRequests";
 import { toast } from "sonner";
@@ -55,6 +55,7 @@ export function MyRegistrations() {
   const [transferFee, setTransferFee] = useState<number>(0);
   const [paymentConfirmed, setPaymentConfirmed] = useState(false);
   const [showMissingAttributesModal, setShowMissingAttributesModal] = useState(false);
+  const [verifyingPaymentId, setVerifyingPaymentId] = useState<string | null>(null);
 
   useEffect(() => {
     if (user) {
@@ -240,18 +241,77 @@ export function MyRegistrations() {
     }
   };
 
+  const handleVerifyPayment = async (registration: Registration) => {
+    setVerifyingPaymentId(registration.id);
+    try {
+      const response = await verifyPayment(registration.id);
+      if (response.success && response.payment_verified) {
+        toast.success(response.message || "Pagamento confirmado. Atualizando lista.");
+        loadRegistrations();
+      } else {
+        toast.info(response.message || "Pagamento ainda não identificado. Tente novamente em instantes.");
+      }
+    } catch (error: any) {
+      toast.error(error.message || "Erro ao verificar pagamento.");
+    } finally {
+      setVerifyingPaymentId(null);
+    }
+  };
+
+  const handlePayDifference = async (registration: Registration) => {
+    setSelectedRegistration(registration);
+    setLoadingPix(true);
+    setIsPixDialogOpen(true);
+    setPixData(null);
+    try {
+      const response = await getPendingDifferencePayment(registration.id);
+      if (response.success && response.data) {
+        const d = response.data as { already_paid?: boolean; pix_qr_code?: string | null; value?: number; due_date?: string };
+        if (d.already_paid) {
+          toast.success("Pagamento já foi confirmado. Atualizando lista.");
+          setIsPixDialogOpen(false);
+          loadRegistrations();
+          return;
+        }
+        if (d.pix_qr_code) {
+          setPixData({
+            qrCode: d.pix_qr_code,
+            value: d.value ?? 0,
+            dueDate: d.due_date?.slice(0, 10) || new Date().toISOString().slice(0, 10),
+          });
+        } else {
+          toast.error("QR Code PIX da diferença não disponível.");
+          setIsPixDialogOpen(false);
+        }
+      } else {
+        toast.error(response.error || "Erro ao carregar pagamento da diferença");
+        setIsPixDialogOpen(false);
+      }
+    } catch (error: any) {
+      toast.error(error.message || "Erro ao carregar pagamento da diferença");
+      setIsPixDialogOpen(false);
+    } finally {
+      setLoadingPix(false);
+    }
+  };
+
   const handleViewPix = async (registration: Registration) => {
     setSelectedRegistration(registration);
     setLoadingPix(true);
     setIsPixDialogOpen(true);
-    
+    setPixData(null);
     try {
-      // First, try to get existing payment status
+      // First, try to get existing payment status (o backend já verifica no Asaas e atualiza se pago)
       let response = await getPaymentStatus(registration.id);
       
       if (response.success && response.data) {
         const paymentData = response.data;
-        
+        if (paymentData.status === 'paid' || paymentData.status === 'confirmed') {
+          toast.success("Pagamento já foi confirmado. Atualizando lista.");
+          setIsPixDialogOpen(false);
+          loadRegistrations();
+          return;
+        }
         // If QR Code exists, use it
         if (paymentData.pix_qr_code) {
           let dueDateString: string;
@@ -317,7 +377,7 @@ export function MyRegistrations() {
   };
 
   const activeRegistrations = registrations.filter((r) => 
-    r.status === "confirmed" && r.payment_status === "paid"
+    r.status === "confirmed" && (r.payment_status === "paid" || r.payment_status === "partially_paid")
   );
   const pendingRegistrations = registrations.filter((r) => 
     r.status !== "cancelled" && r.status !== "transferred" && (r.status === "pending" || r.payment_status === "pending")
@@ -342,6 +402,9 @@ export function MyRegistrations() {
     // Verificar confirmado e pago
     if (status === "confirmed" && paymentStatus === "paid") {
       return <Badge className="bg-accent">Confirmada</Badge>;
+    }
+    if (status === "confirmed" && paymentStatus === "partially_paid") {
+      return <Badge className="bg-amber-500">Pago parcialmente</Badge>;
     }
     if (status === "pending" || paymentStatus === "pending") {
       return <Badge variant="secondary">Pendente</Badge>;
@@ -408,6 +471,12 @@ export function MyRegistrations() {
                 <span>{format(new Date(registration.event_date), "dd 'de' MMMM 'de' yyyy", { locale: ptBR })}</span>
               </div>
             )}
+            {(registration.modality_name != null && registration.modality_name !== "") && (
+              <div className="flex items-center gap-2">
+                <MapPin className="h-3 w-3" />
+                <span>{registration.modality_name}</span>
+              </div>
+            )}
             {registration.category_name && (
               <div className="flex items-center gap-2">
                 <MapPin className="h-3 w-3" />
@@ -422,6 +491,12 @@ export function MyRegistrations() {
           </div>
 
           <div className="bg-muted/50 rounded-lg p-3 mb-3 space-y-1">
+            {(registration.modality_name != null && registration.modality_name !== "") && (
+              <div className="flex justify-between text-xs">
+                <span className="text-muted-foreground">Modalidade:</span>
+                <span className="font-medium">{registration.modality_name}</span>
+              </div>
+            )}
             {registration.category_name && (
               <div className="flex justify-between text-xs">
                 <span className="text-muted-foreground">Categoria:</span>
@@ -458,18 +533,87 @@ export function MyRegistrations() {
             )}
           </div>
 
-          <div className="flex gap-2">
-            {/* Botão Visualizar PIX - apenas para inscrições pendentes */}
-            {(registration.status === "pending" || registration.payment_status === "pending") && (
-              <Button 
-                variant="outline" 
-                size="sm" 
-                className="flex-1"
-                onClick={() => handleViewPix(registration)}
-              >
-                <CreditCard className="h-3 w-3 mr-1" />
-                Visualizar PIX
-              </Button>
+          {/* Resumo financeiro quando há diferença a pagar */}
+          {(registration.has_pending_difference || (registration.pending_difference_amount ?? 0) > 0) &&
+           registration.payment_status !== 'paid' && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50/80 dark:border-amber-800 dark:bg-amber-950/30 p-3 mb-3 space-y-2 text-xs">
+              <div className="font-medium text-amber-800 dark:text-amber-200 mb-1.5">Resumo do pagamento</div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground" title="Total que você já pagou (inclui taxas da plataforma)">Valor já pago (incl. taxas):</span>
+                <span className="font-medium">{formatCurrency(registration.amount_paid ?? (registration.total_amount ?? 0) - (registration.pending_difference_amount ?? 0))}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Taxa de atualização:</span>
+                <span className="font-medium">{formatCurrency(registration.registration_edit_fee ?? 0)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Valor restante:</span>
+                <span className="font-semibold text-amber-700 dark:text-amber-300">{formatCurrency(registration.pending_difference_amount ?? 0)}</span>
+              </div>
+              <div className="flex justify-between pt-1 border-t border-amber-200 dark:border-amber-800">
+                <span className="font-medium text-amber-800 dark:text-amber-200">Valor total:</span>
+                <span className="font-semibold">{formatCurrency(registration.total_amount ?? 0)}</span>
+              </div>
+            </div>
+          )}
+
+          <div className="flex gap-2 flex-wrap">
+            {/* Pagar diferença - apenas quando há cobrança pendente e inscrição ainda não está paga (não mostrar após confirmação manual pelo admin) */}
+            {(registration.has_pending_difference || (registration.pending_difference_amount ?? 0) > 0) &&
+             registration.payment_status !== 'paid' && (
+              <>
+                <Button 
+                  variant="default" 
+                  size="sm" 
+                  className="flex-1"
+                  onClick={() => handlePayDifference(registration)}
+                >
+                  <QrCode className="h-3 w-3 mr-1" />
+                  Pagar diferença
+                </Button>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  className="flex-1"
+                  onClick={() => handleVerifyPayment(registration)}
+                  disabled={verifyingPaymentId === registration.id}
+                >
+                  {verifyingPaymentId === registration.id ? (
+                    <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                  ) : (
+                    <CheckCircle2 className="h-3 w-3 mr-1" />
+                  )}
+                  Confirmar pagamento
+                </Button>
+              </>
+            )}
+            {/* Botão Visualizar PIX - apenas para inscrições pendentes (pagamento inicial) */}
+            {(registration.status === "pending" || registration.payment_status === "pending") && !registration.has_pending_difference && (
+              <>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  className="flex-1"
+                  onClick={() => handleViewPix(registration)}
+                >
+                  <CreditCard className="h-3 w-3 mr-1" />
+                  Visualizar PIX
+                </Button>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  className="flex-1"
+                  onClick={() => handleVerifyPayment(registration)}
+                  disabled={verifyingPaymentId === registration.id}
+                >
+                  {verifyingPaymentId === registration.id ? (
+                    <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                  ) : (
+                    <CheckCircle2 className="h-3 w-3 mr-1" />
+                  )}
+                  Confirmar pagamento
+                </Button>
+              </>
             )}
             
             {/* Botões para inscrições confirmadas */}

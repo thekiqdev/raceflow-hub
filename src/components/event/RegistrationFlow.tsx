@@ -1151,6 +1151,7 @@ export function RegistrationFlow({
         runner_id: runnerId,
         category_id: selectedCategory.id,
         kit_id: selectedKit?.id,
+        modality_id: selectedModality?.id ?? null,
         payment_method: selectedPaymentMethod || "pix", // Use selected payment method
         total_amount: totalPrice,
         coupon_code: appliedCoupon?.code || undefined,
@@ -3189,6 +3190,7 @@ export function RegistrationFlow({
                               runner_id: runnerId,
                               category_id: selectedCategory.id,
                               kit_id: selectedKit?.id,
+                              modality_id: selectedModality?.id ?? null,
                               payment_method: 'credit_card',
                               total_amount: totalPrice,
                               coupon_code: appliedCoupon?.code || undefined,

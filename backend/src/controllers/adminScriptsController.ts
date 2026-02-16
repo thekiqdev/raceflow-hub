@@ -311,3 +311,112 @@ export const disableAsaasNotificationsController = asyncHandler(async (req: Auth
     return;
   }
 });
+
+/**
+ * POST /api/admin/scripts/backfill-platform-fee-amount
+ * OK Etapa 6: Preenche platform_fee_amount em inscrições antigas (usa taxa atual da plataforma).
+ * Idempotente: só atualiza onde platform_fee_amount IS NULL ou 0 e total_amount > 0.
+ */
+export const backfillPlatformFeeAmountController = asyncHandler(async (req: AuthRequest, res: Response) => {
+  if (!req.user) {
+    return res.status(401).json({
+      success: false,
+      error: 'Not authenticated',
+    });
+  }
+
+  const isAdmin = await hasRole(req.user.id, 'admin');
+  if (!isAdmin) {
+    return res.status(403).json({
+      success: false,
+      error: 'Forbidden',
+      message: 'Apenas administradores podem executar este script',
+    });
+  }
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+
+  const logs: string[] = [];
+  const logMessage = (message: string) => {
+    const timestamp = new Date().toISOString();
+    const logLine = `[${timestamp}] ${message}`;
+    logs.push(logLine);
+    res.write(`data: ${JSON.stringify({ type: 'log', message: logLine })}\n\n`);
+  };
+
+  try {
+    logMessage('🔍 Backfill: Atualizar taxa da plataforma em inscrições antigas...\n');
+    logMessage('   Critério: platform_fee_amount IS NULL ou 0 e total_amount > 0');
+    logMessage('   Cálculo: platform_fee_amount = total_amount - calculate_value_without_platform_fee(...)\n');
+
+    const updateResult = await query(`
+      UPDATE registrations r
+      SET
+        platform_fee_amount = ROUND(
+          r.total_amount - calculate_value_without_platform_fee(
+            r.total_amount,
+            get_platform_fee(),
+            get_platform_fee_type()
+          ),
+          2
+        ),
+        platform_fee_backfilled = TRUE
+      WHERE (r.platform_fee_amount IS NULL OR r.platform_fee_amount = 0)
+        AND r.total_amount > 0
+    `);
+
+    const updated = updateResult.rowCount ?? 0;
+    logMessage(`✅ Inscrições atualizadas: ${updated}\n`);
+
+    const summary = `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📊 Resumo (OK Etapa 6):
+   ✅ Inscrições com platform_fee_amount preenchido: ${updated}
+
+💡 Essas inscrições passam a ter a taxa da plataforma (inscrição) estimada com a
+   configuração atual. Relatórios de organizador e admin passam a separar valor e taxas.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+
+    logMessage(summary);
+
+    const logDir = path.join(__dirname, '../../logs');
+    if (!fs.existsSync(logDir)) {
+      fs.mkdirSync(logDir, { recursive: true });
+    }
+    const logFileName = `backfill-platform-fee-amount-${Date.now()}.txt`;
+    const logFilePath = path.join(logDir, logFileName);
+    fs.writeFileSync(logFilePath, logs.join('\n') + '\n\n' + summary, 'utf-8');
+    logMessage(`📄 Log salvo em: ${logFilePath}`);
+
+    res.write(`data: ${JSON.stringify({
+      type: 'complete',
+      success: true,
+      summary: { updated, total: updated, errors: 0 },
+      logFile: logFileName,
+      message: `${updated} inscrição(ões) atualizada(s)`,
+    })}\n\n`);
+    res.end();
+    return;
+  } catch (error: any) {
+    logMessage(`❌ Erro ao executar backfill: ${error.message}`);
+
+    const logDir = path.join(__dirname, '../../logs');
+    if (!fs.existsSync(logDir)) {
+      fs.mkdirSync(logDir, { recursive: true });
+    }
+    const logFileName = `backfill-platform-fee-amount-error-${Date.now()}.txt`;
+    const logFilePath = path.join(logDir, logFileName);
+    fs.writeFileSync(logFilePath, logs.join('\n') + '\n\n❌ Erro: ' + error.message, 'utf-8');
+
+    res.write(`data: ${JSON.stringify({
+      type: 'error',
+      success: false,
+      message: error.message,
+      logFile: logFileName,
+    })}\n\n`);
+    res.end();
+    return;
+  }
+});

@@ -29,11 +29,15 @@ import { Search, MoreVertical, Eye, FileDown, Loader2, Edit2, Save, X, Trash2, L
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { useNavigate } from "react-router-dom";
-import { getRegistrations, exportRegistrations, getRegistrationById, updateRegistration, completeRegistrationAttributes, removeRegistrationAttributes, attachRegistrationToCommission, getRegistrationCommission as getRegistrationCommissionForAttach, detachCommission, type Registration, type RegistrationCommissionInfo } from "@/lib/api/registrations";
+import { getRegistrations, exportRegistrations, getRegistrationById, updateRegistration, previewRegistrationEdit, confirmDifferencePayment, completeRegistrationAttributes, removeRegistrationAttributes, attachRegistrationToCommission, getRegistrationCommission as getRegistrationCommissionForAttach, detachCommission, type Registration, type RegistrationCommissionInfo, type PreviewRegistrationEditResponse } from "@/lib/api/registrations";
 import { getEventCommissionsByEvent, type EventCommissionOption } from "@/lib/api/leaderEventCommissions";
 import { getRegistrationCommission, removeCommission, type LeaderCommissionRecord } from "@/lib/api/admin";
 import { getEvents, type Event } from "@/lib/api/events";
 import { getEventKits, type EventKit, type KitProduct } from "@/lib/api/eventKits";
+import { getCategoriesByModality, type Category } from "@/lib/api/categories";
+import { getCategoryBatches } from "@/lib/api/categoryBatches";
+import type { CategoryBatch } from "@/lib/api/categories";
+import { getModalities, type Modality } from "@/lib/api/modalities";
 import { toast } from "sonner";
 import { useDebounce } from "@/hooks/useDebounce";
 import { getEnabledModules } from "@/lib/api/systemSettings";
@@ -64,10 +68,22 @@ const AdminRegistrations = () => {
   const [isEditMode, setIsEditMode] = useState(false);
   const [editingStatus, setEditingStatus] = useState<string>("");
   const [editingPaymentStatus, setEditingPaymentStatus] = useState<string>("");
+  const [editingCategoryId, setEditingCategoryId] = useState<string>("");
+  const [editingKitId, setEditingKitId] = useState<string>("");
+  const [editingModalityId, setEditingModalityId] = useState<string>("");
+  const [eventCategoriesList, setEventCategoriesList] = useState<Category[]>([]);
+  const [eventKitsList, setEventKitsList] = useState<EventKit[]>([]);
+  const [eventModalitiesList, setEventModalitiesList] = useState<Modality[]>([]);
   const [editingProductAttributes, setEditingProductAttributes] = useState<Record<string, Record<string, string>>>({});
   const [kitProducts, setKitProducts] = useState<KitProduct[]>([]);
   const [loadingKit, setLoadingKit] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [categoryBatchesList, setCategoryBatchesList] = useState<CategoryBatch[]>([]);
+  const [editingBatchId, setEditingBatchId] = useState<string>("");
+  const [previewData, setPreviewData] = useState<PreviewRegistrationEditResponse | null>(null);
+  const [loadingPreview, setLoadingPreview] = useState(false);
+  const [isConfirmDiffDialogOpen, setIsConfirmDiffDialogOpen] = useState(false);
+  const [confirmingDiff, setConfirmingDiff] = useState(false);
 
   // Atrelar inscrição a comissão (admin)
   const [isAttachCommissionDialogOpen, setIsAttachCommissionDialogOpen] = useState(false);
@@ -90,6 +106,38 @@ const AdminRegistrations = () => {
     loadRegistrations();
     loadPlatformFeeSettings();
   }, [debouncedSearch, statusFilter, paymentStatusFilter, eventFilter]);
+
+  // Pré-visualização ao alterar categoria/kit/modalidade/lote (Etapa 8)
+  useEffect(() => {
+    if (!isEditMode || !registrationDetails?.id) {
+      setPreviewData(null);
+      return;
+    }
+    const categoryId = editingCategoryId || registrationDetails.category_id;
+    if (!categoryId) {
+      setPreviewData(null);
+      return;
+    }
+    let cancelled = false;
+    setLoadingPreview(true);
+    previewRegistrationEdit(registrationDetails.id, {
+      category_id: categoryId,
+      kit_id: editingKitId || undefined,
+      modality_id: editingModalityId || undefined,
+      batch_id: editingBatchId || undefined,
+    })
+      .then((res) => {
+        if (!cancelled && res.success && res.data) setPreviewData(res.data as PreviewRegistrationEditResponse);
+        else if (!cancelled) setPreviewData(null);
+      })
+      .catch(() => {
+        if (!cancelled) setPreviewData(null);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingPreview(false);
+      });
+    return () => { cancelled = true; };
+  }, [isEditMode, registrationDetails?.id, registrationDetails?.category_id, editingCategoryId, editingKitId, editingModalityId, editingBatchId]);
 
   const loadPlatformFeeSettings = async () => {
     try {
@@ -293,24 +341,45 @@ const AdminRegistrations = () => {
   };
 
   const handleEditClick = async () => {
-    if (!registrationDetails?.kit_id) {
-      toast.error("Esta inscrição não possui kit para editar atributos");
-      setIsEditMode(true);
-      return;
-    }
+    if (!registrationDetails) return;
 
     setIsEditMode(true);
+    setEditingModalityId(registrationDetails.modality_id || "");
+    setEditingCategoryId(registrationDetails.category_id || "");
+    setEditingKitId(registrationDetails.kit_id || "");
+    setEditingBatchId((registrationDetails as any).category_batch_id || "");
+    setPreviewData(null);
     setLoadingKit(true);
 
     try {
-      // Load kit products with variants
-      const kitsResponse = await getEventKits(registrationDetails.event_id);
-      if (kitsResponse.success && kitsResponse.data) {
-        const kit = kitsResponse.data.find((k) => k.id === registrationDetails.kit_id);
-        if (kit && kit.products) {
-          setKitProducts(kit.products);
+      const modalitiesResponse = await getModalities(registrationDetails.event_id);
+      if (modalitiesResponse.success && modalitiesResponse.data) {
+        setEventModalitiesList(modalitiesResponse.data);
+      } else {
+        setEventModalitiesList([]);
+      }
 
-          // Initialize editing attributes from existing selections
+      // Carregar categorias pela modalidade (se já tiver modalidade na inscrição)
+      if (registrationDetails.modality_id) {
+        const categoriesResponse = await getCategoriesByModality(registrationDetails.modality_id);
+        if (categoriesResponse.success && categoriesResponse.data) {
+          setEventCategoriesList(categoriesResponse.data);
+        } else {
+          setEventCategoriesList([]);
+        }
+      } else {
+        setEventCategoriesList([]);
+      }
+
+      const kitsResponse = await getEventKits(
+        registrationDetails.event_id,
+        registrationDetails.category_id || undefined
+      );
+      if (kitsResponse.success && kitsResponse.data) {
+        setEventKitsList(kitsResponse.data);
+        const kit = kitsResponse.data.find((k) => k.id === registrationDetails.kit_id);
+        if (kit?.products) {
+          setKitProducts(kit.products);
           const currentAttributes: Record<string, Record<string, string>> = {};
           if (registrationDetails.product_selections) {
             registrationDetails.product_selections.forEach((selection: any) => {
@@ -323,11 +392,30 @@ const AdminRegistrations = () => {
             });
           }
           setEditingProductAttributes(currentAttributes);
+        } else {
+          setKitProducts([]);
+          setEditingProductAttributes({});
         }
+      } else {
+        setEventKitsList([]);
+        setKitProducts([]);
+        setEditingProductAttributes({});
+      }
+
+      if (registrationDetails.category_id) {
+        try {
+          const batchesRes = await getCategoryBatches(registrationDetails.category_id);
+          if (batchesRes.data) setCategoryBatchesList(Array.isArray(batchesRes.data) ? batchesRes.data : []);
+          else setCategoryBatchesList([]);
+        } catch {
+          setCategoryBatchesList([]);
+        }
+      } else {
+        setCategoryBatchesList([]);
       }
     } catch (error: any) {
-      console.error("Error loading kit products:", error);
-      toast.error("Erro ao carregar produtos do kit");
+      console.error("Error loading modalities/categories/kits:", error);
+      toast.error("Erro ao carregar dados para edição");
     } finally {
       setLoadingKit(false);
     }
@@ -336,10 +424,161 @@ const AdminRegistrations = () => {
   const handleCancelEdit = () => {
     setIsEditMode(false);
     setEditingProductAttributes({});
-    // Reset to original values
+    setEditingCategoryId("");
+    setEditingKitId("");
+    setEditingModalityId("");
+    setEditingBatchId("");
+    setEventCategoriesList([]);
+    setEventKitsList([]);
+    setEventModalitiesList([]);
+    setCategoryBatchesList([]);
+    setPreviewData(null);
     if (registrationDetails) {
       setEditingStatus(registrationDetails.status || "pending");
       setEditingPaymentStatus(registrationDetails.payment_status || "pending");
+    }
+  };
+
+  const handleEditingModalityChange = async (newModalityId: string) => {
+    setEditingModalityId(newModalityId);
+    setEditingCategoryId("");
+    setEditingKitId("");
+    setEditingBatchId("");
+    setEventKitsList([]);
+    setKitProducts([]);
+    setEditingProductAttributes({});
+    if (!newModalityId) {
+      setEventCategoriesList([]);
+      setCategoryBatchesList([]);
+      return;
+    }
+    setLoadingKit(true);
+    try {
+      const categoriesResponse = await getCategoriesByModality(newModalityId);
+      if (categoriesResponse.success && categoriesResponse.data) {
+        setEventCategoriesList(categoriesResponse.data);
+        const categories = categoriesResponse.data;
+        const currentCategoryId = registrationDetails?.category_id;
+        const currentKitId = registrationDetails?.kit_id;
+        const currentBatchId = (registrationDetails as any)?.category_batch_id;
+        const categoryExists = currentCategoryId && categories.some((c: Category) => c.id === currentCategoryId);
+        if (categoryExists && currentCategoryId) {
+          setEditingCategoryId(currentCategoryId);
+          const kitsRes = await getEventKits(registrationDetails!.event_id, currentCategoryId);
+          if (kitsRes.success && kitsRes.data) {
+            setEventKitsList(kitsRes.data);
+            const kitExists = currentKitId && kitsRes.data.some((k: EventKit) => k.id === currentKitId);
+            if (kitExists && currentKitId) {
+              setEditingKitId(currentKitId);
+              const kit = kitsRes.data.find((k: EventKit) => k.id === currentKitId);
+              if (kit?.products?.length) {
+                setKitProducts(kit.products);
+                const attrs: Record<string, Record<string, string>> = {};
+                if (registrationDetails?.product_selections?.length) {
+                  registrationDetails.product_selections.forEach((selection: any) => {
+                    if (!attrs[selection.product_id]) attrs[selection.product_id] = {};
+                    if (selection.attribute_name && selection.attribute_value) attrs[selection.product_id][selection.attribute_name] = selection.attribute_value;
+                  });
+                }
+                setEditingProductAttributes(attrs);
+              }
+            }
+          }
+          const batchesRes = await getCategoryBatches(currentCategoryId);
+          if (batchesRes.data && Array.isArray(batchesRes.data)) {
+            setCategoryBatchesList(batchesRes.data);
+            const batchExists = currentBatchId && batchesRes.data.some((b: CategoryBatch) => b.id === currentBatchId);
+            if (batchExists) setEditingBatchId(currentBatchId);
+          } else setCategoryBatchesList([]);
+        } else if (categories.length === 1) {
+          setEditingCategoryId(categories[0].id);
+          const kitsRes = await getEventKits(registrationDetails!.event_id, categories[0].id);
+          if (kitsRes.success && kitsRes.data) setEventKitsList(kitsRes.data);
+          const batchesRes = await getCategoryBatches(categories[0].id);
+          setCategoryBatchesList(Array.isArray(batchesRes?.data) ? batchesRes.data : []);
+        } else {
+          setCategoryBatchesList([]);
+        }
+      } else {
+        setEventCategoriesList([]);
+        setCategoryBatchesList([]);
+      }
+    } catch (error: any) {
+      console.error("Error loading categories for modality:", error);
+      setEventCategoriesList([]);
+      setCategoryBatchesList([]);
+    } finally {
+      setLoadingKit(false);
+    }
+  };
+
+  const handleEditingCategoryChange = async (newCategoryId: string) => {
+    setEditingCategoryId(newCategoryId);
+    setEditingKitId("");
+    setEditingBatchId("");
+    setKitProducts([]);
+    if (!registrationDetails?.event_id) return;
+    const currentKitId = registrationDetails.kit_id;
+    const currentBatchId = (registrationDetails as any)?.category_batch_id;
+    const currentAttrs = { ...editingProductAttributes };
+    setLoadingKit(true);
+    try {
+      const kitsResponse = await getEventKits(registrationDetails.event_id, newCategoryId || undefined);
+      if (kitsResponse.success && kitsResponse.data) {
+        setEventKitsList(kitsResponse.data);
+        const kits = kitsResponse.data;
+        const kitExists = currentKitId && kits.some((k: EventKit) => k.id === currentKitId);
+        if (kitExists && currentKitId) {
+          setEditingKitId(currentKitId);
+          const kit = kits.find((k: EventKit) => k.id === currentKitId);
+          if (kit?.products?.length) {
+            setKitProducts(kit.products);
+            setEditingProductAttributes(currentAttrs);
+          } else {
+            setEditingProductAttributes({});
+          }
+        } else {
+          setEditingProductAttributes({});
+          if (kits.length === 1) {
+            setEditingKitId(kits[0].id);
+            if (kits[0].products?.length) setKitProducts(kits[0].products);
+          }
+        }
+      } else {
+        setEventKitsList([]);
+      }
+      if (newCategoryId) {
+        const batchesRes = await getCategoryBatches(newCategoryId);
+        const batches = Array.isArray(batchesRes?.data) ? batchesRes.data : [];
+        setCategoryBatchesList(batches);
+        const batchExists = currentBatchId && batches.some((b: CategoryBatch) => b.id === currentBatchId);
+        if (batchExists) setEditingBatchId(currentBatchId);
+      } else {
+        setCategoryBatchesList([]);
+      }
+    } catch (error: any) {
+      console.error("Error loading kits for category:", error);
+      setEventKitsList([]);
+      setCategoryBatchesList([]);
+    } finally {
+      setLoadingKit(false);
+    }
+  };
+
+  const handleEditingKitChange = (newKitId: string) => {
+    setEditingKitId(newKitId);
+    if (!newKitId) {
+      setKitProducts([]);
+      setEditingProductAttributes({});
+      return;
+    }
+    const kit = eventKitsList.find((k) => k.id === newKitId);
+    if (kit?.products) {
+      setKitProducts(kit.products);
+      setEditingProductAttributes({});
+    } else {
+      setKitProducts([]);
+      setEditingProductAttributes({});
     }
   };
 
@@ -349,13 +588,25 @@ const AdminRegistrations = () => {
     setSaving(true);
 
     try {
-      // Update registration status and payment status
+      // Update registration status, payment status, category and kit
       const updateData: any = {};
       if (editingStatus !== registrationDetails.status) {
         updateData.status = editingStatus;
       }
       if (editingPaymentStatus !== registrationDetails.payment_status) {
         updateData.payment_status = editingPaymentStatus;
+      }
+      if (editingCategoryId && editingCategoryId !== registrationDetails.category_id) {
+        updateData.category_id = editingCategoryId;
+      }
+      if (editingKitId !== (registrationDetails.kit_id || "")) {
+        updateData.kit_id = editingKitId || null;
+      }
+      if (editingModalityId !== (registrationDetails.modality_id || "")) {
+        updateData.modality_id = editingModalityId || null;
+      }
+      if (editingBatchId !== ((registrationDetails as any).category_batch_id || "")) {
+        updateData.batch_id = editingBatchId || null;
       }
 
       if (Object.keys(updateData).length > 0) {
@@ -367,8 +618,8 @@ const AdminRegistrations = () => {
         }
       }
 
-      // Update product attributes if kit exists and has variable products
-      if (registrationDetails.kit_id && kitProducts.length > 0) {
+      // Update product attributes if kit is selected and has variable products
+      if (editingKitId && kitProducts.length > 0) {
         const variableProducts = kitProducts.filter((p) => p.type === "variable" && p.variant_attributes && p.variant_attributes.length > 0);
         
         if (variableProducts.length > 0) {
@@ -447,6 +698,27 @@ const AdminRegistrations = () => {
       toast.error(error.message || "Erro ao salvar alterações");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleConfirmDifferencePayment = async () => {
+    if (!registrationDetails?.id) return;
+    setConfirmingDiff(true);
+    try {
+      const res = await confirmDifferencePayment(registrationDetails.id);
+      if (res.success) {
+        toast.success("Pagamento da diferença confirmado.");
+        setIsConfirmDiffDialogOpen(false);
+        const response = await getRegistrationById(registrationDetails.id);
+        if (response.success && response.data) setRegistrationDetails(response.data);
+        loadRegistrations();
+      } else {
+        toast.error(res.error || "Erro ao confirmar pagamento");
+      }
+    } catch (e: any) {
+      toast.error(e.message || "Erro ao confirmar pagamento");
+    } finally {
+      setConfirmingDiff(false);
     }
   };
 
@@ -563,6 +835,8 @@ const AdminRegistrations = () => {
     switch (status) {
       case "paid":
         return <Badge variant="default" className="bg-green-500">Pago</Badge>;
+      case "partially_paid":
+        return <Badge variant="default" className="bg-amber-500">Pago parcialmente</Badge>;
       case "convidado":
         return <Badge variant="default" className="bg-blue-500">Convite</Badge>;
       case "pending":
@@ -741,6 +1015,7 @@ const AdminRegistrations = () => {
                     <TableHead>Evento</TableHead>
                     <TableHead>Modalidade/Kit</TableHead>
                     <TableHead className="text-right">Valor</TableHead>
+                    <TableHead className="text-right">Taxas da plataforma</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Pagamento</TableHead>
                     <TableHead>Data</TableHead>
@@ -750,7 +1025,7 @@ const AdminRegistrations = () => {
                 <TableBody>
                   {registrations.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
+                      <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
                         Nenhuma inscrição encontrada
                       </TableCell>
                     </TableRow>
@@ -774,7 +1049,18 @@ const AdminRegistrations = () => {
                           </div>
                         </TableCell>
                         <TableCell className="text-right font-semibold">
-                          {formatCurrency(parseFloat(String(registration.total_amount || 0)))}
+                          {(() => {
+                            const total = parseFloat(String(registration.total_amount || 0)) || 0;
+                            const pf = Number(registration.platform_fee_amount) || 0;
+                            const ef = Number(registration.registration_edit_fee_amount) || 0;
+                            const valorSemTaxa = pf > 0 || ef > 0
+                              ? Math.round((total - pf - ef) * 100) / 100
+                              : calculateValueWithoutFee(total, platformFee, platformFeeType);
+                            return formatCurrency(valorSemTaxa);
+                          })()}
+                        </TableCell>
+                        <TableCell className="text-right text-muted-foreground">
+                          {formatCurrency((Number(registration.platform_fee_amount) || 0) + (Number(registration.registration_edit_fee_amount) || 0))}
                         </TableCell>
                         <TableCell>{getStatusBadge(registration.status || "pending")}</TableCell>
                         <TableCell>{getPaymentStatusBadge(registration.payment_status || "pending")}</TableCell>
@@ -981,38 +1267,182 @@ const AdminRegistrations = () => {
                     <Label className="text-sm text-muted-foreground">Evento</Label>
                     <p className="font-medium">{registrationDetails.event_title || "N/A"}</p>
                   </div>
+                  {/* Ordem na edição: 1º Modalidade, 2º Categoria (disponíveis para a modalidade), 3º Kit */}
+                  <div>
+                    <Label className="text-sm text-muted-foreground">Modalidade</Label>
+                    {isEditMode ? (
+                      <Select
+                        value={editingModalityId || "none"}
+                        onValueChange={(v) => handleEditingModalityChange(v === "none" ? "" : v)}
+                      >
+                        <SelectTrigger className="mt-1">
+                          <SelectValue placeholder="Selecione a modalidade" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">Não definida</SelectItem>
+                          {eventModalitiesList.map((mod) => (
+                            <SelectItem key={mod.id} value={mod.id}>
+                              {mod.name} {mod.distance ? `(${mod.distance})` : ""}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <p className="font-medium">
+                        {registrationDetails.modality_name || "Não definida"}
+                      </p>
+                    )}
+                  </div>
                   <div>
                     <Label className="text-sm text-muted-foreground">Categoria</Label>
-                    <p className="font-medium">
-                      {registrationDetails.category_name || "N/A"}
-                      {registrationDetails.category_distance && ` - ${registrationDetails.category_distance}`}
-                    </p>
+                    {isEditMode ? (
+                      <Select
+                        value={editingCategoryId}
+                        onValueChange={handleEditingCategoryChange}
+                        disabled={!editingModalityId}
+                      >
+                        <SelectTrigger className="mt-1">
+                          <SelectValue
+                            placeholder={
+                              editingModalityId
+                                ? "Selecione a categoria"
+                                : "Selecione a modalidade primeiro"
+                            }
+                          />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {eventCategoriesList.map((cat) => (
+                            <SelectItem key={cat.id} value={cat.id}>
+                              {cat.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <p className="font-medium">
+                        {registrationDetails.category_name || "N/A"}
+                        {registrationDetails.category_distance && ` - ${registrationDetails.category_distance}`}
+                      </p>
+                    )}
                   </div>
-                  <div>
-                    <Label className="text-sm text-muted-foreground">Tipo de Categoria</Label>
-                    <p className="font-medium capitalize">{registrationDetails.category_type || "N/A"}</p>
-                  </div>
-                  {registrationDetails.modality_names && registrationDetails.modality_names.length > 0 && (
+                  {isEditMode && editingCategoryId && (
                     <div>
-                      <Label className="text-sm text-muted-foreground">Modalidade(s)</Label>
-                      <p className="font-medium">{registrationDetails.modality_names.join(', ')}</p>
+                      <Label className="text-sm text-muted-foreground">Lote</Label>
+                      <Select
+                        value={editingBatchId || "base"}
+                        onValueChange={(v) => setEditingBatchId(v === "base" ? "" : v)}
+                      >
+                        <SelectTrigger className="mt-1">
+                          <SelectValue placeholder="Preço base da categoria" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="base">Preço base da categoria</SelectItem>
+                          {categoryBatchesList.map((batch) => (
+                            <SelectItem key={batch.id} value={batch.id}>
+                              {batch.name || `Lote - R$ ${Number(batch.price).toFixed(2).replace(".", ",")}`}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+                  {!isEditMode && (
+                    <div>
+                      <Label className="text-sm text-muted-foreground">Tipo de Categoria</Label>
+                      <p className="font-medium capitalize">{registrationDetails.category_type || "N/A"}</p>
                     </div>
                   )}
                   <div>
                     <Label className="text-sm text-muted-foreground">Kit</Label>
-                    <p className="font-medium">{registrationDetails.kit_name || "Sem kit"}</p>
+                    {isEditMode ? (
+                      <Select value={editingKitId || "none"} onValueChange={(v) => handleEditingKitChange(v === "none" ? "" : v)}>
+                        <SelectTrigger className="mt-1">
+                          <SelectValue placeholder="Selecione o kit (opcional)" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">Sem kit</SelectItem>
+                          {eventKitsList.map((kit) => (
+                            <SelectItem key={kit.id} value={kit.id}>
+                              {kit.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <p className="font-medium">{registrationDetails.kit_name || "Sem kit"}</p>
+                    )}
                   </div>
+                  {isEditMode && (
+                    <Card className="bg-muted/50 w-full md:col-span-2">
+                      <CardHeader className="py-2 px-4">
+                        <CardTitle className="text-sm">Pré-visualização da edição</CardTitle>
+                        <CardDescription className="text-xs">
+                          Valores recalculados ao alterar categoria, kit, modalidade ou lote
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent className="py-2 px-4 text-sm min-h-[7.5rem]">
+                        {loadingPreview ? (
+                          <div className="flex items-center gap-2">
+                            <Loader2 className="h-4 w-4 animate-spin shrink-0" />
+                            <span>Calculando...</span>
+                          </div>
+                        ) : previewData ? (
+                          <div className="space-y-4">
+                            {/* O que já foi pago */}
+                            <div className="space-y-1">
+                              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">O que já foi pago</p>
+                              <p className="font-medium">Total pago pelo corredor: {formatCurrency(previewData.amount_paid) || "R$ 0,00"}</p>
+                              <p className="text-xs text-muted-foreground">
+                                Valor líquido (organizador): {formatCurrency(previewData.amount_paid_for_organizer ?? 0) || "R$ 0,00"}
+                                {(() => {
+                                  const oldTotal = previewData.old_total ?? 0;
+                                  const pf = Number(registrationDetails?.platform_fee_amount) || 0;
+                                  const taxaInscricao = pf > 0 ? pf : 0;
+                                  if (taxaInscricao > 0) return ` · Taxa plataforma: ${formatCurrency(taxaInscricao)}`;
+                                  return "";
+                                })()}
+                              </p>
+                            </div>
+
+                            {/* Valor após edição */}
+                            <div className="space-y-1 border-t pt-3">
+                              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Valor após edição</p>
+                              <p>Novo valor (categoria + kit): <strong>{formatCurrency(previewData.new_subtotal)}</strong></p>
+                              {previewData.update_fee > 0 && (
+                                <p>Taxa de atualização: <strong>{formatCurrency(previewData.update_fee)}</strong></p>
+                              )}
+                            </div>
+
+                            {/* Diferença */}
+                            <div className="border-t pt-3">
+                              {previewData.difference_to_pay > 0 && (
+                                <p className="text-amber-600 font-semibold">Diferença a cobrar: {formatCurrency(previewData.difference_to_pay)}</p>
+                              )}
+                              {previewData.difference_to_refund > 0 && (
+                                <p className="text-blue-600 font-semibold">Diferença a reembolsar (manual): {formatCurrency(previewData.difference_to_refund)}</p>
+                              )}
+                              {previewData.difference_to_pay <= 0 && previewData.difference_to_refund <= 0 && (
+                                <p className="text-muted-foreground text-sm">Nenhuma diferença a cobrar ou reembolsar.</p>
+                              )}
+                            </div>
+                          </div>
+                        ) : (
+                          <span className="text-muted-foreground">Altere categoria, kit, modalidade ou lote para ver o resumo.</span>
+                        )}
+                      </CardContent>
+                    </Card>
+                  )}
                   <div>
-                    <Label className="text-sm text-muted-foreground">Valor Total</Label>
+                    <Label className="text-sm text-muted-foreground">Valor líquido</Label>
                     <p className="font-medium text-lg">
                       {formatCurrency(
-                        (registrationDetails.total_amount || 0) > 0
-                          ? calculateValueWithoutFee(
-                              parseFloat(String(registrationDetails.total_amount || 0)),
-                              platformFee,
-                              platformFeeType
-                            )
-                          : parseFloat(String(registrationDetails.total_amount || 0))
+                        (() => {
+                          const total = parseFloat(String(registrationDetails.total_amount || 0)) || 0;
+                          const pf = Number(registrationDetails.platform_fee_amount) || 0;
+                          const ef = Number(registrationDetails.registration_edit_fee_amount) || 0;
+                          if (pf > 0 || ef > 0) return Math.round((total - pf - ef) * 100) / 100;
+                          return total > 0 ? calculateValueWithoutFee(total, platformFee, platformFeeType) : total;
+                        })()
                       )}
                     </p>
                   </div>
@@ -1045,6 +1475,7 @@ const AdminRegistrations = () => {
                         <SelectContent>
                           <SelectItem value="pending">Pendente</SelectItem>
                           <SelectItem value="paid">Pago</SelectItem>
+                          <SelectItem value="partially_paid">Pago parcialmente</SelectItem>
                           <SelectItem value="refunded">Reembolsado</SelectItem>
                           <SelectItem value="failed">Falhou</SelectItem>
                         </SelectContent>
@@ -1118,6 +1549,27 @@ const AdminRegistrations = () => {
                 </div>
               </div>
 
+              {/* Pagamento da diferença pendente – apenas quando há cobrança pendente e inscrição não está totalmente paga */}
+              {(registrationDetails.pending_difference_amount ?? 0) > 0 && registrationDetails.payment_status !== 'paid' && (
+                <div className="space-y-3 rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-800 p-4">
+                  <h3 className="text-lg font-semibold border-b border-amber-200 dark:border-amber-800 pb-2">Pagamento da diferença pendente</h3>
+                  <p className="text-sm">
+                    Valor a receber: <strong>{formatCurrency(registrationDetails.pending_difference_amount ?? 0)}</strong>
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Se o corredor pagou em dinheiro ou transferência, confirme abaixo. O PIX da diferença será invalidado.
+                  </p>
+                  <Button
+                    size="sm"
+                    onClick={() => setIsConfirmDiffDialogOpen(true)}
+                    disabled={confirmingDiff}
+                  >
+                    {confirmingDiff ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                    Confirmar pagamento recebido
+                  </Button>
+                </div>
+              )}
+
               {/* Cupom de Desconto */}
               {registrationDetails.coupon_code && (
                 <div className="space-y-3">
@@ -1167,7 +1619,7 @@ const AdminRegistrations = () => {
               )}
 
               {/* Produto e Variações Selecionadas */}
-              {isEditMode && registrationDetails.kit_id && (
+              {isEditMode && editingKitId && (
                 <div className="space-y-3">
                   <h3 className="text-lg font-semibold border-b pb-2">Editar Atributos dos Produtos</h3>
                   {loadingKit ? (
@@ -1381,6 +1833,27 @@ const AdminRegistrations = () => {
                 Fechar
               </Button>
             )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal: Confirmar pagamento da diferença recebido (só admin) */}
+      <Dialog open={isConfirmDiffDialogOpen} onOpenChange={setIsConfirmDiffDialogOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Confirmar pagamento recebido</DialogTitle>
+            <DialogDescription>
+              O corredor pagou a diferença de {formatCurrency(registrationDetails?.pending_difference_amount ?? 0)}? Esta ação marcará o pagamento como confirmado e invalidará o PIX da diferença.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsConfirmDiffDialogOpen(false)} disabled={confirmingDiff}>
+              Cancelar
+            </Button>
+            <Button onClick={handleConfirmDifferencePayment} disabled={confirmingDiff}>
+              {confirmingDiff ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+              Sim, confirmar
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

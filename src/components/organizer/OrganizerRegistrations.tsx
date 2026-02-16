@@ -373,7 +373,7 @@ const OrganizerRegistrations = () => {
     setIsEditMode(false);
     setEditingProductAttributes({});
     setKitProducts([]);
-
+    
     try {
       const response = await getRegistrationById(registration.id);
       if (response.success && response.data) {
@@ -745,6 +745,8 @@ const OrganizerRegistrations = () => {
     switch (status) {
       case "paid":
         return <Badge variant="default" className="bg-green-500">Pago</Badge>;
+      case "partially_paid":
+        return <Badge variant="default" className="bg-amber-500">Pago parcialmente</Badge>;
       case "convidado":
         return <Badge variant="default" className="bg-blue-500">Convite</Badge>;
       case "pending":
@@ -1648,7 +1650,7 @@ const OrganizerRegistrations = () => {
                         </SelectContent>
                       </Select>
                     ) : (
-                      <div className="mt-1">{getStatusBadge(registrationDetails.status || "pending")}</div>
+                    <div className="mt-1">{getStatusBadge(registrationDetails.status || "pending")}</div>
                     )}
                   </div>
                   <div>
@@ -1661,12 +1663,13 @@ const OrganizerRegistrations = () => {
                         <SelectContent>
                           <SelectItem value="pending">Pendente</SelectItem>
                           <SelectItem value="paid">Pago</SelectItem>
+                          <SelectItem value="partially_paid">Pago parcialmente</SelectItem>
                           <SelectItem value="refunded">Reembolsado</SelectItem>
                           <SelectItem value="failed">Falhou</SelectItem>
                         </SelectContent>
                       </Select>
                     ) : (
-                      <div className="mt-1">{getPaymentStatusBadge(registrationDetails.payment_status || "pending")}</div>
+                    <div className="mt-1">{getPaymentStatusBadge(registrationDetails.payment_status || "pending")}</div>
                     )}
                   </div>
                   <div>
@@ -1968,9 +1971,9 @@ const OrganizerRegistrations = () => {
               </>
             )}
             {!isEditMode && (
-              <Button variant="outline" onClick={() => setIsDetailsDialogOpen(false)}>
-                Fechar
-              </Button>
+            <Button variant="outline" onClick={() => setIsDetailsDialogOpen(false)}>
+              Fechar
+            </Button>
             )}
           </DialogFooter>
         </DialogContent>

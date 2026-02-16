@@ -8,6 +8,7 @@ import {
 } from '../types/asaas.js';
 import { getTransferRequestById, updateTransferRequest } from '../services/transferRequestService.js';
 import { findUserByCpfOrEmail, transferRegistration, getRegistrationById } from '../services/registrationsService.js';
+import { syncRegistrationPaymentStatus } from '../services/asaasService.js';
 import { getEventById } from '../services/eventsService.js';
 import { sendNotificationSafely, getUserEmail, getUserName } from '../services/notificationService.js';
 
@@ -343,69 +344,76 @@ export const handleWebhook = asyncHandler(async (req: Request, res: Response) =>
     });
   }
 
-  // Find registration by external_reference or asaas_payment_id
+  // Find registration by asaas_payment_id (payment.id ou payment.invoiceNumber) ou external_reference
   let registrationId: string | null = null;
 
   console.log('🔍 Buscando inscrição para o pagamento:', {
     asaasPaymentId,
+    invoiceNumber: payment.invoiceNumber,
     externalReference: payment.externalReference,
   });
 
-  // Try to find by asaas_payment_id in asaas_payments table
-  const paymentResult = await query(
+  // 1) Buscar por asaas_payment_id = payment.id
+  const paymentResultById = await query(
     'SELECT registration_id FROM asaas_payments WHERE asaas_payment_id = $1',
     [asaasPaymentId]
   );
 
-  console.log('🔍 Resultado da busca por asaas_payment_id:', {
-    rowsFound: paymentResult.rows.length,
-    registrationId: paymentResult.rows[0]?.registration_id || null,
-  });
+  if (paymentResultById.rows.length > 0) {
+    registrationId = paymentResultById.rows[0].registration_id;
+    console.log(`✅ Inscrição encontrada por asaas_payment_id (payment.id): ${registrationId}`);
+  }
 
-  if (paymentResult.rows.length > 0) {
-    registrationId = paymentResult.rows[0].registration_id;
-    console.log(`✅ Inscrição encontrada por asaas_payment_id: ${registrationId}`);
-  } else {
-    // Fallback: buscar por external_reference
-    if (payment.externalReference) {
-      const externalRef = payment.externalReference;
-      console.log(`🔍 Tentando buscar por external_reference: ${externalRef}`);
-    
-      // Verificar se externalRef é um UUID válido
-      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-      const isUuid = uuidRegex.test(externalRef);
-      
-      let regResult;
-      
-      if (isUuid) {
-        // Se for UUID, buscar por ID ou confirmation_code
-        regResult = await query(
-          'SELECT id FROM registrations WHERE id = $1 OR confirmation_code = $2',
-          [externalRef, externalRef]
-        );
-      } else {
-        // Se não for UUID, buscar apenas por confirmation_code
-        regResult = await query(
-          'SELECT id FROM registrations WHERE confirmation_code = $1',
-          [externalRef]
-        );
-      }
-    
-      console.log('🔍 Resultado da busca por external_reference:', {
-        rowsFound: regResult.rows.length,
-        registrationId: regResult.rows[0]?.id || null,
-        isUuid: isUuid,
-      });
-    
-      if (regResult.rows.length > 0) {
-        registrationId = regResult.rows[0].id;
-        console.log(`✅ Inscrição encontrada por external_reference: ${externalRef} -> ${registrationId}`);
-      } else {
-        console.warn(`⚠️ Inscrição não encontrada por external_reference: ${externalRef}`);
-      }
-    } else {
-      console.warn('⚠️ externalReference não fornecido no pagamento');
+  // 2) Se não encontrou, tentar por invoiceNumber (Asaas pode enviar esse id no webhook)
+  if (!registrationId && payment.invoiceNumber) {
+    const paymentResultByInvoice = await query(
+      'SELECT registration_id FROM asaas_payments WHERE asaas_payment_id = $1',
+      [payment.invoiceNumber]
+    );
+    if (paymentResultByInvoice.rows.length > 0) {
+      registrationId = paymentResultByInvoice.rows[0].registration_id;
+      console.log(`✅ Inscrição encontrada por asaas_payment_id (invoiceNumber): ${registrationId}`);
     }
+  }
+
+  // 3) Fallback: buscar por external_reference
+  if (!registrationId && payment.externalReference) {
+    const externalRef = payment.externalReference;
+    console.log(`🔍 Tentando buscar por external_reference: ${externalRef}`);
+
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const isUuid = uuidRegex.test(externalRef);
+
+    let regResult;
+
+    if (isUuid) {
+      regResult = await query(
+        'SELECT id FROM registrations WHERE id = $1 OR confirmation_code = $2',
+        [externalRef, externalRef]
+      );
+    } else {
+      regResult = await query(
+        'SELECT id FROM registrations WHERE confirmation_code = $1',
+        [externalRef]
+      );
+    }
+
+    console.log('🔍 Resultado da busca por external_reference:', {
+      rowsFound: regResult.rows.length,
+      registrationId: regResult.rows[0]?.id || null,
+      isUuid: isUuid,
+    });
+
+    if (regResult.rows.length > 0) {
+      registrationId = regResult.rows[0].id;
+      console.log(`✅ Inscrição encontrada por external_reference: ${externalRef} -> ${registrationId}`);
+    } else {
+      console.warn(`⚠️ Inscrição não encontrada por external_reference: ${externalRef}`);
+    }
+  }
+
+  if (!registrationId) {
+    console.warn('⚠️ Inscrição não encontrada por asaas_payment_id nem external_reference');
   }
 
   // Save webhook event to database
@@ -430,7 +438,12 @@ export const handleWebhook = asyncHandler(async (req: Request, res: Response) =>
     // Continue processing even if saving fails
   }
 
-  // Update asaas_payments table
+  // Update asaas_payments: por payment.id e/ou invoiceNumber (Asaas pode enviar um ou outro no webhook)
+  const paymentIdsToUpdate = [payment.id];
+  if (payment.invoiceNumber && payment.invoiceNumber !== payment.id) {
+    paymentIdsToUpdate.push(payment.invoiceNumber);
+  }
+  const paymentStatusNormalized = typeof payment.status === 'string' ? payment.status.toUpperCase() : payment.status;
   try {
     await query(
       `UPDATE asaas_payments 
@@ -438,12 +451,12 @@ export const handleWebhook = asyncHandler(async (req: Request, res: Response) =>
            payment_date = $2,
            pix_transaction_id = $3,
            updated_at = NOW()
-       WHERE asaas_payment_id = $4`,
+       WHERE asaas_payment_id = ANY($4::text[])`,
       [
-        payment.status,
+        paymentStatusNormalized,
         payment.paymentDate ? new Date(payment.paymentDate) : null,
         payment.pixTransactionId || null,
-        asaasPaymentId,
+        paymentIdsToUpdate,
       ]
     );
     if (isCreditCard) {
@@ -614,15 +627,8 @@ async function processWebhookEvent(
   switch (event) {
     case 'PAYMENT_CONFIRMED':
     case 'PAYMENT_RECEIVED':
-      // Update payment_status to 'paid' and status to 'confirmed'
-      await query(
-        `UPDATE registrations 
-         SET payment_status = 'paid', 
-             status = 'confirmed',
-             updated_at = NOW()
-         WHERE id = $1`,
-        [registrationId]
-      );
+      // Considerar inscrição paga quando soma dos pagamentos ≥ total_amount (Etapa 6)
+      await syncRegistrationPaymentStatus(registrationId);
       
       if (isCreditCardPayment) {
         console.log(`✅ Inscrição ${registrationId} confirmada após pagamento com CARTÃO DE CRÉDITO`);
@@ -879,14 +885,11 @@ async function processWebhookEvent(
       let newStatus: string | null = null;
       
       if (paymentStatus === 'CONFIRMED' || paymentStatus === 'RECEIVED') {
-        newPaymentStatus = 'paid';
-        newStatus = 'confirmed'; // ✅ Corrigido: atualizar status da inscrição
-        
+        // Considerar inscrição paga quando soma dos pagamentos ≥ total_amount (Etapa 6)
+        await syncRegistrationPaymentStatus(registrationId);
         if (isCreditCardPayment) {
-          console.log(`💳 Pagamento com CARTÃO DE CRÉDITO confirmado - atualizando inscrição ${registrationId}`);
-          console.log(`💳 Status: ${paymentStatus} -> payment_status: ${newPaymentStatus}, status: ${newStatus}`);
+          console.log(`💳 Pagamento com CARTÃO DE CRÉDITO confirmado - inscrição ${registrationId} sincronizada`);
         }
-        
         // Check for commission and invitation bonuses after payment confirmation
         try {
           const { getUserReferral } = await import('../services/referralsService.js');
@@ -976,41 +979,46 @@ async function processWebhookEvent(
         } catch (bonusError: any) {
           console.error('Erro ao verificar comissão/bônus após confirmação de pagamento:', bonusError.message);
         }
-      } else if (paymentStatus === 'OVERDUE') {
-        newPaymentStatus = 'failed';
-        // Status permanece como está (não altera para cancelled automaticamente)
-      } else if (paymentStatus === 'REFUNDED') {
-        newPaymentStatus = 'refunded';
-        newStatus = 'cancelled'; // ✅ Corrigido: atualizar status da inscrição
+        // syncRegistrationPaymentStatus já atualizou a inscrição; não rodar o UPDATE abaixo
       } else {
-        newPaymentStatus = 'pending';
-      }
-
-      // Update with registration status if necessary
-      if (newStatus) {
-        await query(
-          `UPDATE registrations 
-           SET payment_status = $1,
-               status = $2,
-               updated_at = NOW()
-           WHERE id = $3`,
-          [newPaymentStatus, newStatus, registrationId]
-        );
-        console.log(`🔄 Inscrição ${registrationId} atualizada: payment_status=${newPaymentStatus}, status=${newStatus}`);
-      } else {
-      await query(
-        `UPDATE registrations 
-         SET payment_status = $1,
-             updated_at = NOW()
-         WHERE id = $2`,
-        [newPaymentStatus, registrationId]
-      );
-        console.log(`🔄 Inscrição ${registrationId} atualizada: payment_status=${newPaymentStatus}`);
+        if (paymentStatus === 'OVERDUE') {
+          newPaymentStatus = 'failed';
+        } else if (paymentStatus === 'REFUNDED') {
+          newPaymentStatus = 'refunded';
+          newStatus = 'cancelled';
+        } else {
+          newPaymentStatus = 'pending';
+        }
+        if (newStatus) {
+          await query(
+            `UPDATE registrations 
+             SET payment_status = $1, status = $2, updated_at = NOW()
+             WHERE id = $3`,
+            [newPaymentStatus, newStatus, registrationId]
+          );
+          console.log(`🔄 Inscrição ${registrationId} atualizada: payment_status=${newPaymentStatus}, status=${newStatus}`);
+        } else {
+          await query(
+            `UPDATE registrations SET payment_status = $1, updated_at = NOW() WHERE id = $2`,
+            [newPaymentStatus, registrationId]
+          );
+          console.log(`🔄 Inscrição ${registrationId} atualizada: payment_status=${newPaymentStatus}`);
+        }
       }
       break;
 
     default:
-      console.log(`ℹ️ Evento ${event} não requer ação específica`);
+      // Mesmo com evento não mapeado, se o status do pagamento for pago, sincronizar inscrição (evita falha de confirmação)
+      if (
+        paymentStatus === 'CONFIRMED' ||
+        paymentStatus === 'RECEIVED' ||
+        (paymentStatus as string) === 'RECEIVED_IN_CASH'
+      ) {
+        console.log(`🔄 Evento ${event} com status pago (${paymentStatus}): sincronizando inscrição ${registrationId}`);
+        await syncRegistrationPaymentStatus(registrationId);
+      } else {
+        console.log(`ℹ️ Evento ${event} não requer ação específica (status: ${paymentStatus})`);
+      }
       break;
   }
 }
