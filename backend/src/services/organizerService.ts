@@ -153,6 +153,7 @@ export const getOrganizerFinancialSummary = async (organizerId: string): Promise
   const settings = await getSystemSettings();
   const platformFee = settings.platform_fee || 0;
   const platformFeeType = (settings.platform_fee_type || 'fixed') as 'fixed' | 'percentage';
+  const platformFeeMin = settings.platform_fee_min ?? 0;
 
   const result = await query(
     `SELECT 
@@ -185,7 +186,7 @@ export const getOrganizerFinancialSummary = async (organizerId: string): Promise
       const ef = parseFloat(row.registration_edit_fee_amount) || 0;
       const valorLiquido = (pf > 0 || ef > 0)
         ? Math.round((total - pf - ef) * 100) / 100
-        : calculateValueWithoutFee(total, platformFee, platformFeeType);
+        : calculateValueWithoutFee(total, platformFee, platformFeeType, platformFeeMin);
 
       totalRevenue += valorLiquido;
 
@@ -233,6 +234,7 @@ export const getOrganizerEventRevenues = async (organizerId: string): Promise<Or
   const settings = await getSystemSettings();
   const platformFee = settings.platform_fee || 0;
   const platformFeeType = (settings.platform_fee_type || 'fixed') as 'fixed' | 'percentage';
+  const platformFeeMin = settings.platform_fee_min ?? 0;
 
   const result = await query(
     `SELECT 
@@ -284,7 +286,7 @@ export const getOrganizerEventRevenues = async (organizerId: string): Promise<Or
         const ef = parseFloat(row.registration_edit_fee_amount) || 0;
         const valorLiquido = (pf > 0 || ef > 0)
           ? Math.round((total - pf - ef) * 100) / 100
-          : calculateValueWithoutFee(total, platformFee, platformFeeType);
+          : calculateValueWithoutFee(total, platformFee, platformFeeType, platformFeeMin);
         event.totalRevenue += valorLiquido;
       }
     }

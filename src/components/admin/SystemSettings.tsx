@@ -71,6 +71,7 @@ const SystemSettings = () => {
   const [feesForm, setFeesForm] = useState({
     platform_fee: 0,
     platform_fee_type: 'fixed' as 'fixed' | 'percentage',
+    platform_fee_min: 0,
     registration_edit_fee: 0,
     withdrawal_fee: 0,
     withdrawal_fee_type: 'fixed' as 'fixed' | 'percentage',
@@ -145,6 +146,7 @@ const SystemSettings = () => {
         setFeesForm({
           platform_fee: data.platform_fee || 0,
           platform_fee_type: data.platform_fee_type || 'fixed',
+          platform_fee_min: data.platform_fee_min ?? 0,
           registration_edit_fee: data.registration_edit_fee ?? 0,
           withdrawal_fee: data.withdrawal_fee || 0,
           withdrawal_fee_type: data.withdrawal_fee_type || 'fixed',
@@ -374,6 +376,7 @@ const SystemSettings = () => {
       const response = await updateSystemSettings({
         platform_fee: feesForm.platform_fee,
         platform_fee_type: feesForm.platform_fee_type,
+        platform_fee_min: feesForm.platform_fee_min,
         registration_edit_fee: feesForm.registration_edit_fee,
         withdrawal_fee: feesForm.withdrawal_fee,
         withdrawal_fee_type: feesForm.withdrawal_fee_type,
@@ -966,6 +969,24 @@ const SystemSettings = () => {
                       Taxa cobrada dos corredores ao fazer inscrições
                     </p>
                   </div>
+                  {feesForm.platform_fee_type === 'percentage' && (
+                    <div>
+                      <Label htmlFor="platform_fee_min">Taxa mínima (R$)</Label>
+                      <Input
+                        id="platform_fee_min"
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={feesForm.platform_fee_min}
+                        onChange={(e) => setFeesForm({ ...feesForm, platform_fee_min: parseFloat(e.target.value) || 0 })}
+                        placeholder="0.00"
+                        className="mt-1"
+                      />
+                      <p className="text-sm text-muted-foreground mt-1">
+                        Quando o percentual sobre o valor for menor que este valor, será aplicada esta taxa mínima (para cobrir custos).
+                      </p>
+                    </div>
+                  )}
                 </div>
 
                 <Separator />

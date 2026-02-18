@@ -182,6 +182,7 @@ export function RegistrationFlow({
   // Platform fee state
   const [platformFee, setPlatformFee] = useState<number>(0);
   const [platformFeeType, setPlatformFeeType] = useState<'fixed' | 'percentage'>('fixed');
+  const [platformFeeMin, setPlatformFeeMin] = useState<number>(0);
   const [platformFeesEnabled, setPlatformFeesEnabled] = useState(false);
 
   // Calculate total price based on selected batch or category price
@@ -219,16 +220,17 @@ export function RegistrationFlow({
   const totalAfterSeniorDiscount = Math.max(0, subtotal - seniorDiscountAmount);
   const totalAfterDiscounts = Math.max(0, totalAfterSeniorDiscount - discountAmount);
   
-  // Calculate platform fee (applied after discounts)
+  // Calculate platform fee (applied after discounts). When percentage, apply minimum if configured.
   let platformFeeAmount = 0;
   if (platformFeesEnabled && platformFee > 0) {
     if (platformFeeType === 'percentage') {
-      platformFeeAmount = (totalAfterDiscounts * platformFee) / 100;
+      const feeFromPercent = (totalAfterDiscounts * platformFee) / 100;
+      platformFeeAmount = platformFeeMin > 0 ? Math.max(feeFromPercent, platformFeeMin) : feeFromPercent;
     } else {
       platformFeeAmount = platformFee;
     }
   }
-  
+
   const totalPrice = Math.max(0, totalAfterDiscounts + platformFeeAmount);
 
   // Função helper para verificar se um método de pagamento está habilitado
@@ -311,6 +313,7 @@ export function RegistrationFlow({
             setPlatformFeesEnabled(response.data.enabled_modules?.platform_fees || false);
             setPlatformFee(response.data.platform_fee || 0);
             setPlatformFeeType(response.data.platform_fee_type || 'fixed');
+            setPlatformFeeMin(response.data.platform_fee_min ?? 0);
           }
         } catch (error) {
           console.error('Erro ao carregar configurações:', error);
@@ -2955,7 +2958,7 @@ export function RegistrationFlow({
                   )}
                   {platformFeeAmount > 0 && (
                     <div className="flex justify-between items-center text-sm">
-                      <span>Taxa da Plataforma {platformFeeType === 'percentage' ? `(${platformFee}%)` : ''}:</span>
+                      <span>Taxa da Plataforma:</span>
                       <span className="font-semibold">+{formatPrice(platformFeeAmount)}</span>
                     </div>
                   )}

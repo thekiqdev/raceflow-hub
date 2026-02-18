@@ -425,6 +425,7 @@ export const getOrganizerFinancialOverview = async (organizerId: string): Promis
   const settings = await getSystemSettings();
   const platformFee = settings.platform_fee || 0;
   const platformFeeType = (settings.platform_fee_type || 'fixed') as 'fixed' | 'percentage';
+  const platformFeeMin = settings.platform_fee_min ?? 0;
 
   // Get all paid registrations for this organizer's events
   const revenueResult = await query(
@@ -443,7 +444,8 @@ export const getOrganizerFinancialOverview = async (organizerId: string): Promis
     total_revenue += calculateValueWithoutFee(
       parseFloat(row.total_amount) || 0,
       platformFee,
-      platformFeeType
+      platformFeeType,
+      platformFeeMin
     );
   });
 

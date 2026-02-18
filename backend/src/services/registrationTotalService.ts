@@ -144,11 +144,12 @@ export async function calculateRegistrationTotal(
   const platformFeeEnabled = settings.enabled_modules?.platform_fees === true;
   const platformFeeValue = settings.platform_fee ?? 0;
   const platformFeeType = settings.platform_fee_type || 'fixed';
+  const platformFeeMin = settings.platform_fee_min ?? 0;
 
   let platformFee = 0;
   let total = amountAfterDiscounts;
   if (platformFeeEnabled && platformFeeValue > 0 && amountAfterDiscounts > 0) {
-    total = calculateValueWithFee(amountAfterDiscounts, platformFeeValue, platformFeeType);
+    total = calculateValueWithFee(amountAfterDiscounts, platformFeeValue, platformFeeType, platformFeeMin);
     platformFee = Math.round((total - amountAfterDiscounts) * 100) / 100;
   }
 

@@ -31,6 +31,7 @@ export const getOrganizers = async (searchTerm?: string): Promise<UserWithStats[
   const settings = await getSystemSettings();
   const platformFee = settings.platform_fee || 0;
   const platformFeeType = (settings.platform_fee_type || 'fixed') as 'fixed' | 'percentage';
+  const platformFeeMin = settings.platform_fee_min ?? 0;
   const { calculateValueWithoutFee } = await import('../utils/feeCalculations.js');
 
   // First, get organizers with basic info and events count
@@ -96,7 +97,8 @@ export const getOrganizers = async (searchTerm?: string): Promise<UserWithStats[
       stats.revenue += calculateValueWithoutFee(
         parseFloat(row.total_amount) || 0,
         platformFee,
-        platformFeeType
+        platformFeeType,
+        platformFeeMin
       );
     }
   });

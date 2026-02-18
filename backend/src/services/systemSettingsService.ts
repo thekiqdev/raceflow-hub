@@ -29,6 +29,8 @@ export interface SystemSettings {
   transfer_fee?: number;
   platform_fee?: number;
   platform_fee_type?: 'fixed' | 'percentage';
+  /** Taxa mínima (R$) quando o tipo é percentual; se o % for menor, aplica este valor */
+  platform_fee_min?: number;
   registration_edit_fee?: number;
   withdrawal_fee?: number;
   withdrawal_fee_type?: 'fixed' | 'percentage';
@@ -74,6 +76,7 @@ export const getSystemSettings = async (): Promise<SystemSettings> => {
       transfer_fee: 0,
       platform_fee: 0,
       platform_fee_type: 'fixed',
+      platform_fee_min: 0,
       registration_edit_fee: 0,
       withdrawal_fee: 0,
       withdrawal_fee_type: 'fixed',
@@ -115,6 +118,7 @@ export const getSystemSettings = async (): Promise<SystemSettings> => {
     transfer_fee: row.transfer_fee ? parseFloat(row.transfer_fee) : undefined,
     platform_fee: row.platform_fee ? parseFloat(row.platform_fee) : undefined,
     platform_fee_type: row.platform_fee_type || 'fixed',
+    platform_fee_min: row.platform_fee_min != null ? parseFloat(row.platform_fee_min) : 0,
     registration_edit_fee: row.registration_edit_fee != null ? parseFloat(row.registration_edit_fee) : 0,
     withdrawal_fee: row.withdrawal_fee ? parseFloat(row.withdrawal_fee) : undefined,
     withdrawal_fee_type: row.withdrawal_fee_type || 'fixed',
@@ -204,6 +208,7 @@ export const updateSystemSettings = async (
     transfer_fee: row.transfer_fee ? parseFloat(row.transfer_fee) : undefined,
     platform_fee: row.platform_fee ? parseFloat(row.platform_fee) : undefined,
     platform_fee_type: row.platform_fee_type || 'fixed',
+    platform_fee_min: row.platform_fee_min != null ? parseFloat(row.platform_fee_min) : 0,
     registration_edit_fee: row.registration_edit_fee != null ? parseFloat(row.registration_edit_fee) : 0,
     withdrawal_fee: row.withdrawal_fee ? parseFloat(row.withdrawal_fee) : undefined,
     withdrawal_fee_type: row.withdrawal_fee_type || 'fixed',

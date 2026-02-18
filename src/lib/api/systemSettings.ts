@@ -29,6 +29,7 @@ export interface SystemSettings {
   transfer_fee?: number;
   platform_fee?: number;
   platform_fee_type?: 'fixed' | 'percentage';
+  platform_fee_min?: number;
   registration_edit_fee?: number;
   withdrawal_fee?: number;
   withdrawal_fee_type?: 'fixed' | 'percentage';
@@ -74,6 +75,7 @@ export interface UpdateSystemSettingsData {
   transfer_fee?: number;
   platform_fee?: number;
   platform_fee_type?: 'fixed' | 'percentage';
+  platform_fee_min?: number;
   registration_edit_fee?: number;
   withdrawal_fee?: number;
   leader_commission_percentage?: number;
@@ -110,6 +112,7 @@ export const getEnabledModules = async (): Promise<{
     transfer_fee: number;
     platform_fee?: number;
     platform_fee_type?: 'fixed' | 'percentage';
+    platform_fee_min?: number;
     withdrawal_fee?: number;
     withdrawal_fee_type?: 'fixed' | 'percentage';
     old_platform_url?: string | null;
@@ -122,6 +125,7 @@ export const getEnabledModules = async (): Promise<{
     transfer_fee: number;
     platform_fee?: number;
     platform_fee_type?: 'fixed' | 'percentage';
+    platform_fee_min?: number;
     withdrawal_fee?: number;
     withdrawal_fee_type?: 'fixed' | 'percentage';
     old_platform_url?: string | null;

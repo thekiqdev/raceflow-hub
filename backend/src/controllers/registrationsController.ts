@@ -988,8 +988,9 @@ export const createRegistrationController = asyncHandler(async (req: AuthRequest
     const platformFeesEnabled = settings.enabled_modules?.platform_fees === true;
     const platformFee = Number(settings.platform_fee) || 0;
     const platformFeeType = (settings.platform_fee_type as 'fixed' | 'percentage') || 'fixed';
+    const platformFeeMin = Number(settings.platform_fee_min) || 0;
     if (platformFeesEnabled && platformFee > 0) {
-      const valueWithoutFee = calculateValueWithoutFee(totalAmount, platformFee, platformFeeType);
+      const valueWithoutFee = calculateValueWithoutFee(totalAmount, platformFee, platformFeeType, platformFeeMin);
       platformFeeAmount = Math.round((totalAmount - valueWithoutFee) * 100) / 100;
     }
   }
@@ -4144,8 +4145,9 @@ export const createRegistrationByLeaderController = asyncHandler(async (req: Aut
     const platformFeesEnabled = settings.enabled_modules?.platform_fees === true;
     const platformFee = Number(settings.platform_fee) || 0;
     const platformFeeType = (settings.platform_fee_type as 'fixed' | 'percentage') || 'fixed';
+    const platformFeeMin = Number(settings.platform_fee_min) || 0;
     if (platformFeesEnabled && platformFee > 0) {
-      const valueWithoutFee = calculateValueWithoutFee(totalAmount, platformFee, platformFeeType);
+      const valueWithoutFee = calculateValueWithoutFee(totalAmount, platformFee, platformFeeType, platformFeeMin);
       leaderPlatformFeeAmount = Math.round((totalAmount - valueWithoutFee) * 100) / 100;
     }
   }

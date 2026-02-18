@@ -5,75 +5,64 @@
 export interface PlatformFeeSettings {
   platform_fee: number;
   platform_fee_type: 'fixed' | 'percentage';
+  /** Taxa mínima (R$) quando tipo é percentual; se o % for menor, aplica este valor. */
+  platform_fee_min?: number;
 }
 
 /**
  * Calculate the original value without platform fee
- * 
+ *
  * @param totalAmount - The total amount including platform fee
  * @param platformFee - The platform fee value
  * @param platformFeeType - Type of fee: 'fixed' or 'percentage'
- * @returns The original value without the platform fee
- * 
- * @example
- * // Percentage fee: if total is 110 and fee is 10%, original = 110 / 1.10 = 100
- * calculateValueWithoutFee(110, 10, 'percentage') // returns 100
- * 
- * @example
- * // Fixed fee: if total is 110 and fee is 10, original = 110 - 10 = 100
- * calculateValueWithoutFee(110, 10, 'fixed') // returns 100
+ * @param platformFeeMin - Optional minimum fee (R$) when type is percentage; used to infer fee from total
  */
 export function calculateValueWithoutFee(
   totalAmount: number,
   platformFee: number,
-  platformFeeType: 'fixed' | 'percentage'
+  platformFeeType: 'fixed' | 'percentage',
+  platformFeeMin?: number
 ): number {
-  // If any value is invalid, return the original totalAmount
   if (!totalAmount || totalAmount <= 0 || !platformFee || platformFee <= 0) {
     return totalAmount;
   }
-  
+
   if (platformFeeType === 'percentage') {
-    // If fee is percentage: value_without_fee = total_amount / (1 + fee/100)
-    // Example: if total is 110 and fee is 10%, then original = 110 / 1.10 = 100
-    return Math.round((totalAmount / (1 + platformFee / 100)) * 100) / 100;
+    const min = typeof platformFeeMin === 'number' && platformFeeMin > 0 ? platformFeeMin : 0;
+    // Fee that was applied = max(total * p/(100+p), min); valueWithoutFee = total - fee
+    const feeFromPercent = (totalAmount * platformFee) / (100 + platformFee);
+    const fee = min > 0 ? Math.max(feeFromPercent, min) : feeFromPercent;
+    return Math.max(0, Math.round((totalAmount - fee) * 100) / 100);
   } else {
-    // If fee is fixed: value_without_fee = total_amount - fee
     return Math.max(0, Math.round((totalAmount - platformFee) * 100) / 100);
   }
 }
 
 /**
- * Calculate the total amount with platform fee
- * 
+ * Calculate the total amount with platform fee.
+ * When type is percentage and platformFeeMin is set, applies at least that amount (R$).
+ *
  * @param baseAmount - The base amount without platform fee
  * @param platformFee - The platform fee value
  * @param platformFeeType - Type of fee: 'fixed' or 'percentage'
- * @returns The total amount including the platform fee
- * 
- * @example
- * // Percentage fee: if base is 100 and fee is 10%, total = 100 * 1.10 = 110
- * calculateValueWithFee(100, 10, 'percentage') // returns 110
- * 
- * @example
- * // Fixed fee: if base is 100 and fee is 10, total = 100 + 10 = 110
- * calculateValueWithFee(100, 10, 'fixed') // returns 110
+ * @param platformFeeMin - Optional minimum fee (R$) when type is percentage
  */
 export function calculateValueWithFee(
   baseAmount: number,
   platformFee: number,
-  platformFeeType: 'fixed' | 'percentage'
+  platformFeeType: 'fixed' | 'percentage',
+  platformFeeMin?: number
 ): number {
-  // If any value is invalid, return the original baseAmount
   if (!baseAmount || baseAmount <= 0 || !platformFee || platformFee <= 0) {
     return baseAmount;
   }
-  
+
   if (platformFeeType === 'percentage') {
-    // If fee is percentage: total = base * (1 + fee/100)
-    return Math.round((baseAmount * (1 + platformFee / 100)) * 100) / 100;
+    const min = typeof platformFeeMin === 'number' && platformFeeMin > 0 ? platformFeeMin : 0;
+    const feeFromPercent = Math.round((baseAmount * (platformFee / 100)) * 100) / 100;
+    const fee = min > 0 ? Math.max(feeFromPercent, min) : feeFromPercent;
+    return Math.round((baseAmount + fee) * 100) / 100;
   } else {
-    // If fee is fixed: total = base + fee
     return Math.round((baseAmount + platformFee) * 100) / 100;
   }
 }
