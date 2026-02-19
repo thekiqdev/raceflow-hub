@@ -3,6 +3,7 @@ import { useSearchParams, useNavigate } from "react-router-dom";
 import Index from "./Index";
 import { MultiStepRegistration } from "@/components/MultiStepRegistration";
 import { useAuth } from "@/contexts/AuthContext";
+import { getDashboardRoute } from "@/lib/utils/navigation";
 
 export default function Cadastro() {
   const [searchParams] = useSearchParams();
@@ -11,15 +12,9 @@ export default function Cadastro() {
   const [registrationOpen, setRegistrationOpen] = useState(false);
 
   useEffect(() => {
-    // Se o usuário já estiver autenticado, redireciona para o dashboard
     if (isAuthenticated) {
       const currentUser = JSON.parse(localStorage.getItem('auth_user') || '{}');
-      const dashboardRoute = currentUser.roles?.includes('admin')
-        ? '/admin/dashboard'
-        : currentUser.roles?.includes('organizer')
-        ? '/organizer/dashboard'
-        : '/runner/dashboard';
-      navigate(dashboardRoute);
+      navigate(getDashboardRoute(currentUser));
       return;
     }
 

@@ -739,7 +739,7 @@ export function MyRegistrations() {
                 <CardContent className="py-12 text-center">
                   <Calendar className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
                   <p className="text-muted-foreground mb-4">Nenhuma inscrição ativa</p>
-                  <Button onClick={() => navigate("/runner/dashboard?tab=home")}>
+                  <Button onClick={() => navigate("/corredor/inicio")}>
                     Explorar Corridas
                   </Button>
                 </CardContent>

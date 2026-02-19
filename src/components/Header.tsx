@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { User, LogIn, FileText, Trophy, UserCircle, LogOut, Calculator, Menu, Home, ClipboardList, Award } from "lucide-react";
 import { useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
+import { getCorredorPath, getDashboardRoute } from "@/lib/utils/navigation";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -106,7 +107,7 @@ export function Header() {
                         <button
                           onClick={() => {
                             setMobileMenuOpen(false);
-                            navigate("/runner/dashboard?tab=home");
+                            navigate(getCorredorPath("home"));
                           }}
                           className="flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-white/10 transition-colors text-left"
                         >
@@ -116,7 +117,7 @@ export function Header() {
                         <button
                           onClick={() => {
                             setMobileMenuOpen(false);
-                            navigate("/runner/dashboard?tab=registrations");
+                            navigate(getCorredorPath("registrations"));
                           }}
                           className="flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-white/10 transition-colors text-left"
                         >
@@ -126,7 +127,7 @@ export function Header() {
                         <button
                           onClick={() => {
                             setMobileMenuOpen(false);
-                            navigate("/runner/dashboard?tab=results");
+                            navigate(getCorredorPath("results"));
                           }}
                           className="flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-white/10 transition-colors text-left"
                         >
@@ -136,7 +137,7 @@ export function Header() {
                         <button
                           onClick={() => {
                             setMobileMenuOpen(false);
-                            navigate("/runner/dashboard?tab=profile");
+                            navigate(getCorredorPath("profile"));
                           }}
                           className="flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-white/10 transition-colors text-left"
                         >
@@ -160,7 +161,7 @@ export function Header() {
                         <button
                           onClick={() => {
                             setMobileMenuOpen(false);
-                            navigate("/dashboard");
+                            navigate(getDashboardRoute(user));
                           }}
                           className="flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-white/10 transition-colors text-left"
                         >
@@ -257,19 +258,19 @@ export function Header() {
                   <DropdownMenuSeparator />
                   {isRunner ? (
                     <>
-                      <DropdownMenuItem onClick={() => navigate("/runner/dashboard?tab=home")}>
+                      <DropdownMenuItem onClick={() => navigate(getCorredorPath("home"))}>
                         <Home className="mr-2 h-4 w-4" />
                         Início
                       </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => navigate("/runner/dashboard?tab=registrations")}>
+                      <DropdownMenuItem onClick={() => navigate(getCorredorPath("registrations"))}>
                         <ClipboardList className="mr-2 h-4 w-4" />
                         Inscrições
                       </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => navigate("/runner/dashboard?tab=results")}>
+                      <DropdownMenuItem onClick={() => navigate(getCorredorPath("results"))}>
                         <Award className="mr-2 h-4 w-4" />
                         Resultados
                       </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => navigate("/runner/dashboard?tab=profile")}>
+                      <DropdownMenuItem onClick={() => navigate(getCorredorPath("profile"))}>
                         <UserCircle className="mr-2 h-4 w-4" />
                         Perfil
                       </DropdownMenuItem>
@@ -281,7 +282,7 @@ export function Header() {
                     </>
                   ) : (
                     <>
-                      <DropdownMenuItem onClick={() => navigate("/dashboard")}>
+                      <DropdownMenuItem onClick={() => navigate(getDashboardRoute(user))}>
                         <UserCircle className="mr-2 h-4 w-4" />
                         Dashboard
                       </DropdownMenuItem>

@@ -503,7 +503,7 @@ export default function ValidateRegistration() {
             <Button 
               className="w-full" 
               variant={hasPendingDiff ? "outline" : "default"}
-              onClick={() => navigate("/runner/dashboard?tab=registrations")}
+              onClick={() => navigate("/corredor/minhas-inscricoes")}
             >
               <List className="w-4 h-4 mr-2" />
               Minhas Inscrições

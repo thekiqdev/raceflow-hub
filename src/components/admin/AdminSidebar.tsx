@@ -1,5 +1,6 @@
 import { LayoutDashboard, Users, Calendar, DollarSign, FileText, Settings, MessageSquare, Building2, Palette, ArrowRightLeft, UserCog, Calculator, ClipboardList } from "lucide-react";
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Sidebar,
   SidebarContent,
@@ -15,10 +16,10 @@ import { getSystemSettings } from "@/lib/api/systemSettings";
 import { getNewQuotesCount } from "@/lib/api/quotes";
 import { getNewContactMessagesCount } from "@/lib/api/contactMessages";
 import { getPendingDocuments } from "@/lib/api/documents";
+import { getAdminPath } from "@/lib/utils/navigation";
 
 interface AdminSidebarProps {
   activeSection: string;
-  onSectionChange: (section: string) => void;
 }
 
 const menuItems = [
@@ -37,7 +38,8 @@ const menuItems = [
   { id: "support", title: "Suporte", icon: MessageSquare, badge: true }, // Badge para documentos e contatos pendentes
 ];
 
-export function AdminSidebar({ activeSection, onSectionChange }: AdminSidebarProps) {
+export function AdminSidebar({ activeSection }: AdminSidebarProps) {
+  const navigate = useNavigate();
   const { open } = useSidebar();
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [transfersEnabled, setTransfersEnabled] = useState(false);
@@ -190,7 +192,7 @@ export function AdminSidebar({ activeSection, onSectionChange }: AdminSidebarPro
                 .map((item) => (
                   <SidebarMenuItem key={item.id}>
                     <SidebarMenuButton
-                      onClick={() => onSectionChange(item.id)}
+                      onClick={() => navigate(getAdminPath(item.id))}
                       isActive={activeSection === item.id}
                       className="hover:bg-muted/50 relative"
                     >

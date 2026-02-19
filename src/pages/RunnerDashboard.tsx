@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { BottomNav } from "@/components/runner/BottomNav";
 import { ExploreEvents } from "@/components/runner/ExploreEvents";
 import { MyRegistrations } from "@/components/runner/MyRegistrations";
@@ -7,28 +7,28 @@ import { Results } from "@/components/runner/Results";
 import { Profile } from "@/components/runner/Profile";
 import { MissingAttributesAlert } from "@/components/runner/MissingAttributesAlert";
 import { MissingAttributesModal } from "@/components/runner/MissingAttributesModal";
+import { getCorredorPath, getCorredorTabFromPath } from "@/lib/utils/navigation";
+
+const VALID_TABS = ["home", "registrations", "results", "profile"];
 
 export default function RunnerDashboard() {
-  const [searchParams] = useSearchParams();
-  const [activeTab, setActiveTab] = useState(() => {
-    const tabFromUrl = searchParams.get("tab");
-    if (tabFromUrl && ["home", "registrations", "results", "profile"].includes(tabFromUrl)) {
-      return tabFromUrl;
-    }
-    return localStorage.getItem("runnerActiveTab") || "home";
-  });
+  const navigate = useNavigate();
+  const { section: sectionParam } = useParams<{ section?: string }>();
+  const location = useLocation();
   const [showMissingAttributesModal, setShowMissingAttributesModal] = useState(false);
 
-  useEffect(() => {
-    const tabFromUrl = searchParams.get("tab");
-    if (tabFromUrl && ["home", "registrations", "results", "profile"].includes(tabFromUrl)) {
-      setActiveTab(tabFromUrl);
-    }
-  }, [searchParams]);
+  const activeTab = getCorredorTabFromPath(location.pathname);
 
   useEffect(() => {
-    localStorage.setItem("runnerActiveTab", activeTab);
-  }, [activeTab]);
+    if (!sectionParam || sectionParam === "") {
+      navigate(getCorredorPath("home"), { replace: true });
+      return;
+    }
+    const tab = getCorredorTabFromPath(location.pathname);
+    if (!VALID_TABS.includes(tab)) {
+      navigate(getCorredorPath("home"), { replace: true });
+    }
+  }, [sectionParam, location.pathname, navigate]);
 
   const handleSelectAttributes = () => {
     setShowMissingAttributesModal(true);
@@ -63,7 +63,7 @@ export default function RunnerDashboard() {
         <MissingAttributesAlert onSelectClick={handleSelectAttributes} />
         {renderContent()}
       </div>
-      <BottomNav activeTab={activeTab} onTabChange={setActiveTab} />
+      <BottomNav activeTab={activeTab} />
       <MissingAttributesModal
         open={showMissingAttributesModal}
         onOpenChange={setShowMissingAttributesModal}

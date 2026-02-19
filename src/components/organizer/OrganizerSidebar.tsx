@@ -1,4 +1,5 @@
 import { LayoutDashboard, Calendar, Users, DollarSign, FileText, MessageSquare, Settings, BarChart3, Trophy, Building2, UserCog } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { getNewContactMessagesCount } from "@/lib/api/contactMessages";
 import {
   Sidebar,
@@ -12,10 +13,10 @@ import {
 } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
 import { useEffect, useState } from "react";
+import { getOrganizerPath } from "@/lib/utils/navigation";
 
 interface OrganizerSidebarProps {
   activeSection: string;
-  onSectionChange: (section: string) => void;
 }
 
 const menuItems = [
@@ -30,7 +31,8 @@ const menuItems = [
   { id: "settings", title: "Configurações", icon: Settings },
 ];
 
-export function OrganizerSidebar({ activeSection, onSectionChange }: OrganizerSidebarProps) {
+export function OrganizerSidebar({ activeSection }: OrganizerSidebarProps) {
+  const navigate = useNavigate();
   const { open } = useSidebar();
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [newMessagesCount, setNewMessagesCount] = useState(0);
@@ -108,7 +110,7 @@ export function OrganizerSidebar({ activeSection, onSectionChange }: OrganizerSi
               {menuItems.map((item) => (
                 <SidebarMenuItem key={item.id}>
                   <SidebarMenuButton
-                    onClick={() => onSectionChange(item.id)}
+                    onClick={() => navigate(getOrganizerPath(item.id))}
                     isActive={activeSection === item.id}
                     className="hover:bg-muted/50 relative"
                   >

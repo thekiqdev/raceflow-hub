@@ -1,12 +1,14 @@
 import { Home, Ticket, Trophy, User } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
+import { getCorredorPath } from "@/lib/utils/navigation";
 
 interface BottomNavProps {
   activeTab: string;
-  onTabChange: (tab: string) => void;
 }
 
-export function BottomNav({ activeTab, onTabChange }: BottomNavProps) {
+export function BottomNav({ activeTab }: BottomNavProps) {
+  const navigate = useNavigate();
   const tabs = [
     { id: "home", label: "Início", icon: Home },
     { id: "registrations", label: "Inscrições", icon: Ticket },
@@ -24,7 +26,7 @@ export function BottomNav({ activeTab, onTabChange }: BottomNavProps) {
           return (
             <button
               key={tab.id}
-              onClick={() => onTabChange(tab.id)}
+              onClick={() => navigate(getCorredorPath(tab.id))}
               className={cn(
                 "flex flex-col items-center justify-center gap-1 flex-1 h-full transition-colors",
                 isActive ? "text-primary" : "text-muted-foreground"

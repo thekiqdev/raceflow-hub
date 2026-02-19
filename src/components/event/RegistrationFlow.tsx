@@ -922,7 +922,7 @@ export function RegistrationFlow({
         
         // Wait a bit for user data to be loaded, then redirect
         setTimeout(() => {
-          navigate("/runner/dashboard");
+          navigate("/corredor/inicio");
         }, 500);
       }
     } catch (error) {
@@ -3320,7 +3320,7 @@ export function RegistrationFlow({
                   className="w-full"
                   onClick={() => {
                     onOpenChange(false);
-                    navigate("/runner/dashboard?tab=registrations&subtab=pending");
+                    navigate("/corredor/minhas-inscricoes");
                   }}
                 >
                   <List className="w-4 h-4 mr-2" />
@@ -3385,7 +3385,7 @@ export function RegistrationFlow({
                   className="w-full"
                   onClick={() => {
                     onOpenChange(false);
-                    navigate("/runner/dashboard?tab=registrations");
+                    navigate("/corredor/minhas-inscricoes");
                   }}
                 >
                   <List className="w-4 h-4 mr-2" />
@@ -3634,7 +3634,7 @@ export function RegistrationFlow({
                   className="flex-1" 
                   onClick={() => {
                     onOpenChange(false);
-                    navigate("/runner/dashboard?tab=registrations&subtab=pending");
+                    navigate("/corredor/minhas-inscricoes");
                   }}
                 >
                   <List className="w-4 h-4 mr-2" />

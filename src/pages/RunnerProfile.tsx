@@ -159,7 +159,7 @@ const RunnerProfile = () => {
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <h1
             className="text-2xl font-bold bg-gradient-hero bg-clip-text text-transparent cursor-pointer"
-            onClick={() => navigate("/runner/dashboard")}
+            onClick={() => navigate("/corredor/inicio")}
           >
             Cronoteam
           </h1>
@@ -239,7 +239,7 @@ const RunnerProfile = () => {
                   <p className="text-muted-foreground">Nenhuma corrida futura confirmada</p>
                   <Button
                     className="mt-4"
-                    onClick={() => navigate("/runner/dashboard?tab=home")}
+                    onClick={() => navigate("/corredor/inicio")}
                   >
                     Explorar Eventos
                   </Button>

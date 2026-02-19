@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { LogOut } from "lucide-react";
@@ -19,41 +19,48 @@ import { GroupLeadersManagement } from "@/components/admin/GroupLeadersManagemen
 import QuotesManagement from "@/components/admin/QuotesManagement";
 import AdminRegistrations from "@/components/admin/AdminRegistrations";
 import { getSystemSettings } from "@/lib/api/systemSettings";
+import { getAdminPath, getAdminSectionFromPath, getBreadcrumbForPath } from "@/lib/utils/navigation";
 
 const AdminDashboard = () => {
   const navigate = useNavigate();
+  const { section: sectionParam } = useParams<{ section?: string }>();
+  const location = useLocation();
   const { logout } = useAuth();
-  const [activeSection, setActiveSection] = useState("overview");
   const [transfersEnabled, setTransfersEnabled] = useState(false);
+
+  // Sincronizar URL → activeSection: derivar da URL (pathname ou param)
+  const activeSection = getAdminSectionFromPath(location.pathname);
+
+  useEffect(() => {
+    if (!sectionParam || sectionParam === "" || sectionParam === "dashboard") {
+      navigate(getAdminPath("overview"), { replace: true });
+    }
+  }, [sectionParam, navigate]);
 
   useEffect(() => {
     loadSystemSettings();
-    
-    // Escutar evento para navegar para uma seção
-    const handleNavigateToSection = (event: CustomEvent) => {
-      setActiveSection(event.detail);
-    };
 
-    // Escutar atualizações de configurações
+    const handleNavigateToSection = (event: CustomEvent) => {
+      navigate(getAdminPath(event.detail));
+    };
     const handleSettingsUpdate = () => {
       loadSystemSettings();
     };
 
-    window.addEventListener('admin:navigate-to-section', handleNavigateToSection as EventListener);
-    window.addEventListener('admin-settings-updated', handleSettingsUpdate);
-    
+    window.addEventListener("admin:navigate-to-section", handleNavigateToSection as EventListener);
+    window.addEventListener("admin-settings-updated", handleSettingsUpdate);
+
     return () => {
-      window.removeEventListener('admin:navigate-to-section', handleNavigateToSection as EventListener);
-      window.removeEventListener('admin-settings-updated', handleSettingsUpdate);
+      window.removeEventListener("admin:navigate-to-section", handleNavigateToSection as EventListener);
+      window.removeEventListener("admin-settings-updated", handleSettingsUpdate);
     };
-  }, []);
+  }, [navigate]);
 
   useEffect(() => {
-    // Redirect if transfers section is active but module is disabled
     if (activeSection === "transfers" && !transfersEnabled) {
-      setActiveSection("overview");
+      navigate(getAdminPath("overview"), { replace: true });
     }
-  }, [activeSection, transfersEnabled]);
+  }, [activeSection, transfersEnabled, navigate]);
 
   const loadSystemSettings = async () => {
     try {
@@ -107,16 +114,26 @@ const AdminDashboard = () => {
   return (
     <SidebarProvider>
       <div className="min-h-screen flex w-full bg-gradient-to-br from-background via-muted/20 to-background">
-        <AdminSidebar activeSection={activeSection} onSectionChange={setActiveSection} />
+        <AdminSidebar activeSection={activeSection} />
         
         <div className="flex-1 flex flex-col">
           <nav className="border-b bg-card/50 backdrop-blur-sm sticky top-0 z-50">
             <div className="px-4 py-4 flex items-center justify-between">
               <div className="flex items-center gap-4">
                 <SidebarTrigger />
-                <h1 className="text-2xl font-bold bg-gradient-hero bg-clip-text text-transparent">
-                  Cronoteam Admin
-                </h1>
+                <div className="flex flex-col gap-0.5">
+                  <h1 className="text-2xl font-bold bg-gradient-hero bg-clip-text text-transparent">
+                    Cronoteam Admin
+                  </h1>
+                  {(() => {
+                    const breadcrumb = getBreadcrumbForPath(location.pathname);
+                    return breadcrumb ? (
+                      <p className="text-xs text-muted-foreground" aria-label="Navegação">
+                        {breadcrumb.area} &gt; {breadcrumb.sectionLabel}
+                      </p>
+                    ) : null;
+                  })()}
+                </div>
               </div>
               <div className="flex items-center gap-4">
                 <span className="text-sm text-muted-foreground">
