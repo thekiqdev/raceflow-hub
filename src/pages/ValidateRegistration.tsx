@@ -13,8 +13,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { ArrowLeft, Calendar, MapPin, User, CheckCircle, AlertCircle, Loader2, QrCode } from "lucide-react";
-import { format } from "date-fns";
-import { ptBR } from "date-fns/locale";
+import { formatDateTimeBrasilia } from "@/lib/utils";
 import { getRegistrationById, getRegistrationForValidation, getPendingDifferencePayment, verifyPayment, type Registration } from "@/lib/api/registrations";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
@@ -268,11 +267,7 @@ export default function ValidateRegistration() {
             {registration.event_date && (
               <div className="flex items-center gap-2 text-sm">
                 <Calendar className="h-4 w-4 text-muted-foreground" />
-                <span>
-                  {format(new Date(registration.event_date), "dd 'de' MMMM 'de' yyyy 'às' HH:mm", {
-                    locale: ptBR
-                  })}
-                </span>
+                <span>{formatDateTimeBrasilia(registration.event_date)}</span>
               </div>
             )}
             <div className="flex items-center gap-2 text-sm">

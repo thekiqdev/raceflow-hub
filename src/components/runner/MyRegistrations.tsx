@@ -17,6 +17,7 @@ import { Label } from "@/components/ui/label";
 import { Calendar, MapPin, QrCode, RefreshCw, X, Loader2, AlertCircle, Download, CreditCard, Eye, CheckCircle2 } from "lucide-react";
 import { format, isFuture } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { formatDateOnlyBrasilia } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
 import { getRegistrations, transferRegistration, cancelRegistration, getPaymentStatus, generatePayment, getPendingDifferencePayment, verifyPayment, type Registration } from "@/lib/api/registrations";
 import { getEnabledModules } from "@/lib/api/systemSettings";
@@ -468,7 +469,7 @@ export function MyRegistrations() {
             {registration.event_date && (
               <div className="flex items-center gap-2">
                 <Calendar className="h-3 w-3" />
-                <span>{format(new Date(registration.event_date), "dd 'de' MMMM 'de' yyyy", { locale: ptBR })}</span>
+                <span>{formatDateOnlyBrasilia(registration.event_date)}</span>
               </div>
             )}
             {(registration.modality_name != null && registration.modality_name !== "") && (

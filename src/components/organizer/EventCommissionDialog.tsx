@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Loader2 } from "lucide-react";
 import { type LeaderEventCommission } from "@/lib/api/leaderEventCommissions";
 import { type Event } from "@/lib/api/events";
+import { formatDateOnlyBrasilia } from "@/lib/utils";
 
 interface EventCommissionDialogProps {
   open: boolean;
@@ -160,7 +161,7 @@ export function EventCommissionDialog({
                 ) : (
                   availableEvents.map((event) => (
                     <SelectItem key={event.id} value={event.id}>
-                      {event.title} - {new Date(event.event_date).toLocaleDateString("pt-BR")}
+                      {event.title} - {formatDateOnlyBrasilia(event.event_date)}
                     </SelectItem>
                   ))
                 )}

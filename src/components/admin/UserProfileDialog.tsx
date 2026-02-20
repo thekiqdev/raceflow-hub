@@ -26,6 +26,7 @@ import {
   deleteUser,
 } from "@/lib/api/userManagement";
 import { getRegistrations } from "@/lib/api/registrations";
+import { formatDateOnlyBrasilia } from "@/lib/utils";
 
 interface UserProfileDialogProps {
   open: boolean;
@@ -715,7 +716,7 @@ export function UserProfileDialog({
                               )}
                               {reg.event_date && (
                                 <span>
-                                  Data: {new Date(reg.event_date).toLocaleDateString('pt-BR')}
+                                  Data: {formatDateOnlyBrasilia(reg.event_date)}
                                 </span>
                               )}
                               {reg.created_at && (

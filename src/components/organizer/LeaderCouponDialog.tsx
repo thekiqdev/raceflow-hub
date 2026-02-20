@@ -10,6 +10,7 @@ import { Loader2 } from "lucide-react";
 import { type Coupon, type CreateCouponData, type CouponType } from "@/lib/api/coupons";
 import { getEvents, type Event } from "@/lib/api/events";
 import { useAuth } from "@/contexts/AuthContext";
+import { formatDateOnlyBrasilia } from "@/lib/utils";
 
 interface LeaderCouponDialogProps {
   open: boolean;
@@ -242,7 +243,7 @@ export function LeaderCouponDialog({
                           htmlFor={`event-${event.id}`}
                           className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer flex-1"
                         >
-                          {event.title} - {new Date(event.event_date).toLocaleDateString("pt-BR")}
+                          {event.title} - {formatDateOnlyBrasilia(event.event_date)}
                         </label>
                       </div>
                     ))}

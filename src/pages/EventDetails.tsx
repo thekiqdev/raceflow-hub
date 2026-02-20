@@ -18,6 +18,7 @@ import {
 import { Header } from "@/components/Header";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { formatDateOnlyBrasilia, formatTimeBrasilia, formatDateBrasilia } from "@/lib/utils";
 import { useEffect, useState } from "react";
 import heroImage from "@/assets/hero-running.jpg";
 import { RegistrationFlow } from "@/components/event/RegistrationFlow";
@@ -319,11 +320,11 @@ const EventDetails = () => {
           <div className="flex flex-wrap gap-6 text-sm">
             <div className="flex items-center gap-2">
               <Calendar className="h-5 w-5" />
-              <span>{format(new Date(event.event_date), "dd 'de' MMMM 'de' yyyy", { locale: ptBR })}</span>
+              <span>{formatDateOnlyBrasilia(event.event_date)}</span>
             </div>
             <div className="flex items-center gap-2">
               <Clock className="h-5 w-5" />
-              <span>{format(new Date(event.event_date), "HH:mm", { locale: ptBR })}</span>
+              <span>{formatTimeBrasilia(event.event_date)}</span>
             </div>
             <div className="flex items-center gap-2">
               <MapPin className="h-5 w-5" />
@@ -417,14 +418,14 @@ const EventDetails = () => {
                       <p className="text-sm font-medium text-muted-foreground mb-1">Data do Evento</p>
                       <p className="flex items-center gap-2">
                         <Calendar className="h-4 w-4" />
-                        {format(new Date(event.event_date), "EEEE, dd 'de' MMMM 'de' yyyy", { locale: ptBR })}
+                        {formatDateBrasilia(event.event_date)}
                       </p>
                     </div>
                     <div>
                       <p className="text-sm font-medium text-muted-foreground mb-1">Horário de Largada</p>
                       <p className="flex items-center gap-2">
                         <Clock className="h-4 w-4" />
-                        {format(new Date(event.event_date), "HH:mm", { locale: ptBR })}h
+                        {formatTimeBrasilia(event.event_date)}h
                       </p>
                     </div>
                   </div>

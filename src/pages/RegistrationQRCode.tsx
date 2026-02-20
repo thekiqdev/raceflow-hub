@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ArrowLeft, Calendar, MapPin, User, Loader2, AlertCircle, Download } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { formatDateTimeBrasilia } from "@/lib/utils";
 import { getRegistrationById, type Registration } from "@/lib/api/registrations";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
@@ -62,7 +63,7 @@ Data da Inscrição: ${registration?.created_at ? format(new Date(registration.c
 
 DADOS DO EVENTO:
 ${registration?.event_title || 'Evento'}
-Data: ${registration?.event_date ? format(new Date(registration.event_date), "dd 'de' MMMM 'de' yyyy 'às' HH:mm", { locale: ptBR }) : 'N/A'}
+Data: ${registration?.event_date ? formatDateTimeBrasilia(registration.event_date) : 'N/A'}
 Local: ${registration?.location || `${registration?.city || ''}, ${registration?.state || ''}`}
 
 DADOS DO CORREDOR:
@@ -221,11 +222,7 @@ Status do Pagamento: ${registration?.payment_status === 'paid' ? 'Pago' : regist
             {registration.event_date && (
               <div className="flex items-center gap-2 text-sm">
                 <Calendar className="h-4 w-4 text-muted-foreground" />
-                <span>
-                  {format(new Date(registration.event_date), "dd 'de' MMMM 'de' yyyy 'às' HH:mm", {
-                    locale: ptBR
-                  })}
-                </span>
+                <span>{formatDateTimeBrasilia(registration.event_date)}</span>
               </div>
             )}
             <div className="flex items-center gap-2 text-sm">

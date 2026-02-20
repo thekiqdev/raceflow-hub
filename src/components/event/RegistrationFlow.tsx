@@ -13,6 +13,7 @@ import { CheckCircle2, Calendar, MapPin, Ticket, Download, ChevronDown, ChevronU
 import jsPDF from "jspdf";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { formatDateTimeBrasilia } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
 import { getOwnProfile, getPublicProfileByCpf } from "@/lib/api/profiles";
 import { createRegistration, getPaymentStatus, checkExistingRegistration } from "@/lib/api/registrations";
@@ -1370,8 +1371,7 @@ export function RegistrationFlow({
       doc.text(`Evento: ${event.title}`, margin, yPos);
       yPos += 7;
       if (event.event_date) {
-        const eventDate = format(new Date(event.event_date), "dd 'de' MMMM 'de' yyyy 'às' HH:mm", { locale: ptBR });
-        doc.text(`Data: ${eventDate}`, margin, yPos);
+        doc.text(`Data: ${formatDateTimeBrasilia(event.event_date)}`, margin, yPos);
         yPos += 7;
       }
       if (event.location || event.city) {
@@ -3457,9 +3457,7 @@ export function RegistrationFlow({
                     <div className="flex items-start gap-2">
                       <Calendar className="w-4 h-4 text-muted-foreground mt-0.5" />
                       <span>
-                        {format(new Date(event.event_date), "dd 'de' MMMM 'de' yyyy 'às' HH:mm", {
-                          locale: ptBR,
-                        })}
+                        {formatDateTimeBrasilia(event.event_date)}
                       </span>
                     </div>
                     <div className="flex items-start gap-2">

@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { formatDateOnlyBrasilia } from "@/lib/utils";
 import { EventFilters, EventFiltersState } from "@/components/event/EventFilters";
 import { Header } from "@/components/Header";
 import { getEvents } from "@/lib/api/events";
@@ -324,7 +325,7 @@ const Events = () => {
                 <CardContent className="space-y-2">
                   <div className="flex items-center text-sm text-muted-foreground">
                     <CalendarIcon className="mr-2 h-4 w-4" />
-                    {format(new Date(event.event_date), "dd 'de' MMMM 'de' yyyy", { locale: ptBR })}
+                    {formatDateOnlyBrasilia(event.event_date)}
                   </div>
                   <div className="flex items-center text-sm text-muted-foreground">
                     <MapPin className="mr-2 h-4 w-4" />

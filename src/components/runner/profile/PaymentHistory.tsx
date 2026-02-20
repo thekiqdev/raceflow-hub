@@ -7,6 +7,7 @@ import { Calendar, Download, CreditCard, Loader2, AlertCircle } from "lucide-rea
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { formatDateOnlyBrasilia } from "@/lib/utils";
 import { getRunnerPayments, type RunnerPayment } from "@/lib/api/runnerPayments";
 
 interface PaymentHistoryProps {
@@ -54,7 +55,7 @@ Data do Pagamento: ${payment.created_at ? format(new Date(payment.created_at), "
 
 DADOS DO EVENTO:
 ${payment.event_title || 'Evento'}
-Data: ${payment.event_date ? format(new Date(payment.event_date), "dd 'de' MMMM 'de' yyyy", { locale: ptBR }) : 'N/A'}
+Data: ${payment.event_date ? formatDateOnlyBrasilia(payment.event_date) : 'N/A'}
 
 DADOS DO PAGAMENTO:
 Valor: R$ ${payment.total_amount.toFixed(2).replace('.', ',')}
@@ -162,7 +163,7 @@ Código de Confirmação: ${payment.confirmation_code || 'N/A'}
                             {payment.event_date && (
                               <div className="flex items-center gap-1 text-sm text-muted-foreground">
                                 <Calendar className="w-3 h-3" />
-                                {format(new Date(payment.event_date), "dd 'de' MMMM 'de' yyyy", { locale: ptBR })}
+                                {formatDateOnlyBrasilia(payment.event_date)}
                               </div>
                             )}
                           </div>

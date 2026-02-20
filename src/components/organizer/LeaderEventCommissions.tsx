@@ -16,6 +16,7 @@ import { EventCommissionDialog } from "./EventCommissionDialog";
 import { getEvents, type Event } from "@/lib/api/events";
 import { useAuth } from "@/contexts/AuthContext";
 import { getOrganizerGroupLeaderById, getGroupLeaderById, type GroupLeader } from "@/lib/api/groupLeaders";
+import { formatDateOnlyBrasilia } from "@/lib/utils";
 
 interface LeaderEventCommissionsProps {
   leaderId: string;
@@ -213,9 +214,9 @@ export function LeaderEventCommissions({ leaderId, isAdmin = false }: LeaderEven
                       </TableCell>
                       <TableCell>
                         {commission.event_date
-                          ? new Date(commission.event_date).toLocaleDateString("pt-BR")
+                          ? formatDateOnlyBrasilia(commission.event_date)
                           : event?.event_date
-                          ? new Date(event.event_date).toLocaleDateString("pt-BR")
+                          ? formatDateOnlyBrasilia(event.event_date)
                           : "N/A"}
                       </TableCell>
                       <TableCell>

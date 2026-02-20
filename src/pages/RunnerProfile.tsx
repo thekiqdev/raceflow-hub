@@ -23,7 +23,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { format, differenceInDays, isFuture, isPast } from "date-fns";
-import { ptBR } from "date-fns/locale";
+import { formatDateOnlyBrasilia } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
 import { getOwnProfile, type Profile } from "@/lib/api/profiles";
 import { getRegistrations, type Registration } from "@/lib/api/registrations";
@@ -256,7 +256,7 @@ const RunnerProfile = () => {
                           {reg.event_date && (
                             <div className="flex items-center">
                               <Calendar className="mr-2 h-4 w-4" />
-                              {format(new Date(reg.event_date), "dd 'de' MMMM 'de' yyyy", { locale: ptBR })}
+                              {formatDateOnlyBrasilia(reg.event_date)}
                             </div>
                           )}
                           {reg.category_name && (
@@ -322,7 +322,7 @@ const RunnerProfile = () => {
                           {reg.event_date && (
                             <div className="flex items-center">
                               <Calendar className="mr-2 h-4 w-4" />
-                              {format(new Date(reg.event_date), "dd 'de' MMMM 'de' yyyy", { locale: ptBR })}
+                              {formatDateOnlyBrasilia(reg.event_date)}
                             </div>
                           )}
                           {reg.category_name && (

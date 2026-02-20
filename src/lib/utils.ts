@@ -5,48 +5,123 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+const TIMEZONE_BRASILIA = 'America/Sao_Paulo';
+
 /**
- * Converte um valor datetime-local (YYYY-MM-DDTHH:mm) para ISO string
- * preservando o horário exato informado (sem conversão de timezone)
- * Se o horário estiver vazio, usa 00:00
- * 
- * IMPORTANTE: Esta função cria a data em UTC para preservar o horário exato
- * informado pelo usuário, evitando conversões de timezone.
+ * Formata uma data/hora ISO para exibição em Brasília (data por extenso em pt-BR).
+ * Use para exibir event_date na página do evento.
+ */
+export function formatDateBrasilia(isoString: string | Date | null | undefined): string {
+  if (!isoString) return '';
+  const date = typeof isoString === 'string' ? new Date(isoString) : isoString;
+  if (isNaN(date.getTime())) return '';
+  return date.toLocaleDateString('pt-BR', {
+    timeZone: TIMEZONE_BRASILIA,
+    weekday: 'long',
+    day: '2-digit',
+    month: 'long',
+    year: 'numeric',
+  });
+}
+
+/**
+ * Formata apenas o horário em Brasília (HH:mm).
+ */
+export function formatTimeBrasilia(isoString: string | Date | null | undefined): string {
+  if (!isoString) return '';
+  const date = typeof isoString === 'string' ? new Date(isoString) : isoString;
+  if (isNaN(date.getTime())) return '';
+  return date.toLocaleTimeString('pt-BR', {
+    timeZone: TIMEZONE_BRASILIA,
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+}
+
+/**
+ * Formata data em Brasília no formato dd 'de' MMMM 'de' yyyy (para uso com locale pt-BR em componentes).
+ */
+export function formatDateOnlyBrasilia(isoString: string | Date | null | undefined): string {
+  if (!isoString) return '';
+  const date = typeof isoString === 'string' ? new Date(isoString) : isoString;
+  if (isNaN(date.getTime())) return '';
+  return date.toLocaleDateString('pt-BR', {
+    timeZone: TIMEZONE_BRASILIA,
+    day: '2-digit',
+    month: 'long',
+    year: 'numeric',
+  });
+}
+
+/**
+ * Formata data em Brasília no formato curto (ex.: "15 de mar. de 2025").
+ */
+export function formatDateShortBrasilia(isoString: string | Date | null | undefined): string {
+  if (!isoString) return '';
+  const date = typeof isoString === 'string' ? new Date(isoString) : isoString;
+  if (isNaN(date.getTime())) return '';
+  return date.toLocaleDateString('pt-BR', {
+    timeZone: TIMEZONE_BRASILIA,
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  });
+}
+
+/**
+ * Formata data e hora em Brasília no formato "dd 'de' MMMM 'de' yyyy 'às' HH:mm".
+ */
+export function formatDateTimeBrasilia(isoString: string | Date | null | undefined): string {
+  if (!isoString) return '';
+  const date = typeof isoString === 'string' ? new Date(isoString) : isoString;
+  if (isNaN(date.getTime())) return '';
+  const dateStr = date.toLocaleDateString('pt-BR', {
+    timeZone: TIMEZONE_BRASILIA,
+    day: '2-digit',
+    month: 'long',
+    year: 'numeric',
+  });
+  const timeStr = date.toLocaleTimeString('pt-BR', {
+    timeZone: TIMEZONE_BRASILIA,
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+  return `${dateStr} às ${timeStr}`;
+}
+
+/**
+ * Converte um valor datetime-local (YYYY-MM-DDTHH:mm) para ISO string.
+ * O horário informado é interpretado como horário de Brasília; a função retorna o instante em UTC.
+ * Ex.: 15/03/2025 14:00 (Brasília) → 2025-03-15T17:00:00.000Z
  */
 export function datetimeLocalToISO(datetimeLocal: string | null | undefined): string | null {
   if (!datetimeLocal || datetimeLocal.trim() === '') {
     return null;
   }
 
-  // Se não tiver horário, adiciona 00:00
   if (datetimeLocal.length === 10) {
     datetimeLocal = `${datetimeLocal}T00:00`;
   }
 
-  // datetimeLocal está no formato YYYY-MM-DDTHH:mm
   const [datePart, timePart] = datetimeLocal.split('T');
   if (!datePart) {
     return null;
   }
 
-  const [year, month, day] = datePart.split('-').map(Number);
-  const [hours = 0, minutes = 0] = (timePart || '00:00').split(':').map(Number);
-
-  // Cria Date object em UTC para preservar o horário exato informado
-  // Isso evita conversões de timezone que podem alterar o horário
-  // Exemplo: se o usuário digita 00:00, queremos salvar 00:00 UTC, não 03:00 UTC
-  const date = new Date(Date.UTC(year, month - 1, day, hours, minutes));
-  
-  // Retorna ISO string (já está em UTC)
+  // Interpreta como horário de Brasília (UTC-3) e obtém o instante UTC
+  const isoWithOffset = `${datePart}T${(timePart || '00:00').slice(0, 5)}:00-03:00`;
+  const date = new Date(isoWithOffset);
+  if (isNaN(date.getTime())) {
+    return null;
+  }
   return date.toISOString();
 }
 
 /**
  * Converte uma ISO string ou Date para datetime-local (YYYY-MM-DDTHH:mm)
- * preservando o horário exato (usando UTC para evitar conversões)
- * 
- * IMPORTANTE: Como salvamos em UTC, precisamos ler em UTC também
- * para preservar o horário exato que o usuário digitou.
+ * exibindo o horário em Brasília (mesmo que o usuário digitou na criação).
  */
 export function isoToDatetimeLocal(isoString: string | Date | null | undefined): string {
   if (!isoString) {
@@ -54,20 +129,20 @@ export function isoToDatetimeLocal(isoString: string | Date | null | undefined):
   }
 
   const date = typeof isoString === 'string' ? new Date(isoString) : isoString;
-  
   if (isNaN(date.getTime())) {
     return '';
   }
 
-  // Usa métodos UTC para preservar o horário exato que foi salvo
-  // Isso garante que se salvamos 00:00 UTC, exibimos 00:00 no campo
-  const year = date.getUTCFullYear();
-  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
-  const day = String(date.getUTCDate()).padStart(2, '0');
-  const hours = String(date.getUTCHours()).padStart(2, '0');
-  const minutes = String(date.getUTCMinutes()).padStart(2, '0');
-
-  return `${year}-${month}-${day}T${hours}:${minutes}`;
+  const s = date.toLocaleString('sv-SE', { timeZone: TIMEZONE_BRASILIA });
+  const match = s.match(/^(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2})/);
+  if (match) {
+    return `${match[1]}-${match[2]}-${match[3]}T${match[4]}:${match[5]}`;
+  }
+  const [datePart, timePart] = s.split(' ');
+  if (datePart && timePart) {
+    return `${datePart}T${timePart.slice(0, 5)}`;
+  }
+  return '';
 }
 
 /**

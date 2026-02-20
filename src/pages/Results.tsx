@@ -7,6 +7,7 @@ import { Header } from "@/components/Header";
 import { Trophy, MapPin, Calendar, Search, ExternalLink, Loader2 } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { formatDateOnlyBrasilia } from "@/lib/utils";
 import { getEvents } from "@/lib/api/events";
 import { toast } from "sonner";
 
@@ -32,7 +33,6 @@ interface EventCardProps {
 
 function EventCard({ event, onViewResults, onCardClick }: EventCardProps) {
   const [imageError, setImageError] = useState(false);
-  const eventDate = new Date(event.event_date);
 
   return (
     <Card 
@@ -56,9 +56,7 @@ function EventCard({ event, onViewResults, onCardClick }: EventCardProps) {
         <div className="space-y-2 text-sm text-muted-foreground">
           <div className="flex items-center gap-2">
             <Calendar className="h-4 w-4" />
-            <span>
-              {format(eventDate, "dd 'de' MMMM 'de' yyyy", { locale: ptBR })}
-            </span>
+            <span>{formatDateOnlyBrasilia(event.event_date)}</span>
           </div>
           <div className="flex items-center gap-2">
             <MapPin className="h-4 w-4" />

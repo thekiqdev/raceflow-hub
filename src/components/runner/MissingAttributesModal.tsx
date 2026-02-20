@@ -21,6 +21,7 @@ import { Separator } from "@/components/ui/separator";
 import { Loader2, AlertCircle, CheckCircle2 } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { formatDateOnlyBrasilia } from "@/lib/utils";
 import {
   getRegistrationsWithMissingAttributes,
   completeRegistrationAttributes,
@@ -205,10 +206,7 @@ export function MissingAttributesModal({
                 <CardHeader>
                   <CardTitle className="text-lg">{registration.event_title}</CardTitle>
                   <p className="text-sm text-muted-foreground">
-                    {registration.event_date &&
-                      format(new Date(registration.event_date), "dd 'de' MMMM 'de' yyyy", {
-                        locale: ptBR,
-                      })}
+                    {registration.event_date && formatDateOnlyBrasilia(registration.event_date)}
                   </p>
                   <p className="text-sm text-muted-foreground">Kit: {registration.kit_name}</p>
                 </CardHeader>

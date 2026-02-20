@@ -7,6 +7,7 @@ import heroImage from "@/assets/hero-running.jpg";
 import { useState, useEffect } from "react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { formatDateOnlyBrasilia } from "@/lib/utils";
 import { EventFilters, EventFiltersState } from "@/components/event/EventFilters";
 import { Header } from "@/components/Header";
 import { useAuth } from "@/contexts/AuthContext";
@@ -328,11 +329,7 @@ const Index = () => {
                       </div>
                       <div className="flex items-center gap-2 text-xs text-muted-foreground mb-3">
                         <Calendar className="h-3 w-3" />
-                        <span>
-                          {format(new Date(event.event_date), "dd 'de' MMMM 'de' yyyy", {
-                            locale: ptBR
-                          })}
-                        </span>
+                        <span>{formatDateOnlyBrasilia(event.event_date)}</span>
                       </div>
                       <div className="space-y-1 text-xs text-muted-foreground mb-4">
                         <div className="flex items-center gap-2">

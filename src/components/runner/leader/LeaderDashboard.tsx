@@ -41,6 +41,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { formatDateOnlyBrasilia } from "@/lib/utils";
 
 export function LeaderDashboard() {
   const [loading, setLoading] = useState(true);
@@ -809,7 +810,7 @@ export function LeaderDashboard() {
                         </div>
                         <div className="text-sm text-muted-foreground mb-2">
                           {commission.event_date
-                            ? formatDate(commission.event_date)
+                            ? formatDateOnlyBrasilia(commission.event_date)
                             : "Data não informada"}
                         </div>
                         <div className="flex items-center gap-2 mb-2 flex-wrap">
@@ -1285,7 +1286,7 @@ export function LeaderDashboard() {
                                   </div>
                                   {invitation.event_date && (
                                     <div className="text-sm text-muted-foreground mb-2">
-                                      {formatDate(invitation.event_date)}
+                                      {formatDateOnlyBrasilia(invitation.event_date)}
                                     </div>
                                   )}
                                   <Badge variant="default" className="text-xs">

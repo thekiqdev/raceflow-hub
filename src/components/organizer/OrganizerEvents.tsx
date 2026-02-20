@@ -30,6 +30,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Plus, Search, MoreVertical, Edit, Eye, Trash2, BarChart3, Calendar, Loader2, ExternalLink, ArrowRightLeft } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { formatDateShortBrasilia } from "@/lib/utils";
 import { EventFormDialog } from "./EventFormDialog";
 import EventDetailedReport from "./EventDetailedReport";
 import { getEvents, deleteEvent, updateEvent, type Event } from "@/lib/api/events";
@@ -278,7 +279,7 @@ const OrganizerEvents = () => {
                       <TableCell>
                         <div className="flex items-center gap-2">
                           <Calendar className="h-4 w-4 text-muted-foreground" />
-                          {format(new Date(event.event_date), "dd 'de' MMM, yyyy", { locale: ptBR })}
+                          {formatDateShortBrasilia(event.event_date)}
                         </div>
                       </TableCell>
                       <TableCell>

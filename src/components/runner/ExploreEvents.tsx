@@ -6,6 +6,7 @@ import { MapPin, Calendar, ChevronRight, Trophy, Loader2, AlertCircle, Search } 
 import { useNavigate } from "react-router-dom";
 import { format, isPast, isFuture } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { formatDateShortBrasilia } from "@/lib/utils";
 import heroImage from "@/assets/hero-running.jpg";
 import { EventFilters, EventFiltersState } from "@/components/event/EventFilters";
 import { getEvents, type Event } from "@/lib/api/events";
@@ -257,7 +258,7 @@ export function ExploreEvents() {
                   <div className="space-y-1 text-xs text-muted-foreground">
                     <div className="flex items-center gap-1">
                       <Calendar className="h-3 w-3" />
-                      <span>{format(new Date(event.event_date), "dd 'de' MMM, yyyy", { locale: ptBR })}</span>
+                      <span>{formatDateShortBrasilia(event.event_date)}</span>
                     </div>
                     <div className="flex items-center gap-1">
                       <MapPin className="h-3 w-3" />
