@@ -2446,64 +2446,38 @@ export function RegistrationFlow({
                                         const productKey = `${kit.id}-${product.id}`;
                                         const selections = variantSelections.get(productKey) || {};
                                         
-                                        // Filter variants based on previous selections
-                                        const getAvailableVariants = (attributeIndex: number): ProductVariant[] => {
+                                        // Variants matching previous attribute selections (no stock filter)
+                                        const getMatchingVariants = (attributeIndex: number): ProductVariant[] => {
                                           return product.variants.filter(variant => {
                                             const variantValues = variant.name.split(' - ').map(v => v.trim());
-                                            
-                                            // Check all previous attributes
                                             for (let i = 0; i < attributeIndex; i++) {
                                               const attrName = attributeOrder[i];
                                               const selectedValue = selections[attrName];
-                                              
-                                              if (selectedValue) {
-                                                // All attributes use values from the variant name
-                                                if (variantValues[i]?.trim() !== selectedValue) {
-                                                  return false;
-                                                }
+                                              if (selectedValue && variantValues[i]?.trim() !== selectedValue) {
+                                                return false;
                                               }
                                             }
-                                            
-                                            // Check availability
-                                            return variant.available_quantity === null || variant.available_quantity > 0;
+                                            return true;
                                           });
                                         };
                                         
-                                        // Get available values for current attribute
-                                        const getAvailableValues = (attributeIndex: number): string[] => {
-                                          const availableVariants = getAvailableVariants(attributeIndex);
-                                          
-                                          // Debug log
-                                          console.log(`🔍 getAvailableValues - attributeIndex: ${attributeIndex}, availableVariants:`, availableVariants.length);
-                                          
-                                          if (availableVariants.length === 0) {
-                                            console.warn('⚠️ Nenhuma variante disponível para o atributo', attributeIndex);
-                                            return [];
-                                          }
-                                          
-                                          // Preserve order from variants (first occurrence order)
-                                          // Instead of sorting, maintain the order as they appear in variants
-                                          const orderedValues: string[] = [];
+                                        // Values for current attribute with stock info (mostra todos; esgotados em cinza)
+                                        const getValuesWithStock = (attributeIndex: number): { value: string; inStock: boolean }[] => {
+                                          const matchingVariants = getMatchingVariants(attributeIndex);
+                                          const ordered: { value: string; inStock: boolean }[] = [];
                                           const seen = new Set<string>();
-                                          
-                                          availableVariants.forEach(variant => {
-                                            // Always parse the variant name to get values
+                                          matchingVariants.forEach(variant => {
                                             const variantValues = variant.name.split(' - ').map(v => v.trim());
-                                            
-                                            // Debug log
-                                            console.log(`🔍 Variant: ${variant.name}, parsed values:`, variantValues, `attributeIndex: ${attributeIndex}`);
-                                            
-                                            // All attributes use values from the variant name
-                                            if (variantValues[attributeIndex] && !seen.has(variantValues[attributeIndex])) {
-                                              orderedValues.push(variantValues[attributeIndex]);
-                                              seen.add(variantValues[attributeIndex]);
-                                              console.log(`✅ Adicionado valor: ${variantValues[attributeIndex]}`);
-                                            }
+                                            const value = variantValues[attributeIndex]?.trim();
+                                            if (!value || seen.has(value)) return;
+                                            seen.add(value);
+                                            const inStock = matchingVariants.some(
+                                              v => v.name.split(' - ').map((x: string) => x.trim())[attributeIndex] === value
+                                                && (v.available_quantity === null || v.available_quantity > 0)
+                                            );
+                                            ordered.push({ value, inStock });
                                           });
-                                          
-                                          console.log(`✅ Valores disponíveis para atributo ${attributeIndex}:`, orderedValues);
-                                          
-                                          return orderedValues;
+                                          return ordered;
                                         };
                                         
                                         console.log('🔍 attributeOrder:', attributeOrder);
@@ -2512,29 +2486,16 @@ export function RegistrationFlow({
                                         return (
                                           <div className="space-y-4 ml-2">
                                             {attributeOrder.map((attrName, attrIndex) => {
-                                              const availableValues = getAvailableValues(attrIndex);
+                                              const valuesWithStock = getValuesWithStock(attrIndex);
                                               const selectedValue = selections[attrName];
-                                              
-                                              console.log(`🔍 Atributo ${attrIndex} (${attrName}):`, {
-                                                availableValues,
-                                                selectedValue,
-                                                count: availableValues.length
-                                              });
                                               
                                               // Don't show this attribute if previous attribute is not selected
                                               if (attrIndex > 0) {
                                                 const prevAttrName = attributeOrder[attrIndex - 1];
-                                                if (!selections[prevAttrName]) {
-                                                  console.log(`⏭️ Pulando atributo ${attrIndex} porque o anterior não foi selecionado`);
-                                                  return null;
-                                                }
+                                                if (!selections[prevAttrName]) return null;
                                               }
                                               
-                                              // Don't show if no values available
-                                              if (availableValues.length === 0) {
-                                                console.warn(`⚠️ Nenhum valor disponível para atributo ${attrIndex} (${attrName})`);
-                                                return null;
-                                              }
+                                              if (valuesWithStock.length === 0) return null;
                                               
                                               return (
                                                 <div key={attrName} className="space-y-2">
@@ -2546,43 +2507,31 @@ export function RegistrationFlow({
                                                     onValueChange={(value) => {
                                                       const newSelections = { ...selections };
                                                       newSelections[attrName] = value;
-                                                      
-                                                      // Clear subsequent selections when a previous one changes
                                                       attributeOrder.slice(attrIndex + 1).forEach(clearAttr => {
                                                         delete newSelections[clearAttr];
                                                       });
-                                                      
                                                       setVariantSelections(new Map(variantSelections.set(productKey, newSelections)));
-                                                      
-                                                      // Find the final variant if all attributes are selected
                                                       if (Object.keys(newSelections).length === attributeOrder.length) {
                                                         const finalVariant = product.variants.find(v => {
                                                           const variantValues = v.name.split(' - ').map(val => val.trim());
-                                                          
-                                                          // Check all attributes
                                                           for (let i = 0; i < attributeOrder.length; i++) {
-                                                            const attrName = attributeOrder[i];
-                                                            const selectedValue = newSelections[attrName];
-                                                            if (variantValues[i]?.trim() !== selectedValue) {
-                                                              return false;
-                                                            }
+                                                            const a = attributeOrder[i];
+                                                            if (variantValues[i]?.trim() !== newSelections[a]) return false;
                                                           }
-                                                          
                                                           return true;
                                                         });
-                                                        
                                                         if (finalVariant) {
                                                           handleVariantSelect(finalVariant.id, product.id, kit.id);
                                                         }
                                                       }
                                                     }}
                                                     className={`grid gap-3 ${
-                                                      availableValues.length <= 3 ? 'grid-cols-3' : 
-                                                      availableValues.length <= 4 ? 'grid-cols-4' : 
-                                                      availableValues.length <= 6 ? 'grid-cols-6' : 'grid-cols-3'
+                                                      valuesWithStock.length <= 3 ? 'grid-cols-3' : 
+                                                      valuesWithStock.length <= 4 ? 'grid-cols-4' : 
+                                                      valuesWithStock.length <= 6 ? 'grid-cols-6' : 'grid-cols-3'
                                                     }`}
                                                   >
-                                                    {availableValues.map((value) => {
+                                                    {valuesWithStock.map(({ value, inStock }) => {
                                                       const isSelected = selectedValue === value;
                                                       
                                                       return (
@@ -2591,16 +2540,22 @@ export function RegistrationFlow({
                                                             value={value}
                                                             id={`${productKey}-${attrName}-${value}`}
                                                             className="peer sr-only"
+                                                            disabled={!inStock}
                                                           />
                                                           <Label
-                                                            htmlFor={`${productKey}-${attrName}-${value}`}
-                                                            className={`flex flex-col items-center justify-center rounded-md border-2 px-3 py-2 cursor-pointer transition-all ${
-                                                              isSelected
-                                                                ? "border-primary bg-primary text-primary-foreground"
-                                                                : "border-muted bg-background hover:bg-accent hover:text-accent-foreground"
+                                                            htmlFor={inStock ? `${productKey}-${attrName}-${value}` : undefined}
+                                                            className={`flex flex-col items-center justify-center rounded-md border-2 px-3 py-2 transition-all ${
+                                                              !inStock
+                                                                ? "border-muted bg-muted/50 text-muted-foreground cursor-not-allowed opacity-70"
+                                                                : isSelected
+                                                                  ? "border-primary bg-primary text-primary-foreground cursor-pointer"
+                                                                  : "border-muted bg-background hover:bg-accent hover:text-accent-foreground cursor-pointer"
                                                             }`}
                                                           >
                                                             <span className="font-medium">{value}</span>
+                                                            {!inStock && (
+                                                              <span className="text-xs mt-0.5">Esgotado</span>
+                                                            )}
                                                           </Label>
                                                         </div>
                                                       );
