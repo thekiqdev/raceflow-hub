@@ -102,6 +102,19 @@ export const getEventKits = async (eventIdOrSlug: string, categoryId?: string): 
     created_at: row.created_at,
   }));
 
+  // Usage count per variant in this event (inscrições não canceladas que escolheram cada variante)
+  const usageResult = await query(
+    `SELECT rps.variant_id, COUNT(DISTINCT rps.registration_id)::int AS usage_count
+     FROM registration_product_selections rps
+     INNER JOIN registrations r ON r.id = rps.registration_id AND r.status != 'cancelled'
+     WHERE r.event_id = $1 AND rps.variant_id IS NOT NULL
+     GROUP BY rps.variant_id`,
+    [eventId]
+  );
+  const usageByVariant = new Map<string, number>(
+    usageResult.rows.map((r: any) => [r.variant_id, parseInt(r.usage_count) || 0])
+  );
+
   // Get category_ids and products for each kit
   for (const kit of kits) {
     // Get category_ids for this kit
@@ -125,7 +138,7 @@ export const getEventKits = async (eventIdOrSlug: string, categoryId?: string): 
       created_at: row.created_at,
     }));
 
-    // Get variants for variable products
+    // Get variants for variable products; available_quantity = estoque restante (inclui inscrições anteriores)
     for (const product of products) {
       if (product.type === 'variable') {
         const variantsResult = await query(
@@ -133,16 +146,22 @@ export const getEventKits = async (eventIdOrSlug: string, categoryId?: string): 
           [product.id]
         );
 
-        product.variants = variantsResult.rows.map((row) => ({
-          id: row.id,
-          product_id: row.product_id,
-          name: row.name,
-          variant_group_name: row.variant_group_name || null,
-          available_quantity: row.available_quantity ? parseInt(row.available_quantity) : null,
-          sku: row.sku || null,
-          price: row.price ? parseFloat(row.price) : null,
-          created_at: row.created_at,
-        }));
+        product.variants = variantsResult.rows.map((row) => {
+          const baseQty = row.available_quantity != null ? parseInt(row.available_quantity) : null;
+          const usage = usageByVariant.get(row.id) || 0;
+          const remaining =
+            baseQty === null ? null : Math.max(0, baseQty - usage);
+          return {
+            id: row.id,
+            product_id: row.product_id,
+            name: row.name,
+            variant_group_name: row.variant_group_name || null,
+            available_quantity: remaining,
+            sku: row.sku || null,
+            price: row.price ? parseFloat(row.price) : null,
+            created_at: row.created_at,
+          };
+        });
       }
     }
 

@@ -13,7 +13,7 @@ import { Header } from "@/components/Header";
 import { useAuth } from "@/contexts/AuthContext";
 import { getHomePageSettings, updateHomePageSettings } from "@/lib/api/homePageSettings";
 import { getEvents } from "@/lib/api/events";
-import { getEffectiveRegistrationStatus, getRegistrationStatusLabel, getRegistrationStatusVariant } from "@/lib/utils/eventRegistration";
+import { getEffectiveRegistrationStatus, getRegistrationStatusLabel, getRegistrationStatusVariant, isRegistrationClosed } from "@/lib/utils/eventRegistration";
 import { getSystemSettings } from "@/lib/api/systemSettings";
 import { VisualEditorProvider } from "@/contexts/VisualEditorContext";
 import { EditableText } from "@/components/visual-editor/EditableText";
@@ -125,14 +125,8 @@ const Index = () => {
         return effectiveStatus === 'open' || effectiveStatus === 'not_open' || effectiveStatus === 'closed';
       });
       
-      // Ordenar: inscrições abertas, depois em breve, depois encerradas; dentro de cada grupo, por data
+      // Ordenar apenas por data do evento (mantém inscrições encerradas na mesma ordem)
       const sortedEvents = filteredEvents.sort((a, b) => {
-        const statusA = getEffectiveRegistrationStatus(a);
-        const statusB = getEffectiveRegistrationStatus(b);
-        const order: Record<string, number> = { open: 0, not_open: 1, closed: 2 };
-        const ia = statusA ? (order[statusA] ?? 3) : 3;
-        const ib = statusB ? (order[statusB] ?? 3) : 3;
-        if (ia !== ib) return ia - ib;
         const dateA = new Date(a.event_date).getTime();
         const dateB = new Date(b.event_date).getTime();
         return filters.order_by_date === 'desc' ? dateB - dateA : dateA - dateB;
@@ -346,12 +340,10 @@ const Index = () => {
                             className="flex-1 text-xs" 
                             onClick={e => {
                               e.stopPropagation();
-                              // Corrigir URL se contiver template strings
                               let urlToOpen = event.result_url!;
                               if (urlToOpen.includes('${')) {
                                 const port = window.location.port || '3001';
                                 urlToOpen = urlToOpen.replace(/\$\{API_PORT\}/g, port);
-                                // Se ainda tiver template strings, usar localhost:3001 como padrão
                                 if (urlToOpen.includes('${')) {
                                   urlToOpen = urlToOpen.replace(/http:\/\/localhost:\$\{API_PORT\}/g, 'http://localhost:3001');
                                 }
@@ -362,17 +354,32 @@ const Index = () => {
                             <Trophy className="h-3 w-3 mr-1" />
                             RESULTADOS
                           </Button>
-                        ) : (
+                        ) : null}
+                        {isRegistrationClosed(event) ? (
                           <Button 
                             size="sm" 
-                            className="flex-1 text-xs" 
+                            variant="secondary"
+                            className="flex-1 text-xs bg-muted hover:bg-muted/90 text-muted-foreground" 
                             onClick={e => {
                               e.stopPropagation();
                               navigate(event.slug ? `/evento/${event.slug}` : `/events/${event.id}`);
                             }}
                           >
-                            Inscrever-se
+                            Inscrições Encerradas
                           </Button>
+                        ) : (
+                          !event.result_url && (
+                            <Button 
+                              size="sm" 
+                              className="flex-1 text-xs" 
+                              onClick={e => {
+                                e.stopPropagation();
+                                navigate(event.slug ? `/evento/${event.slug}` : `/events/${event.id}`);
+                              }}
+                            >
+                              Inscrever-se
+                            </Button>
+                          )
                         )}
                       </div>
                     </CardContent>

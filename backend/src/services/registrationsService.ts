@@ -1,6 +1,34 @@
 import { query } from '../config/database.js';
 import { RegistrationStatus, PaymentStatus, PaymentMethod } from '../types/index.js';
 
+/**
+ * Estoque restante da variante no evento (considera todas as inscrições não canceladas).
+ * @param excludeRegistrationId - se informado, não conta essa inscrição (útil ao atualizar atributos).
+ */
+async function getVariantRemainingStock(
+  variantId: string,
+  eventId: string,
+  excludeRegistrationId?: string
+): Promise<number | null> {
+  const row = await query(
+    `SELECT available_quantity FROM product_variants WHERE id = $1`,
+    [variantId]
+  );
+  if (row.rows.length === 0) return null;
+  const base = row.rows[0].available_quantity;
+  if (base == null) return null; // ilimitado
+
+  const usageRow = await query(
+    `SELECT COUNT(DISTINCT rps.registration_id)::int AS cnt
+     FROM registration_product_selections rps
+     INNER JOIN registrations r ON r.id = rps.registration_id AND r.status != 'cancelled' AND r.event_id = $2
+     WHERE rps.variant_id = $1 AND ($3::uuid IS NULL OR rps.registration_id != $3)`,
+    [variantId, eventId, excludeRegistrationId ?? null]
+  );
+  const usage = parseInt(usageRow.rows[0]?.cnt) || 0;
+  return Math.max(0, parseInt(base) - usage);
+}
+
 // Credit Card Data Types
 export interface CreditCardData {
   holderName: string;
@@ -562,6 +590,17 @@ export const createRegistration = async (data: CreateRegistrationData) => {
   // Save product and variant selections if provided
   if (data.product_selections && data.product_selections.length > 0) {
     try {
+      // Validate stock (estoque restante considera inscrições anteriores e atuais)
+      for (const selection of data.product_selections) {
+        const variantIdToCheck = selection.variant_id;
+        if (variantIdToCheck) {
+          const remaining = await getVariantRemainingStock(variantIdToCheck, data.event_id);
+          if (remaining !== null && remaining <= 0) {
+            throw new Error('Estoque desta variante chegou a zero; não é possível selecioná-la.');
+          }
+        }
+      }
+
       for (const selection of data.product_selections) {
         // Priority 1: If attribute_selections is provided directly, use it (most reliable)
         if (selection.attribute_selections && Object.keys(selection.attribute_selections).length > 0) {
@@ -1093,7 +1132,7 @@ export const completeRegistrationAttributes = async (
         }
       }
 
-      // Validate variant_id if provided
+      // Validate variant_id if provided and check remaining stock (inclui inscrições anteriores)
       if (selection.variant_id) {
         const variantResult = await query(
           `SELECT name, product_id FROM product_variants WHERE id = $1 AND product_id = $2`,
@@ -1102,6 +1141,14 @@ export const completeRegistrationAttributes = async (
 
         if (variantResult.rows.length === 0) {
           throw new Error(`Variant ${selection.variant_id} does not belong to product ${selection.product_id}`);
+        }
+        const remaining = await getVariantRemainingStock(
+          selection.variant_id,
+          registration.event_id,
+          registrationId
+        );
+        if (remaining !== null && remaining <= 0) {
+          throw new Error('Estoque desta variante chegou a zero; não é possível selecioná-la.');
         }
       }
     }
@@ -1171,23 +1218,19 @@ export const removeRegistrationAttributes = async (
     throw new Error('Cannot remove attributes for cancelled registration');
   }
 
-  // Delete attribute selections
+  // Delete attribute selections (estoque é calculado por contagem; não é preciso devolver)
   if (productIds && productIds.length > 0) {
-    // Validate product IDs format
     for (const productId of productIds) {
       if (!uuidRegex.test(productId)) {
         throw new Error(`Invalid product ID format: ${productId}`);
       }
     }
-
-    // Delete selections for specific products
     await query(
       `DELETE FROM registration_product_selections
        WHERE registration_id = $1 AND product_id = ANY($2::uuid[])`,
       [registrationId, productIds]
     );
   } else {
-    // Delete all selections for this registration
     await query(
       `DELETE FROM registration_product_selections
        WHERE registration_id = $1`,
@@ -1316,7 +1359,7 @@ export const cancelRegistration = async (registrationId: string) => {
     throw new Error('Registration is already cancelled');
   }
 
-  // Update status to cancelled
+  // Update status to cancelled (estoque é calculado por contagem; inscrições canceladas não entram na contagem)
   const result = await query(
     `UPDATE registrations 
      SET status = 'cancelled', updated_at = NOW()
