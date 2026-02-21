@@ -20,7 +20,7 @@ import { getOrganizers } from "@/lib/api/userManagement";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, MapPin, Calendar, Users, DollarSign, Search, CheckCircle, Package, MapPin as MapPinIcon, Plus, Trash2, ChevronUp, ChevronDown, X, Ban, AlertTriangle } from "lucide-react";
 import { FileUpload } from "@/components/ui/file-upload";
-import { isoToDatetimeLocal, processDatetimeLocalForSave, datetimeLocalToISO } from "@/lib/utils";
+import { isoToDatetimeLocal, processDatetimeLocalForSave, datetimeLocalToISO, formatTimeBrasilia } from "@/lib/utils";
 
 interface EventViewEditDialogProps {
   eventId: string | null;
@@ -1994,52 +1994,18 @@ export function EventViewEditDialog({
                                             <Input
                                               type="date"
                                               key={`date-from-${batch.id || batchIndex}-${batch.valid_from || 'empty'}`}
-                                              defaultValue={(() => {
-                                                if (!batch.valid_from) return "";
-                                                try {
-                                                  const date = new Date(batch.valid_from);
-                                                  if (isNaN(date.getTime())) return "";
-                                                  // Usa UTC para evitar problemas de timezone
-                                                  const year = date.getUTCFullYear();
-                                                  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
-                                                  const day = String(date.getUTCDate()).padStart(2, '0');
-                                                  return `${year}-${month}-${day}`;
-                                                } catch {
-                                                  return "";
-                                                }
-                                              })()}
-                                              onChange={(e) => {
-                                                // Não faz nada durante a digitação - permite digitação livre
-                                                // O valor será processado apenas no onBlur
-                                              }}
+                                              defaultValue={batch.valid_from ? isoToDatetimeLocal(batch.valid_from).split('T')[0] || "" : ""}
+                                              onChange={() => {}}
                                               onBlur={(e) => {
                                                 const dateValue = e.target.value;
-                                                console.log('📅 onBlur date valid_from:', dateValue);
-                                                
                                                 if (!dateValue || dateValue.trim() === '') {
-                                                  updateBatchLocal(
-                                                    index,
-                                                    batchIndex,
-                                                    "valid_from",
-                                                    null
-                                                  );
+                                                  updateBatchLocal(index, batchIndex, "valid_from", null);
                                                   return;
                                                 }
-
-                                                // Valida se a data está completa (YYYY-MM-DD = 10 caracteres)
                                                 if (dateValue.length === 10 && dateValue.match(/^\d{4}-\d{2}-\d{2}$/)) {
-                                                  // Se tiver apenas a data, adiciona 00:00 automaticamente
-                                                  const datetimeValue = `${dateValue}T00:00`;
-                                                  const processedValue = processDatetimeLocalForSave(datetimeValue);
-                                                  console.log('📅 onBlur date valid_from processado:', processedValue);
-                                                  
+                                                  const processedValue = processDatetimeLocalForSave(`${dateValue}T00:00`);
                                                   if (processedValue) {
-                                                    updateBatchLocal(
-                                                      index,
-                                                      batchIndex,
-                                                      "valid_from",
-                                                      processedValue
-                                                    );
+                                                    updateBatchLocal(index, batchIndex, "valid_from", processedValue);
                                                   }
                                                 }
                                               }}
@@ -2047,35 +2013,21 @@ export function EventViewEditDialog({
                                             />
                                             <Input
                                               type="time"
-                                              value={batch.valid_from ? (() => {
-                                                const date = new Date(batch.valid_from);
-                                                if (isNaN(date.getTime())) return "00:00";
-                                                return `${String(date.getUTCHours()).padStart(2, '0')}:${String(date.getUTCMinutes()).padStart(2, '0')}`;
-                                              })() : "00:00"}
-                                              onChange={(e) => {
-                                                const timeValue = e.target.value;
-                                                console.log('📅 onChange time valid_from:', timeValue);
-                                                
-                                                // Pega a data atual do batch ou usa hoje
-                                                const currentDate = batch.valid_from 
-                                                  ? new Date(batch.valid_from)
-                                                  : new Date();
-                                                  
-                                                if (isNaN(currentDate.getTime())) {
-                                                  return;
+                                              key={`time-from-${batch.id || batchIndex}-${batch.valid_from || 'empty'}`}
+                                              defaultValue={batch.valid_from ? formatTimeBrasilia(batch.valid_from) : "00:00"}
+                                              onBlur={(e) => {
+                                                const timeValue = (e.target.value || "").trim();
+                                                if (!/^\d{1,2}:\d{2}$/.test(timeValue) && !/^\d{2}:\d{2}$/.test(timeValue)) return;
+                                                const [h, m] = timeValue.split(':').map(s => s.padStart(2, '0'));
+                                                const timePart = `${h.padStart(2, '0')}:${m}`;
+                                                const datePart = batch.valid_from
+                                                  ? isoToDatetimeLocal(batch.valid_from).split('T')[0]
+                                                  : new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' }).slice(0, 10);
+                                                if (!datePart) return;
+                                                const processedValue = datetimeLocalToISO(`${datePart}T${timePart}`);
+                                                if (processedValue) {
+                                                  updateBatchLocal(index, batchIndex, "valid_from", processedValue);
                                                 }
-
-                                                const dateStr = `${currentDate.getUTCFullYear()}-${String(currentDate.getUTCMonth() + 1).padStart(2, '0')}-${String(currentDate.getUTCDate()).padStart(2, '0')}`;
-                                                const datetimeValue = `${dateStr}T${timeValue || '00:00'}`;
-                                                const processedValue = processDatetimeLocalForSave(datetimeValue);
-                                                console.log('📅 onChange time valid_from processado:', processedValue);
-                                                
-                                                updateBatchLocal(
-                                                  index,
-                                                  batchIndex,
-                                                  "valid_from",
-                                                  processedValue
-                                                );
                                               }}
                                               className="h-9 w-32"
                                             />
@@ -2089,52 +2041,18 @@ export function EventViewEditDialog({
                                             <Input
                                               type="date"
                                               key={`date-to-${batch.id || batchIndex}-${batch.valid_to || 'empty'}`}
-                                              defaultValue={(() => {
-                                                if (!batch.valid_to) return "";
-                                                try {
-                                                  const date = new Date(batch.valid_to);
-                                                  if (isNaN(date.getTime())) return "";
-                                                  // Usa UTC para evitar problemas de timezone
-                                                  const year = date.getUTCFullYear();
-                                                  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
-                                                  const day = String(date.getUTCDate()).padStart(2, '0');
-                                                  return `${year}-${month}-${day}`;
-                                                } catch {
-                                                  return "";
-                                                }
-                                              })()}
-                                              onChange={(e) => {
-                                                // Não faz nada durante a digitação - permite digitação livre
-                                                // O valor será processado apenas no onBlur
-                                              }}
+                                              defaultValue={batch.valid_to ? isoToDatetimeLocal(batch.valid_to).split('T')[0] || "" : ""}
+                                              onChange={() => {}}
                                               onBlur={(e) => {
                                                 const dateValue = e.target.value;
-                                                console.log('📅 onBlur date valid_to:', dateValue);
-                                                
                                                 if (!dateValue || dateValue.trim() === '') {
-                                                  updateBatchLocal(
-                                                    index,
-                                                    batchIndex,
-                                                    "valid_to",
-                                                    null
-                                                  );
+                                                  updateBatchLocal(index, batchIndex, "valid_to", null);
                                                   return;
                                                 }
-
-                                                // Valida se a data está completa (YYYY-MM-DD = 10 caracteres)
                                                 if (dateValue.length === 10 && dateValue.match(/^\d{4}-\d{2}-\d{2}$/)) {
-                                                  // Se tiver apenas a data, adiciona 00:00 automaticamente
-                                                  const datetimeValue = `${dateValue}T00:00`;
-                                                  const processedValue = processDatetimeLocalForSave(datetimeValue);
-                                                  console.log('📅 onBlur date valid_to processado:', processedValue);
-                                                  
+                                                  const processedValue = processDatetimeLocalForSave(`${dateValue}T00:00`);
                                                   if (processedValue) {
-                                                    updateBatchLocal(
-                                                      index,
-                                                      batchIndex,
-                                                      "valid_to",
-                                                      processedValue
-                                                    );
+                                                    updateBatchLocal(index, batchIndex, "valid_to", processedValue);
                                                   }
                                                 }
                                               }}
@@ -2142,35 +2060,21 @@ export function EventViewEditDialog({
                                             />
                                             <Input
                                               type="time"
-                                              value={batch.valid_to ? (() => {
-                                                const date = new Date(batch.valid_to);
-                                                if (isNaN(date.getTime())) return "00:00";
-                                                return `${String(date.getUTCHours()).padStart(2, '0')}:${String(date.getUTCMinutes()).padStart(2, '0')}`;
-                                              })() : "00:00"}
-                                              onChange={(e) => {
-                                                const timeValue = e.target.value;
-                                                console.log('📅 onChange time valid_to:', timeValue);
-                                                
-                                                // Pega a data atual do batch ou usa hoje
-                                                const currentDate = batch.valid_to 
-                                                  ? new Date(batch.valid_to)
-                                                  : new Date();
-                                                  
-                                                if (isNaN(currentDate.getTime())) {
-                                                  return;
+                                              key={`time-to-${batch.id || batchIndex}-${batch.valid_to || 'empty'}`}
+                                              defaultValue={batch.valid_to ? formatTimeBrasilia(batch.valid_to) : "00:00"}
+                                              onBlur={(e) => {
+                                                const timeValue = (e.target.value || "").trim();
+                                                if (!/^\d{1,2}:\d{2}$/.test(timeValue) && !/^\d{2}:\d{2}$/.test(timeValue)) return;
+                                                const [h, m] = timeValue.split(':').map(s => s.padStart(2, '0'));
+                                                const timePart = `${h.padStart(2, '0')}:${m}`;
+                                                const datePart = batch.valid_to
+                                                  ? isoToDatetimeLocal(batch.valid_to).split('T')[0]
+                                                  : new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' }).slice(0, 10);
+                                                if (!datePart) return;
+                                                const processedValue = datetimeLocalToISO(`${datePart}T${timePart}`);
+                                                if (processedValue) {
+                                                  updateBatchLocal(index, batchIndex, "valid_to", processedValue);
                                                 }
-
-                                                const dateStr = `${currentDate.getUTCFullYear()}-${String(currentDate.getUTCMonth() + 1).padStart(2, '0')}-${String(currentDate.getUTCDate()).padStart(2, '0')}`;
-                                                const datetimeValue = `${dateStr}T${timeValue || '00:00'}`;
-                                                const processedValue = processDatetimeLocalForSave(datetimeValue);
-                                                console.log('📅 onChange time valid_to processado:', processedValue);
-                                                
-                                                updateBatchLocal(
-                                                  index,
-                                                  batchIndex,
-                                                  "valid_to",
-                                                  processedValue
-                                                );
                                               }}
                                               className="h-9 w-32"
                                             />
