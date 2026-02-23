@@ -294,28 +294,30 @@ const EventManagement = () => {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 px-0 sm:px-0">
       <div>
-        <h2 className="text-3xl font-bold mb-2">Gestão de Eventos</h2>
-        <p className="text-muted-foreground">Gerenciar todos os eventos da plataforma</p>
+        <h2 className="text-2xl sm:text-3xl font-bold mb-2">Gestão de Eventos</h2>
+        <p className="text-sm text-muted-foreground">Gerenciar todos os eventos da plataforma</p>
       </div>
 
       <Card>
-        <CardHeader>
-          <CardTitle>Eventos</CardTitle>
-          <CardDescription>Aprovar, visualizar e gerenciar eventos</CardDescription>
-          <div className="flex gap-2 pt-4">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+        <CardHeader className="space-y-4 pb-4">
+          <div>
+            <CardTitle>Eventos</CardTitle>
+            <CardDescription>Aprovar, visualizar e gerenciar eventos</CardDescription>
+          </div>
+          <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-2">
+            <div className="relative w-full sm:flex-1 sm:min-w-[200px]">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
                 placeholder="Buscar por nome, organizador ou cidade..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10"
+                className="pl-10 w-full"
               />
             </div>
             <Select value={statusFilter || "all"} onValueChange={(value) => setStatusFilter(value === "all" ? "" : value)}>
-              <SelectTrigger className="w-[180px]">
+              <SelectTrigger className="w-full sm:w-[180px]">
                 <SelectValue placeholder="Todos os status" />
               </SelectTrigger>
               <SelectContent>
@@ -328,7 +330,7 @@ const EventManagement = () => {
               </SelectContent>
             </Select>
             <Select value={dateOrderFilter} onValueChange={setDateOrderFilter}>
-              <SelectTrigger className="w-[200px]">
+              <SelectTrigger className="w-full sm:w-[200px]">
                 <SelectValue placeholder="Ordenar por data" />
               </SelectTrigger>
               <SelectContent>
@@ -336,23 +338,28 @@ const EventManagement = () => {
                 <SelectItem value="desc">Mais longe primeiro</SelectItem>
               </SelectContent>
             </Select>
-            <Button variant="outline">
-              <Download className="mr-2 h-4 w-4" />
-              Exportar
-            </Button>
-            <Button onClick={() => setIsCreateDialogOpen(true)}>
-              <Plus className="mr-2 h-4 w-4" />
-              Criar Evento
-            </Button>
+            <div className="flex gap-2 flex-wrap">
+              <Button variant="outline" className="flex-1 sm:flex-none">
+                <Download className="mr-2 h-4 w-4" />
+                Exportar
+              </Button>
+              <Button onClick={() => setIsCreateDialogOpen(true)} className="flex-1 sm:flex-none">
+                <Plus className="mr-2 h-4 w-4" />
+                Criar Evento
+              </Button>
+            </div>
           </div>
         </CardHeader>
-        <CardContent>
+        <CardContent className="p-0 sm:p-6 pt-0">
           {loading ? (
             <div className="flex items-center justify-center py-8">
               <Loader2 className="h-8 w-8 animate-spin" />
             </div>
           ) : (
-            <Table>
+            <>
+              {/* Desktop: tabela */}
+              <div className="hidden md:block overflow-x-auto">
+                <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Evento</TableHead>
@@ -365,17 +372,11 @@ const EventManagement = () => {
                   <TableHead>Faturamento</TableHead>
                   <TableHead>Ticket Médio</TableHead>
                   <TableHead>Taxa Plataforma</TableHead>
-                  <TableHead>Ações</TableHead>
+                  <TableHead className="text-right">Ações</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {loading ? (
-                  <TableRow>
-                    <TableCell colSpan={11} className="text-center py-8">
-                      <Loader2 className="h-6 w-6 animate-spin mx-auto" />
-                    </TableCell>
-                  </TableRow>
-                ) : events.length === 0 ? (
+                {events.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={11} className="text-center py-8 text-muted-foreground">
                       Nenhum evento encontrado
@@ -463,11 +464,11 @@ const EventManagement = () => {
                       <TableCell>
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon">
+                            <Button variant="ghost" size="icon" className="h-9 w-9 touch-manipulation">
                               <MoreVertical className="h-4 w-4" />
                             </Button>
                           </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
+                          <DropdownMenuContent align="end" side="bottom" collisionPadding={12}>
                             {event.status === "draft" ? (
                               <>
                                 <DropdownMenuItem onClick={() => handleApprove(event.id)}>
@@ -526,6 +527,133 @@ const EventManagement = () => {
                 )}
               </TableBody>
             </Table>
+              </div>
+
+              {/* Mobile: cards */}
+              <div className="md:hidden space-y-3 px-4 pb-4">
+                {events.length === 0 ? (
+                  <p className="text-center py-8 text-muted-foreground text-sm">Nenhum evento encontrado</p>
+                ) : (
+                  events.map((event) => (
+                    <Card key={event.id} className="p-4">
+                      <div className="space-y-3">
+                        <div className="flex justify-between items-start gap-2">
+                          <h3 className="font-medium text-sm line-clamp-2">{event.title}</h3>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="outline" size="sm" className="h-8 w-8 p-0 shrink-0 touch-manipulation">
+                                <MoreVertical className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" side="bottom" collisionPadding={12}>
+                              {event.status === "draft" ? (
+                                <>
+                                  <DropdownMenuItem onClick={() => handleApprove(event.id)}>
+                                    <CheckCircle className="mr-2 h-4 w-4 text-green-500" />
+                                    Aprovar
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem onClick={() => handleReject(event.id)}>
+                                    <XCircle className="mr-2 h-4 w-4 text-red-500" />
+                                    Reprovar
+                                  </DropdownMenuItem>
+                                </>
+                              ) : (
+                                <>
+                                  <DropdownMenuItem onClick={() => navigate(event.slug ? `/evento/${event.slug}` : `/events/${event.id}`)}>
+                                    <ExternalLink className="mr-2 h-4 w-4" />
+                                    Ver página pública
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem onClick={() => handleViewEvent(event.id)}>
+                                    <Eye className="mr-2 h-4 w-4" />
+                                    Visualizar
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem onClick={() => handleEditEvent(event.id)}>
+                                    <Edit className="mr-2 h-4 w-4" />
+                                    Editar
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem onClick={() => setSelectedEventIdForReport(event.id)}>
+                                    <BarChart className="mr-2 h-4 w-4" />
+                                    Estatísticas
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem onClick={() => { setEventForResult(event); setResultUrl(""); setIsResultDialogOpen(true); }}>
+                                    <Award className="mr-2 h-4 w-4 text-yellow-500" />
+                                    Enviar Resultado
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem className="text-destructive" onClick={() => handleDeleteEvent(event)}>
+                                    <Trash2 className="mr-2 h-4 w-4" />
+                                    Excluir
+                                  </DropdownMenuItem>
+                                </>
+                              )}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
+                        <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                          <span>{event.organizer}</span>
+                          <span>{new Date(event.date).toLocaleDateString('pt-BR')}</span>
+                          <span>{event.city}</span>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <Badge variant={getStatusColor(event.status)} className="text-xs">
+                            {getStatusLabel(event.status)}
+                          </Badge>
+                          {getEffectiveRegistrationStatus(event) !== null ? (
+                            editingRegistrationStatus === event.id ? (
+                              <Select
+                                value={getEffectiveRegistrationStatus(event) || "default"}
+                                onValueChange={async (value) => {
+                                  try {
+                                    const newStatus = value === "default" ? null : value;
+                                    const response = await updateEvent(event.id, {
+                                      registration_status: newStatus,
+                                      registration_auto_mode: false,
+                                    });
+                                    if (response.success) {
+                                      toast({ title: "Sucesso", description: "Status de inscrições atualizado!" });
+                                      setEditingRegistrationStatus(null);
+                                      loadEvents();
+                                    } else throw new Error(response.error);
+                                  } catch (err: any) {
+                                    toast({ title: "Erro", description: err.message, variant: "destructive" });
+                                  }
+                                }}
+                                onOpenChange={(open) => !open && setEditingRegistrationStatus(null)}
+                              >
+                                <SelectTrigger className="h-7 text-xs w-[160px]">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="not_open">Em Breve</SelectItem>
+                                  <SelectItem value="open">Abertas</SelectItem>
+                                  <SelectItem value="closed">Encerradas</SelectItem>
+                                  <SelectItem value="default">Padrão</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            ) : (
+                              <Badge
+                                variant={getRegistrationStatusVariant(event)}
+                                className="text-xs cursor-pointer touch-manipulation"
+                                onClick={() => setEditingRegistrationStatus(event.id)}
+                              >
+                                {getRegistrationStatusLabel(event)}
+                              </Badge>
+                            )
+                          ) : null}
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 text-xs pt-2 border-t">
+                          <div>
+                            <span className="text-muted-foreground">Inscrições:</span> {event.registrations}
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground">Faturamento:</span> {formatCurrency(event.revenue)}
+                          </div>
+                        </div>
+                      </div>
+                    </Card>
+                  ))
+                )}
+              </div>
+            </>
           )}
         </CardContent>
       </Card>

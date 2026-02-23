@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Users, Calendar, DollarSign, TrendingUp, CheckCircle, MessageSquare, Loader2, Receipt } from "lucide-react";
@@ -6,9 +7,11 @@ import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, R
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import { getDashboardStats, getDashboardCharts, type DashboardStats } from "@/lib/api/admin";
 import { getSupportTickets } from "@/lib/api/support";
+import { getAdminPath } from "@/lib/utils/navigation";
 import { toast } from "sonner";
 
 const DashboardOverview = () => {
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [registrationsByMonth, setRegistrationsByMonth] = useState<Array<{ month: string; inscrições: number }>>([]);
@@ -253,18 +256,14 @@ const DashboardOverview = () => {
         <CardContent className="flex flex-wrap gap-2">
           <Button 
             variant="outline"
-            onClick={() => {
-              window.dispatchEvent(new CustomEvent('admin:navigate-to-section', { detail: 'events' }));
-            }}
+            onClick={() => navigate(getAdminPath('events'))}
           >
             <Calendar className="mr-2 h-4 w-4" />
             Eventos {stats.pending_events > 0 && `(${stats.pending_events})`}
           </Button>
           <Button 
             variant="outline"
-            onClick={() => {
-              window.dispatchEvent(new CustomEvent('admin:navigate-to-section', { detail: 'support' }));
-            }}
+            onClick={() => navigate(getAdminPath('support'))}
           >
             <MessageSquare className="mr-2 h-4 w-4" />
             Suporte {newTicketsCount > 0 && `(${newTicketsCount})`}
