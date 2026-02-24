@@ -1,5 +1,7 @@
-import { query } from '../config/database.js';
+import { randomBytes } from 'crypto';
+import { query, getClient } from '../config/database.js';
 import { RegistrationStatus, PaymentStatus, PaymentMethod } from '../types/index.js';
+import { hashPassword } from './authService.js';
 
 /**
  * Estoque restante da variante no evento (considera todas as inscrições não canceladas).
@@ -832,6 +834,91 @@ export const findUserByCpfOrEmail = async (cpf?: string, email?: string) => {
   }
   
   return null;
+};
+
+export interface RunnerDataByOrganizer {
+  full_name: string;
+  birth_date: string;
+  city: string;
+  gender: string;
+  team?: string;
+  email?: string;
+  phone?: string;
+}
+
+/**
+ * Cria atleta (user + profile + role runner) pelo organizador quando o CPF não está cadastrado.
+ * Email: usa runner_data.email se informado e único; senão usa email temporário único.
+ * Retorna o id do usuário criado (runner_id).
+ */
+export const createRunnerByOrganizer = async (
+  cpf: string,
+  runner_data: RunnerDataByOrganizer
+): Promise<{ id: string }> => {
+  const cleanCpf = cpf.replace(/[^0-9]/g, '');
+  if (cleanCpf.length !== 11) {
+    throw new Error('CPF inválido');
+  }
+
+  const existing = await findUserByCpf(cleanCpf);
+  if (existing) {
+    throw new Error('Já existe cadastro para este CPF');
+  }
+
+  let email: string;
+  const rawEmail = runner_data.email?.trim();
+  if (rawEmail) {
+    const byEmail = await findUserByEmail(rawEmail);
+    if (byEmail) {
+      email = `org-runner-${cleanCpf}-${Date.now()}@temp.cronoteam`;
+    } else {
+      email = rawEmail.toLowerCase();
+    }
+  } else {
+    email = `org-runner-${cleanCpf}-${Date.now()}@temp.cronoteam`;
+  }
+
+  const randomPassword = await hashPassword(
+    randomBytes(32).toString('hex')
+  );
+  const client = await getClient();
+
+  try {
+    await client.query('BEGIN');
+    const userResult = await client.query(
+      `INSERT INTO users (email, password_hash) VALUES ($1, $2) RETURNING id`,
+      [email, randomPassword]
+    );
+    const userId = userResult.rows[0].id;
+
+    await client.query(
+      `INSERT INTO profiles (id, full_name, cpf, birth_date, city, gender, team, phone)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [
+        userId,
+        runner_data.full_name?.trim() || '',
+        cleanCpf,
+        runner_data.birth_date || null,
+        runner_data.city?.trim() || null,
+        runner_data.gender?.trim() || null,
+        runner_data.team?.trim() || null,
+        runner_data.phone?.trim() || null,
+      ]
+    );
+
+    await client.query(
+      `INSERT INTO user_roles (user_id, role) VALUES ($1, 'runner')`,
+      [userId]
+    );
+
+    await client.query('COMMIT');
+    return { id: userId };
+  } catch (e) {
+    await client.query('ROLLBACK');
+    throw e;
+  } finally {
+    client.release();
+  }
 };
 
 /**

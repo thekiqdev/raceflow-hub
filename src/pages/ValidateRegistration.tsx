@@ -130,7 +130,8 @@ export default function ValidateRegistration() {
     );
   }
 
-  const isConfirmed = registration.status === "confirmed" && registration.payment_status === "paid";
+  // Inscrição confirmada: paga ou por convite (organizador inscreveu sem cobrança)
+  const isConfirmed = registration.status === "confirmed" && (registration.payment_status === "paid" || registration.payment_status === "convidado");
   const locationText = registration.location || `${registration.city || ''}, ${registration.state || ''}`.trim() || 'Local não informado';
   
   // Generate validation URL only if registration and id are available
@@ -140,8 +141,8 @@ export default function ValidateRegistration() {
   
   // Check if current user is the owner of the registration
   const isOwner = user && registration && (registration.runner_id === user.id || registration.registered_by === user.id);
-  // Não exibir "Pagar diferença" quando a inscrição já está paga (ex.: confirmação manual pelo admin)
-  const hasPendingDiff = registration && (registration.has_pending_difference || (registration.pending_difference_amount ?? 0) > 0) && registration.payment_status !== 'paid';
+  // Não exibir "Pagar diferença" quando a inscrição já está paga ou é por convite
+  const hasPendingDiff = registration && (registration.has_pending_difference || (registration.pending_difference_amount ?? 0) > 0) && registration.payment_status !== 'paid' && registration.payment_status !== 'convidado';
 
   const handlePayDifference = async () => {
     if (!registration?.id) return;
@@ -232,7 +233,9 @@ export default function ValidateRegistration() {
                   <div className="text-center">
                     <h2 className="text-xl font-bold text-green-800">Inscrição Confirmada</h2>
                     <p className="text-sm text-green-700 mt-1">
-                      Pagamento aprovado e inscrição válida
+                      {registration.payment_status === "convidado"
+                        ? "Inscrição por convite — válida"
+                        : "Pagamento aprovado e inscrição válida"}
                     </p>
                   </div>
                   <Badge className="bg-green-600 text-white text-base px-4 py-1">

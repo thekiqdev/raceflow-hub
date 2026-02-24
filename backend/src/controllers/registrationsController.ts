@@ -7,6 +7,8 @@ import {
   updateRegistration,
   findUserByCpfOrEmail,
   findUserByEmail,
+  findUserByCpf,
+  createRunnerByOrganizer,
   transferRegistration,
   cancelRegistration,
   getRegistrationsWithMissingAttributes,
@@ -1521,27 +1523,49 @@ export const createRegistrationByOrganizerController = asyncHandler(async (req: 
     return;
   }
 
-  const { email, event_id, category_id, kit_id } = req.body;
+  const { cpf, runner_data, event_id, category_id, kit_id, modality_id, product_selections } = req.body;
 
-  if (!email || !event_id || !category_id) {
+  if (!cpf || !event_id || !category_id) {
     res.status(400).json({
       success: false,
       error: 'Missing required fields',
-      message: 'email, event_id e category_id são obrigatórios',
+      message: 'cpf, event_id e category_id são obrigatórios',
     });
     return;
   }
 
-  // Find user by email
-  const athlete = await findUserByEmail(email);
-  
-  if (!athlete) {
-    res.status(404).json({
+  const cleanCpf = String(cpf).replace(/[^0-9]/g, '');
+  if (cleanCpf.length !== 11) {
+    res.status(400).json({
       success: false,
-      error: 'User not found',
-      message: 'Não foi encontrado um usuário com o email informado',
+      error: 'Invalid CPF',
+      message: 'CPF deve conter 11 dígitos',
     });
     return;
+  }
+
+  let athlete = await findUserByCpf(cleanCpf);
+
+  if (!athlete) {
+    if (!runner_data || !runner_data.full_name) {
+      res.status(400).json({
+        success: false,
+        error: 'CPF not registered',
+        message: 'CPF não cadastrado. Informe os dados do atleta para criar o cadastro.',
+      });
+      return;
+    }
+    try {
+      const created = await createRunnerByOrganizer(cleanCpf, runner_data);
+      athlete = { id: created.id, full_name: runner_data.full_name, cpf: cleanCpf };
+    } catch (err: any) {
+      res.status(400).json({
+        success: false,
+        error: 'Error creating athlete',
+        message: err.message || 'Erro ao criar cadastro do atleta',
+      });
+      return;
+    }
   }
 
   // Validate event
@@ -1623,22 +1647,23 @@ export const createRegistrationByOrganizerController = asyncHandler(async (req: 
     event_id,
     category_id,
     kit_id: kit_id || undefined,
+    modality_id: modality_id || undefined,
     runner_id: athlete.id,
     registered_by: req.user.id,
     total_amount: totalAmount, // Always 0 for organizer-created registrations
     payment_method: 'free_bonus' as const, // Mark as free bonus (invitation) to exclude from revenue
     status: 'confirmed' as const, // Inscrições criadas por organizador vêm como confirmadas
     payment_status: 'convidado' as const, // Mark as 'convidado' to exclude from revenue calculation
-    product_selections: req.body.product_selections || undefined,
+    product_selections: product_selections || undefined,
   };
 
   console.log('📝 Organizador criando inscrição para atleta:', {
     organizer_id: req.user.id,
     athlete_id: athlete.id,
-    athlete_email: email,
     event_id,
     category_id,
     kit_id,
+    modality_id,
     total_amount: totalAmount,
   });
 

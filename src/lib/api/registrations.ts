@@ -224,12 +224,25 @@ export const createRegistration = async (data: CreateRegistrationData) => {
   return apiClient.post<Registration>('/registrations', data);
 };
 
-// Create registration by organizer for an athlete
+// Runner data when organizer creates new athlete (CPF not registered)
+export interface RunnerDataByOrganizer {
+  full_name: string;
+  birth_date: string;
+  city: string;
+  gender: string;
+  team?: string;
+  email?: string;
+  phone?: string;
+}
+
+// Create registration by organizer for an athlete (identified by CPF)
 export interface CreateRegistrationByOrganizerData {
-  email: string;
+  cpf: string;
+  runner_data?: RunnerDataByOrganizer;
   event_id: string;
   category_id: string;
   kit_id?: string;
+  modality_id?: string | null;
   product_selections?: ProductSelection[];
 }
 
