@@ -299,7 +299,7 @@ const EventDetails = () => {
 
     return () => {
       document.title = "cronoteam";
-      const defaultImage = "https://storage.googleapis.com/gpt-engineer-file-uploads/Iflf9Sg098QodpxrfSw4Slgf0Ey1/uploads/1763481392156-logo-cronoteam-png-128x40-1.png";
+      const defaultImage = "https://cronoteam.com.br/logo-og.png";
       setMeta('meta[property="og:title"]', "content", "cronoteam");
       setMeta('meta[property="og:description"]', "content", "Empresa de cronometragem esportiva.");
       setMeta('meta[property="og:image"]', "content", defaultImage);
