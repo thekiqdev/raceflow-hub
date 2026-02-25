@@ -29,6 +29,7 @@ import { getModalities, type Modality } from "@/lib/api/modalities";
 import { getCategoriesByModality, type Category as CategoryType, type CategoryGender, type CategoryType as CategoryTypeEnum } from "@/lib/api/categories";
 import { getEffectiveRegistrationStatus, getRegistrationStatusMessage, isRegistrationOpen, isRegistrationNotOpen, isRegistrationClosed } from "@/lib/utils/eventRegistration";
 import type { Event } from "@/lib/api/events";
+import { getReferralCoupon, saveReferralCoupon, clearReferralCoupon } from "@/lib/referralCouponCache";
 
 // Re-export ProductVariant type for use in component
 type ProductVariantType = ProductVariant;
@@ -386,21 +387,26 @@ export function RegistrationFlow({
 
       checkRegistration();
 
-      // Check for coupon code in URL and apply automatically
-      const couponFromUrl = searchParams.get('cupom');
-      const refFromUrl = searchParams.get('ref');
-      
-      console.log('🔍 URL Params:', { coupon: couponFromUrl, ref: refFromUrl, searchParams: searchParams.toString() });
-      
-      if (couponFromUrl && !appliedCoupon) {
-        console.log('✅ Cupom encontrado na URL:', couponFromUrl);
-        setCouponCode(couponFromUrl.toUpperCase().trim());
-        // Auto-validate coupon from URL
-        setTimeout(() => {
-          handleValidateCoupon(couponFromUrl.toUpperCase().trim());
-        }, 500);
-      } else if (!couponFromUrl) {
-        console.log('⚠️ Nenhum cupom encontrado na URL');
+      // Cupom/ref: prioridade para URL; se não houver, usar cache (docs/PLANO_APLICACAO_CACHE_CUPOM.md)
+      const couponFromUrl = searchParams.get('cupom')?.trim() || undefined;
+      const refFromUrl = searchParams.get('ref')?.trim() || undefined;
+
+      if (couponFromUrl || refFromUrl) {
+        saveReferralCoupon(event.id, { cupom: couponFromUrl, ref: refFromUrl });
+        if (couponFromUrl && !appliedCoupon) {
+          setCouponCode(couponFromUrl.toUpperCase().trim());
+          setTimeout(() => {
+            handleValidateCoupon(couponFromUrl.toUpperCase().trim());
+          }, 500);
+        }
+      } else {
+        const cached = getReferralCoupon(event.id);
+        if (cached?.cupom && !appliedCoupon) {
+          setCouponCode(cached.cupom.toUpperCase().trim());
+          setTimeout(() => {
+            handleValidateCoupon(cached.cupom!.toUpperCase().trim());
+          }, 500);
+        }
       }
     } else {
       // Reset states when modal closes
@@ -1168,21 +1174,13 @@ export function RegistrationFlow({
         registrationData.credit_card_holder_info = creditCardData.credit_card_holder_info;
       }
 
-      console.log('📤 Enviando dados de inscrição:', {
-        event_id: registrationData.event_id,
-        category_id: registrationData.category_id,
-        kit_id: registrationData.kit_id,
-        total_amount: registrationData.total_amount,
-        categoryPrice,
-        kitPrice: selectedKit?.price || 0,
-        totalPrice,
-      });
-
       const response = await createRegistration(registrationData);
 
       if (!response.success) {
         throw new Error(response.error || "Erro ao criar inscrição");
       }
+
+      clearReferralCoupon(event.id);
 
       // Generate confirmation code (use the one from API if available, otherwise generate)
       const code = response.data?.confirmation_code || 
@@ -3161,6 +3159,8 @@ export function RegistrationFlow({
                             if (!response.success) {
                               throw new Error(response.error || "Erro ao criar inscrição");
                             }
+
+                            clearReferralCoupon(event.id);
 
                             const code = response.data?.confirmation_code || 
                               `CONF-${Math.random().toString(36).substring(2, 10).toUpperCase()}`;

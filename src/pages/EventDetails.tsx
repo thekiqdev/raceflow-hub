@@ -1,7 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
   MapPin,
   Calendar,
@@ -40,6 +40,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { saveReferralCoupon } from "@/lib/referralCouponCache";
 
 interface EventDetail {
   id: string;
@@ -141,6 +142,7 @@ const formatDateUTC = (dateString: string | null | undefined): string => {
 
 const EventDetails = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { id, slug } = useParams();
   // Usar slug se disponível, caso contrário usar id (compatibilidade com UUID)
   const eventIdOrSlug = slug || id;
@@ -270,6 +272,16 @@ const EventDetails = () => {
 
     loadEventData();
   }, [eventIdOrSlug]);
+
+  // Cache de cupom/ref da URL para reutilizar ao abrir inscrição depois (ver docs/PLANO_APLICACAO_CACHE_CUPOM.md)
+  useEffect(() => {
+    if (!event?.id) return;
+    const cupom = searchParams.get("cupom")?.trim() || undefined;
+    const ref = searchParams.get("ref")?.trim() || undefined;
+    if (cupom || ref) {
+      saveReferralCoupon(event.id, { cupom, ref });
+    }
+  }, [event?.id, searchParams]);
 
   // Atualizar meta tags (Open Graph / Twitter) para preview ao compartilhar link (WhatsApp, redes sociais)
   useEffect(() => {

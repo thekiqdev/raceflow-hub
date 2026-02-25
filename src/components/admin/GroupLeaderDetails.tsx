@@ -63,6 +63,9 @@ export function GroupLeaderDetails({
   const [activeTab, setActiveTab] = useState("overview");
   const [eventSearchTerm, setEventSearchTerm] = useState("");
   const [userSearchTerm, setUserSearchTerm] = useState<Record<string, string>>({});
+  const [referralSearchTerm, setReferralSearchTerm] = useState("");
+  const [invitationSearchTerm, setInvitationSearchTerm] = useState("");
+  const [purchaseSearchTerm, setPurchaseSearchTerm] = useState("");
   const [registrationForChangeCoupon, setRegistrationForChangeCoupon] = useState<LeaderRegistration | null>(null);
   const [eventCommissionsForCoupon, setEventCommissionsForCoupon] = useState<EventCommissionOption[]>([]);
   const [selectedCommissionIdForChange, setSelectedCommissionIdForChange] = useState<string>("");
@@ -322,6 +325,40 @@ export function GroupLeaderDetails({
     );
   }, [eventsWithStats, eventSearchTerm]);
 
+  // Filter referrals by search (nome, email, CPF)
+  const filteredReferrals = useMemo(() => {
+    if (!referralSearchTerm.trim()) return referrals;
+    const q = referralSearchTerm.toLowerCase();
+    return referrals.filter(
+      (r) =>
+        (r.full_name || "").toLowerCase().includes(q) ||
+        (r.email || "").toLowerCase().includes(q) ||
+        (r.cpf || "").replace(/\D/g, "").includes(q.replace(/\D/g, ""))
+    );
+  }, [referrals, referralSearchTerm]);
+
+  // Filter invitation progress by event title
+  const filteredInvitationProgress = useMemo(() => {
+    if (!invitationSearchTerm.trim()) return invitationProgress;
+    const q = invitationSearchTerm.toLowerCase();
+    return invitationProgress.filter((item) =>
+      (item.event_title || "").toLowerCase().includes(q)
+    );
+  }, [invitationProgress, invitationSearchTerm]);
+
+  // Filter purchases by evento, participante, cupom
+  const filteredPurchases = useMemo(() => {
+    if (!purchaseSearchTerm.trim()) return purchases;
+    const q = purchaseSearchTerm.toLowerCase();
+    return purchases.filter(
+      (p) =>
+        (p.event_title || "").toLowerCase().includes(q) ||
+        (p.runner_name || "").toLowerCase().includes(q) ||
+        (p.runner_email || "").toLowerCase().includes(q) ||
+        (p.coupon_code || "").toLowerCase().includes(q)
+    );
+  }, [purchases, purchaseSearchTerm]);
+
   // Filter commissions by user search term for a specific event
   const getFilteredCommissionsForEvent = (eventId: string) => {
     const eventCommissions = commissionsByEvent[eventId] || [];
@@ -493,6 +530,15 @@ export function GroupLeaderDetails({
           </TabsContent>
 
           <TabsContent value="referrals" className="space-y-4">
+            <div className="relative">
+              <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Buscar por nome, e-mail ou CPF..."
+                value={referralSearchTerm}
+                onChange={(e) => setReferralSearchTerm(e.target.value)}
+                className="pl-10"
+              />
+            </div>
             {loadingReferrals ? (
               <div className="flex items-center justify-center h-64">
                 <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -508,14 +554,14 @@ export function GroupLeaderDetails({
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {referrals.length === 0 ? (
+                  {filteredReferrals.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
-                        Nenhuma referência encontrada
+                        {referrals.length === 0 ? "Nenhuma referência encontrada" : "Nenhum resultado para a busca"}
                       </TableCell>
                     </TableRow>
                   ) : (
-                    referrals.map((referral) => (
+                    filteredReferrals.map((referral) => (
                       <TableRow key={referral.id}>
                         <TableCell>
                           <div>
@@ -706,11 +752,25 @@ export function GroupLeaderDetails({
               </Card>
             ) : (
               <div className="space-y-4">
+                <div className="relative">
+                  <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Buscar por evento..."
+                    value={invitationSearchTerm}
+                    onChange={(e) => setInvitationSearchTerm(e.target.value)}
+                    className="pl-10"
+                  />
+                </div>
                 <p className="text-sm text-muted-foreground">
                   Regra: a cada X inscrições pagas com o cupom do líder, ele ganha 1 convite (inscrição grátis) no evento.
                 </p>
                 <div className="grid gap-4">
-                  {invitationProgress.map((item) => (
+                  {filteredInvitationProgress.length === 0 ? (
+                    <p className="text-center text-muted-foreground py-6">
+                      {invitationProgress.length === 0 ? "Nenhuma comissão com bônus de convite configurada" : "Nenhum resultado para a busca"}
+                    </p>
+                  ) : (
+                  filteredInvitationProgress.map((item) => (
                     <Card key={item.commission_id}>
                       <CardHeader className="pb-2">
                         <CardTitle className="text-base">{item.event_title}</CardTitle>
@@ -754,7 +814,8 @@ export function GroupLeaderDetails({
                         </p>
                       </CardContent>
                     </Card>
-                  ))}
+                  ))
+                  )}
                 </div>
               </div>
             )}
@@ -773,14 +834,25 @@ export function GroupLeaderDetails({
               </Card>
             ) : (
               <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <p className="text-sm text-muted-foreground">
-                    Inscrições realizadas com cupons do líder
-                  </p>
-                  <Button variant="outline" size="sm" onClick={loadPurchases} disabled={loadingPurchases}>
-                    <RefreshCw className={`h-4 w-4 mr-1 ${loadingPurchases ? "animate-spin" : ""}`} />
-                    Atualizar
-                  </Button>
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                  <div className="relative flex-1 max-w-sm">
+                    <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Buscar por evento, participante ou cupom..."
+                      value={purchaseSearchTerm}
+                      onChange={(e) => setPurchaseSearchTerm(e.target.value)}
+                      className="pl-10"
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm text-muted-foreground hidden sm:block">
+                      Inscrições com cupons do líder
+                    </p>
+                    <Button variant="outline" size="sm" onClick={loadPurchases} disabled={loadingPurchases}>
+                      <RefreshCw className={`h-4 w-4 mr-1 ${loadingPurchases ? "animate-spin" : ""}`} />
+                      Atualizar
+                    </Button>
+                  </div>
                 </div>
                 <Table>
                   <TableHeader>
@@ -795,7 +867,14 @@ export function GroupLeaderDetails({
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {purchases.map((reg) => (
+                    {filteredPurchases.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+                          {purchases.length === 0 ? "Nenhuma compra com cupom deste líder" : "Nenhum resultado para a busca"}
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                    filteredPurchases.map((reg) => (
                       <TableRow key={reg.id}>
                         <TableCell>
                           <div className="font-medium">{reg.event_title}</div>
@@ -826,7 +905,8 @@ export function GroupLeaderDetails({
                           )}
                         </TableCell>
                       </TableRow>
-                    ))}
+                    ))
+                    )}
                   </TableBody>
                 </Table>
               </div>
