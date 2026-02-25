@@ -271,6 +271,45 @@ const EventDetails = () => {
     loadEventData();
   }, [eventIdOrSlug]);
 
+  // Atualizar meta tags (Open Graph / Twitter) para preview ao compartilhar link (WhatsApp, redes sociais)
+  useEffect(() => {
+    if (!event) return;
+
+    const title = `${event.title} | Cronoteam`;
+    const description = event.description?.replace(/<[^>]*>/g, "").slice(0, 160) || `Confira ${event.title} - Cronoteam`;
+    const imageUrl = event.banner_url
+      ? (event.banner_url.startsWith("http") ? event.banner_url : `${window.location.origin}${event.banner_url.startsWith("/") ? "" : "/"}${event.banner_url}`)
+      : `${window.location.origin}/favicon.png`;
+    const url = window.location.href;
+
+    document.title = title;
+
+    const setMeta = (selector: string, attr: string, value: string) => {
+      const el = document.querySelector(selector) as HTMLMetaElement | null;
+      if (el) el.setAttribute(attr, value);
+    };
+    setMeta('meta[property="og:title"]', "content", title);
+    setMeta('meta[property="og:description"]', "content", description);
+    setMeta('meta[property="og:image"]', "content", imageUrl);
+    setMeta('meta[property="og:url"]', "content", url);
+    setMeta('meta[name="twitter:title"]', "content", title);
+    setMeta('meta[name="twitter:description"]', "content", description);
+    setMeta('meta[name="twitter:image"]', "content", imageUrl);
+    setMeta('meta[name="description"]', "content", description);
+
+    return () => {
+      document.title = "cronoteam";
+      const defaultImage = "https://storage.googleapis.com/gpt-engineer-file-uploads/Iflf9Sg098QodpxrfSw4Slgf0Ey1/uploads/1763481392156-logo-cronoteam-png-128x40-1.png";
+      setMeta('meta[property="og:title"]', "content", "cronoteam");
+      setMeta('meta[property="og:description"]', "content", "Empresa de cronometragem esportiva.");
+      setMeta('meta[property="og:image"]', "content", defaultImage);
+      setMeta('meta[name="twitter:title"]', "content", "cronoteam");
+      setMeta('meta[name="twitter:description"]', "content", "Empresa de cronometragem esportiva.");
+      setMeta('meta[name="twitter:image"]', "content", defaultImage);
+      setMeta('meta[name="description"]', "content", "Empresa de cronometragem esportiva.");
+    };
+  }, [event]);
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
