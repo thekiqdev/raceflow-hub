@@ -1,22 +1,3 @@
-const BOT_UA_PATTERNS = [
-  /whatsapp/i,
-  /facebookexternalhit/i,
-  /facebot/i,
-  /twitterbot/i,
-  /telegrambot/i,
-  /linkedinbot/i,
-  /pinterest/i,
-  /slackbot/i,
-  /discordbot/i,
-  /googlebot/i,
-  /bingbot/i,
-];
-
-function isBotUserAgent(ua: string | undefined): boolean {
-  if (!ua) return false;
-  return BOT_UA_PATTERNS.some((p) => p.test(ua));
-}
-
 import { Request, Response } from 'express';
 import { getEventById } from '../services/eventsService.js';
 import { getSystemSettings } from '../services/systemSettingsService.js';
