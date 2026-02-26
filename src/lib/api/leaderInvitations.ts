@@ -18,9 +18,20 @@ export interface LeaderInvitation {
   runner_email?: string;
 }
 
+export interface RunnerDataForInvitation {
+  full_name: string;
+  birth_date: string;
+  city: string;
+  gender: string;
+  team?: string;
+  email?: string;
+  phone?: string;
+}
+
 export interface SendInvitationData {
   invitation_id: string;
   runner_cpf: string;
+  runner_data?: RunnerDataForInvitation;
 }
 
 // Get all invitations for the authenticated leader

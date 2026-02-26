@@ -33,6 +33,9 @@ import {
 import { getMyEventCommissions, type LeaderEventCommission } from "@/lib/api/leaderEventCommissions";
 import { getMyCouponRegistrations, type LeaderRegistration } from "@/lib/api/leaderRegistrations";
 import { getMyInvitations, sendInvitation, type LeaderInvitation } from "@/lib/api/leaderInvitations";
+import { getPublicProfileByCpf, type Profile } from "@/lib/api/profiles";
+import { maskCpf, maskPhone, unmask } from "@/lib/utils/masks";
+import { validateCpf } from "@/lib/utils/validators";
 import { createRegistrationByLeader } from "@/lib/api/registrations";
 import { getModalities, type Modality } from "@/lib/api/modalities";
 import { getCategories, type Category } from "@/lib/api/categories";
@@ -41,6 +44,9 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { format } from "date-fns";
+import { ptBR } from "date-fns/locale";
 import { formatDateOnlyBrasilia } from "@/lib/utils";
 
 export function LeaderDashboard() {
@@ -62,6 +68,22 @@ export function LeaderDashboard() {
   const [selectedInvitation, setSelectedInvitation] = useState<LeaderInvitation | null>(null);
   const [runnerCpf, setRunnerCpf] = useState("");
   const [sendingInvitation, setSendingInvitation] = useState(false);
+  const [inviteStep, setInviteStep] = useState<1 | 2>(1);
+  const [inviteCpfLookupLoading, setInviteCpfLookupLoading] = useState(false);
+  const [inviteAthleteFound, setInviteAthleteFound] = useState<boolean | null>(null);
+  const [inviteAthleteData, setInviteAthleteData] = useState<Profile | null>(null);
+  const [inviteRunnerFormData, setInviteRunnerFormData] = useState({
+    full_name: "",
+    birth_date: "",
+    city: "",
+    gender: "",
+    team: "",
+    email: "",
+    phone: "",
+  });
+  const [inviteRunnerFormErrors, setInviteRunnerFormErrors] = useState<Record<string, string>>({});
+  const [inviteCpfError, setInviteCpfError] = useState("");
+  const [inviteApiError, setInviteApiError] = useState("");
   const [stats, setStats] = useState<{
     total_referrals: number;
     total_registrations: number;
@@ -480,53 +502,120 @@ export function LeaderDashboard() {
   const handleOpenSendDialog = (invitation: LeaderInvitation) => {
     setSelectedInvitation(invitation);
     setRunnerCpf("");
+    setInviteStep(1);
+    setInviteCpfLookupLoading(false);
+    setInviteAthleteFound(null);
+    setInviteAthleteData(null);
+    setInviteRunnerFormData({ full_name: "", birth_date: "", city: "", gender: "", team: "", email: "", phone: "" });
+    setInviteRunnerFormErrors({});
+    setInviteCpfError("");
+    setInviteApiError("");
     setSendInvitationDialogOpen(true);
   };
 
+  const handleInviteCpfLookup = async () => {
+    const clean = unmask(runnerCpf);
+    if (clean.length !== 11) {
+      setInviteCpfError("CPF deve ter 11 dígitos.");
+      return;
+    }
+    if (!validateCpf(runnerCpf)) {
+      setInviteCpfError("CPF inválido. Verifique os dígitos.");
+      return;
+    }
+    setInviteCpfError("");
+    setInviteApiError("");
+    setInviteCpfLookupLoading(true);
+    try {
+      const response = await getPublicProfileByCpf(runnerCpf);
+      if (response.success && response.data) {
+        setInviteAthleteFound(true);
+        setInviteAthleteData(response.data);
+      } else {
+        setInviteAthleteFound(false);
+        setInviteAthleteData(null);
+      }
+      setInviteStep(2);
+    } catch {
+      setInviteAthleteFound(false);
+      setInviteAthleteData(null);
+      setInviteStep(2);
+    } finally {
+      setInviteCpfLookupLoading(false);
+    }
+  };
+
   const handleSendInvitation = async () => {
-    if (!selectedInvitation || !runnerCpf.trim()) {
-      toast.error("Por favor, informe o CPF do runner");
+    if (!selectedInvitation) return;
+    const cleanCpf = unmask(runnerCpf);
+    if (cleanCpf.length !== 11) {
+      toast.error("CPF inválido.");
+      return;
+    }
+    if (!validateCpf(runnerCpf)) {
+      toast.error("CPF inválido. Verifique os dígitos.");
       return;
     }
 
+    if (inviteAthleteFound === false) {
+      const err: Record<string, string> = {};
+      if (!inviteRunnerFormData.full_name?.trim()) err.full_name = "Nome completo é obrigatório";
+      if (!inviteRunnerFormData.birth_date?.trim()) err.birth_date = "Data de nascimento é obrigatória";
+      if (!inviteRunnerFormData.city?.trim()) err.city = "Cidade é obrigatória";
+      if (!inviteRunnerFormData.gender?.trim()) err.gender = "Sexo é obrigatório";
+      setInviteRunnerFormErrors(err);
+      if (Object.keys(err).length > 0) {
+        toast.error("Preencha os campos obrigatórios para pré-cadastro.");
+        return;
+      }
+    }
+
+    setInviteApiError("");
     setSendingInvitation(true);
     try {
-      const response = await sendInvitation({
+      const payload: { invitation_id: string; runner_cpf: string; runner_data?: typeof inviteRunnerFormData } = {
         invitation_id: selectedInvitation.id,
         runner_cpf: runnerCpf.trim(),
-      });
+      };
+      if (inviteAthleteFound === false) {
+        payload.runner_data = {
+          full_name: inviteRunnerFormData.full_name.trim(),
+          birth_date: inviteRunnerFormData.birth_date.trim(),
+          city: inviteRunnerFormData.city.trim(),
+          gender: inviteRunnerFormData.gender.trim(),
+          team: inviteRunnerFormData.team?.trim() || undefined,
+          email: inviteRunnerFormData.email?.trim() || undefined,
+          phone: inviteRunnerFormData.phone?.trim() || undefined,
+        };
+      }
+      const response = await sendInvitation(payload);
 
       if (response.success) {
         toast.success("Convite enviado com sucesso!");
         setSendInvitationDialogOpen(false);
         setSelectedInvitation(null);
         setRunnerCpf("");
-        
-        // Atualização otimista: atualizar o status do convite imediatamente
+        setInviteStep(1);
+        setInviteAthleteFound(null);
+        setInviteAthleteData(null);
+        setInviteRunnerFormData({ full_name: "", birth_date: "", city: "", gender: "", team: "", email: "", phone: "" });
+
         if (selectedInvitation && response.data) {
-          setInvitations(prev => prev.map(inv => 
-            inv.id === selectedInvitation.id 
-              ? { 
-                  ...inv, 
-                  status: 'sent' as const, 
-                  runner_id: response.data.runner_id || null, 
-                  runner_cpf: response.data.runner_cpf || runnerCpf.trim().replace(/\D/g, ''),
-                  sent_at: response.data.sent_at || new Date().toISOString(),
-                }
+          setInvitations(prev => prev.map(inv =>
+            inv.id === selectedInvitation.id
+              ? { ...inv, status: "sent" as const, runner_id: response.data!.runner_id ?? null, runner_cpf: response.data!.runner_cpf ?? cleanCpf, sent_at: response.data!.sent_at ?? new Date().toISOString() }
               : inv
           ));
         }
-        
-        // Recarregar convites após um pequeno delay para garantir que o backend processou
-        setTimeout(() => {
-          loadInvitations();
-        }, 500);
+        setTimeout(() => loadInvitations(), 500);
       } else {
+        setInviteApiError(response.error || "Erro ao enviar convite");
         toast.error(response.error || "Erro ao enviar convite");
       }
     } catch (error: any) {
-      console.error("Erro ao enviar convite:", error);
-      toast.error(error.message || "Erro ao enviar convite");
+      const msg = error?.response?.data?.message || error.message || "Erro ao enviar convite";
+      setInviteApiError(msg);
+      toast.error(msg);
     } finally {
       setSendingInvitation(false);
     }
@@ -1409,53 +1498,198 @@ export function LeaderDashboard() {
       </div>
 
       {/* Send Invitation Dialog */}
-      <Dialog open={sendInvitationDialogOpen} onOpenChange={setSendInvitationDialogOpen}>
-        <DialogContent>
+      <Dialog
+        open={sendInvitationDialogOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            setInviteStep(1);
+            setInviteAthleteFound(null);
+            setInviteAthleteData(null);
+            setInviteRunnerFormData({ full_name: "", birth_date: "", city: "", gender: "", team: "", email: "", phone: "" });
+            setInviteRunnerFormErrors({});
+            setInviteCpfError("");
+            setInviteApiError("");
+          }
+          setSendInvitationDialogOpen(open);
+        }}
+      >
+        <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Enviar Convite</DialogTitle>
             <DialogDescription>
-              Envie este convite de inscrição grátis para um runner cadastrado no site
+              Busque o runner pelo CPF. Se não estiver cadastrado, preencha os dados para pré-cadastro e envio do convite.
             </DialogDescription>
           </DialogHeader>
           {selectedInvitation && (
             <div className="space-y-4">
               <div>
                 <Label>Evento</Label>
-                <div className="text-sm font-medium mt-1">
-                  {selectedInvitation.event_title || "Evento"}
+                <div className="text-sm font-medium mt-1">{selectedInvitation.event_title || "Evento"}</div>
+              </div>
+
+              {inviteStep === 1 && (
+                <div className="space-y-2">
+                  <Label htmlFor="runner_cpf">CPF do runner *</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      id="runner_cpf"
+                      placeholder="000.000.000-00"
+                      value={runnerCpf}
+                      onChange={(e) => {
+                        setRunnerCpf(maskCpf(e.target.value));
+                        setInviteCpfError("");
+                      }}
+                      className="flex-1"
+                    />
+                    <Button
+                      type="button"
+                      onClick={handleInviteCpfLookup}
+                      disabled={inviteCpfLookupLoading || unmask(runnerCpf).length !== 11}
+                    >
+                      {inviteCpfLookupLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+                      <span className="ml-1">{inviteCpfLookupLoading ? "Buscando..." : "Buscar"}</span>
+                    </Button>
+                  </div>
+                  {inviteCpfError && <p className="text-sm text-destructive">{inviteCpfError}</p>}
                 </div>
-              </div>
-              <div>
-                <Label htmlFor="runner_cpf">CPF do Runner *</Label>
-                <Input
-                  id="runner_cpf"
-                  placeholder="000.000.000-00"
-                  value={runnerCpf}
-                  onChange={(e) => setRunnerCpf(e.target.value)}
-                  className="mt-1"
-                />
-                <p className="text-xs text-muted-foreground mt-1">
-                  Informe o CPF do runner que já está cadastrado no site
-                </p>
-              </div>
+              )}
+
+              {inviteStep === 2 && inviteAthleteFound === true && inviteAthleteData && (
+                <div className="rounded-lg border bg-muted/50 p-3 text-sm space-y-1">
+                  <p className="font-medium">Atleta encontrado</p>
+                  <p>{inviteAthleteData.full_name || "—"}</p>
+                  {inviteAthleteData.email && <p className="text-muted-foreground">{inviteAthleteData.email}</p>}
+                  {inviteAthleteData.city && <p className="text-muted-foreground">{inviteAthleteData.city}</p>}
+                </div>
+              )}
+
+              {inviteStep === 2 && inviteAthleteFound === false && (
+                <div className="space-y-3 max-h-[50vh] overflow-y-auto pr-1">
+                  <p className="text-sm text-amber-600 dark:text-amber-400">
+                    CPF não cadastrado. Preencha os dados para pré-cadastro e envio do convite.
+                  </p>
+                  <div className="space-y-2">
+                    <Label htmlFor="invite-full_name">Nome completo *</Label>
+                    <Input
+                      id="invite-full_name"
+                      placeholder="Nome do atleta"
+                      value={inviteRunnerFormData.full_name}
+                      onChange={(e) => {
+                        setInviteRunnerFormData((p) => ({ ...p, full_name: e.target.value }));
+                        if (inviteRunnerFormErrors.full_name) setInviteRunnerFormErrors((p) => ({ ...p, full_name: "" }));
+                      }}
+                    />
+                    {inviteRunnerFormErrors.full_name && <p className="text-sm text-destructive">{inviteRunnerFormErrors.full_name}</p>}
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="invite-birth_date">Data de nascimento *</Label>
+                    <Input
+                      id="invite-birth_date"
+                      type="date"
+                      value={inviteRunnerFormData.birth_date}
+                      onChange={(e) => {
+                        setInviteRunnerFormData((p) => ({ ...p, birth_date: e.target.value }));
+                        if (inviteRunnerFormErrors.birth_date) setInviteRunnerFormErrors((p) => ({ ...p, birth_date: "" }));
+                      }}
+                    />
+                    {inviteRunnerFormErrors.birth_date && <p className="text-sm text-destructive">{inviteRunnerFormErrors.birth_date}</p>}
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="invite-city">Cidade *</Label>
+                    <Input
+                      id="invite-city"
+                      placeholder="Cidade"
+                      value={inviteRunnerFormData.city}
+                      onChange={(e) => {
+                        setInviteRunnerFormData((p) => ({ ...p, city: e.target.value }));
+                        if (inviteRunnerFormErrors.city) setInviteRunnerFormErrors((p) => ({ ...p, city: "" }));
+                      }}
+                    />
+                    {inviteRunnerFormErrors.city && <p className="text-sm text-destructive">{inviteRunnerFormErrors.city}</p>}
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Sexo *</Label>
+                    <RadioGroup
+                      value={inviteRunnerFormData.gender}
+                      onValueChange={(v) => {
+                        setInviteRunnerFormData((p) => ({ ...p, gender: v }));
+                        if (inviteRunnerFormErrors.gender) setInviteRunnerFormErrors((p) => ({ ...p, gender: "" }));
+                      }}
+                      className="flex gap-6"
+                    >
+                      <div className="flex items-center space-x-2">
+                        <RadioGroupItem value="M" id="invite-gender-m" />
+                        <Label htmlFor="invite-gender-m" className="font-normal cursor-pointer">Masculino</Label>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <RadioGroupItem value="F" id="invite-gender-f" />
+                        <Label htmlFor="invite-gender-f" className="font-normal cursor-pointer">Feminino</Label>
+                      </div>
+                    </RadioGroup>
+                    {inviteRunnerFormErrors.gender && <p className="text-sm text-destructive">{inviteRunnerFormErrors.gender}</p>}
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="invite-team">Equipe (opcional)</Label>
+                    <Input
+                      id="invite-team"
+                      placeholder="Nome da equipe"
+                      value={inviteRunnerFormData.team}
+                      onChange={(e) => setInviteRunnerFormData((p) => ({ ...p, team: e.target.value }))}
+                    />
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <div className="space-y-2">
+                      <Label htmlFor="invite-email">Email (opcional)</Label>
+                      <Input
+                        id="invite-email"
+                        type="email"
+                        placeholder="email@exemplo.com"
+                        value={inviteRunnerFormData.email}
+                        onChange={(e) => setInviteRunnerFormData((p) => ({ ...p, email: e.target.value }))}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="invite-phone">Telefone (opcional)</Label>
+                      <Input
+                        id="invite-phone"
+                        placeholder="(00) 00000-0000"
+                        value={inviteRunnerFormData.phone}
+                        onChange={(e) => setInviteRunnerFormData((p) => ({ ...p, phone: maskPhone(e.target.value) }))}
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {inviteApiError && <p className="text-sm text-destructive">{inviteApiError}</p>}
             </div>
           )}
           <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setSendInvitationDialogOpen(false)}
-              disabled={sendingInvitation}
-            >
+            {inviteStep === 2 && (
+              <Button variant="outline" onClick={() => setInviteStep(1)} disabled={sendingInvitation}>
+                Voltar
+              </Button>
+            )}
+            <Button variant="outline" onClick={() => setSendInvitationDialogOpen(false)} disabled={sendingInvitation}>
               Cancelar
             </Button>
             <Button
-              onClick={handleSendInvitation}
-              disabled={sendingInvitation || !runnerCpf.trim()}
+              onClick={inviteStep === 1 ? handleInviteCpfLookup : handleSendInvitation}
+              disabled={
+                sendingInvitation ||
+                (inviteStep === 1 && (inviteCpfLookupLoading || unmask(runnerCpf).length !== 11)) ||
+                (inviteStep === 2 && inviteAthleteFound === false && !inviteRunnerFormData.full_name?.trim())
+              }
             >
               {sendingInvitation ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   Enviando...
+                </>
+              ) : inviteStep === 1 ? (
+                <>
+                  <Search className="mr-2 h-4 w-4" />
+                  Buscar
                 </>
               ) : (
                 <>

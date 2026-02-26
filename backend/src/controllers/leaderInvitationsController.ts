@@ -8,19 +8,28 @@ import {
   sendInvitationByCpf,
 } from '../services/leaderInvitationsService.js';
 
+// Runner data for pre-registration when CPF not found (same shape as createRunnerByOrganizer)
+const runnerDataSchema = z.object({
+  full_name: z.string().min(1, 'Nome completo é obrigatório'),
+  birth_date: z.string().min(1, 'Data de nascimento é obrigatória'),
+  city: z.string().min(1, 'Cidade é obrigatória'),
+  gender: z.string().min(1, 'Sexo é obrigatório'),
+  team: z.string().optional(),
+  email: z.string().email().optional().or(z.literal('')),
+  phone: z.string().optional(),
+});
+
 // Validation schemas
 const sendInvitationSchema = z.object({
   invitation_id: z.string().uuid('Invalid invitation ID'),
   runner_cpf: z.string().min(1, 'CPF é obrigatório').refine(
     (cpf) => {
-      // Remove non-numeric characters and check if has at least 11 digits
       const cleanCpf = cpf.replace(/\D/g, '');
       return cleanCpf.length >= 11;
     },
-    {
-      message: 'CPF deve conter pelo menos 11 dígitos numéricos',
-    }
+    { message: 'CPF deve conter pelo menos 11 dígitos numéricos' }
   ),
+  runner_data: runnerDataSchema.optional(),
 });
 
 /**
@@ -179,7 +188,8 @@ export const sendInvitationController = asyncHandler(
       const invitation = await sendInvitationByCpf(
         leader.id,
         validation.data.invitation_id,
-        validation.data.runner_cpf
+        validation.data.runner_cpf,
+        validation.data.runner_data
       );
 
       res.json({

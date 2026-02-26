@@ -1,4 +1,5 @@
 import { query } from '../config/database.js';
+import { createRunnerByOrganizer, type RunnerDataByOrganizer } from './registrationsService.js';
 
 export interface LeaderInvitation {
   id: string;
@@ -198,24 +199,17 @@ export const getLeaderInvitations = async (
 };
 
 /**
- * Send invitation to runner by CPF
+ * Send invitation to runner by CPF.
+ * If runner does not exist and runnerData is provided, creates the user (pre-registration) then sends the invite.
  */
 export const sendInvitationByCpf = async (
   leaderId: string,
   invitationId: string,
-  runnerCpf: string
+  runnerCpf: string,
+  runnerData?: RunnerDataByOrganizer
 ): Promise<LeaderInvitation> => {
-  console.log('📤 [sendInvitationByCpf] Iniciando:', {
-    leaderId,
-    invitationId,
-    runnerCpf,
-  });
-
-  // Remove non-numeric characters from CPF
   const cleanCpf = runnerCpf.replace(/\D/g, '');
-  console.log('🔍 [sendInvitationByCpf] CPF limpo:', cleanCpf, 'Tamanho:', cleanCpf.length);
 
-  // Validate CPF format (11 digits)
   if (cleanCpf.length !== 11) {
     throw new Error(`CPF inválido. Deve conter 11 dígitos. Recebido: ${cleanCpf.length} dígitos.`);
   }
@@ -229,11 +223,27 @@ export const sendInvitationByCpf = async (
     [cleanCpf]
   );
 
-  if (runnerResult.rows.length === 0) {
-    throw new Error('Runner não encontrado com este CPF. Verifique se o CPF está correto e se o runner já está cadastrado no site.');
+  let runner: { id: string };
+  if (runnerResult.rows.length > 0) {
+    runner = runnerResult.rows[0];
+  } else {
+    // Runner not found: require runner_data for pre-registration
+    if (!runnerData?.full_name?.trim()) {
+      throw new Error(
+        'CPF não cadastrado. Preencha os dados abaixo para pré-cadastro e envio do convite.'
+      );
+    }
+    const created = await createRunnerByOrganizer(cleanCpf, {
+      full_name: runnerData.full_name.trim(),
+      birth_date: runnerData.birth_date || '',
+      city: runnerData.city?.trim() || '',
+      gender: runnerData.gender?.trim() || '',
+      team: runnerData.team?.trim(),
+      email: runnerData.email?.trim() || undefined,
+      phone: runnerData.phone?.trim() || undefined,
+    });
+    runner = { id: created.id };
   }
-
-  const runner = runnerResult.rows[0];
 
   // Verify invitation belongs to leader and is available
   const invitationResult = await query(
@@ -416,3 +426,12 @@ export const getInvitationById = async (
   return result.rows[0] as LeaderInvitation;
 };
 
+/**
+ * Valida token do link de completar cadastro (convite sem cadastro).
+ * Stub: retorna inválido até implementação completa.
+ */
+export const validateCompletionRegistration = async (
+  _token: string
+): Promise<{ valid: boolean; error?: string; runnerName?: string; eventTitle?: string }> => {
+  return { valid: false, error: 'Token inválido ou expirado.' };
+};
