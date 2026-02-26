@@ -426,12 +426,3 @@ export const getInvitationById = async (
   return result.rows[0] as LeaderInvitation;
 };
 
-/**
- * Valida token do link de completar cadastro (convite sem cadastro).
- * Stub: retorna inválido até implementação completa.
- */
-export const validateCompletionRegistration = async (
-  _token: string
-): Promise<{ valid: boolean; error?: string; runnerName?: string; eventTitle?: string }> => {
-  return { valid: false, error: 'Token inválido ou expirado.' };
-};

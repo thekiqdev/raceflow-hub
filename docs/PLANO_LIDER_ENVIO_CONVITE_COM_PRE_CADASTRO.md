@@ -1,5 +1,18 @@
 # Plano: Envio de convite pelo líder com busca por CPF e pré-cadastro
 
+---
+
+## Revisão do plano (antes de implementar)
+
+- **Backend:** `createRunnerByOrganizer(cpf, runner_data)` existe em `registrationsService.ts`; tipo `RunnerDataByOrganizer`: `full_name`, `birth_date`, `city`, `gender`, `team?`, `email?`, `phone?`. Rota atual: `POST /group-leaders/me/invitations/send` com schema `invitation_id` + `runner_cpf`; será estendida com `runner_data?` opcional.
+- **Frontend:** Líder usa `getPublicProfileByCpf(cpf)` (rota `/profiles/search-by-cpf` com `authenticate` — líder autenticado pode chamar). Dialog atual: só CPF + "Enviar Convite"; será alterado para Passo 1 = CPF + Buscar; Passo 2a = atleta encontrado + Enviar; Passo 2b = formulário pré-cadastro + Enviar com `runner_data`.
+- **API client:** `sendInvitation` em `leaderInvitations.ts` hoje aceita `SendInvitationData`; estender para `runner_data?: { full_name, birth_date, city, gender, team?, email?, phone? }`.
+- **Validação:** Backend deve exigir `runner_data.full_name` (e demais obrigatórios do createRunnerByOrganizer) quando runner não existir e `runner_data` for enviado; quando runner não existir e `runner_data` ausente/inválido, retornar erro 400 com mensagem clara.
+
+Nenhuma inconsistência encontrada. Implementação na ordem: Etapa 1 (backend) → Etapa 2 (frontend) → Etapa 3 (UX).
+
+---
+
 ## 1. Objetivo
 
 Alinhar o fluxo de **envio de convite** pelo líder de grupo ao comportamento do **painel do organizador** ao inscrever atleta:

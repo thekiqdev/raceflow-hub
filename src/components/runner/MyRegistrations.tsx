@@ -377,8 +377,11 @@ export function MyRegistrations() {
     }
   };
 
-  const activeRegistrations = registrations.filter((r) => 
-    r.status === "confirmed" && (r.payment_status === "paid" || r.payment_status === "partially_paid")
+  const activeRegistrations = registrations.filter((r) =>
+    r.status === "confirmed" &&
+    (r.payment_status === "paid" ||
+      r.payment_status === "partially_paid" ||
+      r.payment_status === "convidado")
   );
   const pendingRegistrations = registrations.filter((r) => 
     r.status !== "cancelled" && r.status !== "transferred" && (r.status === "pending" || r.payment_status === "pending")
@@ -434,13 +437,13 @@ export function MyRegistrations() {
   const RegistrationCard = ({ registration }: { registration: Registration }) => {
     const isUpcoming = registration.event_date && isFuture(new Date(registration.event_date));
     const eventAllowsTransfers = registration.event_transfers_enabled !== false; // Default to true if null/undefined
-    const canTransfer = transfersEnabled && 
+    const canTransfer = transfersEnabled &&
                        eventAllowsTransfers &&
-                       registration.status === "confirmed" && 
-                       registration.payment_status === "paid" && 
+                       registration.status === "confirmed" &&
+                       (registration.payment_status === "paid" || registration.payment_status === "convidado") &&
                        registration.status !== "transferred" &&
                        isUpcoming;
-    const canCancel = (registration.status === "pending" || 
+    const canCancel = (registration.status === "pending" ||
                       (registration.status === "confirmed" && registration.payment_status === "paid")) &&
                       isUpcoming;
 
@@ -617,12 +620,13 @@ export function MyRegistrations() {
               </>
             )}
             
-            {/* Botões para inscrições confirmadas */}
-            {registration.status === "confirmed" && registration.payment_status === "paid" && (
+            {/* Botões para inscrições confirmadas (pagas ou por convite) */}
+            {registration.status === "confirmed" &&
+              (registration.payment_status === "paid" || registration.payment_status === "convidado") && (
               <>
-                <Button 
-                  variant="outline" 
-                  size="sm" 
+                <Button
+                  variant="outline"
+                  size="sm"
                   className="flex-1"
                   onClick={() => navigate(`/registration/validate/${registration.id}`)}
                 >
@@ -630,9 +634,9 @@ export function MyRegistrations() {
                   Visualizar Inscrição
                 </Button>
                 {canTransfer && (
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
+                  <Button
+                    variant="outline"
+                    size="sm"
                     className="flex-1"
                     onClick={() => {
                       setSelectedRegistration(registration);
@@ -645,9 +649,12 @@ export function MyRegistrations() {
                 )}
               </>
             )}
-            
+
             {/* Botões para outras situações (não confirmadas) */}
-            {!(registration.status === "confirmed" && registration.payment_status === "paid") && (
+            {!(
+              registration.status === "confirmed" &&
+              (registration.payment_status === "paid" || registration.payment_status === "convidado")
+            ) && (
               <>
                 {canTransfer && (
                   <Button 
