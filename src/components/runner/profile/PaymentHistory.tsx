@@ -7,6 +7,7 @@ import { Calendar, Download, CreditCard, Loader2, AlertCircle } from "lucide-rea
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { formatDateOnlyBrasilia } from "@/lib/utils";
 import { getRunnerPayments, type RunnerPayment } from "@/lib/api/runnerPayments";
 
 interface PaymentHistoryProps {
@@ -54,12 +55,12 @@ Data do Pagamento: ${payment.created_at ? format(new Date(payment.created_at), "
 
 DADOS DO EVENTO:
 ${payment.event_title || 'Evento'}
-Data: ${payment.event_date ? format(new Date(payment.event_date), "dd 'de' MMMM 'de' yyyy", { locale: ptBR }) : 'N/A'}
+Data: ${payment.event_date ? formatDateOnlyBrasilia(payment.event_date) : 'N/A'}
 
 DADOS DO PAGAMENTO:
 Valor: R$ ${payment.total_amount.toFixed(2).replace('.', ',')}
 Método: ${getPaymentMethodLabel(payment.payment_method)}
-Status: ${payment.payment_status === 'paid' ? 'Pago' : payment.payment_status === 'refunded' ? 'Reembolsado' : payment.payment_status}
+Status: ${payment.payment_status === 'paid' ? 'Pago' : payment.payment_status === 'convidado' ? 'Convite' : payment.payment_status === 'refunded' ? 'Reembolsado' : payment.payment_status}
 Código de Confirmação: ${payment.confirmation_code || 'N/A'}
       `.trim();
 
@@ -104,6 +105,8 @@ Código de Confirmação: ${payment.confirmation_code || 'N/A'}
     switch (status) {
       case 'paid':
         return <Badge variant="default" className="bg-green-500">Pago</Badge>;
+      case 'convidado':
+        return <Badge variant="default" className="bg-blue-500">Convite</Badge>;
       case 'refunded':
         return <Badge variant="outline">Reembolsado</Badge>;
       default:
@@ -160,7 +163,7 @@ Código de Confirmação: ${payment.confirmation_code || 'N/A'}
                             {payment.event_date && (
                               <div className="flex items-center gap-1 text-sm text-muted-foreground">
                                 <Calendar className="w-3 h-3" />
-                                {format(new Date(payment.event_date), "dd 'de' MMMM 'de' yyyy", { locale: ptBR })}
+                                {formatDateOnlyBrasilia(payment.event_date)}
                               </div>
                             )}
                           </div>

@@ -143,6 +143,10 @@ Lista eventos publicados (público).
       "city": "Fortaleza",
       "state": "CE",
       "status": "published",
+      "registration_status": "open",
+      "registration_start_date": "2024-12-01T00:00:00Z",
+      "registration_end_date": "2024-12-30T23:59:59Z",
+      "registration_auto_mode": false,
       "organizer_id": "uuid",
       "registration_count": 10
     }
@@ -179,9 +183,25 @@ Cria um novo evento (requer role `organizer` ou `admin`).
   "state": "CE",
   "banner_url": "https://...",
   "regulation_url": "https://...",
-  "status": "draft"
+  "status": "draft",
+  "registration_status": "open",
+  "registration_start_date": "2024-12-01T00:00:00Z",
+  "registration_end_date": "2024-12-30T23:59:59Z",
+  "registration_auto_mode": false
 }
 ```
+
+**Campos de Status de Inscrições (opcionais):**
+- `registration_status` (string, opcional): Status manual das inscrições. Valores possíveis:
+  - `"not_open"`: Inscrições em breve
+  - `"open"`: Inscrições abertas
+  - `"closed"`: Inscrições encerradas
+  - `null`: Usa lógica padrão baseada no `status` do evento
+- `registration_start_date` (string ISO datetime, opcional): Data/hora de abertura das inscrições (usado quando `registration_auto_mode = true`)
+- `registration_end_date` (string ISO datetime, opcional): Data/hora de encerramento das inscrições (usado quando `registration_auto_mode = true`)
+- `registration_auto_mode` (boolean, opcional, padrão: `false`): Se `true`, o status é calculado automaticamente baseado nas datas. Se `false`, usa o valor manual de `registration_status`.
+
+**Nota:** Quando `registration_auto_mode = true`, `registration_start_date` e `registration_end_date` são obrigatórios.
 
 #### PUT /events/:id
 
@@ -189,19 +209,69 @@ Atualiza um evento (requer ser organizador do evento ou admin).
 
 **Headers:** `Authorization: Bearer <token>`
 
-**Body:**
+**Body:** (todos os campos são opcionais)
 ```json
 {
   "title": "Título Atualizado",
-  "status": "published"
+  "status": "published",
+  "registration_status": "open",
+  "registration_start_date": "2024-12-01T00:00:00Z",
+  "registration_end_date": "2024-12-30T23:59:59Z",
+  "registration_auto_mode": false
 }
 ```
+
+**Campos de Status de Inscrições:** Ver documentação de POST /events acima para detalhes dos campos.
 
 #### DELETE /events/:id
 
 Deleta um evento (requer role `admin`).
 
 **Headers:** `Authorization: Bearer <token>`
+
+---
+
+### Endpoints Administrativos - Status de Inscrições
+
+#### POST /admin/update-registration-statuses
+
+Atualiza manualmente o status de inscrições de todos os eventos com modo automático ativado.
+
+**Headers:** `Authorization: Bearer <token>` (requer role `admin`)
+
+**Resposta:**
+```json
+{
+  "success": true,
+  "message": "Status de inscrições atualizado com sucesso",
+  "data": {
+    "updatedCount": 5
+  }
+}
+```
+
+#### POST /admin/events/:eventId/update-registration-status
+
+Atualiza manualmente o status de inscrições de um evento específico.
+
+**Headers:** `Authorization: Bearer <token>` (requer role `admin`)
+
+**Parâmetros:**
+- `eventId` (path): ID do evento
+
+**Resposta:**
+```json
+{
+  "success": true,
+  "message": "Status de inscrições do evento atualizado com sucesso",
+  "data": {
+    "eventId": "uuid",
+    "registrationStatus": "open"
+  }
+}
+```
+
+**Nota:** Estes endpoints são úteis para execução manual da atualização de status. A atualização automática ocorre a cada 5 minutos (configurável via `REGISTRATION_STATUS_UPDATE_INTERVAL_MS`).
 
 ---
 

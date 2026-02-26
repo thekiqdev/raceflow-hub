@@ -8,10 +8,18 @@ import {
   createEventController,
   updateEventController,
   deleteEventController,
+  regenerateSlugController,
+  regenerateAllSlugsController,
 } from '../controllers/eventsController.js';
 import { getEventCategoriesController, syncEventCategoriesController } from '../controllers/eventCategoriesController.js';
-import { getEventKitsController, syncEventKitsController } from '../controllers/eventKitsController.js';
-import { getEventPickupLocationsController } from '../controllers/kitPickupController.js';
+import { getEventKitsController, syncEventKitsController, reorderEventKitsController } from '../controllers/eventKitsController.js';
+import { 
+  getEventPickupLocationsController,
+  createPickupLocationController,
+  updatePickupLocationController,
+  deletePickupLocationController,
+} from '../controllers/kitPickupController.js';
+import { getAttributeSelectionStatsController } from '../controllers/registrationProductSelectionsController.js';
 
 const router = Router();
 
@@ -20,6 +28,10 @@ router.get('/', optionalAuth, getAllEvents);
 router.get('/:eventId/categories', optionalAuth, getEventCategoriesController);
 router.get('/:eventId/kits', optionalAuth, getEventKitsController);
 router.get('/:eventId/pickup-locations', optionalAuth, getEventPickupLocationsController);
+router.get('/:eventId/product-selection-stats', authenticate, getAttributeSelectionStatsController);
+router.post('/:eventId/pickup-locations', authenticate, requireEventOwnership('eventId'), createPickupLocationController);
+router.put('/:eventId/pickup-locations/:locationId', authenticate, requireEventOwnership('eventId'), updatePickupLocationController);
+router.delete('/:eventId/pickup-locations/:locationId', authenticate, requireEventOwnership('eventId'), deletePickupLocationController);
 router.get('/:id', optionalAuth, getEvent);
 
 // Protected routes - require organizer or admin role
@@ -30,6 +42,11 @@ router.delete('/:id', authenticate, requireEventOwnership('id'), deleteEventCont
 // Categories and kits management
 router.post('/:eventId/categories', authenticate, requireEventOwnership('eventId'), syncEventCategoriesController);
 router.post('/:eventId/kits', authenticate, requireEventOwnership('eventId'), syncEventKitsController);
+router.put('/:eventId/kits/reorder', authenticate, requireEventOwnership('eventId'), reorderEventKitsController);
+
+// Slug regeneration routes
+router.post('/:id/regenerate-slug', authenticate, requireEventOwnership('id'), regenerateSlugController);
+router.post('/regenerate-all-slugs', authenticate, requireAnyRole(['admin']), regenerateAllSlugsController);
 
 export default router;
 

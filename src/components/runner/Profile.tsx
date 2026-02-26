@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
 import {
   User,
   CreditCard,
@@ -15,6 +16,7 @@ import {
   Settings,
   Edit,
   Loader2,
+  UserCog,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -25,8 +27,11 @@ import { PrivacySettings } from "./profile/PrivacySettings";
 import { PaymentHistory } from "./profile/PaymentHistory";
 import { NotificationSettings } from "./profile/NotificationSettings";
 import { AccountSettings } from "./profile/AccountSettings";
+import { LeaderDashboard } from "./leader/LeaderDashboard";
 import { getOwnProfile, type Profile } from "@/lib/api/profiles";
 import { getRunnerStats, type RunnerStats } from "@/lib/api/runnerStats";
+import { getMyGroupLeader } from "@/lib/api/groupLeaders";
+import { getEnabledModules } from "@/lib/api/systemSettings";
 
 export function Profile() {
   const navigate = useNavigate();
@@ -34,6 +39,8 @@ export function Profile() {
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [stats, setStats] = useState<RunnerStats | null>(null);
+  const [isLeader, setIsLeader] = useState(false);
+  const [oldPlatformUrl, setOldPlatformUrl] = useState<string | null>(null);
 
   const [openDialogs, setOpenDialogs] = useState({
     editProfile: false,
@@ -42,12 +49,24 @@ export function Profile() {
     payments: false,
     notifications: false,
     account: false,
+    leaderDashboard: false,
   });
 
   useEffect(() => {
     if (user) {
       loadProfileData();
     }
+
+    // Listen for profile update events
+    const handleProfileUpdate = () => {
+      loadProfileData();
+    };
+
+    window.addEventListener('profile:updated', handleProfileUpdate);
+
+    return () => {
+      window.removeEventListener('profile:updated', handleProfileUpdate);
+    };
   }, [user]);
 
   const loadProfileData = async () => {
@@ -55,9 +74,11 @@ export function Profile() {
 
     try {
       setLoading(true);
-      const [profileResponse, statsResponse] = await Promise.all([
+      const [profileResponse, statsResponse, leaderResponse, modulesResponse] = await Promise.all([
         getOwnProfile(),
         getRunnerStats(),
+        getMyGroupLeader().catch(() => ({ success: false, data: null })),
+        getEnabledModules().catch(() => ({ success: false, data: null })),
       ]);
 
       if (profileResponse.success && profileResponse.data) {
@@ -70,6 +91,20 @@ export function Profile() {
         setStats(statsResponse.data);
       } else {
         toast.error(statsResponse.error || "Erro ao carregar estatísticas");
+      }
+
+      // Check if user is a leader
+      if (leaderResponse.success && leaderResponse.data) {
+        setIsLeader(true);
+      } else {
+        setIsLeader(false);
+      }
+
+      // Get old platform URL from modules/settings
+      if (modulesResponse.success && modulesResponse.data?.old_platform_url) {
+        setOldPlatformUrl(modulesResponse.data.old_platform_url);
+      } else {
+        setOldPlatformUrl(null);
       }
     } catch (error: any) {
       console.error("Error loading profile data:", error);
@@ -204,6 +239,19 @@ export function Profile() {
 
       {/* Menu Sections */}
       <div className="px-4 -mt-6">
+        {isLeader && (
+          <MenuSection
+            title="Líder de Grupo"
+            items={[
+              {
+                icon: UserCog,
+                label: "Painel do Líder",
+                action: () => openDialog("leaderDashboard"),
+              },
+            ]}
+          />
+        )}
+
         <MenuSection
           title="Dados Pessoais"
           items={[
@@ -265,9 +313,23 @@ export function Profile() {
         </div>
 
         {/* App Version */}
-        <div className="text-center text-xs text-muted-foreground mb-4">
-          RunEvents v1.0.0
+        <div className="text-center text-xs text-muted-foreground mb-2">
+          Cronoteam v1.0.0
         </div>
+        
+        {/* Old Platform Link */}
+        {oldPlatformUrl && (
+          <div className="text-center mb-4">
+            <a
+              href={oldPlatformUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs text-primary hover:underline"
+            >
+              Acessar plataforma antiga
+            </a>
+          </div>
+        )}
       </div>
 
       {/* Dialogs */}
@@ -301,6 +363,17 @@ export function Profile() {
         open={openDialogs.account}
         onOpenChange={(open) => !open && closeDialog("account")}
       />
+
+      {/* Leader Dashboard Dialog */}
+      {isLeader && (
+        <Dialog open={openDialogs.leaderDashboard} onOpenChange={(open) => {
+          if (!open) closeDialog("leaderDashboard");
+        }}>
+          <DialogContent className="max-w-full max-h-[90vh] overflow-y-auto p-0">
+            <LeaderDashboard />
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }

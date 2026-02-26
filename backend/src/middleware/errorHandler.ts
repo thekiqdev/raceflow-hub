@@ -11,7 +11,13 @@ export const errorHandler = (
   res: Response,
   _next: NextFunction
 ) => {
-  console.error('Error:', err);
+  console.error('❌ Error Handler:', {
+    message: err.message,
+    stack: err.stack,
+    statusCode: err.statusCode,
+    code: err.code,
+    name: err.name,
+  });
 
   // Default error
   const statusCode = err.statusCode || 500;

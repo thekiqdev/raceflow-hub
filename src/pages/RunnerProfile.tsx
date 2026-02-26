@@ -23,7 +23,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { format, differenceInDays, isFuture, isPast } from "date-fns";
-import { ptBR } from "date-fns/locale";
+import { formatDateOnlyBrasilia } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
 import { getOwnProfile, type Profile } from "@/lib/api/profiles";
 import { getRegistrations, type Registration } from "@/lib/api/registrations";
@@ -159,9 +159,9 @@ const RunnerProfile = () => {
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <h1
             className="text-2xl font-bold bg-gradient-hero bg-clip-text text-transparent cursor-pointer"
-            onClick={() => navigate("/runner/dashboard")}
+            onClick={() => navigate("/corredor/inicio")}
           >
-            RunEvents
+            Cronoteam
           </h1>
           <Button variant="outline" size="sm" onClick={handleSignOut}>
             <LogOut className="mr-2 h-4 w-4" />
@@ -239,7 +239,7 @@ const RunnerProfile = () => {
                   <p className="text-muted-foreground">Nenhuma corrida futura confirmada</p>
                   <Button
                     className="mt-4"
-                    onClick={() => navigate("/runner/dashboard?tab=home")}
+                    onClick={() => navigate("/corredor/inicio")}
                   >
                     Explorar Eventos
                   </Button>
@@ -256,7 +256,7 @@ const RunnerProfile = () => {
                           {reg.event_date && (
                             <div className="flex items-center">
                               <Calendar className="mr-2 h-4 w-4" />
-                              {format(new Date(reg.event_date), "dd 'de' MMMM 'de' yyyy", { locale: ptBR })}
+                              {formatDateOnlyBrasilia(reg.event_date)}
                             </div>
                           )}
                           {reg.category_name && (
@@ -322,7 +322,7 @@ const RunnerProfile = () => {
                           {reg.event_date && (
                             <div className="flex items-center">
                               <Calendar className="mr-2 h-4 w-4" />
-                              {format(new Date(reg.event_date), "dd 'de' MMMM 'de' yyyy", { locale: ptBR })}
+                              {formatDateOnlyBrasilia(reg.event_date)}
                             </div>
                           )}
                           {reg.category_name && (

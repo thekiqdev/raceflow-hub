@@ -9,6 +9,18 @@ export interface Profile {
   gender?: string;
   birth_date: string;
   lgpd_consent?: boolean;
+  is_public?: boolean;
+  preferred_name?: string;
+  profession?: string;
+  cbat?: string;
+  team?: string;
+  postal_code?: string;
+  street?: string;
+  address_number?: string;
+  address_complement?: string;
+  neighborhood?: string;
+  city?: string;
+  state?: string;
   created_at?: string;
   updated_at?: string;
 }
@@ -18,6 +30,20 @@ export interface UpdateProfileData {
   phone?: string;
   gender?: string;
   birth_date?: string;
+  preferred_name?: string;
+  profession?: string;
+  cbat?: string;
+  team?: string;
+  postal_code?: string;
+  street?: string;
+  address_number?: string;
+  address_complement?: string;
+  neighborhood?: string;
+  city?: string;
+  state?: string;
+  is_public?: boolean;
+  cpf?: string;
+  password?: string; // Required when runner updates CPF
 }
 
 // Get own profile
@@ -32,7 +58,13 @@ export const updateOwnProfile = async (data: UpdateProfileData) => {
 
 // Get public profile by CPF (for registration by others)
 export const getPublicProfileByCpf = async (cpf: string) => {
-  return apiClient.get<Profile>('/profiles/search-by-cpf', { params: { cpf } });
+  // Build query string manually like other API functions
+  const queryParams = new URLSearchParams();
+  queryParams.append('cpf', cpf);
+  const queryString = queryParams.toString();
+  const endpoint = `/profiles/search-by-cpf${queryString ? `?${queryString}` : ''}`;
+  
+  return apiClient.get<Profile>(endpoint);
 };
 
 

@@ -9,33 +9,30 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { MessageSquare, Send, Eye, CheckCircle, Edit, Trash2, Plus, Loader2 } from "lucide-react";
+import { Edit, Trash2, Plus, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import {
-  getSupportTickets,
-  updateTicketStatus,
-  addTicketMessage,
   getAnnouncements,
   createAnnouncement,
   updateAnnouncement,
   deleteAnnouncement,
-  type SupportTicket,
   type Announcement,
 } from "@/lib/api/support";
 import { getArticles, type KnowledgeArticle } from "@/lib/api/knowledge";
+import { DocumentsManagement } from "./DocumentsManagement";
+import ContactMessagesManagement from "./ContactMessagesManagement";
+import { getPendingDocuments } from "@/lib/api/documents";
+import { getNewContactMessagesCount } from "@/lib/api/contactMessages";
 
 const CommunicationSupport = () => {
-  const [activeTab, setActiveTab] = useState("tickets");
+  const [activeTab, setActiveTab] = useState("contacts");
   const [loading, setLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [tickets, setTickets] = useState<SupportTicket[]>([]);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [faqs, setFaqs] = useState<KnowledgeArticle[]>([]);
+  const [pendingDocumentsCount, setPendingDocumentsCount] = useState(0);
+  const [newContactMessagesCount, setNewContactMessagesCount] = useState(0);
   
   // Dialog states
-  const [ticketDialogOpen, setTicketDialogOpen] = useState(false);
-  const [selectedTicket, setSelectedTicket] = useState<SupportTicket | null>(null);
-  const [ticketMessage, setTicketMessage] = useState("");
   const [announcementDialogOpen, setAnnouncementDialogOpen] = useState(false);
   const [editingAnnouncement, setEditingAnnouncement] = useState<Announcement | null>(null);
   
@@ -50,28 +47,64 @@ const CommunicationSupport = () => {
 
   useEffect(() => {
     loadData();
+    loadNotificationCounts();
+    
+    // Listen for updates
+    const handleDocumentsUpdate = () => {
+      loadPendingDocumentsCount();
+    };
+    const handleContactMessagesUpdate = () => {
+      loadNewContactMessagesCount();
+    };
+    
+    window.addEventListener('documents-updated', handleDocumentsUpdate);
+    window.addEventListener('contact-messages-updated', handleContactMessagesUpdate);
+    
+    // Refresh counts every 30 seconds
+    const interval = setInterval(() => {
+      loadNotificationCounts();
+    }, 30000);
+    
+    return () => {
+      window.removeEventListener('documents-updated', handleDocumentsUpdate);
+      window.removeEventListener('contact-messages-updated', handleContactMessagesUpdate);
+      clearInterval(interval);
+    };
   }, [activeTab]);
 
-  useEffect(() => {
-    if (activeTab === "tickets") {
-      const timer = setTimeout(() => {
-        loadData();
-      }, 500);
-      return () => clearTimeout(timer);
+  const loadNotificationCounts = async () => {
+    await Promise.all([
+      loadPendingDocumentsCount(),
+      loadNewContactMessagesCount(),
+    ]);
+  };
+
+  const loadPendingDocumentsCount = async () => {
+    try {
+      const response = await getPendingDocuments();
+      if (response.success && response.data) {
+        setPendingDocumentsCount(response.data.length);
+      }
+    } catch (error) {
+      console.error("Erro ao carregar contagem de documentos pendentes:", error);
     }
-  }, [searchTerm]);
+  };
+
+  const loadNewContactMessagesCount = async () => {
+    try {
+      const response = await getNewContactMessagesCount();
+      if (response.success && response.data) {
+        setNewContactMessagesCount(response.data.count);
+      }
+    } catch (error) {
+      console.error("Erro ao carregar contagem de mensagens de contato:", error);
+    }
+  };
 
   const loadData = async () => {
     setLoading(true);
     try {
-      if (activeTab === "tickets") {
-        const response = await getSupportTickets(searchTerm ? { search: searchTerm } : undefined);
-        if (response.success && response.data) {
-          setTickets(response.data);
-        } else {
-          toast.error("Erro ao carregar chamados");
-        }
-      } else if (activeTab === "announcements") {
+      if (activeTab === "announcements") {
         const response = await getAnnouncements();
         if (response.success && response.data) {
           setAnnouncements(response.data);
@@ -94,49 +127,6 @@ const CommunicationSupport = () => {
     }
   };
 
-  const handleViewTicket = async (ticket: SupportTicket) => {
-    setSelectedTicket(ticket);
-    setTicketDialogOpen(true);
-  };
-
-  const handleRespondTicket = async () => {
-    if (!selectedTicket || !ticketMessage.trim()) {
-      toast.error("Por favor, digite uma mensagem");
-      return;
-    }
-
-    try {
-      const response = await addTicketMessage(selectedTicket.id, {
-        message: ticketMessage,
-        is_internal: false,
-      });
-
-      if (response.success) {
-        toast.success("Resposta enviada com sucesso!");
-        setTicketMessage("");
-        setTicketDialogOpen(false);
-        loadData();
-      } else {
-        toast.error(response.error || "Erro ao enviar resposta");
-      }
-    } catch (error) {
-      toast.error("Erro ao enviar resposta");
-    }
-  };
-
-  const handleCloseTicket = async (ticketId: string) => {
-    try {
-      const response = await updateTicketStatus(ticketId, { status: "fechado" });
-      if (response.success) {
-        toast.success("Chamado encerrado com sucesso!");
-        loadData();
-      } else {
-        toast.error(response.error || "Erro ao encerrar chamado");
-      }
-    } catch (error) {
-      toast.error("Erro ao encerrar chamado");
-    }
-  };
 
   const handleOpenAnnouncementDialog = (announcement?: Announcement) => {
     if (announcement) {
@@ -205,133 +195,39 @@ const CommunicationSupport = () => {
     }
   };
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "aberto":
-        return "destructive";
-      case "respondido":
-        return "default";
-      case "resolvido":
-        return "default";
-      case "fechado":
-        return "secondary";
-      default:
-        return "secondary";
-    }
-  };
-
-  const getStatusLabel = (status: string) => {
-    return status.replace("_", " ");
-  };
 
   return (
     <div className="space-y-6">
       <div>
         <h2 className="text-3xl font-bold mb-2">Comunicação e Suporte</h2>
-        <p className="text-muted-foreground">Gerenciar chamados, comunicados e FAQ</p>
+        <p className="text-muted-foreground">Gerenciar contatos, comunicados, FAQ e documentos</p>
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
         <TabsList>
-          <TabsTrigger value="tickets">Chamados</TabsTrigger>
+          <TabsTrigger value="contacts" className="relative">
+            Contatos
+            {newContactMessagesCount > 0 && (
+              <span className="ml-2 bg-primary text-primary-foreground text-xs font-bold rounded-full h-5 w-5 flex items-center justify-center">
+                {newContactMessagesCount > 9 ? '9+' : newContactMessagesCount}
+              </span>
+            )}
+          </TabsTrigger>
           <TabsTrigger value="announcements">Comunicados</TabsTrigger>
           <TabsTrigger value="faq">FAQ</TabsTrigger>
+          <TabsTrigger value="documents" className="relative">
+            Documentos
+            {pendingDocumentsCount > 0 && (
+              <span className="ml-2 bg-primary text-primary-foreground text-xs font-bold rounded-full h-5 w-5 flex items-center justify-center">
+                {pendingDocumentsCount > 9 ? '9+' : pendingDocumentsCount}
+              </span>
+            )}
+          </TabsTrigger>
         </TabsList>
 
-        {/* Chamados */}
-        <TabsContent value="tickets">
-          <Card>
-            <CardHeader>
-              <CardTitle>Chamados de Suporte</CardTitle>
-              <CardDescription>Gerenciar solicitações de atletas e organizadores</CardDescription>
-              <div className="relative pt-4">
-                <MessageSquare className="absolute left-3 top-7 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="Buscar chamados..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10"
-                />
-              </div>
-            </CardHeader>
-            <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>ID</TableHead>
-                    <TableHead>Usuário</TableHead>
-                    <TableHead>Tipo</TableHead>
-                    <TableHead>Assunto</TableHead>
-                    <TableHead>Data</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Ações</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {loading ? (
-                    <TableRow>
-                      <TableCell colSpan={7} className="text-center py-8">
-                        <Loader2 className="h-6 w-6 animate-spin mx-auto" />
-                      </TableCell>
-                    </TableRow>
-                  ) : tickets.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
-                        Nenhum chamado encontrado
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    tickets.map((ticket) => (
-                      <TableRow key={ticket.id}>
-                        <TableCell>#{ticket.id.slice(0, 8)}</TableCell>
-                        <TableCell className="font-medium">{ticket.user_name || "Desconhecido"}</TableCell>
-                        <TableCell>
-                          <Badge variant="outline">{ticket.user_type || "N/A"}</Badge>
-                        </TableCell>
-                        <TableCell>{ticket.subject}</TableCell>
-                        <TableCell>{new Date(ticket.created_at).toLocaleDateString('pt-BR')}</TableCell>
-                        <TableCell>
-                          <Badge variant={getStatusColor(ticket.status)}>
-                            {getStatusLabel(ticket.status)}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex gap-1">
-                            <Button 
-                              size="icon" 
-                              variant="ghost" 
-                              title="Visualizar"
-                              onClick={() => handleViewTicket(ticket)}
-                            >
-                              <Eye className="h-4 w-4" />
-                            </Button>
-                            <Button 
-                              size="icon" 
-                              variant="ghost" 
-                              title="Responder"
-                              onClick={() => handleViewTicket(ticket)}
-                            >
-                              <MessageSquare className="h-4 w-4" />
-                            </Button>
-                            {ticket.status !== "fechado" && (
-                              <Button 
-                                size="icon" 
-                                variant="ghost" 
-                                title="Encerrar"
-                                onClick={() => handleCloseTicket(ticket.id)}
-                              >
-                                <CheckCircle className="h-4 w-4" />
-                              </Button>
-                            )}
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
+        {/* Contatos */}
+        <TabsContent value="contacts">
+          <ContactMessagesManagement />
         </TabsContent>
 
         {/* Comunicados */}
@@ -490,46 +386,12 @@ const CommunicationSupport = () => {
             </CardContent>
           </Card>
         </TabsContent>
-      </Tabs>
 
-      {/* Ticket Dialog */}
-      <Dialog open={ticketDialogOpen} onOpenChange={setTicketDialogOpen}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Chamado #{selectedTicket?.id.slice(0, 8)}</DialogTitle>
-            <DialogDescription>
-              {selectedTicket?.subject}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div>
-              <Label>Mensagem Original</Label>
-              <p className="text-sm text-muted-foreground mt-2 p-3 bg-muted rounded-md">
-                {selectedTicket?.message}
-              </p>
-            </div>
-            <div>
-              <Label htmlFor="response">Resposta</Label>
-              <Textarea
-                id="response"
-                placeholder="Digite sua resposta..."
-                value={ticketMessage}
-                onChange={(e) => setTicketMessage(e.target.value)}
-                className="mt-2 min-h-[100px]"
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setTicketDialogOpen(false)}>
-              Cancelar
-            </Button>
-            <Button onClick={handleRespondTicket}>
-              <Send className="mr-2 h-4 w-4" />
-              Enviar Resposta
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        {/* Documentos */}
+        <TabsContent value="documents">
+          <DocumentsManagement />
+        </TabsContent>
+      </Tabs>
 
       {/* Announcement Dialog */}
       <Dialog open={announcementDialogOpen} onOpenChange={setAnnouncementDialogOpen}>

@@ -1,0 +1,422 @@
+import { Response } from 'express';
+import { AuthRequest } from '../middleware/auth.js';
+import { hasRole } from '../services/userRolesService.js';
+import { query } from '../config/database.js';
+import { asyncHandler } from '../middleware/errorHandler.js';
+import { updateCustomerNotificationDisabled } from '../services/asaasService.js';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+/**
+ * POST /api/admin/scripts/fix-organizer-registrations
+ * Executa o script para corrigir inscrições criadas por organizadores
+ * Apenas para administradores
+ */
+export const fixOrganizerRegistrationsController = asyncHandler(async (req: AuthRequest, res: Response) => {
+  if (!req.user) {
+    return res.status(401).json({
+      success: false,
+      error: 'Not authenticated',
+    });
+  }
+
+  const isAdmin = await hasRole(req.user.id, 'admin');
+  if (!isAdmin) {
+    return res.status(403).json({
+      success: false,
+      error: 'Forbidden',
+      message: 'Apenas administradores podem executar este script',
+    });
+  }
+
+  // Configurar headers para streaming de logs
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no'); // Desabilitar buffering do nginx
+
+  const logs: string[] = [];
+  const logMessage = (message: string) => {
+    const timestamp = new Date().toISOString();
+    const logLine = `[${timestamp}] ${message}`;
+    logs.push(logLine);
+    res.write(`data: ${JSON.stringify({ type: 'log', message: logLine })}\n\n`);
+  };
+
+  try {
+    logMessage('🔍 Verificando inscrições criadas por organizadores...\n');
+
+    // Buscar inscrições onde o organizador criou para seu próprio evento
+    const registrations = await query(
+      `SELECT 
+        r.id,
+        r.runner_id,
+        r.event_id,
+        r.registered_by,
+        r.total_amount,
+        r.status,
+        r.payment_status,
+        r.payment_method,
+        e.title as event_title,
+        e.organizer_id,
+        p.full_name as organizer_name
+      FROM registrations r
+      JOIN events e ON r.event_id = e.id
+      LEFT JOIN profiles p ON e.organizer_id = p.id
+      WHERE r.registered_by = e.organizer_id
+        AND r.registered_by != r.runner_id
+        AND (r.total_amount > 0 OR r.payment_status = 'paid' OR r.payment_method != 'free_bonus')
+        AND r.status != 'cancelled'
+      ORDER BY r.created_at DESC`
+    );
+
+    if (registrations.rows.length === 0) {
+      logMessage('✅ Nenhuma inscrição criada por organizador precisa ser corrigida.');
+      res.write(`data: ${JSON.stringify({ type: 'complete', success: true, message: 'Nenhuma inscrição precisa ser corrigida' })}\n\n`);
+      res.end();
+      return;
+    }
+
+    logMessage(`📊 Encontradas ${registrations.rows.length} inscrições para corrigir:\n`);
+
+    let updated = 0;
+    let errors = 0;
+    let totalAmountZeroed = 0;
+
+    for (const reg of registrations.rows) {
+      try {
+        logMessage(`  - Corrigindo inscrição ID ${reg.id}`);
+        logMessage(`    Evento: ${reg.event_title}`);
+        logMessage(`    Organizador: ${reg.organizer_name || reg.organizer_id}`);
+        logMessage(`    Valor atual: R$ ${parseFloat(reg.total_amount || 0).toFixed(2)}`);
+        logMessage(`    Status atual: ${reg.status} / ${reg.payment_status} / ${reg.payment_method}`);
+        logMessage(`    Novo status: confirmed / convidado / free_bonus`);
+        logMessage(`    Novo valor: R$ 0,00`);
+
+        await query(
+          `UPDATE registrations 
+           SET total_amount = 0,
+               payment_method = 'free_bonus',
+               payment_status = 'convidado',
+               status = 'confirmed',
+               updated_at = NOW()
+           WHERE id = $1`,
+          [reg.id]
+        );
+
+        if (parseFloat(reg.total_amount || 0) > 0) {
+          totalAmountZeroed++;
+        }
+
+        logMessage(`    ✅ Corrigida com sucesso!\n`);
+        updated++;
+      } catch (error: any) {
+        logMessage(`    ❌ Erro ao corrigir: ${error.message}\n`);
+        errors++;
+      }
+    }
+
+    const summary = `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📊 Resumo:
+   ✅ Inscrições corrigidas: ${updated}
+   💰 Valores zerados: ${totalAmountZeroed}
+   ❌ Erros: ${errors}
+   📦 Total processado: ${registrations.rows.length}
+
+💡 Nota: As inscrições corrigidas não serão mais incluídas no cálculo de receita/saque
+   do organizador, pois o valor já foi recebido diretamente pelo organizador.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+
+    logMessage(summary);
+
+    // Salvar log em arquivo .txt
+    const logDir = path.join(__dirname, '../../logs');
+    if (!fs.existsSync(logDir)) {
+      fs.mkdirSync(logDir, { recursive: true });
+    }
+
+    const logFileName = `fix-organizer-registrations-${Date.now()}.txt`;
+    const logFilePath = path.join(logDir, logFileName);
+    const fullLog = logs.join('\n') + '\n\n' + summary;
+    
+    fs.writeFileSync(logFilePath, fullLog, 'utf-8');
+
+    logMessage(`📄 Log salvo em: ${logFilePath}`);
+
+    res.write(`data: ${JSON.stringify({ 
+      type: 'complete', 
+      success: true, 
+      summary: {
+        updated,
+        totalAmountZeroed,
+        errors,
+        total: registrations.rows.length,
+      },
+      logFile: logFileName,
+    })}\n\n`);
+    res.end();
+    return;
+  } catch (error: any) {
+    logMessage(`❌ Erro ao executar script: ${error.message}`);
+    
+    // Salvar log de erro
+    const logDir = path.join(__dirname, '../../logs');
+    if (!fs.existsSync(logDir)) {
+      fs.mkdirSync(logDir, { recursive: true });
+    }
+
+    const logFileName = `fix-organizer-registrations-error-${Date.now()}.txt`;
+    const logFilePath = path.join(logDir, logFileName);
+    const errorLog = logs.join('\n') + '\n\n❌ Erro: ' + error.message;
+    
+    fs.writeFileSync(logFilePath, errorLog, 'utf-8');
+
+    res.write(`data: ${JSON.stringify({ 
+      type: 'error', 
+      success: false, 
+      message: error.message,
+      logFile: logFileName,
+    })}\n\n`);
+    res.end();
+    return;
+  }
+});
+
+/**
+ * POST /api/admin/scripts/disable-asaas-notifications
+ * Desabilita notificações de faturas no Asaas para todos os clientes da tabela asaas_customers.
+ * Apenas para administradores.
+ */
+export const disableAsaasNotificationsController = asyncHandler(async (req: AuthRequest, res: Response) => {
+  if (!req.user) {
+    return res.status(401).json({
+      success: false,
+      error: 'Not authenticated',
+    });
+  }
+
+  const isAdmin = await hasRole(req.user.id, 'admin');
+  if (!isAdmin) {
+    return res.status(403).json({
+      success: false,
+      error: 'Forbidden',
+      message: 'Apenas administradores podem executar este script',
+    });
+  }
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+
+  const logs: string[] = [];
+  const logMessage = (message: string) => {
+    const timestamp = new Date().toISOString();
+    const logLine = `[${timestamp}] ${message}`;
+    logs.push(logLine);
+    res.write(`data: ${JSON.stringify({ type: 'log', message: logLine })}\n\n`);
+  };
+
+  try {
+    logMessage('🔍 Buscando clientes Asaas em asaas_customers...\n');
+
+    const rows = await query(
+      'SELECT user_id, asaas_customer_id FROM asaas_customers ORDER BY created_at ASC'
+    );
+
+    if (rows.rows.length === 0) {
+      logMessage('✅ Nenhum cliente Asaas encontrado na base.');
+      res.write(`data: ${JSON.stringify({ type: 'complete', success: true, message: 'Nenhum cliente para atualizar' })}\n\n`);
+      res.end();
+      return;
+    }
+
+    logMessage(`📊 Encontrados ${rows.rows.length} clientes. Enviando PUT notificationDisabled=true para cada um...\n`);
+
+    let updated = 0;
+    let errors = 0;
+
+    for (const row of rows.rows) {
+      try {
+        logMessage(`  - Asaas customer ${row.asaas_customer_id} (user_id: ${row.user_id})`);
+        const result = await updateCustomerNotificationDisabled(row.asaas_customer_id);
+        if (result.ok) {
+          logMessage(`    ✅ Notificações desabilitadas.\n`);
+          updated++;
+        } else {
+          logMessage(`    ❌ Erro: ${result.error}\n`);
+          errors++;
+        }
+        // Pequeno delay para respeitar rate limit da API Asaas
+        await new Promise((r) => setTimeout(r, 300));
+      } catch (err: any) {
+        logMessage(`    ❌ Exceção: ${err.message}\n`);
+        errors++;
+      }
+    }
+
+    const summary = `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📊 Resumo (Desabilitar notificações Asaas):
+   ✅ Atualizados com sucesso: ${updated}
+   ❌ Erros: ${errors}
+   📦 Total processado: ${rows.rows.length}
+
+💡 Os clientes não receberão mais e-mails/SMS de cobrança gerados pelo Asaas.
+   O Cronoteam continua enviando as próprias notificações de inscrição/confirmação.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+
+    logMessage(summary);
+
+    const logDir = path.join(__dirname, '../../logs');
+    if (!fs.existsSync(logDir)) {
+      fs.mkdirSync(logDir, { recursive: true });
+    }
+
+    const logFileName = `disable-asaas-notifications-${Date.now()}.txt`;
+    const logFilePath = path.join(logDir, logFileName);
+    fs.writeFileSync(logFilePath, logs.join('\n') + '\n\n' + summary, 'utf-8');
+
+    logMessage(`📄 Log salvo em: ${logFilePath}`);
+
+    res.write(`data: ${JSON.stringify({
+      type: 'complete',
+      success: true,
+      summary: { updated, errors, total: rows.rows.length },
+      logFile: logFileName,
+    })}\n\n`);
+    res.end();
+    return;
+  } catch (error: any) {
+    logMessage(`❌ Erro ao executar script: ${error.message}`);
+
+    const logDir = path.join(__dirname, '../../logs');
+    if (!fs.existsSync(logDir)) {
+      fs.mkdirSync(logDir, { recursive: true });
+    }
+    const logFileName = `disable-asaas-notifications-error-${Date.now()}.txt`;
+    const logFilePath = path.join(logDir, logFileName);
+    fs.writeFileSync(logFilePath, logs.join('\n') + '\n\n❌ Erro: ' + error.message, 'utf-8');
+
+    res.write(`data: ${JSON.stringify({
+      type: 'error',
+      success: false,
+      message: error.message,
+      logFile: logFileName,
+    })}\n\n`);
+    res.end();
+    return;
+  }
+});
+
+/**
+ * POST /api/admin/scripts/backfill-platform-fee-amount
+ * OK Etapa 6: Preenche platform_fee_amount em inscrições antigas (usa taxa atual da plataforma).
+ * Idempotente: só atualiza onde platform_fee_amount IS NULL ou 0 e total_amount > 0.
+ */
+export const backfillPlatformFeeAmountController = asyncHandler(async (req: AuthRequest, res: Response) => {
+  if (!req.user) {
+    return res.status(401).json({
+      success: false,
+      error: 'Not authenticated',
+    });
+  }
+
+  const isAdmin = await hasRole(req.user.id, 'admin');
+  if (!isAdmin) {
+    return res.status(403).json({
+      success: false,
+      error: 'Forbidden',
+      message: 'Apenas administradores podem executar este script',
+    });
+  }
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+
+  const logs: string[] = [];
+  const logMessage = (message: string) => {
+    const timestamp = new Date().toISOString();
+    const logLine = `[${timestamp}] ${message}`;
+    logs.push(logLine);
+    res.write(`data: ${JSON.stringify({ type: 'log', message: logLine })}\n\n`);
+  };
+
+  try {
+    logMessage('🔍 Backfill: Atualizar taxa da plataforma em inscrições antigas...\n');
+    logMessage('   Critério: platform_fee_amount IS NULL ou 0 e total_amount > 0');
+    logMessage('   Cálculo: platform_fee_amount = total_amount - calculate_value_without_platform_fee(...)\n');
+
+    const updateResult = await query(`
+      UPDATE registrations r
+      SET
+        platform_fee_amount = ROUND(
+          r.total_amount - calculate_value_without_platform_fee(
+            r.total_amount,
+            get_platform_fee(),
+            get_platform_fee_type()
+          ),
+          2
+        ),
+        platform_fee_backfilled = TRUE
+      WHERE (r.platform_fee_amount IS NULL OR r.platform_fee_amount = 0)
+        AND r.total_amount > 0
+    `);
+
+    const updated = updateResult.rowCount ?? 0;
+    logMessage(`✅ Inscrições atualizadas: ${updated}\n`);
+
+    const summary = `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📊 Resumo (OK Etapa 6):
+   ✅ Inscrições com platform_fee_amount preenchido: ${updated}
+
+💡 Essas inscrições passam a ter a taxa da plataforma (inscrição) estimada com a
+   configuração atual. Relatórios de organizador e admin passam a separar valor e taxas.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+
+    logMessage(summary);
+
+    const logDir = path.join(__dirname, '../../logs');
+    if (!fs.existsSync(logDir)) {
+      fs.mkdirSync(logDir, { recursive: true });
+    }
+    const logFileName = `backfill-platform-fee-amount-${Date.now()}.txt`;
+    const logFilePath = path.join(logDir, logFileName);
+    fs.writeFileSync(logFilePath, logs.join('\n') + '\n\n' + summary, 'utf-8');
+    logMessage(`📄 Log salvo em: ${logFilePath}`);
+
+    res.write(`data: ${JSON.stringify({
+      type: 'complete',
+      success: true,
+      summary: { updated, total: updated, errors: 0 },
+      logFile: logFileName,
+      message: `${updated} inscrição(ões) atualizada(s)`,
+    })}\n\n`);
+    res.end();
+    return;
+  } catch (error: any) {
+    logMessage(`❌ Erro ao executar backfill: ${error.message}`);
+
+    const logDir = path.join(__dirname, '../../logs');
+    if (!fs.existsSync(logDir)) {
+      fs.mkdirSync(logDir, { recursive: true });
+    }
+    const logFileName = `backfill-platform-fee-amount-error-${Date.now()}.txt`;
+    const logFilePath = path.join(logDir, logFileName);
+    fs.writeFileSync(logFilePath, logs.join('\n') + '\n\n❌ Erro: ' + error.message, 'utf-8');
+
+    res.write(`data: ${JSON.stringify({
+      type: 'error',
+      success: false,
+      message: error.message,
+      logFile: logFileName,
+    })}\n\n`);
+    res.end();
+    return;
+  }
+});

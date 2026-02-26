@@ -13,6 +13,12 @@ export interface DashboardStats {
   total_commissions: number;
   finished_events: number;
   revenue_change_percentage?: number;
+  /** OK Etapa 4: Taxa de inscrição (soma em inscrições pagas) */
+  platform_fee_revenue?: number;
+  /** OK Etapa 4: Taxa de atualização (soma em inscrições pagas) */
+  registration_edit_fee_revenue?: number;
+  /** OK Etapa 4: Total taxas da plataforma */
+  total_platform_fees?: number;
 }
 
 export interface ChartDataPoint {
@@ -50,6 +56,30 @@ export const getDashboardCharts = async (period: number = 6): Promise<{
   return apiClient.get<ChartData>(`/admin/dashboard/charts?period=${period}`);
 };
 
+/** Leader commission (generated record) - for admin remove commission */
+export interface LeaderCommissionRecord {
+  id: string;
+  leader_id: string;
+  registration_id: string;
+  event_id: string;
+  commission_amount: number;
+  commission_percentage: number;
+  registration_amount: number;
+  status: 'pending' | 'paid' | 'cancelled';
+  created_at?: string;
+  paid_at?: string | null;
+}
 
+/**
+ * Get the leader commission linked to a registration (admin only)
+ */
+export const getRegistrationCommission = async (registrationId: string) => {
+  return apiClient.get<LeaderCommissionRecord>(`/admin/registrations/${registrationId}/commission`);
+};
 
-
+/**
+ * Remove (cancel) a leader commission (admin only)
+ */
+export const removeCommission = async (commissionId: string) => {
+  return apiClient.delete<LeaderCommissionRecord>(`/admin/commissions/${commissionId}`);
+};

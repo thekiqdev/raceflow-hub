@@ -9,10 +9,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { MessageSquare, HelpCircle, ArrowLeft } from "lucide-react";
+import { MessageSquare, HelpCircle, ArrowLeft, Loader2 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { getOwnProfile } from "@/lib/api/profiles";
 import { useToast } from "@/hooks/use-toast";
+import { createContactMessage } from "@/lib/api/contactMessages";
+import { getPublicFormConfigurations, type PublicFormFieldConfiguration } from "@/lib/api/formConfigurations";
 
 interface ContactDialogProps {
   open: boolean;
@@ -20,12 +22,13 @@ interface ContactDialogProps {
   eventTitle?: string;
   organizerEmail?: string;
   organizerName?: string;
+  eventId?: string;
 }
 
 type ContactStep = "select" | "form";
 type ContactType = "event" | "platform" | null;
 
-export const ContactDialog = ({ open, onOpenChange, eventTitle, organizerEmail, organizerName }: ContactDialogProps) => {
+export const ContactDialog = ({ open, onOpenChange, eventTitle, organizerEmail, organizerName, eventId }: ContactDialogProps) => {
   const { user, isAuthenticated } = useAuth();
   const [step, setStep] = useState<ContactStep>("select");
   const [contactType, setContactType] = useState<ContactType>(null);
@@ -34,12 +37,10 @@ export const ContactDialog = ({ open, onOpenChange, eventTitle, organizerEmail, 
   const { toast } = useToast();
 
   // Form fields
-  const [name, setName] = useState("");
-  const [phone, setPhone] = useState("");
-  const [email, setEmail] = useState("");
-  const [subject, setSubject] = useState("");
-  const [message, setMessage] = useState("");
+  const [formFields, setFormFields] = useState<PublicFormFieldConfiguration[]>([]);
+  const [formData, setFormData] = useState<Record<string, any>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [loadingFields, setLoadingFields] = useState(false);
 
   useEffect(() => {
     if (open) {
@@ -47,8 +48,75 @@ export const ContactDialog = ({ open, onOpenChange, eventTitle, organizerEmail, 
       resetForm();
       setStep("select");
       setContactType(null);
+      loadFormFields();
     }
   }, [open]);
+
+  useEffect(() => {
+    if (step === "form" && contactType) {
+      loadFormFields();
+    }
+  }, [step, contactType]);
+
+  const loadFormFields = async () => {
+    setLoadingFields(true);
+    try {
+      const response = await getPublicFormConfigurations("contact");
+      if (response.success && response.data && response.data.length > 0) {
+        setFormFields(response.data);
+        
+        // Initialize form data
+        const initialData: Record<string, any> = {};
+        response.data.forEach((field) => {
+          initialData[field.field_key] = "";
+        });
+        
+        // Pre-fill with user data if logged in
+        if (isAuthenticated && user) {
+          if (userProfile) {
+            const nameField = response.data.find(f => f.field_key === 'name');
+            const emailField = response.data.find(f => f.field_key === 'email');
+            const phoneField = response.data.find(f => f.field_key === 'phone');
+            
+            if (nameField && userProfile.full_name) {
+              initialData['name'] = userProfile.full_name;
+            }
+            if (emailField && user.email) {
+              initialData['email'] = user.email;
+            }
+            if (phoneField && userProfile.phone) {
+              initialData['phone'] = userProfile.phone;
+            }
+          }
+        }
+        
+        // Pre-fill subject if event type
+        if (contactType === "event" && eventTitle) {
+          const subjectField = response.data.find(f => f.field_key === 'subject');
+          if (subjectField) {
+            initialData['subject'] = `Dúvida sobre: ${eventTitle}`;
+          }
+        } else if (contactType === "platform") {
+          const subjectField = response.data.find(f => f.field_key === 'subject');
+          if (subjectField) {
+            initialData['subject'] = "Dúvida sobre a plataforma";
+          }
+        }
+        
+        setFormData(initialData);
+      } else {
+        // Fallback to default fields
+        setFormFields([]);
+        setFormData({});
+      }
+    } catch (error: any) {
+      console.error("Error loading contact form fields:", error);
+      setFormFields([]);
+      setFormData({});
+    } finally {
+      setLoadingFields(false);
+    }
+  };
 
   const checkAuth = async () => {
     if (isAuthenticated && user) {
@@ -59,15 +127,22 @@ export const ContactDialog = ({ open, onOpenChange, eventTitle, organizerEmail, 
         if (response.success && response.data) {
           const profile = response.data;
           setUserProfile(profile);
-          setName(profile.full_name || "");
-          setPhone(profile.phone || "");
-          setEmail(user.email || "");
+          
+          // Update form data with user info
+          setFormData(prev => ({
+            ...prev,
+            name: profile.full_name || prev.name || "",
+            email: user.email || prev.email || "",
+            phone: profile.phone || prev.phone || "",
+          }));
         }
       } catch (error) {
         console.error("Erro ao carregar perfil:", error);
-        // Se falhar, pelo menos usar dados básicos do usuário
         if (user.email) {
-          setEmail(user.email);
+          setFormData(prev => ({
+            ...prev,
+            email: user.email || prev.email || "",
+          }));
         }
       }
     } else {
@@ -77,21 +152,19 @@ export const ContactDialog = ({ open, onOpenChange, eventTitle, organizerEmail, 
   };
 
   const resetForm = () => {
-    setName("");
-    setPhone("");
-    setEmail("");
-    setSubject("");
-    setMessage("");
+    setFormData({});
+  };
+
+  const updateField = (fieldKey: string, value: any) => {
+    setFormData(prev => ({
+      ...prev,
+      [fieldKey]: value,
+    }));
   };
 
   const handleSelectType = (type: ContactType) => {
     setContactType(type);
     setStep("form");
-    if (type === "event" && eventTitle) {
-      setSubject(`Dúvida sobre: ${eventTitle}`);
-    } else if (type === "platform") {
-      setSubject("Dúvida sobre a plataforma");
-    }
   };
 
   const handleBack = () => {
@@ -102,10 +175,17 @@ export const ContactDialog = ({ open, onOpenChange, eventTitle, organizerEmail, 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!name.trim() || !email.trim() || !subject.trim() || !message.trim()) {
+    // Validate required fields
+    const requiredFields = formFields.filter(f => f.field_required);
+    const missingFields = requiredFields.filter(f => {
+      const value = formData[f.field_key];
+      return !value || (typeof value === 'string' && !value.trim());
+    });
+    
+    if (missingFields.length > 0) {
       toast({
         title: "Campos obrigatórios",
-        description: "Por favor, preencha todos os campos obrigatórios.",
+        description: `Por favor, preencha todos os campos obrigatórios: ${missingFields.map(f => f.field_label).join(', ')}`,
         variant: "destructive",
       });
       return;
@@ -114,21 +194,68 @@ export const ContactDialog = ({ open, onOpenChange, eventTitle, organizerEmail, 
     setIsSubmitting(true);
 
     try {
-      // TODO: Implementar envio do contato para o backend
-      // Por enquanto, apenas simulamos o envio
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Map form data to API format
+      const apiData: any = {
+        type: contactType || 'platform',
+        event_id: contactType === 'event' && eventId ? eventId : undefined,
+      };
       
-      toast({
-        title: "Mensagem enviada!",
-        description: "Sua mensagem foi enviada com sucesso. Entraremos em contato em breve.",
+      // Map field_key to API field names
+      const fieldMapping: Record<string, string> = {
+        'name': 'name',
+        'sender_name': 'name',
+        'email': 'email',
+        'sender_email': 'email',
+        'phone': 'phone',
+        'sender_phone': 'phone',
+        'subject': 'subject',
+        'message': 'message',
+      };
+      
+      formFields.forEach((field) => {
+        const value = formData[field.field_key];
+        if (value !== undefined && value !== null && value !== "") {
+          const apiFieldName = fieldMapping[field.field_key] || field.field_key;
+          apiData[apiFieldName] = String(value).trim();
+        }
       });
       
-      onOpenChange(false);
-      resetForm();
-    } catch (error) {
+      // Ensure required fields are present
+      if (!apiData.name || !apiData.email || !apiData.subject || !apiData.message) {
+        toast({
+          title: "Campos obrigatórios",
+          description: "Por favor, preencha todos os campos obrigatórios.",
+          variant: "destructive",
+        });
+        setIsSubmitting(false);
+        return;
+      }
+      
+      const response = await createContactMessage(apiData);
+
+      if (response.success) {
+        toast({
+          title: "Mensagem enviada!",
+          description: "Sua mensagem foi enviada com sucesso. Entraremos em contato em breve.",
+        });
+        
+        // Trigger event to update messages count in admin/organizer sidebar
+        window.dispatchEvent(new Event('contact-messages-updated'));
+        
+        onOpenChange(false);
+        resetForm();
+      } else {
+        toast({
+          title: "Erro ao enviar",
+          description: response.error || "Ocorreu um erro ao enviar sua mensagem. Tente novamente.",
+          variant: "destructive",
+        });
+      }
+    } catch (error: any) {
+      console.error("Error submitting contact message:", error);
       toast({
         title: "Erro ao enviar",
-        description: "Ocorreu um erro ao enviar sua mensagem. Tente novamente.",
+        description: error.message || "Ocorreu um erro ao enviar sua mensagem. Tente novamente.",
         variant: "destructive",
       });
     } finally {
@@ -199,78 +326,123 @@ export const ContactDialog = ({ open, onOpenChange, eventTitle, organizerEmail, 
               Voltar
             </Button>
 
-            {isLoggedIn && userProfile && (
-              <div className="p-4 bg-muted rounded-lg">
-                <p className="text-sm font-medium mb-2">Seus dados:</p>
-                <div className="text-sm space-y-1">
-                  <p><strong>Nome:</strong> {userProfile.full_name}</p>
-                  <p><strong>Email:</strong> {email}</p>
-                  <p><strong>Telefone:</strong> {userProfile.phone}</p>
-                </div>
+            {loadingFields ? (
+              <div className="flex justify-center py-8">
+                <Loader2 className="h-6 w-6 animate-spin" />
               </div>
-            )}
-
-            {!isLoggedIn && (
+            ) : formFields.length === 0 ? (
+              <div className="text-center py-4 text-muted-foreground text-sm">
+                Formulário não configurado
+              </div>
+            ) : (
               <>
-                <div className="space-y-2">
-                  <Label htmlFor="name">Nome *</Label>
-                  <Input
-                    id="name"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    placeholder="Seu nome completo"
-                    required
-                  />
-                </div>
+                {isLoggedIn && userProfile && (
+                  <div className="p-4 bg-muted rounded-lg">
+                    <p className="text-sm font-medium mb-2">Seus dados:</p>
+                    <div className="text-sm space-y-1">
+                      <p><strong>Nome:</strong> {userProfile.full_name}</p>
+                      <p><strong>Email:</strong> {formData.email || user.email}</p>
+                      <p><strong>Telefone:</strong> {userProfile.phone || formData.phone || 'Não informado'}</p>
+                    </div>
+                  </div>
+                )}
 
-                <div className="space-y-2">
-                  <Label htmlFor="email">Email *</Label>
-                  <Input
-                    id="email"
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="seu@email.com"
-                    required
-                  />
-                </div>
+                {(() => {
+                  // Group fields by row based on width
+                  const rows: PublicFormFieldConfiguration[][] = [];
+                  let currentRow: PublicFormFieldConfiguration[] = [];
+                  let currentRowWidth = 0;
 
-                <div className="space-y-2">
-                  <Label htmlFor="phone">Telefone *</Label>
-                  <Input
-                    id="phone"
-                    type="tel"
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                    placeholder="(11) 99999-9999"
-                    required
-                  />
-                </div>
+                  formFields.forEach((field) => {
+                    // Skip name, email, phone if user is logged in (already shown in info box)
+                    if (isLoggedIn && ['name', 'email', 'phone'].includes(field.field_key)) {
+                      return;
+                    }
+
+                    const width = field.field_width === '50%' ? 50 : 
+                                  field.field_width === '33%' ? 33 : 
+                                  100;
+
+                    if (currentRowWidth + width > 100 || currentRow.length === 0) {
+                      if (currentRow.length > 0) {
+                        rows.push([...currentRow]);
+                      }
+                      currentRow = [field];
+                      currentRowWidth = width;
+                    } else {
+                      currentRow.push(field);
+                      currentRowWidth += width;
+                    }
+                  });
+
+                  if (currentRow.length > 0) {
+                    rows.push(currentRow);
+                  }
+
+                  return rows.map((row, rowIndex) => (
+                    <div key={rowIndex} className="flex flex-wrap gap-4">
+                      {row.map((field) => {
+                        const fieldValue = formData[field.field_key] || "";
+                        
+                        return (
+                          <div
+                            key={field.field_key}
+                            className={field.field_width === '50%' ? 'flex-1 min-w-[200px]' : 
+                                        field.field_width === '33%' ? 'flex-1 min-w-[150px]' : 
+                                        'w-full'}
+                          >
+                            <div className="space-y-2">
+                              <Label htmlFor={field.field_key}>
+                                {field.field_label}
+                                {field.field_required && <span className="text-destructive ml-1">*</span>}
+                              </Label>
+                              {field.field_type === 'textarea' ? (
+                                <Textarea
+                                  id={field.field_key}
+                                  value={fieldValue}
+                                  onChange={(e) => updateField(field.field_key, e.target.value)}
+                                  placeholder={field.field_placeholder}
+                                  className="min-h-[120px]"
+                                  required={field.field_required}
+                                />
+                              ) : field.field_type === 'select' ? (
+                                <select
+                                  id={field.field_key}
+                                  value={fieldValue}
+                                  onChange={(e) => updateField(field.field_key, e.target.value)}
+                                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                                  required={field.field_required}
+                                >
+                                  <option value="">{field.field_placeholder || "Selecione"}</option>
+                                  {Array.isArray(field.field_options) && field.field_options.map((option: string, idx: number) => (
+                                    <option key={idx} value={option.trim()}>
+                                      {option.trim()}
+                                    </option>
+                                  ))}
+                                </select>
+                              ) : (
+                                <Input
+                                  id={field.field_key}
+                                  type={field.field_type === 'email' ? 'email' : 
+                                        field.field_type === 'tel' ? 'tel' : 
+                                        field.field_type === 'date' ? 'date' : 
+                                        field.field_type === 'number' ? 'number' : 
+                                        'text'}
+                                  value={fieldValue}
+                                  onChange={(e) => updateField(field.field_key, e.target.value)}
+                                  placeholder={field.field_placeholder}
+                                  required={field.field_required}
+                                />
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ));
+                })()}
               </>
             )}
-
-            <div className="space-y-2">
-              <Label htmlFor="subject">Assunto *</Label>
-              <Input
-                id="subject"
-                value={subject}
-                onChange={(e) => setSubject(e.target.value)}
-                placeholder="Assunto da mensagem"
-                required
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="message">Mensagem *</Label>
-              <Textarea
-                id="message"
-                value={message}
-                onChange={(e) => setMessage(e.target.value)}
-                placeholder="Descreva sua dúvida..."
-                className="min-h-[120px]"
-                required
-              />
-            </div>
 
             <div className="flex gap-2 pt-4">
               <Button

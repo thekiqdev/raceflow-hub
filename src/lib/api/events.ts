@@ -1,9 +1,12 @@
 import { apiClient } from './client.js';
 
+export type EventRegistrationStatus = 'not_open' | 'open' | 'closed';
+
 export interface Event {
   id: string;
   organizer_id: string;
   title: string;
+  slug: string;
   description?: string;
   event_date: string;
   location: string;
@@ -13,6 +16,15 @@ export interface Event {
   regulation_url?: string;
   result_url?: string;
   status?: 'draft' | 'published' | 'ongoing' | 'finished' | 'cancelled';
+  registration_status?: EventRegistrationStatus | null;
+  registration_start_date?: string | null;
+  registration_end_date?: string | null;
+  registration_auto_mode?: boolean;
+  pix_enabled?: boolean | null;
+  pix_disabled_at?: string | null;
+  credit_card_enabled?: boolean | null;
+  credit_card_disabled_at?: string | null;
+  transfers_enabled?: boolean | null;
   created_at?: string;
   updated_at?: string;
   organizer_name?: string;
@@ -30,6 +42,7 @@ export interface Event {
 
 export interface CreateEventData {
   title: string;
+  slug?: string; // Opcional - será gerado automaticamente se não fornecido
   description?: string;
   event_date: string;
   location: string;
@@ -40,10 +53,20 @@ export interface CreateEventData {
   result_url?: string;
   status?: 'draft' | 'published' | 'ongoing' | 'finished' | 'cancelled';
   organizer_id?: string;
+  registration_status?: EventRegistrationStatus | null;
+  registration_start_date?: string | null;
+  registration_end_date?: string | null;
+  registration_auto_mode?: boolean;
+  pix_enabled?: boolean;
+  pix_disabled_at?: string | null;
+  credit_card_enabled?: boolean;
+  credit_card_disabled_at?: string | null;
+  transfers_enabled?: boolean;
 }
 
 export interface UpdateEventData {
   title?: string;
+  slug?: string; // Opcional - será gerado automaticamente se título mudar
   description?: string;
   event_date?: string;
   location?: string;
@@ -53,6 +76,15 @@ export interface UpdateEventData {
   regulation_url?: string;
   result_url?: string;
   status?: 'draft' | 'published' | 'ongoing' | 'finished' | 'cancelled';
+  registration_status?: EventRegistrationStatus | null;
+  registration_start_date?: string | null;
+  registration_end_date?: string | null;
+  registration_auto_mode?: boolean;
+  pix_enabled?: boolean;
+  pix_disabled_at?: string | null;
+  credit_card_enabled?: boolean;
+  credit_card_disabled_at?: string | null;
+  transfers_enabled?: boolean;
 }
 
 // Get all events
@@ -62,6 +94,7 @@ export const getEvents = async (filters?: {
   state?: string;
   organizer_id?: string;
   search?: string;
+  order_by_date?: 'asc' | 'desc';
 }) => {
   const queryParams = new URLSearchParams();
   if (filters?.status) queryParams.append('status', filters.status);
@@ -69,6 +102,7 @@ export const getEvents = async (filters?: {
   if (filters?.state) queryParams.append('state', filters.state);
   if (filters?.organizer_id) queryParams.append('organizer_id', filters.organizer_id);
   if (filters?.search) queryParams.append('search', filters.search);
+  if (filters?.order_by_date) queryParams.append('order_by_date', filters.order_by_date);
 
   const queryString = queryParams.toString();
   const endpoint = `/events${queryString ? `?${queryString}` : ''}`;
@@ -117,4 +151,44 @@ export const deleteEvent = async (id: string) => {
   return apiClient.delete(`/events/${id}`);
 };
 
+/**
+ * Calcula o status efetivo de inscrições do evento
+ * - Se modo automático está ativado, calcula baseado nas datas
+ * - Se modo automático está desativado, usa o status manual
+ * - Se ambos são NULL, retorna NULL (usa lógica antiga)
+ */
+export function getEffectiveRegistrationStatus(event: Event): EventRegistrationStatus | null {
+  // Se modo automático está ativado, calcular baseado nas datas
+  if (event.registration_auto_mode && event.registration_start_date && event.registration_end_date) {
+    const now = new Date();
+    const startDate = new Date(event.registration_start_date);
+    const endDate = new Date(event.registration_end_date);
+    
+    if (now < startDate) {
+      return 'not_open';
+    } else if (now >= startDate && now <= endDate) {
+      return 'open';
+    } else {
+      return 'closed';
+    }
+  }
+  
+  // Caso contrário, usar status manual
+  return event.registration_status || null;
+}
+
+export interface AttributeSelectionStats {
+  kit_id: string;
+  kit_name: string;
+  product_id: string;
+  product_name: string;
+  attribute_name: string;
+  attribute_value: string;
+  selection_count: number;
+  variant_price?: number | null;
+}
+
+export const getAttributeSelectionStats = async (eventId: string) => {
+  return apiClient.get<AttributeSelectionStats[]>(`/events/${eventId}/product-selection-stats`);
+};
 

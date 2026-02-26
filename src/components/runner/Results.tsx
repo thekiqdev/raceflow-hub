@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Trophy, Clock, TrendingUp, Share2, Medal, Loader2, ExternalLink, AlertCircle } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { formatDateOnlyBrasilia } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
 import { getRunnerResults, getRunnerResultsStats, type RunnerResult, type RunnerResultsStats } from "@/lib/api/runnerResults";
 import { toast } from "sonner";
@@ -159,7 +160,7 @@ export function Results() {
                   <div className="flex-1">
                     <h3 className="font-semibold text-base mb-1">{result.event_title}</h3>
                     <p className="text-xs text-muted-foreground">
-                      {format(new Date(result.event_date), "dd 'de' MMMM 'de' yyyy", { locale: ptBR })}
+                      {formatDateOnlyBrasilia(result.event_date)}
                     </p>
                   </div>
                   <Badge variant="default" className="ml-2">

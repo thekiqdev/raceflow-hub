@@ -139,3 +139,89 @@ export const createAdmin = async (data: CreateAdminData): Promise<{
   return apiClient.post<{ id: string }>('/admin/users/admins', data);
 };
 
+/**
+ * Get user profile by ID (admin)
+ */
+export const getUserProfileById = async (userId: string): Promise<{
+  success: boolean;
+  data?: {
+    id: string;
+    full_name: string;
+    email: string;
+    cpf?: string;
+    phone: string;
+    gender?: string;
+    birth_date?: string;
+    status: string;
+    role?: string;
+  };
+  error?: string;
+}> => {
+  return apiClient.get(`/admin/users/${userId}/profile`);
+};
+
+/**
+ * Update user profile (admin)
+ */
+export const updateUserProfile = async (userId: string, data: {
+  full_name?: string;
+  email?: string;
+  phone?: string;
+  gender?: string;
+  birth_date?: string;
+  status?: 'active' | 'pending' | 'blocked';
+  role?: 'admin' | 'organizer' | 'runner';
+}): Promise<{
+  success: boolean;
+  message?: string;
+  error?: string;
+}> => {
+  return apiClient.put(`/admin/users/${userId}/profile`, data);
+};
+
+/**
+ * Delete user (admin) - soft delete
+ */
+export const deleteUser = async (userId: string): Promise<{
+  success: boolean;
+  message?: string;
+  error?: string;
+}> => {
+  return apiClient.delete(`/admin/users/${userId}`);
+};
+
+/**
+ * Hard delete user profile (admin) - permanently deletes user and all related data
+ * WARNING: This is a destructive operation that cannot be undone
+ */
+export const hardDeleteUserProfile = async (userId: string): Promise<{
+  success: boolean;
+  message?: string;
+  error?: string;
+}> => {
+  return apiClient.delete(`/admin/users/${userId}/hard-delete`);
+};
+
+/**
+ * Generate random password
+ */
+export const generateRandomPassword = (length: number = 12): string => {
+  const charset = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*';
+  let password = '';
+  for (let i = 0; i < length; i++) {
+    password += charset.charAt(Math.floor(Math.random() * charset.length));
+  }
+  return password;
+};
+
+/**
+ * Convert athlete to organizer
+ */
+export const convertAthleteToOrganizer = async (userId: string): Promise<{
+  success: boolean;
+  message?: string;
+  error?: string;
+}> => {
+  return apiClient.post(`/admin/users/${userId}/convert-to-organizer`, {});
+};
+

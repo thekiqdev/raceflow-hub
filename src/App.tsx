@@ -2,7 +2,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
@@ -10,13 +10,16 @@ import Dashboard from "./pages/Dashboard";
 import Events from "./pages/Events";
 import EventDetails from "./pages/EventDetails";
 import OrganizerDashboard from "./pages/OrganizerDashboard";
-import RunnerProfile from "./pages/RunnerProfile";
 import RunnerDashboard from "./pages/RunnerDashboard";
 import AdminDashboard from "./pages/AdminDashboard";
 import Quote from "./pages/Quote";
 import FAQ from "./pages/FAQ";
 import RegistrationQRCode from "./pages/RegistrationQRCode";
 import ValidateRegistration from "./pages/ValidateRegistration";
+import Cadastro from "./pages/Cadastro";
+import ForgotPassword from "./pages/ForgotPassword";
+import ResetPassword from "./pages/ResetPassword";
+import Results from "./pages/Results";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -31,14 +34,19 @@ const App = () => (
           {/* Public routes */}
           <Route path="/" element={<Index />} />
           <Route path="/auth" element={<Auth />} />
+          <Route path="/cadastro" element={<Cadastro />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
           <Route path="/events" element={<Events />} />
-          <Route path="/events/:id" element={<EventDetails />} />
+          <Route path="/evento/:slug" element={<EventDetails />} />
+          <Route path="/events/:id" element={<EventDetails />} /> {/* Compatibilidade com UUID */}
+          <Route path="/results" element={<Results />} />
           <Route path="/orcamento" element={<Quote />} />
           <Route path="/faq" element={<FAQ />} />
           <Route path="/registration/qrcode/:id" element={<RegistrationQRCode />} />
           <Route path="/registration/validate/:id" element={<ValidateRegistration />} />
           
-          {/* Protected routes - require authentication */}
+          {/* Ponto de entrada único (Etapa 4): /dashboard redireciona por role via getDashboardRoute */}
           <Route 
             path="/dashboard" 
             element={
@@ -48,9 +56,18 @@ const App = () => (
             } 
           />
           
-          {/* Admin routes - require admin role */}
+          {/* Admin: URLs em português (Etapa 1); requiredRole="admin" */}
+          <Route path="/admin/dashboard" element={<Navigate to="/admin/visao-geral" replace />} />
           <Route 
-            path="/admin/dashboard" 
+            path="/admin" 
+            element={
+              <ProtectedRoute requiredRole="admin">
+                <AdminDashboard />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/admin/:section" 
             element={
               <ProtectedRoute requiredRole="admin">
                 <AdminDashboard />
@@ -58,9 +75,18 @@ const App = () => (
             } 
           />
           
-          {/* Organizer routes - require organizer role */}
+          {/* Organizador: URLs em português (Etapa 2); requiredRole="organizer" */}
+          <Route path="/organizer/dashboard" element={<Navigate to="/organizador/visao-geral" replace />} />
           <Route 
-            path="/organizer/dashboard" 
+            path="/organizador" 
+            element={
+              <ProtectedRoute requiredRole="organizer">
+                <OrganizerDashboard />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/organizador/:section" 
             element={
               <ProtectedRoute requiredRole="organizer">
                 <OrganizerDashboard />
@@ -68,9 +94,11 @@ const App = () => (
             } 
           />
           
-          {/* Runner routes - require runner role */}
+          {/* Corredor: URLs em português (Etapa 3); requiredRole="runner" */}
+          <Route path="/runner/dashboard" element={<Navigate to="/corredor/inicio" replace />} />
+          <Route path="/runner/profile" element={<Navigate to="/corredor/perfil" replace />} />
           <Route 
-            path="/runner/dashboard" 
+            path="/corredor" 
             element={
               <ProtectedRoute requiredRole="runner">
                 <RunnerDashboard />
@@ -78,10 +106,10 @@ const App = () => (
             } 
           />
           <Route 
-            path="/runner/profile" 
+            path="/corredor/:section" 
             element={
               <ProtectedRoute requiredRole="runner">
-                <RunnerProfile />
+                <RunnerDashboard />
               </ProtectedRoute>
             } 
           />
