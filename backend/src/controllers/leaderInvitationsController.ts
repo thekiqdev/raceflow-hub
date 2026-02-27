@@ -6,6 +6,8 @@ import {
   getAvailableInvitations,
   getLeaderInvitations,
   sendInvitationByCpf,
+  resendInvitationEmail,
+  getInvitationRegistrationForLeader,
 } from '../services/leaderInvitationsService.js';
 
 // Runner data for pre-registration when CPF not found (same shape as createRunnerByOrganizer)
@@ -215,6 +217,110 @@ export const sendInvitationController = asyncHandler(
         code: error.message.includes('já possui uma inscrição') ? 'RUNNER_ALREADY_REGISTERED' : 'INVITATION_ERROR',
       });
     }
+  }
+);
+
+/**
+ * Resend invitation email (convite must be sent and belong to the leader).
+ * POST /group-leaders/me/invitations/:id/resend-email
+ */
+export const resendInvitationEmailController = asyncHandler(
+  async (req: AuthRequest, res: Response) => {
+    if (!req.user) {
+      res.status(401).json({
+        success: false,
+        error: 'Unauthorized',
+        message: 'Usuário não autenticado',
+      });
+      return;
+    }
+    const { getGroupLeaderByUserId } = await import('../services/groupLeadersService.js');
+    const leader = await getGroupLeaderByUserId(req.user.id);
+    if (!leader) {
+      res.status(403).json({
+        success: false,
+        error: 'Forbidden',
+        message: 'Você não é um líder de grupo',
+      });
+      return;
+    }
+    const invitationId = req.params.id;
+    if (!invitationId) {
+      res.status(400).json({
+        success: false,
+        error: 'ID do convite é obrigatório',
+        message: 'ID do convite é obrigatório',
+      });
+      return;
+    }
+    try {
+      await resendInvitationEmail(leader.id, invitationId);
+      res.json({
+        success: true,
+        message: 'Email reenviado com sucesso.',
+      });
+    } catch (error: any) {
+      const statusCode =
+        error.message?.includes('não encontrado') || error.message?.includes('não está disponível')
+          ? 404
+          : error.message?.includes('sem email')
+            ? 400
+            : 400;
+      res.status(statusCode).json({
+        success: false,
+        error: error.message || 'Erro ao reenviar email',
+        message: error.message || 'Erro ao reenviar email',
+      });
+    }
+  }
+);
+
+/**
+ * Get registration (ingresso) for a sent invitation. Leader only.
+ * GET /group-leaders/me/invitations/:id/registration
+ */
+export const getInvitationRegistrationController = asyncHandler(
+  async (req: AuthRequest, res: Response) => {
+    if (!req.user) {
+      res.status(401).json({
+        success: false,
+        error: 'Unauthorized',
+        message: 'Usuário não autenticado',
+      });
+      return;
+    }
+    const { getGroupLeaderByUserId } = await import('../services/groupLeadersService.js');
+    const leader = await getGroupLeaderByUserId(req.user.id);
+    if (!leader) {
+      res.status(403).json({
+        success: false,
+        error: 'Forbidden',
+        message: 'Você não é um líder de grupo',
+      });
+      return;
+    }
+    const invitationId = req.params.id;
+    if (!invitationId) {
+      res.status(400).json({
+        success: false,
+        error: 'ID do convite é obrigatório',
+        message: 'ID do convite é obrigatório',
+      });
+      return;
+    }
+    const data = await getInvitationRegistrationForLeader(leader.id, invitationId);
+    if (!data) {
+      res.status(404).json({
+        success: false,
+        error: 'Convite ou inscrição não encontrados',
+        message: 'Convite ou inscrição não encontrados',
+      });
+      return;
+    }
+    res.json({
+      success: true,
+      data,
+    });
   }
 );
 

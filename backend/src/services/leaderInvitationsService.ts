@@ -1,3 +1,4 @@
+import jwt from 'jsonwebtoken';
 import { query } from '../config/database.js';
 import { createRunnerByOrganizer, type RunnerDataByOrganizer } from './registrationsService.js';
 
@@ -14,6 +15,7 @@ export interface LeaderInvitation {
   used_at: Date | null;
   created_at: Date;
   updated_at: Date;
+  runner_preregistered?: boolean;
   // Enriched fields
   event_title?: string;
   event_date?: Date;
@@ -224,6 +226,7 @@ export const sendInvitationByCpf = async (
   );
 
   let runner: { id: string };
+  let runnerWasPreregistered = false;
   if (runnerResult.rows.length > 0) {
     runner = runnerResult.rows[0];
   } else {
@@ -243,6 +246,7 @@ export const sendInvitationByCpf = async (
       phone: runnerData.phone?.trim() || undefined,
     });
     runner = { id: created.id };
+    runnerWasPreregistered = true;
   }
 
   // Verify invitation belongs to leader and is available
@@ -310,6 +314,13 @@ export const sendInvitationByCpf = async (
     runner_id: updateResult.rows[0].runner_id,
   });
 
+  if (runnerWasPreregistered) {
+    await query(
+      `UPDATE leader_invitations SET runner_preregistered = true, updated_at = NOW() WHERE id = $1`,
+      [invitationId]
+    );
+  }
+
   // Transfer the bonus registration to the runner and update status
   await query(
     `UPDATE registrations 
@@ -345,50 +356,18 @@ export const sendInvitationByCpf = async (
 
   // Send email notification to runner who received the invitation
   try {
-    const { sendNotificationSafely } = await import('./notificationService.js');
-    
     if (enrichedInvitation.runner_email && enrichedInvitation.runner_name) {
-      // Format event date
-      const eventDate = enrichedInvitation.event_date 
-        ? new Date(enrichedInvitation.event_date).toLocaleDateString('pt-BR', {
-            day: '2-digit',
-            month: '2-digit',
-            year: 'numeric',
-          })
-        : 'Data não informada';
-
-      // Format event location
-      const event = await query(
-        'SELECT location, city, state FROM events WHERE id = $1',
-        [enrichedInvitation.event_id]
+      await sendInvitationEmailToRunner(enrichedInvitation, invitationId);
+    } else {
+      console.warn(
+        '⚠️ [sendInvitationByCpf] Convite enviado mas email não enviado: runner_email ou runner_name ausente',
+        {
+          invitationId,
+          runner_id: enrichedInvitation.runner_id,
+          has_email: !!enrichedInvitation.runner_email,
+          has_name: !!enrichedInvitation.runner_name,
+        }
       );
-      const eventData = event.rows[0];
-      const eventLocation = eventData?.location || 
-        `${eventData?.city || ''}${eventData?.city && eventData?.state ? ' - ' : ''}${eventData?.state || ''}`.trim() || 
-        'Local não informado';
-
-      // Get leader name
-      const leaderResult = await query(
-        'SELECT name FROM group_leaders WHERE id = $1',
-        [enrichedInvitation.leader_id]
-      );
-      const leaderName = leaderResult.rows[0]?.name || 'Líder de Grupo';
-
-      await sendNotificationSafely({
-        templateKey: 'invitation_received',
-        recipient: {
-          email: enrichedInvitation.runner_email,
-          name: enrichedInvitation.runner_name,
-        },
-        variables: {
-          userName: enrichedInvitation.runner_name,
-          leaderName: leaderName,
-          eventTitle: enrichedInvitation.event_title || 'Evento',
-          eventDate: eventDate,
-          eventLocation: eventLocation,
-        },
-      });
-      console.log('✅ Notificação de convite enviada para runner');
     }
   } catch (notificationError: any) {
     // Don't fail the invitation if notification fails
@@ -396,6 +375,175 @@ export const sendInvitationByCpf = async (
   }
 
   return enrichedInvitation;
+};
+
+/**
+ * Internal: send invitation email (template by runner_preregistered). Assumes runner_email and runner_name exist.
+ */
+async function sendInvitationEmailToRunner(
+  enrichedInvitation: LeaderInvitation,
+  invitationId: string
+): Promise<void> {
+  const { sendNotificationSafely } = await import('./notificationService.js');
+  const eventDate = enrichedInvitation.event_date
+    ? new Date(enrichedInvitation.event_date).toLocaleDateString('pt-BR', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+      })
+    : 'Data não informada';
+  const event = await query(
+    'SELECT location, city, state FROM events WHERE id = $1',
+    [enrichedInvitation.event_id]
+  );
+  const eventData = event.rows[0];
+  const eventLocation = eventData?.location ||
+    `${eventData?.city || ''}${eventData?.city && eventData?.state ? ' - ' : ''}${eventData?.state || ''}`.trim() ||
+    'Local não informado';
+  const leaderResult = await query(
+    `SELECT p.full_name as name FROM group_leaders gl
+     LEFT JOIN profiles p ON gl.user_id = p.id
+     WHERE gl.id = $1`,
+    [enrichedInvitation.leader_id]
+  );
+  const leaderName = leaderResult.rows[0]?.name || 'Líder de Grupo';
+  const baseVariables = {
+    userName: enrichedInvitation.runner_name!,
+    leaderName: leaderName,
+    eventTitle: enrichedInvitation.event_title || 'Evento',
+    eventDate,
+    eventLocation,
+  };
+  let templateKey: string;
+  let variables: Record<string, string>;
+  if (enrichedInvitation.runner_preregistered && enrichedInvitation.runner_id) {
+    const secret = process.env.JWT_SECRET;
+    if (!secret) {
+      console.error('❌ JWT_SECRET não definido; link de completar cadastro não gerado.');
+    }
+    const token = secret
+      ? jwt.sign(
+          { invitationId, runnerId: enrichedInvitation.runner_id },
+          secret,
+          { expiresIn: '7d' }
+        )
+      : '';
+    const frontendUrl = (process.env.FRONTEND_URL || 'http://localhost:8080').replace(/\/$/, '');
+    const completeRegistrationLink = token
+      ? `${frontendUrl}/completar-cadastro?token=${encodeURIComponent(token)}`
+      : frontendUrl + '/completar-cadastro';
+    templateKey = 'invitation_received_no_account';
+    variables = { ...baseVariables, completeRegistrationLink };
+  } else {
+    templateKey = 'invitation_received';
+    variables = baseVariables;
+  }
+  await sendNotificationSafely({
+    templateKey,
+    recipient: {
+      email: enrichedInvitation.runner_email!,
+      name: enrichedInvitation.runner_name!,
+    },
+    variables,
+  });
+  console.log('✅ Notificação de convite enviada para runner');
+}
+
+/**
+ * Resend invitation email. Convite must belong to leader and have status 'sent'.
+ */
+export const resendInvitationEmail = async (
+  leaderId: string,
+  invitationId: string
+): Promise<void> => {
+  const check = await query(
+    'SELECT id FROM leader_invitations WHERE id = $1 AND leader_id = $2 AND status = $3',
+    [invitationId, leaderId, 'sent']
+  );
+  if (check.rows.length === 0) {
+    throw new Error('Convite não encontrado ou não está disponível para reenvio.');
+  }
+  const enrichedResult = await query(
+    `SELECT 
+      li.*,
+      e.title as event_title,
+      e.event_date,
+      e.location,
+      e.city,
+      e.state,
+      p.full_name as runner_name,
+      u.email as runner_email
+    FROM leader_invitations li
+    JOIN events e ON li.event_id = e.id
+    LEFT JOIN users u ON li.runner_id = u.id
+    LEFT JOIN profiles p ON u.id = p.id
+    WHERE li.id = $1`,
+    [invitationId]
+  );
+  const enrichedInvitation = enrichedResult.rows[0] as LeaderInvitation;
+  if (!enrichedInvitation?.runner_email || !enrichedInvitation?.runner_name) {
+    throw new Error('Não é possível reenviar: convite sem email ou nome do corredor.');
+  }
+  await sendInvitationEmailToRunner(enrichedInvitation, invitationId);
+};
+
+/**
+ * Validate completion-registration JWT and convite/runner.
+ * Used by GET /api/invitations/complete-registration/validate and by set-password-invitation.
+ * Returns { valid, runnerName?, eventTitle?, error? }.
+ */
+export const validateCompletionRegistration = async (token: string): Promise<{
+  valid: boolean;
+  runnerName?: string;
+  eventTitle?: string;
+  invitationId?: string;
+  runnerId?: string;
+  error?: string;
+}> => {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
+    return { valid: false, error: 'Configuração do servidor inválida.' };
+  }
+
+  let payload: { invitationId?: string; runnerId?: string };
+  try {
+    const decoded = jwt.verify(token, secret) as { invitationId?: string; runnerId?: string; exp?: number };
+    payload = decoded;
+  } catch {
+    return { valid: false, error: 'Token inválido ou expirado.' };
+  }
+
+  const invitationId = payload.invitationId;
+  const runnerId = payload.runnerId;
+  if (!invitationId || !runnerId) {
+    return { valid: false, error: 'Token inválido.' };
+  }
+
+  const result = await query(
+    `SELECT 
+      li.id,
+      li.runner_id,
+      e.title as event_title,
+      p.full_name as runner_name
+    FROM leader_invitations li
+    JOIN events e ON li.event_id = e.id
+    LEFT JOIN profiles p ON p.id = li.runner_id
+    WHERE li.id = $1 AND li.runner_id = $2 AND li.status = 'sent'`,
+    [invitationId, runnerId]
+  );
+
+  if (result.rows.length === 0) {
+    return { valid: false, error: 'Convite não encontrado ou já utilizado.' };
+  }
+
+  const row = result.rows[0];
+  return {
+    valid: true,
+    runnerName: row.runner_name || 'Corredor',
+    eventTitle: row.event_title || 'Evento',
+    invitationId,
+    runnerId,
+  };
 };
 
 /**
@@ -424,5 +572,41 @@ export const getInvitationById = async (
   }
 
   return result.rows[0] as LeaderInvitation;
+};
+
+/**
+ * Get registration data for an invitation (leader viewing runner's ticket/ingresso).
+ * Only for invitations that belong to the leader and have status 'sent'.
+ * Returns same shape as GET /registrations/:id (registration + product_selections).
+ */
+export const getInvitationRegistrationForLeader = async (
+  leaderId: string,
+  invitationId: string
+): Promise<any | null> => {
+  const invResult = await query(
+    `SELECT id, bonus_registration_id FROM leader_invitations
+     WHERE id = $1 AND leader_id = $2 AND status = 'sent'`,
+    [invitationId, leaderId]
+  );
+  if (invResult.rows.length === 0) {
+    return null;
+  }
+  const bonusRegistrationId = invResult.rows[0].bonus_registration_id;
+  if (!bonusRegistrationId) {
+    return null;
+  }
+  const { getRegistrationById } = await import('./registrationsService.js');
+  const registration = await getRegistrationById(bonusRegistrationId);
+  if (!registration) {
+    return null;
+  }
+  let productSelections: any[] = [];
+  try {
+    const { getRegistrationProductSelections } = await import('./registrationProductSelectionsService.js');
+    productSelections = await getRegistrationProductSelections(bonusRegistrationId);
+  } catch {
+    // optional
+  }
+  return { ...registration, product_selections: productSelections };
 };
 

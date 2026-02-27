@@ -2,6 +2,7 @@ import bcrypt from 'bcrypt';
 import jwt, { SignOptions } from 'jsonwebtoken';
 import { query, getClient } from '../config/database.js';
 import { AppRole } from '../types/index.js';
+import { validateCompletionRegistration } from './leaderInvitationsService.js';
 
 export interface RegisterData {
   email: string;
@@ -280,6 +281,70 @@ export const login = async (data: LoginData): Promise<AuthResponse> => {
       roles,
     },
     token,
+  };
+};
+
+/**
+ * Set password for runner who completed registration via invitation link (JWT token).
+ * Validates token (convite/runner, status sent), updates password_hash, returns login token.
+ */
+export const setPasswordByInvitationToken = async (
+  token: string,
+  newPassword: string
+): Promise<AuthResponse> => {
+  const validation = await validateCompletionRegistration(token);
+  if (!validation.valid || !validation.runnerId) {
+    throw new Error(validation.error || 'Token inválido ou expirado.');
+  }
+
+  if (!newPassword || newPassword.length < 6) {
+    throw new Error('A senha deve ter no mínimo 6 caracteres.');
+  }
+
+  const password_hash = await hashPassword(newPassword);
+  await query('UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2', [
+    password_hash,
+    validation.runnerId,
+  ]);
+
+  const userResult = await query(
+    'SELECT id, email FROM users WHERE id = $1',
+    [validation.runnerId]
+  );
+  if (userResult.rows.length === 0) {
+    throw new Error('Usuário não encontrado.');
+  }
+  const user = userResult.rows[0];
+
+  const profileResult = await query(
+    'SELECT id, full_name, cpf, phone FROM profiles WHERE id = $1',
+    [user.id]
+  );
+  const profile = profileResult.rows[0];
+  if (!profile) {
+    throw new Error('Perfil não encontrado.');
+  }
+
+  const rolesResult = await query(
+    'SELECT role FROM user_roles WHERE user_id = $1',
+    [user.id]
+  );
+  const roles = rolesResult.rows.map((row) => row.role as AppRole);
+
+  const authToken = generateToken(user.id, user.email);
+  return {
+    user: {
+      id: user.id,
+      email: user.email,
+      profile: {
+        id: profile.id,
+        full_name: profile.full_name,
+        cpf: profile.cpf,
+        phone: profile.phone,
+      },
+      roles,
+    },
+    token: authToken,
   };
 };
 

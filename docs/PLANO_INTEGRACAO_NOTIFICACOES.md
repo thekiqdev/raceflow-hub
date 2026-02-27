@@ -117,14 +117,28 @@ Integrar 100% o sistema de notificações com todos os gatilhos existentes do si
 **Status:** ✅ IMPLEMENTADO
 
 #### 3.5. Convite Recebido do Líder
-**Local:** `backend/src/services/leaderInvitationsService.ts` → `sendInvitationByCpf`
+**Local:** `backend/src/services/leaderInvitationsService.ts` → `sendInvitationByCpf` (e reenvio em `resendInvitationEmail`)
 
-**Gatilho:** Quando um líder envia um convite para um runner
+**Gatilho:** Quando um líder envia um convite para um runner (ou reenvia o email do convite)
 
 **Notificações necessárias:**
-- ✅ **Runner** recebe: `invitation_received`
+- ✅ **Runner já cadastrado** recebe: `invitation_received`
   - **Destinatário:** Email do runner
   - **Variáveis:** `userName`, `leaderName`, `eventTitle`, `eventDate`, `eventLocation`
+- ✅ **Runner pré-cadastrado (sem conta)** recebe: `invitation_received_no_account`
+  - **Destinatário:** Email do runner (se informado no pré-cadastro)
+  - **Variáveis:** `userName`, `leaderName`, `eventTitle`, `eventDate`, `eventLocation`, `completeRegistrationLink`
+
+**Log quando email/nome ausente:** Em `sendInvitationByCpf`, quando `runner_email` ou `runner_name` estão vazios, é registrado `console.warn('⚠️ [sendInvitationByCpf] Convite enviado mas email não enviado: runner_email ou runner_name ausente', { invitationId, runner_id, has_email, has_name })`.
+
+**Status:** ✅ IMPLEMENTADO
+
+#### 3.6. Completar cadastro (convite sem conta) – validação de token e definição de senha
+**Locais:** `backend/src/controllers/invitationCompletionController.ts`, `backend/src/controllers/authController.ts`, `backend/src/routes/invitations.ts`, `backend/src/routes/auth.ts`
+
+**Endpoints (públicos):**
+- **GET** `/api/invitations/complete-registration/validate?token=xxx` – Valida o JWT do link de completar cadastro. Retorna `{ valid, runnerName?, eventTitle?, error? }`.
+- **POST** `/api/auth/set-password-invitation` – Body: `{ token, newPassword }`. Atualiza a senha do runner e retorna token de login (`{ user, token }`) para o front autenticar.
 
 **Status:** ✅ IMPLEMENTADO
 
@@ -144,7 +158,8 @@ Integrar 100% o sistema de notificações com todos os gatilhos existentes do si
 2. ✅ `new_contact_message_event` - Nova Mensagem de Contato (Evento) (organizer)
 3. ✅ `registration_transferred` - Inscrição Transferida (runner que transferiu)
 4. ✅ `registration_received` - Inscrição Recebida por Transferência (runner que recebeu)
-5. ✅ `invitation_received` - Convite Recebido do Líder (runner)
+5. ✅ `invitation_received` - Convite Recebido do Líder (runner já cadastrado)
+6. ✅ `invitation_received_no_account` - Convite Recebido (Sem Cadastro – Completar) (runner pré-cadastrado)
 
 ---
 
@@ -327,7 +342,8 @@ export const sendNotificationSafely = async (options: SendNotificationOptions): 
 | `payment_received` | Runner | `users.email` (via runner_id) |
 | `registration_transferred` | Runner (que transferiu) | `users.email` (via old runner_id) |
 | `registration_received` | Runner (que recebeu) | `users.email` (via new runner_id) |
-| `invitation_received` | Runner | `users.email` (via runner_id do convite) |
+| `invitation_received` | Runner (já cadastrado) | `users.email` (via runner_id do convite) |
+| `invitation_received_no_account` | Runner (pré-cadastro) | Email informado no pré-cadastro ou `users.email` |
 
 ---
 
@@ -398,12 +414,20 @@ export const sendNotificationSafely = async (options: SendNotificationOptions): 
 - `eventDate` - Data do evento
 - `eventLocation` - Local do evento
 
-### `invitation_received` (runner)
+### `invitation_received` (runner já cadastrado)
 - `userName` - Nome do runner
 - `leaderName` - Nome do líder de grupo
 - `eventTitle` - Título do evento
 - `eventDate` - Data do evento
 - `eventLocation` - Local do evento
+
+### `invitation_received_no_account` (runner pré-cadastrado)
+- `userName` - Nome do runner
+- `leaderName` - Nome do líder de grupo
+- `eventTitle` - Título do evento
+- `eventDate` - Data do evento
+- `eventLocation` - Local do evento
+- `completeRegistrationLink` - URL para completar cadastro (definir senha), com token JWT (válido 7 dias)
 
 ---
 
@@ -418,6 +442,8 @@ export const sendNotificationSafely = async (options: SendNotificationOptions): 
 4. **Templates inativos:** Verificar se template está ativo antes de enviar.
 
 5. **Email não encontrado:** Se email não for encontrado, logar warning e continuar.
+
+6. **Convites do líder:** Dois templates conforme tipo de runner: `invitation_received` (já cadastrado) e `invitation_received_no_account` (pré-cadastro, com link de completar cadastro). Para checklist de verificação manual (staging, templates no admin), ver **Etapa 8** em `docs/PLANO_CONVITE_NOTIFICACOES_POS_CADASTRO.md`.
 
 ---
 

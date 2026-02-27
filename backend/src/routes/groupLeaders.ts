@@ -20,6 +20,8 @@ import {
   getMyInvitationsController,
   getMyAvailableInvitationsController,
   sendInvitationController,
+  resendInvitationEmailController,
+  getInvitationRegistrationController,
 } from '../controllers/leaderInvitationsController.js';
 
 const router = Router();
@@ -36,6 +38,8 @@ router.get('/me/stats', authenticate, getMyStatsController);
 router.get('/me/invitations', authenticate, getMyInvitationsController);
 router.get('/me/invitations/available', authenticate, getMyAvailableInvitationsController);
 router.post('/me/invitations/send', authenticate, sendInvitationController);
+router.post('/me/invitations/:id/resend-email', authenticate, resendInvitationEmailController);
+router.get('/me/invitations/:id/registration', authenticate, getInvitationRegistrationController);
 
 // Admin routes
 router.post('/', authenticate, createGroupLeaderController);

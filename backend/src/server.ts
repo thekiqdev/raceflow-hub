@@ -29,6 +29,7 @@ import notificationTemplatesRouter from './routes/notificationTemplates.js';
 import documentTypesRouter from './routes/documentTypes.js';
 import kitCategoriesRouter from './routes/kitCategories.js';
 import ogRouter from './routes/og.js';
+import invitationsRouter from './routes/invitations.js';
 import { updateRegistrationStatuses } from './services/registrationStatusService.js';
 import { cancelExpiredRegistrations } from './services/expiredRegistrationsService.js';
 
@@ -252,6 +253,7 @@ app.use('/api/coupons', couponsRouter);
 app.use('/api/modalities', modalitiesRouter);
 app.use('/api/categories', categoriesRouter);
 app.use('/api/og', ogRouter);
+app.use('/api/invitations', invitationsRouter);
 app.use('/api', kitCategoriesRouter);
 
 // Root endpoint

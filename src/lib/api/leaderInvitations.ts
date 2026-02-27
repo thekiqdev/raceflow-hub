@@ -49,3 +49,18 @@ export const sendInvitation = async (data: SendInvitationData) => {
   return apiClient.post<LeaderInvitation>('/group-leaders/me/invitations/send', data);
 };
 
+// Resend invitation email (convite must have status 'sent')
+export const resendInvitationEmail = async (invitationId: string) => {
+  return apiClient.post<{ success: boolean; message?: string }>(
+    `/group-leaders/me/invitations/${invitationId}/resend-email`,
+    {}
+  );
+};
+
+// Get registration (ingresso) for a sent invitation - for leader to view QR / download PDF
+export const getInvitationRegistration = async (invitationId: string) => {
+  return apiClient.get<import('@/lib/api/registrations').Registration>(
+    `/group-leaders/me/invitations/${invitationId}/registration`
+  );
+};
+

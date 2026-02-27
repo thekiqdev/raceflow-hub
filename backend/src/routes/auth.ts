@@ -5,6 +5,7 @@ import {
   loginUser,
   getCurrentUser,
   logoutUser,
+  setPasswordInvitationController,
 } from '../controllers/authController.js';
 import {
   requestPasswordResetController,
@@ -22,6 +23,9 @@ router.post('/login', loginUser);
 router.post('/password-reset/request', requestPasswordResetController);
 router.post('/password-reset/reset', resetPasswordController);
 router.get('/password-reset/validate-token', validateTokenController);
+
+// Complete registration (invitation link): set password with JWT token (public)
+router.post('/set-password-invitation', setPasswordInvitationController);
 
 // Protected routes
 router.get('/me', authenticate, getCurrentUser);

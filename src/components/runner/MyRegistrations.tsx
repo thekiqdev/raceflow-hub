@@ -72,6 +72,17 @@ export function MyRegistrations() {
     }
   }, [searchParams]);
 
+  // Etapa 6: ao vir do completar-cadastro, abrir modal de atributos faltantes
+  useEffect(() => {
+    if (!user) return;
+    const openMissing = searchParams.get("openMissingAttributes");
+    if (openMissing === "1") {
+      localStorage.removeItem("missingAttributesAlertDismissed");
+      setShowMissingAttributesModal(true);
+      navigate("/corredor/minhas-inscricoes", { replace: true });
+    }
+  }, [user, searchParams, navigate]);
+
   // Listen for settings updates
   useEffect(() => {
     const handleSettingsUpdate = () => {

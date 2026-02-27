@@ -19,6 +19,7 @@ import ValidateRegistration from "./pages/ValidateRegistration";
 import Cadastro from "./pages/Cadastro";
 import ForgotPassword from "./pages/ForgotPassword";
 import ResetPassword from "./pages/ResetPassword";
+import CompletarCadastro from "./pages/CompletarCadastro";
 import Results from "./pages/Results";
 import NotFound from "./pages/NotFound";
 
@@ -37,6 +38,7 @@ const App = () => (
           <Route path="/cadastro" element={<Cadastro />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/reset-password" element={<ResetPassword />} />
+          <Route path="/completar-cadastro" element={<CompletarCadastro />} />
           <Route path="/events" element={<Events />} />
           <Route path="/evento/:slug" element={<EventDetails />} />
           <Route path="/events/:id" element={<EventDetails />} /> {/* Compatibilidade com UUID */}

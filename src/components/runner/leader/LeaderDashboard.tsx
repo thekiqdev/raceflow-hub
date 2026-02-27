@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -19,6 +19,11 @@ import {
   Search,
   Gift,
   Send,
+  QrCode,
+  Download,
+  MapPin,
+  User,
+  AlertCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -32,7 +37,8 @@ import {
 } from "@/lib/api/groupLeaders";
 import { getMyEventCommissions, type LeaderEventCommission } from "@/lib/api/leaderEventCommissions";
 import { getMyCouponRegistrations, type LeaderRegistration } from "@/lib/api/leaderRegistrations";
-import { getMyInvitations, sendInvitation, type LeaderInvitation } from "@/lib/api/leaderInvitations";
+import { getMyInvitations, sendInvitation, resendInvitationEmail, getInvitationRegistration, type LeaderInvitation } from "@/lib/api/leaderInvitations";
+import { type Registration } from "@/lib/api/registrations";
 import { getPublicProfileByCpf, type Profile } from "@/lib/api/profiles";
 import { maskCpf, maskPhone, unmask } from "@/lib/utils/masks";
 import { validateCpf } from "@/lib/utils/validators";
@@ -47,7 +53,9 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { formatDateOnlyBrasilia } from "@/lib/utils";
+import { formatDateOnlyBrasilia, formatDateTimeBrasilia } from "@/lib/utils";
+import { QRCodeSVG } from "qrcode.react";
+import jsPDF from "jspdf";
 
 export function LeaderDashboard() {
   const [loading, setLoading] = useState(true);
@@ -68,6 +76,10 @@ export function LeaderDashboard() {
   const [selectedInvitation, setSelectedInvitation] = useState<LeaderInvitation | null>(null);
   const [runnerCpf, setRunnerCpf] = useState("");
   const [sendingInvitation, setSendingInvitation] = useState(false);
+  const [resendingInvitationId, setResendingInvitationId] = useState<string | null>(null);
+  const [invitationTicketInvitationId, setInvitationTicketInvitationId] = useState<string | null>(null);
+  const [invitationTicketRegistration, setInvitationTicketRegistration] = useState<Registration | null>(null);
+  const [loadingInvitationTicket, setLoadingInvitationTicket] = useState(false);
   const [inviteStep, setInviteStep] = useState<1 | 2>(1);
   const [inviteCpfLookupLoading, setInviteCpfLookupLoading] = useState(false);
   const [inviteAthleteFound, setInviteAthleteFound] = useState<boolean | null>(null);
@@ -618,6 +630,182 @@ export function LeaderDashboard() {
       toast.error(msg);
     } finally {
       setSendingInvitation(false);
+    }
+  };
+
+  const handleResendInvitationEmail = async (invitationId: string) => {
+    setResendingInvitationId(invitationId);
+    try {
+      const response = await resendInvitationEmail(invitationId);
+      if (response.success) {
+        toast.success("Email reenviado com sucesso.");
+      } else {
+        toast.error(response.error || response.message || "Erro ao reenviar email");
+      }
+    } catch (error: any) {
+      const msg = error?.message || error?.error || "Erro ao reenviar email";
+      toast.error(msg);
+    } finally {
+      setResendingInvitationId(null);
+    }
+  };
+
+  const hasValidRunnerEmail = (invitation: LeaderInvitation) =>
+    !!invitation.runner_email && !invitation.runner_email.includes("@temp.cronoteam");
+
+  const openInvitationTicketModal = async (invitationId: string) => {
+    setInvitationTicketInvitationId(invitationId);
+    setInvitationTicketRegistration(null);
+    setLoadingInvitationTicket(true);
+    try {
+      const response = await getInvitationRegistration(invitationId);
+      if (response.success && response.data) {
+        setInvitationTicketRegistration(response.data);
+      } else {
+        toast.error(response.error || "Erro ao carregar ingresso");
+        setInvitationTicketInvitationId(null);
+      }
+    } catch (error: any) {
+      toast.error(error?.message || "Erro ao carregar ingresso");
+      setInvitationTicketInvitationId(null);
+    } finally {
+      setLoadingInvitationTicket(false);
+    }
+  };
+
+  const closeInvitationTicketModal = () => {
+    setInvitationTicketInvitationId(null);
+    setInvitationTicketRegistration(null);
+  };
+
+  const handleDownloadInvitationReceipt = async (reg: Registration) => {
+    try {
+      const doc = new jsPDF();
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const margin = 20;
+      let yPos = margin;
+      const confirmationCode = reg.confirmation_code || reg.id.substring(0, 8).toUpperCase();
+      const validationUrl = `${window.location.origin}/registration/validate/${reg.id}`;
+      const locationText =
+        (reg as any).location ||
+        `${(reg as any).city || ""}, ${(reg as any).state || ""}`.trim() ||
+        "Local não informado";
+
+      doc.setFontSize(18);
+      doc.setFont("helvetica", "bold");
+      doc.text("COMPROVANTE DE INSCRIÇÃO", pageWidth / 2, yPos, { align: "center" });
+      yPos += 12;
+
+      doc.setFontSize(14);
+      doc.text(reg.event_title || "Evento", pageWidth / 2, yPos, { align: "center" });
+      yPos += 10;
+
+      doc.setFontSize(11);
+      doc.setFont("helvetica", "normal");
+      doc.text(`Código: ${confirmationCode}`, margin, yPos);
+      yPos += 7;
+      doc.text(
+        `Data da Inscrição: ${reg.created_at ? format(new Date(reg.created_at), "dd/MM/yyyy", { locale: ptBR }) : "N/A"}`,
+        margin,
+        yPos
+      );
+      yPos += 12;
+
+      doc.setFont("helvetica", "bold");
+      doc.text("DADOS DO EVENTO:", margin, yPos);
+      yPos += 7;
+      doc.setFont("helvetica", "normal");
+      doc.text(`Evento: ${reg.event_title || "Evento"}`, margin, yPos);
+      yPos += 6;
+      doc.text(`Data: ${reg.event_date ? formatDateTimeBrasilia(reg.event_date) : "N/A"}`, margin, yPos);
+      yPos += 6;
+      doc.text(`Local: ${locationText}`, margin, yPos);
+      yPos += 10;
+
+      doc.setFont("helvetica", "bold");
+      doc.text("DADOS DO CORREDOR:", margin, yPos);
+      yPos += 7;
+      doc.setFont("helvetica", "normal");
+      doc.text(`Nome: ${reg.runner_name || "N/A"}`, margin, yPos);
+      yPos += 6;
+      doc.text(`CPF: ${reg.runner_cpf ? maskCpf(reg.runner_cpf) : "N/A"}`, margin, yPos);
+      yPos += 10;
+
+      doc.setFont("helvetica", "bold");
+      doc.text("DADOS DA INSCRIÇÃO:", margin, yPos);
+      yPos += 7;
+      doc.setFont("helvetica", "normal");
+      doc.text(`Categoria: ${reg.category_name || "N/A"} ${reg.category_distance ? `(${reg.category_distance})` : ""}`, margin, yPos);
+      yPos += 6;
+      doc.text(`Kit: ${reg.kit_name || "Sem kit"}`, margin, yPos);
+      yPos += 6;
+      if (reg.product_selections && reg.product_selections.length > 0) {
+        const productGroups = new Map<string, { product_name: string; attrs: string[] }>();
+        reg.product_selections.forEach((sel: any) => {
+          const key = sel.product_id;
+          if (!productGroups.has(key)) {
+            productGroups.set(key, { product_name: sel.product_name || "Produto", attrs: [] });
+          }
+          productGroups.get(key)!.attrs.push(`${sel.attribute_name}: ${sel.attribute_value}`);
+        });
+        productGroups.forEach((data) => {
+          data.attrs.forEach((line) => {
+            doc.text(line, margin, yPos);
+            yPos += 5;
+          });
+        });
+        yPos += 3;
+      }
+      doc.text(`Valor: R$ ${Number(reg.total_amount ?? 0).toFixed(2).replace(".", ",")}`, margin, yPos);
+      yPos += 6;
+      doc.text(
+        `Status do Pagamento: ${reg.payment_status === "paid" ? "Pago" : (reg as any).payment_status === "convidado" ? "Convite" : "Pendente"}`,
+        margin,
+        yPos
+      );
+      yPos += 14;
+
+      doc.setFont("helvetica", "bold");
+      doc.text("QR CODE DE VALIDAÇÃO:", pageWidth / 2, yPos, { align: "center" });
+      yPos += 8;
+
+      try {
+        const QRCodeLib = await import("qrcode");
+        const qrCodeSize = 80;
+        const qrCodeX = (pageWidth - qrCodeSize) / 2;
+        const qrCodeDataUrl = await QRCodeLib.default.toDataURL(validationUrl, {
+          width: qrCodeSize,
+          margin: 2,
+        });
+        doc.addImage(qrCodeDataUrl, "PNG", qrCodeX, yPos, qrCodeSize, qrCodeSize);
+        yPos += qrCodeSize + 8;
+      } catch {
+        doc.text("QR Code não disponível", pageWidth / 2, yPos, { align: "center" });
+        yPos += 10;
+      }
+
+      doc.setFontSize(9);
+      doc.setFont("helvetica", "italic");
+      doc.text("Escaneie o QR Code para validar a inscrição no evento.", pageWidth / 2, yPos, { align: "center" });
+
+      doc.save(`comprovante_${confirmationCode}.pdf`);
+      toast.success("Comprovante baixado com sucesso!");
+    } catch (error: any) {
+      console.error("Error generating PDF:", error);
+      toast.error("Erro ao baixar comprovante");
+    }
+  };
+
+  const handleDownloadInvitationReceiptById = async (invitationId: string) => {
+    try {
+      const response = await getInvitationRegistration(invitationId);
+      if (response.success && response.data) {
+        await handleDownloadInvitationReceipt(response.data);
+      } else {
+        toast.error(response.error || "Erro ao carregar ingresso");
+      }
+    } catch (error: any) {
+      toast.error(error?.message || "Erro ao baixar comprovante");
     }
   };
 
@@ -1432,6 +1620,46 @@ export function LeaderDashboard() {
                                   <Badge variant="secondary" className="text-xs mt-2">
                                     Enviado
                                   </Badge>
+                                  {!hasValidRunnerEmail(invitation) && (
+                                    <p className="text-xs text-muted-foreground mt-2">
+                                      Corredor sem email válido. Baixe o comprovante e envie por outro meio (ex.: WhatsApp).
+                                    </p>
+                                  )}
+                                </div>
+                                <div className="flex flex-col gap-2 shrink-0">
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => openInvitationTicketModal(invitation.id)}
+                                  >
+                                    <QrCode className="h-4 w-4 mr-1" />
+                                    Ver ingresso
+                                  </Button>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => handleDownloadInvitationReceiptById(invitation.id)}
+                                  >
+                                    <Download className="h-4 w-4 mr-1" />
+                                    Baixar PDF
+                                  </Button>
+                                  {hasValidRunnerEmail(invitation) && (
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      disabled={resendingInvitationId === invitation.id}
+                                      onClick={() => handleResendInvitationEmail(invitation.id)}
+                                    >
+                                      {resendingInvitationId === invitation.id ? (
+                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                      ) : (
+                                        <>
+                                          <Send className="h-4 w-4 mr-1" />
+                                          Reenviar email
+                                        </>
+                                      )}
+                                    </Button>
+                                  )}
                                 </div>
                               </div>
                             </CardContent>
@@ -1496,6 +1724,121 @@ export function LeaderDashboard() {
           </TabsContent>
         </Tabs>
       </div>
+
+      {/* Invitation Ticket (Ver ingresso) Modal */}
+      <Dialog
+        open={!!invitationTicketInvitationId}
+        onOpenChange={(open) => {
+          if (!open) closeInvitationTicketModal();
+        }}
+      >
+        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Ingresso do convite</DialogTitle>
+            <DialogDescription>Inscrição vinculada a este convite. Você pode baixar o comprovante e enviar ao corredor.</DialogDescription>
+          </DialogHeader>
+          {loadingInvitationTicket && (
+            <div className="flex justify-center py-8">
+              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            </div>
+          )}
+          {!loadingInvitationTicket && invitationTicketRegistration && (() => {
+            const reg = invitationTicketRegistration;
+            const isConfirmed =
+              reg.status === "confirmed" &&
+              (reg.payment_status === "paid" || (reg as any).payment_status === "convidado");
+            const validationUrl = `${window.location.origin}/registration/validate/${reg.id}`;
+            const locationText =
+              (reg as any).location ||
+              `${(reg as any).city || ""}, ${(reg as any).state || ""}`.trim() ||
+              "Local não informado";
+            return (
+              <div className="space-y-4">
+                {isConfirmed ? (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-center text-base">QR Code da Inscrição</CardTitle>
+                      <p className="text-xs text-muted-foreground text-center">
+                        Apresente este código no dia do evento
+                      </p>
+                    </CardHeader>
+                    <CardContent className="flex flex-col items-center gap-2">
+                      <div className="bg-white p-3 rounded-lg">
+                        <QRCodeSVG value={validationUrl} size={200} level="H" includeMargin />
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Código: {reg.confirmation_code || reg.id.substring(0, 8).toUpperCase()}
+                      </p>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  <Card className="border-yellow-500 bg-yellow-50">
+                    <CardContent className="pt-4 pb-4">
+                      <div className="text-center">
+                        <AlertCircle className="h-8 w-8 mx-auto mb-2 text-yellow-600" />
+                        <p className="text-sm text-yellow-700">Inscrição pendente de confirmação</p>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">{reg.event_title || "Evento"}</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-2 text-sm">
+                    {reg.event_date && (
+                      <div className="flex items-center gap-2">
+                        <Calendar className="h-4 w-4 text-muted-foreground" />
+                        <span>{formatDateTimeBrasilia(reg.event_date)}</span>
+                      </div>
+                    )}
+                    <div className="flex items-center gap-2">
+                      <MapPin className="h-4 w-4 text-muted-foreground" />
+                      <span>{locationText}</span>
+                    </div>
+                    <div className="pt-2 border-t flex justify-between">
+                      <span className="text-muted-foreground">Categoria:</span>
+                      <span>{reg.category_name || "N/A"}</span>
+                    </div>
+                    {reg.kit_name && (
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Kit:</span>
+                        <span>{reg.kit_name}</span>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <User className="h-4 w-4" />
+                      Dados do Corredor
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="text-sm space-y-1">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Nome:</span>
+                      <span>{reg.runner_name || "N/A"}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">CPF:</span>
+                      <span>{reg.runner_cpf ? maskCpf(reg.runner_cpf) : "N/A"}</span>
+                    </div>
+                  </CardContent>
+                </Card>
+                <Button
+                  className="w-full"
+                  variant="outline"
+                  onClick={() => handleDownloadInvitationReceipt(invitationTicketRegistration)}
+                >
+                  <Download className="h-4 w-4 mr-2" />
+                  Baixar comprovante
+                </Button>
+              </div>
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
 
       {/* Send Invitation Dialog */}
       <Dialog

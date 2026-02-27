@@ -1,5 +1,61 @@
 # Plano: Notificações de convite, reenviar e pós-cadastro
 
+---
+
+## Revisão do plano (antes de implantar por etapas)
+
+**Objetivo desta revisão:** conferir o que já existe no código e o que falta, para executar o plano por etapas sem duplicar trabalho e sem quebrar o que já está feito.
+
+### O que já existe
+
+| Item | Onde | Observação |
+|------|------|------------|
+| Coluna `runner_preregistered` | Migration **092** (`092_add_runner_preregistered_to_leader_invitations.sql`) | Já criada. Convites antigos ficam `false`. |
+| Template `invitation_received` | `notificationTemplatesService.ts` (seed) | Usado no envio atual; variáveis: userName, leaderName, eventTitle, eventDate, eventLocation. |
+| Envio de email no convite | `leaderInvitationsService.sendInvitationByCpf` | Só envia se `runner_email && runner_name`; usa sempre `invitation_received`. |
+| Rota GET validate token | `routes/invitations.ts` → `GET /complete-registration/validate?token=xxx` | Controller chama `validateCompletionRegistration(token)` do service. |
+| Controller validate | `invitationCompletionController.ts` | Retorna `valid`, `runnerName`, `eventTitle` ou `error`. |
+
+### O que está incompleto ou falta
+
+| Item | Situação | Etapa do plano |
+|------|----------|----------------|
+| Marcar `runner_preregistered = true` ao criar runner | No `sendInvitationByCpf`, após criar runner com `createRunnerByOrganizer`, não há `UPDATE leader_invitations SET runner_preregistered = true`. | Etapa 1 |
+| Incluir `runner_preregistered` no SELECT enriquecido | O `enrichedResult` em `sendInvitationByCpf` não seleciona `li.runner_preregistered`. | Etapa 1 |
+| Dois templates (cadastrado vs sem cadastro) | Serviço usa só `invitation_received`. Não existe template `invitation_received_no_account` nem geração de link JWT. | Etapas 1 e 2 |
+| Template `invitation_received_no_account` | Não está no seed de `notificationTemplatesService`. | Etapa 2 |
+| Geração do link de completar cadastro (JWT) | Não implementada. Payload sugerido: `{ invitationId, runnerId, exp }`, assinado com `JWT_SECRET`. | Etapa 2 |
+| Função `validateCompletionRegistration` | Importada pelo controller mas **não existe** no `leaderInvitationsService.ts` (apenas em build antigo/dist). Precisa ser implementada: validar JWT, conferir convite/runner e status “sent”. | Etapa 3 |
+| POST definir senha por token | Rota `POST /api/auth/set-password-invitation` (ou equivalente) **não existe**. Corpo: `{ token, newPassword }`; atualizar `users.password_hash` e opcionalmente retornar token de login. | Etapa 3 |
+| Reenviar email | Endpoint `POST /group-leaders/me/invitations/:id/resend-email` **não existe**. Reutilizar lógica de template (cadastrado vs sem cadastro) e envio. | Etapa 4 |
+| Página frontend `/completar-cadastro` | Rota e tela **não existem**. Fluxo: validar token → formulário “Definir senha” → POST set-password → login e redirecionamento. | Etapa 5 |
+| Completar itens da inscrição (variantes) | Depende do fluxo de “atributos faltantes” (ex.: `MissingAttributesModal`). Garantir que inscrições com `payment_status = 'convidado'` entrem nesse fluxo. | Etapa 6 |
+| Botão “Reenviar” no painel do líder | Não implementado na lista de convites enviados. | Etapa 7 |
+| Log quando email/nome ausente | Plano diz que já foi feito (Etapa 8). Confirmar em `sendInvitationByCpf`: `console.warn` quando `!runner_email || !runner_name`. | Etapa 8 |
+| Líder: ver ingresso / PDF do convite | Endpoint `GET /group-leaders/me/invitations/:id/registration` **não existe**. Front: “Ver ingresso”, “Baixar PDF”, “Reenviar email” (este só se email válido). | Etapa 9 |
+
+### Ordem sugerida para implementar (sem iniciar ainda)
+
+1. **Etapa 1** – Backend: setar `runner_preregistered` ao criar runner; incluir no SELECT; escolher template (por enquanto só um continua; o segundo entra na Etapa 2).
+2. **Etapa 2** – Backend: criar template `invitation_received_no_account` no seed; gerar JWT e `completeRegistrationLink`; no envio do convite, se `runner_preregistered` → usar novo template com link.
+3. **Etapa 3** – Backend: implementar `validateCompletionRegistration` (validar JWT, convite, runner); criar `POST /api/auth/set-password-invitation` (ou em rota de invitations).
+4. **Etapa 4** – Backend: `POST /group-leaders/me/invitations/:id/resend-email`.
+5. **Etapa 5** – Frontend: rota `/completar-cadastro`, validar token, formulário senha, chamar set-password, login e redirecionamento.
+6. **Etapa 6** – Frontend: garantir redirecionamento para fluxo de atributos faltantes (ou página “Completar inscrição”).
+7. **Etapa 7** – Frontend: botão “Reenviar email” em convites enviados.
+8. **Etapa 8** – Verificação: email para cadastrados, logs, docs e templates no admin.
+9. **Etapa 9** – Backend: GET ingresso do convite para o líder; Frontend: “Ver ingresso”, “Baixar PDF”, “Reenviar” (condicionado a email válido).
+
+### Pontos de atenção
+
+- **Email temporário:** `createRunnerByOrganizer` usa `org-runner-{cpf}-{timestamp}@temp.cronoteam` quando não há email. Considerar “email válido” quando **não** for `@temp.cronoteam` (Etapa 9 e botão Reenviar).
+- **JWT do link:** Usar o mesmo `JWT_SECRET` do auth; expiração sugerida 7 dias; payload mínimo: `{ invitationId, runnerId, exp }`.
+- **Montagem da rota de invitations:** O arquivo `routes/invitations.ts` existe, mas o router **não está montado** em `server.ts`. É necessário adicionar `import invitationsRouter from './routes/invitations.js'` e `app.use('/api/invitations', invitationsRouter)` para o endpoint `GET /api/invitations/complete-registration/validate` (e futuros endpoints de completar cadastro) funcionarem.
+
+Com isso, o plano está revisado e pronto para ser implantado por etapas quando você decidir iniciar.
+
+---
+
 ## 1. Objetivo
 
 1. **Novo template** de email para convites recebidos por **corredores que não tinham cadastro** (pré-cadastrados pelo líder), com link para completar cadastro (senha + itens faltantes da inscrição).

@@ -442,6 +442,25 @@ export const initializeDefaultTemplates = async (): Promise<void> => {
       is_active: true,
       is_system: true,
     },
+    {
+      template_key: 'invitation_received_no_account',
+      template_name: 'Convite Recebido (Sem Cadastro – Completar)',
+      template_type: 'email',
+      target_audience: 'runner',
+      subject: 'Complete seu cadastro – Convite para {{eventTitle}}',
+      body_html: '<h1>Convite para {{eventTitle}}</h1><p>Olá {{userName}},</p><p>O líder de grupo <strong>{{leaderName}}</strong> enviou um convite para você participar do evento <strong>{{eventTitle}}</strong>.</p><p><strong>Data do Evento:</strong> {{eventDate}}</p><p><strong>Local:</strong> {{eventLocation}}</p><p>Seu cadastro foi iniciado. Para acessar sua inscrição e o ingresso, é preciso <strong>definir uma senha</strong> e completar os dados da inscrição.</p><p><a href="{{completeRegistrationLink}}" style="display: inline-block; padding: 12px 24px; background-color: #007bff; color: #ffffff; text-decoration: none; border-radius: 4px; margin: 16px 0;">Completar meu cadastro</a></p><p>Ou copie e cole o link no navegador:</p><p style="word-break: break-all; color: #666;">{{completeRegistrationLink}}</p><p>Este link é válido por 7 dias.</p>',
+      body_text: 'Convite para {{eventTitle}}\n\nOlá {{userName}},\n\nO líder de grupo {{leaderName}} enviou um convite para você participar do evento {{eventTitle}}.\n\nData do Evento: {{eventDate}}\nLocal: {{eventLocation}}\n\nSeu cadastro foi iniciado. Para acessar sua inscrição e o ingresso, defina uma senha e complete os dados em:\n{{completeRegistrationLink}}\n\nEste link é válido por 7 dias.',
+      variables: {
+        userName: 'Nome do runner',
+        leaderName: 'Nome do líder de grupo',
+        eventTitle: 'Título do evento',
+        eventDate: 'Data do evento',
+        eventLocation: 'Local do evento',
+        completeRegistrationLink: 'URL para completar cadastro (definir senha)',
+      },
+      is_active: true,
+      is_system: true,
+    },
     // Admin templates
     {
       template_key: 'new_quote_received',
