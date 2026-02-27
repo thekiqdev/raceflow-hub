@@ -424,8 +424,63 @@ export const sendNotification = async (options: SendNotificationOptions): Promis
 
     // Render templates
     const renderedSubject = template.subject ? renderTemplate(template.subject, options.variables) : '';
-    const renderedHtml = template.body_html ? renderTemplate(template.body_html, options.variables) : '';
-    const renderedText = template.body_text ? renderTemplate(template.body_text, options.variables) : '';
+    let renderedHtml = template.body_html ? renderTemplate(template.body_html, options.variables) : '';
+    let renderedText = template.body_text ? renderTemplate(template.body_text, options.variables) : '';
+
+    const siteUrl = (process.env.FRONTEND_URL || 'https://cronoteam.com.br').replace(/\/$/, '');
+
+    if (notificationType === 'email') {
+      // Header: logo (from admin config) + site name + link
+      let platformName = 'Cronoteam';
+      let logoUrl: string | null = null;
+      try {
+        const settings = await getSystemSettings();
+        if (settings.platform_name) platformName = settings.platform_name;
+        if (settings.platform_logo_url && settings.platform_logo_url.trim()) {
+          // URL absoluta (http/https) ou data URL (base64) – ambos válidos para img em email
+          if (settings.platform_logo_url.startsWith('http') || settings.platform_logo_url.startsWith('data:')) {
+            logoUrl = settings.platform_logo_url;
+          } else {
+            const baseUrl = (process.env.BACKEND_URL || process.env.API_URL || process.env.FRONTEND_URL || siteUrl).replace(/\/$/, '');
+            logoUrl = settings.platform_logo_url.startsWith('/') ? `${baseUrl}${settings.platform_logo_url}` : `${baseUrl}/${settings.platform_logo_url}`;
+          }
+        }
+      } catch (_e) {
+        // keep defaults
+      }
+      const emailHeaderHtml = `
+<div style="background-color: #f8f9fa; padding: 20px 24px; margin: 0 -8px 24px -8px; border-bottom: 1px solid #eee; text-align: center;">
+  <a href="${siteUrl}" style="text-decoration: none; color: #333;">
+${logoUrl ? `    <img src="${logoUrl}" alt="${platformName}" style="max-width: 180px; max-height: 60px; height: auto; display: inline-block; vertical-align: middle;" />` : ''}
+${logoUrl ? '    <br style="line-height: 12px;" />' : ''}
+    <span style="font-size: 18px; font-weight: 600; ${logoUrl ? 'margin-top: 8px; display: inline-block;' : ''}">${platformName}</span>
+  </a>
+</div>
+`;
+      const emailHeaderText = `
+${platformName}
+${siteUrl}
+---
+`;
+      renderedHtml = emailHeaderHtml + renderedHtml;
+      renderedText = emailHeaderText + renderedText;
+
+      // Footer: site name + link
+      const emailFooterHtml = `
+<hr style="margin-top: 24px; border: none; border-top: 1px solid #eee;" />
+<p style="margin-top: 16px; font-size: 12px; color: #666; text-align: center;">
+  Este email foi enviado por <a href="${siteUrl}" style="color: #007bff; text-decoration: none;">${platformName}</a> · <a href="${siteUrl}" style="color: #007bff; text-decoration: none;">${siteUrl}</a>
+</p>
+`;
+      const emailFooterText = `
+
+---
+Este email foi enviado por ${platformName}.
+Acesse: ${siteUrl}
+`;
+      renderedHtml = renderedHtml + emailFooterHtml;
+      renderedText = renderedText + emailFooterText;
+    }
 
     // Send based on type
     switch (notificationType) {

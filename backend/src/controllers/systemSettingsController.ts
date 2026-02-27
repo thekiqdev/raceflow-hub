@@ -6,7 +6,8 @@ import { z } from 'zod';
 // Validation schema for system settings update
 const updateSystemSettingsSchema = z.object({
   platform_name: z.string().min(1).optional(),
-  platform_logo_url: z.string().url().optional().nullable(),
+  // URL (http/https) ou data URL (data:image/...) para logo em base64
+  platform_logo_url: z.string().optional().nullable(),
   platform_favicon_url: z.string().url().optional().nullable(),
   contact_email: z.string().email().optional().nullable(),
   contact_phone: z.string().optional().nullable(),
@@ -47,6 +48,32 @@ const updateSystemSettingsSchema = z.object({
   old_results_url: z.string().url().optional().nullable(),
   old_platform_url: z.string().url().optional().nullable(),
 });
+
+/**
+ * GET /api/settings/branding (público)
+ * Retorna apenas nome e logo da plataforma para uso no header, footer e emails.
+ */
+export const getPublicBrandingController = async (
+  _req: AuthRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    const settings = await getSystemSettings();
+    res.json({
+      success: true,
+      data: {
+        platform_name: settings.platform_name ?? 'Cronoteam',
+        platform_logo_url: settings.platform_logo_url ?? null,
+      },
+    });
+  } catch (error: any) {
+    console.error('Error fetching public branding:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Internal server error',
+    });
+  }
+};
 
 /**
  * GET /api/admin/settings

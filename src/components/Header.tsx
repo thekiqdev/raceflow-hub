@@ -1,9 +1,10 @@
 import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { User, LogIn, FileText, Trophy, UserCircle, LogOut, Calculator, Menu, Home, ClipboardList, Award } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { getCorredorPath, getDashboardRoute } from "@/lib/utils/navigation";
+import { getPublicBranding } from "@/lib/api/systemSettings";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -27,6 +28,24 @@ export function Header() {
   const { user, logout, isAuthenticated } = useAuth();
   const [loginDialogOpen, setLoginDialogOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [platformName, setPlatformName] = useState("Cronoteam");
+  const [platformLogoUrl, setPlatformLogoUrl] = useState<string | null>(null);
+
+  const loadBranding = () => {
+    getPublicBranding().then((res) => {
+      if (res.success && res.data) {
+        setPlatformName(res.data.platform_name || "Cronoteam");
+        setPlatformLogoUrl(res.data.platform_logo_url ?? null);
+      }
+    }).catch(() => {});
+  };
+
+  useEffect(() => {
+    loadBranding();
+    const onBrandingUpdate = () => loadBranding();
+    window.addEventListener('admin-logo-updated', onBrandingUpdate);
+    return () => window.removeEventListener('admin-logo-updated', onBrandingUpdate);
+  }, []);
 
   const handleLogout = async () => {
     await logout();
@@ -201,11 +220,15 @@ export function Header() {
           </Sheet>
         </div>
 
-        {/* Logo - Centralizado no mobile */}
-        <Link to="/" className="absolute left-1/2 transform -translate-x-1/2 md:relative md:left-0 md:transform-none flex items-center gap-2">
-          <div className="border-2 border-white px-4 py-2">
-            <span className="text-xl font-bold">CRONOTEAM</span>
-          </div>
+        {/* Logo da plataforma - Centralizado no mobile */}
+        <Link to="/" className="absolute left-1/2 transform -translate-x-1/2 md:relative md:left-0 md:transform-none flex items-center gap-2" aria-label={`${platformName} - Início`}>
+          {platformLogoUrl ? (
+            <img src={platformLogoUrl} alt={platformName} className="h-9 max-w-[180px] w-auto object-contain" />
+          ) : (
+            <div className="border-2 border-white px-4 py-2">
+              <span className="text-xl font-bold">{platformName.toUpperCase()}</span>
+            </div>
+          )}
         </Link>
 
         <nav className="hidden md:flex items-center gap-6">

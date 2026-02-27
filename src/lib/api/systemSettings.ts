@@ -90,6 +90,24 @@ export interface UpdateSystemSettingsData {
   old_platform_url?: string | null;
 }
 
+/** Dados públicos de branding (nome e logo da plataforma) */
+export interface PublicBranding {
+  platform_name: string;
+  platform_logo_url: string | null;
+}
+
+/**
+ * Get public branding (logo + platform name). Endpoint público, usado no header e no footer.
+ * Configurado em Admin > Configurações > Geral > Logo da Plataforma.
+ */
+export const getPublicBranding = async (): Promise<{
+  success: boolean;
+  data?: PublicBranding;
+  error?: string;
+}> => {
+  return apiClient.get<PublicBranding>('/settings/branding');
+};
+
 /**
  * Get system settings (admin only)
  */

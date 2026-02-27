@@ -435,7 +435,7 @@ const SystemSettings = () => {
                 Logo da Plataforma
               </CardTitle>
               <CardDescription>
-                Faça upload da logo da plataforma. Esta logo será exibida no menu lateral.
+                Logo da plataforma configurada aqui é usada no cabeçalho do site, no menu lateral do admin e no cabeçalho dos emails enviados pelo sistema.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">

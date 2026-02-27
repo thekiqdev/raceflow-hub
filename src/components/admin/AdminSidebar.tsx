@@ -117,6 +117,14 @@ export function AdminSidebar({ activeSection }: AdminSidebarProps) {
       const response = await getSystemSettings();
       if (response.success && response.data) {
         setTransfersEnabled(response.data.enabled_modules?.transfers || false);
+        // Logo da plataforma (Configurações > Geral): usar na sidebar e manter em sync com localStorage
+        if (response.data.platform_logo_url) {
+          setLogoUrl(response.data.platform_logo_url);
+          localStorage.setItem('admin-logo', response.data.platform_logo_url);
+        } else {
+          setLogoUrl(null);
+          localStorage.removeItem('admin-logo');
+        }
       }
     } catch (error) {
       console.error("Erro ao carregar configurações:", error);
@@ -165,7 +173,7 @@ export function AdminSidebar({ activeSection }: AdminSidebarProps) {
             {logoUrl ? (
               <img 
                 src={logoUrl} 
-                alt="Logo" 
+                alt="Logo da plataforma" 
                 className={`object-contain ${open ? 'max-h-20 max-w-full' : 'max-h-12 max-w-12'}`}
               />
             ) : (
