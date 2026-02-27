@@ -157,24 +157,32 @@ export function MissingAttributesModal({
     }
   };
 
-  const getAvailableValues = (
+  /** Retorna valores do atributo com indicação de estoque (para mostrar "Esgotada" e desabilitar) */
+  const getAvailableValuesWithStock = (
     registration: MissingAttributesRegistration,
     productId: string,
     attributeName: string
-  ): string[] => {
+  ): { value: string; inStock: boolean }[] => {
     const product = registration.products_with_missing_attributes.find(
       (p) => p.product_id === productId
     );
     if (!product) return [];
 
-    const values = new Set<string>();
+    const byValue = new Map<string, boolean>();
     product.available_variants.forEach((variant) => {
-      if (variant.attribute_values[attributeName]) {
-        values.add(variant.attribute_values[attributeName]);
+      const value = variant.attribute_values[attributeName];
+      if (!value) return;
+      const inStock = variant.in_stock !== false;
+      if (!byValue.has(value)) {
+        byValue.set(value, inStock);
+      } else {
+        byValue.set(value, byValue.get(value) || inStock);
       }
     });
 
-    return Array.from(values).sort();
+    return Array.from(byValue.entries())
+      .map(([value, inStock]) => ({ value, inStock }))
+      .sort((a, b) => a.value.localeCompare(b.value));
   };
 
   return (
@@ -216,7 +224,7 @@ export function MissingAttributesModal({
                       <div className="font-semibold text-base">{product.product_name}</div>
                       <div className="space-y-3 pl-4 border-l-2 border-muted">
                         {product.variant_attributes.map((attributeName) => {
-                          const availableValues = getAvailableValues(
+                          const valuesWithStock = getAvailableValuesWithStock(
                             registration,
                             product.product_id,
                             attributeName
@@ -248,9 +256,14 @@ export function MissingAttributesModal({
                                   <SelectValue placeholder={`Selecione ${attributeName}`} />
                                 </SelectTrigger>
                                 <SelectContent>
-                                  {availableValues.map((value) => (
-                                    <SelectItem key={value} value={value}>
-                                      {value}
+                                  {valuesWithStock.map(({ value, inStock }) => (
+                                    <SelectItem
+                                      key={value}
+                                      value={value}
+                                      disabled={!inStock}
+                                      className={!inStock ? "text-muted-foreground opacity-70" : undefined}
+                                    >
+                                      {value}{!inStock ? " (Esgotada)" : ""}
                                     </SelectItem>
                                   ))}
                                 </SelectContent>

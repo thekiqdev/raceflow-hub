@@ -1038,23 +1038,32 @@ export const getRegistrationsWithMissingAttributes = async (userId: string) => {
           [product.product_id]
         );
 
-        // Parse variant names to extract attribute values
-        const variantsWithAttributes = availableVariants.rows.map((variant) => {
+        // Todas as variantes com flag in_stock para o frontend mostrar "Esgotada" nas esgotadas (cinza, desabilitado)
+        const eventId = registration.event_id;
+        const variantsWithAttributes = [];
+        for (const variant of availableVariants.rows) {
+          const remaining = await getVariantRemainingStock(
+            variant.variant_id,
+            eventId,
+            registration.id
+          );
+          const inStock = remaining === null || remaining > 0;
+
           const variantValues = variant.variant_name.split(' - ').map((v: string) => v.trim());
           const attributeValues: Record<string, string> = {};
-
-          variantAttributes.forEach((attrName, index) => {
+          variantAttributes.forEach((attrName: string, index: number) => {
             if (index < variantValues.length) {
               attributeValues[attrName] = variantValues[index];
             }
           });
 
-          return {
+          variantsWithAttributes.push({
             variant_id: variant.variant_id,
             variant_name: variant.variant_name,
             attribute_values: attributeValues,
-          };
-        });
+            in_stock: inStock,
+          });
+        }
 
         productsWithMissingAttributes.push({
           product_id: product.product_id,
@@ -1250,9 +1259,49 @@ export const completeRegistrationAttributes = async (
     );
   }
 
-  // Save new selections
+  // Resolver variant_id quando o frontend envia só attribute_selections (ex.: modal de atributos pendentes),
+  // para que o INSERT use variant_id e o estoque seja contabilizado igual à inscrição normal.
+  const productVariantAttrs = new Map<string, string[]>(
+    kitProducts.rows
+      .filter((p: any) => p.variant_attributes && Array.isArray(p.variant_attributes))
+      .map((p: any) => [p.id, p.variant_attributes])
+  );
+
   for (const selection of productSelections) {
     if (selection.attribute_selections && Object.keys(selection.attribute_selections).length > 0) {
+      let variantIdToUse = selection.variant_id;
+      if (!variantIdToUse) {
+        const attrOrder = productVariantAttrs.get(selection.product_id);
+        if (attrOrder && attrOrder.length > 0) {
+          const variantsResult = await query(
+            `SELECT id, name FROM product_variants WHERE product_id = $1`,
+            [selection.product_id]
+          );
+          for (const row of variantsResult.rows) {
+            const variantValues = (row.name as string).split(' - ').map((v: string) => v.trim());
+            const matches = attrOrder.every(
+              (attrName, index) => (selection.attribute_selections![attrName] ?? '').trim() === (variantValues[index] ?? '').trim()
+            );
+            if (matches) {
+              variantIdToUse = row.id;
+              break;
+            }
+          }
+        }
+      }
+
+      // Validar estoque ao completar atributos (mesmo quando variant_id veio resolvido dos attribute_selections)
+      if (variantIdToUse) {
+        const remaining = await getVariantRemainingStock(
+          variantIdToUse,
+          registration.event_id,
+          registrationId
+        );
+        if (remaining !== null && remaining <= 0) {
+          throw new Error('Estoque desta variante chegou a zero; não é possível selecioná-la. Escolha outra opção.');
+        }
+      }
+
       for (const [attributeName, attributeValue] of Object.entries(selection.attribute_selections)) {
         await query(
           `INSERT INTO registration_product_selections 
@@ -1261,7 +1310,7 @@ export const completeRegistrationAttributes = async (
           [
             registrationId,
             selection.product_id,
-            selection.variant_id || null,
+            variantIdToUse || null,
             attributeName,
             attributeValue,
           ]

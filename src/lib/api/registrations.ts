@@ -350,6 +350,7 @@ export interface MissingAttributesRegistration {
       variant_id: string;
       variant_name: string;
       attribute_values: { [key: string]: string };
+      in_stock?: boolean;
     }>;
   }>;
 }

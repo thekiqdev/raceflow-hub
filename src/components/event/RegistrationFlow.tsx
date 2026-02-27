@@ -2459,7 +2459,7 @@ export function RegistrationFlow({
                                           });
                                         };
                                         
-                                        // Values for current attribute with stock info (mostra todos; esgotados em cinza)
+                                        // Valores do atributo com info de estoque; mostra todos, esgotados em cinza com "Esgotada"
                                         const getValuesWithStock = (attributeIndex: number): { value: string; inStock: boolean }[] => {
                                           const matchingVariants = getMatchingVariants(attributeIndex);
                                           const ordered: { value: string; inStock: boolean }[] = [];
@@ -2477,9 +2477,6 @@ export function RegistrationFlow({
                                           });
                                           return ordered;
                                         };
-                                        
-                                        console.log('🔍 attributeOrder:', attributeOrder);
-                                        console.log('🔍 selections:', selections);
                                         
                                         return (
                                           <div className="space-y-4 ml-2">
@@ -2536,7 +2533,7 @@ export function RegistrationFlow({
                                                         <div key={value}>
                                                           <RadioGroupItem
                                                             value={value}
-                                                            id={`${productKey}-${attrName}-${value}`}
+                                                            id={inStock ? `${productKey}-${attrName}-${value}` : undefined}
                                                             className="peer sr-only"
                                                             disabled={!inStock}
                                                           />
@@ -2552,7 +2549,7 @@ export function RegistrationFlow({
                                                           >
                                                             <span className="font-medium">{value}</span>
                                                             {!inStock && (
-                                                              <span className="text-xs mt-0.5">Esgotado</span>
+                                                              <span className="text-xs mt-0.5">Esgotada</span>
                                                             )}
                                                           </Label>
                                                         </div>
@@ -3140,7 +3137,22 @@ export function RegistrationFlow({
                           setIsSubmitting(true);
                           try {
                             const runnerId = otherPersonId || user.id;
-                            
+
+                            // Incluir variação e atributos do kit (mesmo critério do handleSubmit)
+                            const productSelections: Array<{ product_id: string; variant_id?: string; attribute_selections?: Record<string, string> }> = [];
+                            if (selectedKit?.id && selectedProducts.has(selectedKit.id)) {
+                              const selection = selectedProducts.get(selectedKit.id);
+                              if (selection) {
+                                const kitKey = `${selectedKit.id}-${selection.productId}`;
+                                const variantSelection = variantSelections.get(kitKey);
+                                productSelections.push({
+                                  product_id: selection.productId,
+                                  variant_id: selection.variantId,
+                                  attribute_selections: variantSelection || undefined,
+                                });
+                              }
+                            }
+
                             const registrationData: any = {
                               event_id: event.id,
                               runner_id: runnerId,
@@ -3150,6 +3162,7 @@ export function RegistrationFlow({
                               payment_method: 'credit_card',
                               total_amount: totalPrice,
                               coupon_code: appliedCoupon?.code || undefined,
+                              product_selections: productSelections.length > 0 ? productSelections : undefined,
                               credit_card: data.credit_card,
                               credit_card_holder_info: data.credit_card_holder_info,
                             };
