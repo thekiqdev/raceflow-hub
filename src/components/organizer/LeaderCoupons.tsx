@@ -237,6 +237,7 @@ export function LeaderCoupons({ leaderId, isAdmin = false }: LeaderCouponsProps)
         coupon={editingCoupon}
         leaderId={leaderId}
         onSave={handleSaveCoupon}
+        isAdmin={isAdmin}
       />
     </div>
   );

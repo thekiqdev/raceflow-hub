@@ -200,14 +200,23 @@ export const getCouponByCode = async (code: string, organizerId: string): Promis
 };
 
 /**
- * Get all coupons for an organizer
+ * Get all coupons for an organizer.
+ * Includes: (1) coupons where organizer_id = organizerId,
+ *           (2) leader coupons (leader_id IS NOT NULL) that have at least one event in coupon_events
+ *               whose event belongs to this organizer (events.organizer_id = organizerId).
  */
 export const getCouponsByOrganizer = async (organizerId: string): Promise<Coupon[]> => {
   const result = await query(
-    'SELECT * FROM coupons WHERE organizer_id = $1 ORDER BY created_at DESC',
+    `SELECT DISTINCT c.*
+     FROM coupons c
+     LEFT JOIN coupon_events ce ON ce.coupon_id = c.id
+     LEFT JOIN events e ON e.id = ce.event_id AND e.organizer_id = $1
+     WHERE c.organizer_id = $1
+        OR (c.leader_id IS NOT NULL AND e.id IS NOT NULL)
+     ORDER BY c.created_at DESC`,
     [organizerId]
   );
-  
+
   // Get event IDs for each coupon
   const coupons = await Promise.all(
     result.rows.map(async (row) => {
@@ -220,7 +229,7 @@ export const getCouponsByOrganizer = async (organizerId: string): Promise<Coupon
       return { ...coupon, event_ids: eventIds } as any;
     })
   );
-  
+
   return coupons;
 };
 

@@ -18,6 +18,8 @@ interface LeaderCouponDialogProps {
   coupon: Coupon | null;
   leaderId: string;
   onSave: (data: CreateCouponData) => void;
+  /** Quando true (visão admin), carrega todos os eventos do sistema para aplicar o cupom */
+  isAdmin?: boolean;
 }
 
 export function LeaderCouponDialog({
@@ -26,10 +28,12 @@ export function LeaderCouponDialog({
   coupon,
   leaderId,
   onSave,
+  isAdmin = false,
 }: LeaderCouponDialogProps) {
   const { user } = useAuth();
   const [events, setEvents] = useState<Event[]>([]);
   const [loadingEvents, setLoadingEvents] = useState(false);
+  const [eventSearch, setEventSearch] = useState("");
   const [selectedEventIds, setSelectedEventIds] = useState<string[]>([]);
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
@@ -43,6 +47,7 @@ export function LeaderCouponDialog({
   useEffect(() => {
     if (open && user) {
       loadEvents();
+      setEventSearch("");
       if (coupon) {
         setSelectedEventIds(coupon.event_ids || (coupon.event_id ? [coupon.event_id] : []));
         setCode(coupon.code);
@@ -67,14 +72,17 @@ export function LeaderCouponDialog({
         setIsActive(true);
       }
     }
-  }, [open, coupon, user]);
+  }, [open, coupon, user, isAdmin]);
 
   const loadEvents = async () => {
     if (!user) return;
-    
+
     setLoadingEvents(true);
     try {
-      const response = await getEvents({ organizer_id: user.id });
+      // Admin: todos os eventos do sistema; organizador: apenas seus eventos
+      const response = await getEvents(
+        isAdmin ? undefined : { organizer_id: user.id }
+      );
       if (response.success && response.data) {
         setEvents(response.data);
       }
@@ -125,6 +133,18 @@ export function LeaderCouponDialog({
         : [...prev, eventId]
     );
   };
+
+  const searchLower = eventSearch.trim().toLowerCase();
+  const filteredEvents =
+    searchLower === ""
+      ? events
+      : events.filter(
+          (e) =>
+            e.title?.toLowerCase().includes(searchLower) ||
+            e.city?.toLowerCase().includes(searchLower) ||
+            (e.event_date &&
+              new Date(e.event_date).toLocaleDateString("pt-BR").includes(searchLower))
+        );
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -222,6 +242,14 @@ export function LeaderCouponDialog({
 
           <div className="space-y-2">
             <Label>Eventos Aplicáveis</Label>
+            {events.length > 0 && (
+              <Input
+                placeholder="Buscar por título, cidade ou data..."
+                value={eventSearch}
+                onChange={(e) => setEventSearch(e.target.value)}
+                className="max-w-sm"
+              />
+            )}
             {loadingEvents ? (
               <div className="flex items-center justify-center py-4">
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -230,9 +258,11 @@ export function LeaderCouponDialog({
               <div className="border rounded-md p-4 max-h-48 overflow-y-auto">
                 {events.length === 0 ? (
                   <p className="text-sm text-muted-foreground">Nenhum evento disponível</p>
+                ) : filteredEvents.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">Nenhum evento encontrado com &quot;{eventSearch}&quot;</p>
                 ) : (
                   <div className="space-y-2">
-                    {events.map((event) => (
+                    {filteredEvents.map((event) => (
                       <div key={event.id} className="flex items-center space-x-2">
                         <Checkbox
                           id={`event-${event.id}`}
@@ -252,7 +282,9 @@ export function LeaderCouponDialog({
               </div>
             )}
             <p className="text-xs text-muted-foreground">
-              Selecione os eventos onde este cupom poderá ser usado. Deixe vazio para aplicar a todos os eventos.
+              {isAdmin
+                ? "Selecione os eventos onde este cupom poderá ser usado (qualquer evento do sistema)."
+                : "Selecione os eventos onde este cupom poderá ser usado. Deixe vazio para aplicar a todos os eventos."}
             </p>
           </div>
 
