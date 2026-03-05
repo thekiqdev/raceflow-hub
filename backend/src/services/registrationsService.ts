@@ -7,7 +7,7 @@ import { hashPassword } from './authService.js';
  * Estoque restante da variante no evento (considera todas as inscrições não canceladas).
  * @param excludeRegistrationId - se informado, não conta essa inscrição (útil ao atualizar atributos).
  */
-async function getVariantRemainingStock(
+export async function getVariantRemainingStock(
   variantId: string,
   eventId: string,
   excludeRegistrationId?: string
@@ -166,7 +166,9 @@ export const getRegistrations = async (filters?: {
       cp.leader_id as coupon_leader_id,
       -- Informações do líder (se o cupom pertence a um líder)
       gl.id as leader_id,
-      lp.full_name as leader_name
+      lp.full_name as leader_name,
+      -- Etapa 4: convite com "corredor escolhe" (para fluxo de completar categoria/modalidade/kit)
+      (SELECT li.runner_chooses_category_modality_kit FROM leader_invitations li WHERE li.bonus_registration_id = r.id AND li.runner_id = r.runner_id LIMIT 1) as invitation_runner_chooses_category_modality_kit
     FROM registrations r
     LEFT JOIN events e ON r.event_id = e.id
     LEFT JOIN categories c ON r.category_id = c.id
@@ -352,7 +354,8 @@ export const getRegistrationById = async (registrationId: string, viewerId?: str
             ELSE r.status
           END
         ELSE r.status
-      END as display_status
+      END as display_status,
+      (SELECT li.runner_chooses_category_modality_kit FROM leader_invitations li WHERE li.bonus_registration_id = r.id AND li.runner_id = r.runner_id LIMIT 1) as invitation_runner_chooses_category_modality_kit
     FROM registrations r
     LEFT JOIN events e ON r.event_id = e.id
     LEFT JOIN categories c ON r.category_id = c.id
@@ -630,7 +633,7 @@ export const createRegistration = async (data: CreateRegistrationData) => {
           
           if (variantResult.rows.length > 0) {
             const variant = variantResult.rows[0];
-            
+            let inserted = false;
             // Get product variant_attributes to parse variant name
             const productResult = await query(
               `SELECT variant_attributes FROM kit_products WHERE id = $1`,
@@ -658,8 +661,18 @@ export const createRegistration = async (data: CreateRegistrationData) => {
                       variantValues[i],
                     ]
                   );
+                  inserted = true;
                 }
               }
+            }
+            // Fallback: sempre persistir variant_id para contagem de estoque (attribute_name/attribute_value NOT NULL)
+            if (!inserted) {
+              await query(
+                `INSERT INTO registration_product_selections 
+                 (registration_id, product_id, variant_id, attribute_name, attribute_value)
+                 VALUES ($1, $2, $3, 'Variante', $4)`,
+                [registration.id, selection.product_id, selection.variant_id, variant.name || selection.variant_id]
+              );
             }
           }
         }
@@ -1382,6 +1395,195 @@ export const removeRegistrationAttributes = async (
       ? 'Attribute selections removed for specified products'
       : 'All attribute selections removed',
   };
+};
+
+/**
+ * Complete invitation registration: runner chooses category, modality, kit and optional product_selections.
+ * Only for registrations with payment_status = 'convidado' owned by the runner.
+ */
+export const completeInvitationRegistration = async (
+  registrationId: string,
+  userId: string,
+  data: {
+    category_id: string;
+    modality_id?: string | null;
+    kit_id?: string | null;
+    product_selections?: Array<{
+      product_id: string;
+      variant_id?: string;
+      attribute_selections?: Record<string, string>;
+    }>;
+  }
+) => {
+  const registration = await getRegistrationById(registrationId);
+  if (!registration) {
+    throw new Error('Inscrição não encontrada.');
+  }
+  if (registration.runner_id !== userId) {
+    throw new Error('Você não tem permissão para completar esta inscrição.');
+  }
+  if (registration.payment_status !== 'convidado') {
+    throw new Error('Esta inscrição não é um convite ou já foi completada.');
+  }
+  if (registration.status === 'cancelled') {
+    throw new Error('Não é possível completar uma inscrição cancelada.');
+  }
+
+  const eventId = registration.event_id;
+  const { category_id, modality_id, kit_id, product_selections } = data;
+
+  const catCheck = await query(
+    'SELECT id FROM categories WHERE id = $1 AND event_id = $2',
+    [category_id, eventId]
+  );
+  if (catCheck.rows.length === 0) {
+    throw new Error('Categoria inválida ou não pertence a este evento.');
+  }
+
+  if (modality_id) {
+    const modCheck = await query(
+      `SELECT 1 FROM modalities m
+       WHERE m.id = $1 AND m.event_id = $2
+       AND EXISTS (SELECT 1 FROM category_modalities cm WHERE cm.modality_id = m.id AND cm.category_id = $3)`,
+      [modality_id, eventId, category_id]
+    );
+    if (modCheck.rows.length === 0) {
+      throw new Error('Modalidade inválida ou não está vinculada à categoria selecionada.');
+    }
+  }
+
+  if (kit_id) {
+    const kitCheck = await query(
+      'SELECT 1 FROM event_kits WHERE id = $1 AND event_id = $2',
+      [kit_id, eventId]
+    );
+    if (kitCheck.rows.length === 0) {
+      throw new Error('Kit inválido ou não pertence a este evento.');
+    }
+    // Etapa 5: kit com produto variável exige seleção de variante
+    const kitProductsRows = await query(
+      'SELECT id, name, type FROM kit_products WHERE kit_id = $1',
+      [kit_id]
+    );
+    const variableProducts = (kitProductsRows.rows as { id: string; name: string; type: string }[]).filter(
+      (p) => p.type === 'variable'
+    );
+    if (variableProducts.length > 0) {
+      const hasSelections = product_selections && product_selections.length > 0;
+      if (!hasSelections) {
+        throw new Error(
+          'O kit selecionado possui produto(s) com variação (ex.: tamanho). Selecione a variante para cada um.'
+        );
+      }
+      const selectedProductIds = new Set((product_selections || []).map((s) => s.product_id));
+      const missing = variableProducts.filter((p) => !selectedProductIds.has(p.id));
+      if (missing.length > 0) {
+        throw new Error(`Selecione a variante para: ${missing.map((p) => p.name).join(', ')}.`);
+      }
+      for (const sel of product_selections || []) {
+        const prod = variableProducts.find((p) => p.id === sel.product_id);
+        if (prod && !sel.variant_id && (!sel.attribute_selections || Object.keys(sel.attribute_selections).length === 0)) {
+          throw new Error(`Informe a variante (tamanho) para o produto "${prod.name}".`);
+        }
+      }
+    }
+  }
+
+  await query(
+    `UPDATE registrations 
+     SET category_id = $1, modality_id = $2, kit_id = $3, updated_at = NOW()
+     WHERE id = $4`,
+    [category_id, modality_id ?? null, kit_id ?? null, registrationId]
+  );
+
+  if (product_selections && product_selections.length > 0) {
+    if (!kit_id) {
+      throw new Error('É necessário informar o kit para definir seleções de produtos/variantes.');
+    }
+    const kitProducts = await query(
+      'SELECT id FROM kit_products WHERE kit_id = $1',
+      [kit_id]
+    );
+    const allowedProductIds = new Set((kitProducts.rows as { id: string }[]).map((r) => r.id));
+    for (const sel of product_selections) {
+      if (!allowedProductIds.has(sel.product_id)) {
+        throw new Error('Produto da seleção não pertence ao kit informado.');
+      }
+      if (sel.variant_id) {
+        const remaining = await getVariantRemainingStock(sel.variant_id, eventId, registrationId);
+        if (remaining !== null && remaining <= 0) {
+          throw new Error('Estoque desta variante chegou a zero; não é possível selecioná-la.');
+        }
+      }
+    }
+    await query(
+      'DELETE FROM registration_product_selections WHERE registration_id = $1',
+      [registrationId]
+    );
+    for (const selection of product_selections) {
+      if (selection.attribute_selections && Object.keys(selection.attribute_selections).length > 0) {
+        for (const [attributeName, attributeValue] of Object.entries(selection.attribute_selections)) {
+          await query(
+            `INSERT INTO registration_product_selections 
+             (registration_id, product_id, variant_id, attribute_name, attribute_value)
+             VALUES ($1, $2, $3, $4, $5)`,
+            [
+              registrationId,
+              selection.product_id,
+              selection.variant_id || null,
+              attributeName,
+              attributeValue,
+            ]
+          );
+        }
+      } else if (selection.variant_id) {
+        const variantResult = await query(
+          'SELECT name, product_id FROM product_variants WHERE id = $1',
+          [selection.variant_id]
+        );
+        if (variantResult.rows.length > 0) {
+          const variant = variantResult.rows[0] as { name: string; product_id: string };
+          let inserted = false;
+          const productResult = await query(
+            'SELECT variant_attributes FROM kit_products WHERE id = $1',
+            [selection.product_id]
+          );
+          if (productResult.rows.length > 0) {
+            const variantAttributes = (productResult.rows[0] as { variant_attributes: string[] | null }).variant_attributes;
+            if (variantAttributes && variantAttributes.length > 0) {
+              const variantValues = variant.name.split(' - ').map((v: string) => v.trim());
+              for (let i = 0; i < variantAttributes.length && i < variantValues.length; i++) {
+                await query(
+                  `INSERT INTO registration_product_selections 
+                   (registration_id, product_id, variant_id, attribute_name, attribute_value)
+                   VALUES ($1, $2, $3, $4, $5)`,
+                  [
+                    registrationId,
+                    selection.product_id,
+                    selection.variant_id,
+                    variantAttributes[i],
+                    variantValues[i],
+                  ]
+                );
+                inserted = true;
+              }
+            }
+          }
+          // Fallback: sempre persistir variant_id para contagem de estoque
+          if (!inserted) {
+            await query(
+              `INSERT INTO registration_product_selections 
+               (registration_id, product_id, variant_id, attribute_name, attribute_value)
+               VALUES ($1, $2, $3, 'Variante', $4)`,
+              [registrationId, selection.product_id, selection.variant_id, variant.name || selection.variant_id]
+            );
+          }
+        }
+      }
+    }
+  }
+
+  return getRegistrationById(registrationId);
 };
 
 // Transfer registration to another runner

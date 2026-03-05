@@ -21,6 +21,13 @@ const runnerDataSchema = z.object({
   phone: z.string().optional(),
 });
 
+// Product selection (same shape as createRegistration) – opcional no envio do convite
+const productSelectionSchema = z.object({
+  product_id: z.string().uuid('ID do produto inválido'),
+  variant_id: z.string().uuid('ID da variação inválido').optional(),
+  attribute_selections: z.record(z.string(), z.string()).optional(),
+});
+
 // Validation schemas
 const sendInvitationSchema = z.object({
   invitation_id: z.string().uuid('Invalid invitation ID'),
@@ -32,6 +39,13 @@ const sendInvitationSchema = z.object({
     { message: 'CPF deve conter pelo menos 11 dígitos numéricos' }
   ),
   runner_data: runnerDataSchema.optional(),
+  // Etapa 1: líder pode pré-definir categoria, modalidade e kit (e variante) do convite
+  category_id: z.string().uuid('ID da categoria inválido').optional(),
+  modality_id: z.string().uuid('ID da modalidade inválido').optional().nullable(),
+  kit_id: z.string().uuid('ID do kit inválido').optional().nullable(),
+  product_selections: z.array(productSelectionSchema).optional(),
+  // Etapa 2: true = corredor escolhe categoria/modalidade/kit; false = líder definiu (envia category_id, etc.)
+  runner_chooses_category_modality_kit: z.boolean().optional(),
 });
 
 /**
@@ -191,7 +205,14 @@ export const sendInvitationController = asyncHandler(
         leader.id,
         validation.data.invitation_id,
         validation.data.runner_cpf,
-        validation.data.runner_data
+        validation.data.runner_data,
+        {
+          category_id: validation.data.category_id,
+          modality_id: validation.data.modality_id ?? undefined,
+          kit_id: validation.data.kit_id ?? undefined,
+          product_selections: validation.data.product_selections,
+          runner_chooses_category_modality_kit: validation.data.runner_chooses_category_modality_kit,
+        }
       );
 
       res.json({

@@ -26,6 +26,7 @@ import {
   getRegistrationsWithMissingAttributesController,
   completeRegistrationAttributesController,
   removeRegistrationAttributesController,
+  completeInvitationController,
   previewRegistrationEditController,
 } from '../controllers/registrationsController.js';
 import { createTransferRequestController, generateTransferPaymentController, getTransferRequestByIdController } from '../controllers/transferRequestController.js';
@@ -48,6 +49,7 @@ router.get('/missing-attributes', getRegistrationsWithMissingAttributesControlle
 router.get('/', getAllRegistrations);
 router.post('/:id/complete-attributes', completeRegistrationAttributesController);
 router.post('/:id/remove-attributes', removeRegistrationAttributesController);
+router.post('/:id/complete-invitation', completeInvitationController);
 router.get('/:id/payment-status', getPaymentStatusController);
 router.get('/:id/pending-difference-payment', getPendingDifferencePaymentController);
 router.post('/:id/verify-payment', verifyPaymentController);

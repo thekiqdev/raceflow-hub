@@ -16,6 +16,8 @@ export interface LeaderInvitation {
   event_date?: string;
   runner_name?: string;
   runner_email?: string;
+  /** true = corredor escolhe categoria/modalidade/kit; false = líder definiu; null = convite antigo */
+  runner_chooses_category_modality_kit?: boolean | null;
 }
 
 export interface RunnerDataForInvitation {
@@ -28,10 +30,22 @@ export interface RunnerDataForInvitation {
   phone?: string;
 }
 
+export interface ProductSelectionForInvitation {
+  product_id: string;
+  variant_id?: string;
+  attribute_selections?: Record<string, string>;
+}
+
 export interface SendInvitationData {
   invitation_id: string;
   runner_cpf: string;
   runner_data?: RunnerDataForInvitation;
+  /** true = corredor escolhe categoria/modalidade/kit; false = líder definiu (obrigatório enviar category_id e opcionalmente modality_id, kit_id, product_selections) */
+  runner_chooses_category_modality_kit?: boolean;
+  category_id?: string;
+  modality_id?: string;
+  kit_id?: string;
+  product_selections?: ProductSelectionForInvitation[];
 }
 
 // Get all invitations for the authenticated leader

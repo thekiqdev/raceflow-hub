@@ -37,7 +37,7 @@ import {
 } from "@/lib/api/groupLeaders";
 import { getMyEventCommissions, type LeaderEventCommission } from "@/lib/api/leaderEventCommissions";
 import { getMyCouponRegistrations, type LeaderRegistration } from "@/lib/api/leaderRegistrations";
-import { getMyInvitations, sendInvitation, resendInvitationEmail, getInvitationRegistration, type LeaderInvitation } from "@/lib/api/leaderInvitations";
+import { getMyInvitations, sendInvitation, resendInvitationEmail, getInvitationRegistration, type LeaderInvitation, type SendInvitationData } from "@/lib/api/leaderInvitations";
 import { type Registration } from "@/lib/api/registrations";
 import { getPublicProfileByCpf, type Profile } from "@/lib/api/profiles";
 import { maskCpf, maskPhone, unmask } from "@/lib/utils/masks";
@@ -51,6 +51,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Checkbox } from "@/components/ui/checkbox";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { formatDateOnlyBrasilia, formatDateTimeBrasilia } from "@/lib/utils";
@@ -96,6 +97,16 @@ export function LeaderDashboard() {
   const [inviteRunnerFormErrors, setInviteRunnerFormErrors] = useState<Record<string, string>>({});
   const [inviteCpfError, setInviteCpfError] = useState("");
   const [inviteApiError, setInviteApiError] = useState("");
+  // Etapa 3: opção "deixar corredor escolher" e seleção categoria/modalidade/kit
+  const [inviteRunnerChoosesCategoryModalityKit, setInviteRunnerChoosesCategoryModalityKit] = useState(true);
+  const [inviteCategoryId, setInviteCategoryId] = useState("");
+  const [inviteModalityId, setInviteModalityId] = useState("");
+  const [inviteKitId, setInviteKitId] = useState("");
+  const [inviteVariantSelections, setInviteVariantSelections] = useState<Record<string, string>>({});
+  const [inviteCategories, setInviteCategories] = useState<Category[]>([]);
+  const [inviteModalities, setInviteModalities] = useState<Modality[]>([]);
+  const [inviteKits, setInviteKits] = useState<EventKit[]>([]);
+  const [loadingInviteOptions, setLoadingInviteOptions] = useState(false);
   const [stats, setStats] = useState<{
     total_referrals: number;
     total_registrations: number;
@@ -210,6 +221,56 @@ export function LeaderDashboard() {
     }
     setSelectedCategoryId("");
   }, [selectedModalityId]);
+
+  // Etapa 3: carregar categorias, modalidades e kits do evento ao abrir o dialog de enviar convite
+  useEffect(() => {
+    if (!sendInvitationDialogOpen || !selectedInvitation?.event_id) {
+      setInviteCategories([]);
+      setInviteModalities([]);
+      setInviteKits([]);
+      return;
+    }
+    const eventId = selectedInvitation.event_id;
+    let cancelled = false;
+    const load = async () => {
+      setLoadingInviteOptions(true);
+      try {
+        const [catRes, modRes, kitsRes] = await Promise.all([
+          getCategories(eventId),
+          getModalities(eventId),
+          getEventKits(eventId),
+        ]);
+        if (cancelled) return;
+        if (catRes.success && catRes.data) setInviteCategories(catRes.data);
+        if (modRes.success && modRes.data) setInviteModalities(modRes.data);
+        if (kitsRes.success && kitsRes.data) setInviteKits(kitsRes.data);
+      } catch (e) {
+        if (!cancelled) toast.error("Erro ao carregar opções do evento.");
+      } finally {
+        if (!cancelled) setLoadingInviteOptions(false);
+      }
+    };
+    load();
+    return () => { cancelled = true; };
+  }, [sendInvitationDialogOpen, selectedInvitation?.event_id]);
+
+  // Recarregar kits do convite quando a categoria mudar (filtrar por categoria)
+  useEffect(() => {
+    if (!sendInvitationDialogOpen || !selectedInvitation?.event_id) return;
+    const eventId = selectedInvitation.event_id;
+    let cancelled = false;
+    const loadKitsForInvite = async () => {
+      try {
+        const res = await getEventKits(eventId, inviteCategoryId || undefined);
+        if (cancelled) return;
+        if (res.success && res.data) setInviteKits(res.data);
+      } catch {
+        if (!cancelled) setInviteKits([]);
+      }
+    };
+    loadKitsForInvite();
+    return () => { cancelled = true; };
+  }, [sendInvitationDialogOpen, selectedInvitation?.event_id, inviteCategoryId]);
 
   const loadModalities = async () => {
     if (!selectedEventForRegistration) return;
@@ -522,6 +583,11 @@ export function LeaderDashboard() {
     setInviteRunnerFormErrors({});
     setInviteCpfError("");
     setInviteApiError("");
+    setInviteRunnerChoosesCategoryModalityKit(true);
+    setInviteCategoryId("");
+    setInviteModalityId("");
+    setInviteKitId("");
+    setInviteVariantSelections({});
     setSendInvitationDialogOpen(true);
   };
 
@@ -582,12 +648,28 @@ export function LeaderDashboard() {
       }
     }
 
+    if (!inviteRunnerChoosesCategoryModalityKit) {
+      if (!inviteCategoryId?.trim()) {
+        toast.error("Selecione a categoria do convite.");
+        return;
+      }
+      const kit = inviteKits.find((k) => k.id === inviteKitId);
+      const variableProducts = (kit?.products || []).filter((p) => p.type === "variable" && (p.variants?.length ?? 0) > 0);
+      for (const product of variableProducts) {
+        if (!inviteVariantSelections[product.id]?.trim()) {
+          toast.error(`Selecione o tamanho/variante para "${product.name}".`);
+          return;
+        }
+      }
+    }
+
     setInviteApiError("");
     setSendingInvitation(true);
     try {
-      const payload: { invitation_id: string; runner_cpf: string; runner_data?: typeof inviteRunnerFormData } = {
+      const payload: SendInvitationData = {
         invitation_id: selectedInvitation.id,
         runner_cpf: runnerCpf.trim(),
+        runner_chooses_category_modality_kit: inviteRunnerChoosesCategoryModalityKit,
       };
       if (inviteAthleteFound === false) {
         payload.runner_data = {
@@ -599,6 +681,16 @@ export function LeaderDashboard() {
           email: inviteRunnerFormData.email?.trim() || undefined,
           phone: inviteRunnerFormData.phone?.trim() || undefined,
         };
+      }
+      if (!inviteRunnerChoosesCategoryModalityKit) {
+        payload.category_id = inviteCategoryId;
+        if (inviteModalityId) payload.modality_id = inviteModalityId;
+        if (inviteKitId) payload.kit_id = inviteKitId;
+        if (Object.keys(inviteVariantSelections).length > 0) {
+          payload.product_selections = Object.entries(inviteVariantSelections)
+            .filter(([, variantId]) => variantId?.trim())
+            .map(([product_id, variant_id]) => ({ product_id, variant_id }));
+        }
       }
       const response = await sendInvitation(payload);
 
@@ -1843,7 +1935,7 @@ export function LeaderDashboard() {
       {/* Send Invitation Dialog */}
       <Dialog
         open={sendInvitationDialogOpen}
-        onOpenChange={(open) => {
+          onOpenChange={(open) => {
           if (!open) {
             setInviteStep(1);
             setInviteAthleteFound(null);
@@ -1852,28 +1944,156 @@ export function LeaderDashboard() {
             setInviteRunnerFormErrors({});
             setInviteCpfError("");
             setInviteApiError("");
+            setInviteRunnerChoosesCategoryModalityKit(true);
+            setInviteCategoryId("");
+            setInviteModalityId("");
+            setInviteKitId("");
+            setInviteVariantSelections({});
           }
           setSendInvitationDialogOpen(open);
         }}
       >
-        <DialogContent className="max-w-md">
-          <DialogHeader>
+        <DialogContent className="w-[calc(100vw-2rem)] max-w-md max-h-[90vh] flex flex-col overflow-hidden p-4 sm:p-6">
+          <DialogHeader className="shrink-0">
             <DialogTitle>Enviar Convite</DialogTitle>
             <DialogDescription>
               Busque o runner pelo CPF. Se não estiver cadastrado, preencha os dados para pré-cadastro e envio do convite.
             </DialogDescription>
           </DialogHeader>
           {selectedInvitation && (
-            <div className="space-y-4">
+            <div className="space-y-4 overflow-y-auto min-h-0 flex-1 pr-1">
               <div>
                 <Label>Evento</Label>
                 <div className="text-sm font-medium mt-1">{selectedInvitation.event_title || "Evento"}</div>
               </div>
 
+              <div className="flex items-center space-x-2 rounded-md border p-3 bg-muted/30">
+                <Checkbox
+                  id="invite-runner-chooses"
+                  checked={inviteRunnerChoosesCategoryModalityKit}
+                  onCheckedChange={(checked) => {
+                    setInviteRunnerChoosesCategoryModalityKit(checked !== false);
+                    if (checked === true) {
+                      setInviteCategoryId("");
+                      setInviteModalityId("");
+                      setInviteKitId("");
+                      setInviteVariantSelections({});
+                    }
+                  }}
+                />
+                <Label htmlFor="invite-runner-chooses" className="text-sm font-normal cursor-pointer leading-tight">
+                  Deixar o corredor escolher categoria, modalidade e kit
+                </Label>
+              </div>
+
+              {!inviteRunnerChoosesCategoryModalityKit && (
+                <div className="space-y-3 rounded-lg border p-3 bg-muted/20">
+                  <p className="text-sm font-medium text-muted-foreground">Definir no convite</p>
+                  <div className="space-y-2">
+                    <Label>Categoria *</Label>
+                    <Select
+                      value={inviteCategoryId || undefined}
+                      onValueChange={(v) => {
+                        setInviteCategoryId(v || "");
+                        setInviteModalityId("");
+                        setInviteKitId("");
+                        setInviteVariantSelections({});
+                      }}
+                      disabled={loadingInviteOptions}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder={loadingInviteOptions ? "Carregando..." : "Selecione a categoria"} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {inviteCategories.map((c) => (
+                          <SelectItem key={c.id} value={c.id}>
+                            {c.name} - R$ {c.price.toFixed(2).replace(".", ",")}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Modalidade</Label>
+                    <Select
+                      value={inviteModalityId || undefined}
+                      onValueChange={(v) => setInviteModalityId(v || "")}
+                      disabled={loadingInviteOptions}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Selecione a modalidade (opcional)" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {(inviteCategoryId
+                          ? inviteModalities.filter((m) => inviteCategories.find((c) => c.id === inviteCategoryId)?.modality_ids?.includes(m.id))
+                          : inviteModalities
+                        ).map((m) => (
+                          <SelectItem key={m.id} value={m.id}>
+                            {m.name} {m.distance ? `- ${m.distance}` : ""}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Kit</Label>
+                    <Select
+                      value={inviteKitId || undefined}
+                      onValueChange={(v) => {
+                        setInviteKitId(v || "");
+                        setInviteVariantSelections({});
+                      }}
+                      disabled={loadingInviteOptions}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Selecione o kit (opcional)" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {inviteKits.map((k) => (
+                          <SelectItem key={k.id} value={k.id}>
+                            {k.name} - R$ {k.price.toFixed(2).replace(".", ",")}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {inviteKitId && (() => {
+                    const kit = inviteKits.find((k) => k.id === inviteKitId);
+                    const variableProducts = (kit?.products || []).filter((p) => p.type === "variable" && (p.variants?.length ?? 0) > 0);
+                    return variableProducts.length > 0 ? (
+                      <div className="space-y-2 pt-2 border-t">
+                        <Label>Tamanho / variante</Label>
+                        {variableProducts.map((product) => (
+                          <div key={product.id} className="space-y-1">
+                            <span className="text-sm text-muted-foreground">{product.name}</span>
+                            <Select
+                              value={inviteVariantSelections[product.id] || ""}
+                              onValueChange={(v) => setInviteVariantSelections((prev) => ({ ...prev, [product.id]: v }))}
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder="Selecione" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {(product.variants || []).map((v) => (
+                                  <SelectItem key={v.id} value={v.id}>
+                                    {v.name}
+                                    {v.available_quantity != null && v.available_quantity <= 0 ? " (Esgotada)" : ""}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null;
+                  })()}
+                </div>
+              )}
+
               {inviteStep === 1 && (
                 <div className="space-y-2">
                   <Label htmlFor="runner_cpf">CPF do runner *</Label>
-                  <div className="flex gap-2">
+                  <div className="flex gap-2 min-w-0">
                     <Input
                       id="runner_cpf"
                       placeholder="000.000.000-00"
@@ -1882,10 +2102,12 @@ export function LeaderDashboard() {
                         setRunnerCpf(maskCpf(e.target.value));
                         setInviteCpfError("");
                       }}
-                      className="flex-1"
+                      className="flex-1 min-w-0"
                     />
                     <Button
                       type="button"
+                      size="sm"
+                      className="shrink-0"
                       onClick={handleInviteCpfLookup}
                       disabled={inviteCpfLookupLoading || unmask(runnerCpf).length !== 11}
                     >
@@ -2007,7 +2229,7 @@ export function LeaderDashboard() {
               {inviteApiError && <p className="text-sm text-destructive">{inviteApiError}</p>}
             </div>
           )}
-          <DialogFooter>
+          <DialogFooter className="shrink-0">
             {inviteStep === 2 && (
               <Button variant="outline" onClick={() => setInviteStep(1)} disabled={sendingInvitation}>
                 Voltar
@@ -2021,7 +2243,8 @@ export function LeaderDashboard() {
               disabled={
                 sendingInvitation ||
                 (inviteStep === 1 && (inviteCpfLookupLoading || unmask(runnerCpf).length !== 11)) ||
-                (inviteStep === 2 && inviteAthleteFound === false && !inviteRunnerFormData.full_name?.trim())
+                (inviteStep === 2 && inviteAthleteFound === false && !inviteRunnerFormData.full_name?.trim()) ||
+                (inviteStep === 2 && !inviteRunnerChoosesCategoryModalityKit && !inviteCategoryId?.trim())
               }
             >
               {sendingInvitation ? (

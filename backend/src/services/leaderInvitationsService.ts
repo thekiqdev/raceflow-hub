@@ -16,6 +16,8 @@ export interface LeaderInvitation {
   created_at: Date;
   updated_at: Date;
   runner_preregistered?: boolean;
+  /** true = corredor escolhe categoria/modalidade/kit; false = líder definiu. null = convite antigo. */
+  runner_chooses_category_modality_kit?: boolean | null;
   // Enriched fields
   event_title?: string;
   event_date?: Date;
@@ -200,15 +202,31 @@ export const getLeaderInvitations = async (
   return mapped;
 };
 
+/** Opções opcionais ao enviar convite: líder pode pré-definir categoria, modalidade, kit e variante */
+export interface SendInvitationOptions {
+  category_id?: string;
+  modality_id?: string;
+  kit_id?: string;
+  product_selections?: Array<{
+    product_id: string;
+    variant_id?: string;
+    attribute_selections?: Record<string, string>;
+  }>;
+  /** true = corredor escolhe categoria/modalidade/kit; false = líder definiu no envio. Não enviado = true (comportamento atual). */
+  runner_chooses_category_modality_kit?: boolean;
+}
+
 /**
  * Send invitation to runner by CPF.
  * If runner does not exist and runnerData is provided, creates the user (pre-registration) then sends the invite.
+ * If options (category_id, modality_id, kit_id, product_selections) are provided, the bonus registration is updated before assigning to the runner.
  */
 export const sendInvitationByCpf = async (
   leaderId: string,
   invitationId: string,
   runnerCpf: string,
-  runnerData?: RunnerDataByOrganizer
+  runnerData?: RunnerDataByOrganizer,
+  options?: SendInvitationOptions
 ): Promise<LeaderInvitation> => {
   const cleanCpf = runnerCpf.replace(/\D/g, '');
 
@@ -274,8 +292,9 @@ export const sendInvitationByCpf = async (
     throw new Error(`Este runner já possui uma inscrição para este evento (ID: ${existingReg.id}).`);
   }
 
-  // Update invitation to sent status
+  // Update invitation to sent status (inclui flag runner_chooses_category_modality_kit – Etapa 2)
   // IMPORTANTE: Usar WHERE com verificação de status 'available' para evitar atualizar convites já enviados
+  const runnerChoosesFlag = options?.runner_chooses_category_modality_kit ?? true; // default: corredor escolhe (comportamento atual)
   console.log(`🔄 [sendInvitationByCpf] Atualizando convite ${invitationId} para status 'sent'`);
   const updateResult = await query(
     `UPDATE leader_invitations 
@@ -283,12 +302,13 @@ export const sendInvitationByCpf = async (
          runner_cpf = $2,
          status = 'sent',
          sent_at = NOW(),
-         updated_at = NOW()
+         updated_at = NOW(),
+         runner_chooses_category_modality_kit = $5
      WHERE id = $3 
        AND leader_id = $4
        AND status = 'available'
      RETURNING *`,
-    [runner.id, cleanCpf, invitationId, leaderId]
+    [runner.id, cleanCpf, invitationId, leaderId, runnerChoosesFlag]
   );
   
   if (updateResult.rows.length === 0) {
@@ -319,6 +339,193 @@ export const sendInvitationByCpf = async (
       `UPDATE leader_invitations SET runner_preregistered = true, updated_at = NOW() WHERE id = $1`,
       [invitationId]
     );
+  }
+
+  const eventId = invitation.event_id;
+  const bonusRegId = invitation.bonus_registration_id;
+  const hasLeaderChoices =
+    options &&
+    (options.category_id != null ||
+      options.modality_id != null ||
+      options.kit_id != null ||
+      (options.product_selections && options.product_selections.length > 0));
+
+  if (hasLeaderChoices) {
+    // Validar e atualizar a inscrição bônus com categoria/modalidade/kit/variante definidos pelo líder
+    const currentReg = await query(
+      `SELECT category_id, modality_id, kit_id FROM registrations WHERE id = $1`,
+      [bonusRegId]
+    );
+    if (currentReg.rows.length === 0) {
+      throw new Error('Inscrição bônus do convite não encontrada.');
+    }
+    const current = currentReg.rows[0] as { category_id: string | null; modality_id: string | null; kit_id: string | null };
+    const newCategoryId = options.category_id ?? current.category_id;
+    const newModalityId = options.modality_id ?? current.modality_id;
+    const newKitId = options.kit_id ?? current.kit_id;
+
+    if (options.category_id) {
+      const catCheck = await query(
+        `SELECT 1 FROM categories WHERE id = $1 AND event_id = $2`,
+        [options.category_id, eventId]
+      );
+      if (catCheck.rows.length === 0) {
+        throw new Error('Categoria inválida ou não pertence a este evento.');
+      }
+    }
+    if (options.modality_id) {
+      const modCheck = await query(
+        `SELECT 1 FROM modalities m
+         WHERE m.id = $1 AND m.event_id = $2
+         AND ($3::uuid IS NULL OR EXISTS (SELECT 1 FROM category_modalities cm WHERE cm.modality_id = m.id AND cm.category_id = $3))`,
+        [options.modality_id, eventId, newCategoryId]
+      );
+      if (modCheck.rows.length === 0) {
+        throw new Error('Modalidade inválida, não pertence a este evento ou não está vinculada à categoria selecionada.');
+      }
+    }
+    if (options.kit_id) {
+      const kitCheck = await query(
+        `SELECT 1 FROM event_kits WHERE id = $1 AND event_id = $2`,
+        [options.kit_id, eventId]
+      );
+      if (kitCheck.rows.length === 0) {
+        throw new Error('Kit inválido ou não pertence a este evento.');
+      }
+      // Etapa 5: kit com produto variável exige seleção de variante
+      const kitProductsRows = await query(
+        `SELECT id, name, type FROM kit_products WHERE kit_id = $1`,
+        [options.kit_id]
+      );
+      const variableProducts = (kitProductsRows.rows as { id: string; name: string; type: string }[]).filter(
+        (p) => p.type === 'variable'
+      );
+      if (variableProducts.length > 0) {
+        const hasProductSelections = options.product_selections && options.product_selections.length > 0;
+        if (!hasProductSelections) {
+          throw new Error(
+            'O kit selecionado possui produto(s) com variação (ex.: tamanho). Selecione a variante para cada um antes de enviar o convite.'
+          );
+        }
+        const selectedProductIds = new Set(
+          options.product_selections.map((s) => s.product_id)
+        );
+        const missing = variableProducts.filter((p) => !selectedProductIds.has(p.id));
+        if (missing.length > 0) {
+          const names = missing.map((p) => p.name).join(', ');
+          throw new Error(
+            `Selecione a variante para: ${names}.`
+          );
+        }
+        for (const sel of options.product_selections) {
+          const prod = variableProducts.find((p) => p.id === sel.product_id);
+          if (prod && !sel.variant_id && (!sel.attribute_selections || Object.keys(sel.attribute_selections).length === 0)) {
+            throw new Error(
+              `Informe a variante (tamanho) para o produto "${prod.name}".`
+            );
+          }
+        }
+      }
+    }
+
+    await query(
+      `UPDATE registrations 
+       SET category_id = COALESCE($1, category_id),
+           modality_id = COALESCE($2, modality_id),
+           kit_id = COALESCE($3, kit_id),
+           updated_at = NOW()
+       WHERE id = $4`,
+      [newCategoryId, newModalityId, newKitId, bonusRegId]
+    );
+
+    const kitIdForProducts = newKitId;
+    if (options.product_selections && options.product_selections.length > 0) {
+      if (!kitIdForProducts) {
+        throw new Error('É necessário informar o kit para definir seleções de produtos/variantes.');
+      }
+      const { getVariantRemainingStock } = await import('./registrationsService.js');
+      const kitProducts = await query(
+        `SELECT id FROM kit_products WHERE kit_id = $1`,
+        [kitIdForProducts]
+      );
+      const allowedProductIds = new Set((kitProducts.rows as { id: string }[]).map((r) => r.id));
+      for (const sel of options.product_selections) {
+        if (!allowedProductIds.has(sel.product_id)) {
+          throw new Error('Produto da seleção não pertence ao kit informado.');
+        }
+        if (sel.variant_id) {
+          const remaining = await getVariantRemainingStock(sel.variant_id, eventId, bonusRegId);
+          if (remaining !== null && remaining <= 0) {
+            throw new Error('Estoque desta variante chegou a zero; não é possível selecioná-la.');
+          }
+        }
+      }
+      await query(
+        `DELETE FROM registration_product_selections WHERE registration_id = $1`,
+        [bonusRegId]
+      );
+      for (const selection of options.product_selections) {
+        if (selection.attribute_selections && Object.keys(selection.attribute_selections).length > 0) {
+          for (const [attributeName, attributeValue] of Object.entries(selection.attribute_selections)) {
+            await query(
+              `INSERT INTO registration_product_selections 
+               (registration_id, product_id, variant_id, attribute_name, attribute_value)
+               VALUES ($1, $2, $3, $4, $5)`,
+              [
+                bonusRegId,
+                selection.product_id,
+                selection.variant_id || null,
+                attributeName,
+                attributeValue,
+              ]
+            );
+          }
+        } else if (selection.variant_id) {
+          const variantResult = await query(
+            `SELECT name, product_id FROM product_variants WHERE id = $1`,
+            [selection.variant_id]
+          );
+          if (variantResult.rows.length > 0) {
+            const variant = variantResult.rows[0] as { name: string; product_id: string };
+            let inserted = false;
+            const productResult = await query(
+              `SELECT variant_attributes FROM kit_products WHERE id = $1`,
+              [selection.product_id]
+            );
+            if (productResult.rows.length > 0) {
+              const variantAttributes = (productResult.rows[0] as { variant_attributes: string[] | null }).variant_attributes;
+              if (variantAttributes && variantAttributes.length > 0) {
+                const variantValues = variant.name.split(' - ').map((v: string) => v.trim());
+                for (let i = 0; i < variantAttributes.length && i < variantValues.length; i++) {
+                  await query(
+                    `INSERT INTO registration_product_selections 
+                     (registration_id, product_id, variant_id, attribute_name, attribute_value)
+                     VALUES ($1, $2, $3, $4, $5)`,
+                    [
+                      bonusRegId,
+                      selection.product_id,
+                      selection.variant_id,
+                      variantAttributes[i],
+                      variantValues[i],
+                    ]
+                  );
+                  inserted = true;
+                }
+              }
+            }
+            // Fallback: sempre persistir variant_id para contagem de estoque (attribute_name/attribute_value NOT NULL)
+            if (!inserted) {
+              await query(
+                `INSERT INTO registration_product_selections 
+                 (registration_id, product_id, variant_id, attribute_name, attribute_value)
+                 VALUES ($1, $2, $3, 'Variante', $4)`,
+                [bonusRegId, selection.product_id, selection.variant_id, variant.name || selection.variant_id]
+              );
+            }
+          }
+        }
+      }
+    }
   }
 
   // Transfer the bonus registration to the runner and update status

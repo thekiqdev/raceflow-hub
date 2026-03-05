@@ -370,6 +370,100 @@ Atualiza uma inscrição.
 }
 ```
 
+#### POST /registrations/:id/complete-invitation
+
+Completa um convite: o corredor define categoria, modalidade, kit e (se aplicável) variante. Apenas para inscrições com `payment_status = 'convidado'` cujo convite tenha a flag "corredor escolhe" (ou categoria/kit ainda não definidos).
+
+**Headers:** `Authorization: Bearer <token>` (corredor dono da inscrição)
+
+**Body:**
+```json
+{
+  "category_id": "uuid",
+  "modality_id": "uuid ou null (opcional)",
+  "kit_id": "uuid ou null (opcional)",
+  "product_selections": [
+    {
+      "product_id": "uuid",
+      "variant_id": "uuid (obrigatório se o produto for variável)",
+      "attribute_selections": { "Tamanho": "P" }
+    }
+  ]
+}
+```
+
+**Regras:** `category_id` obrigatório. Se o kit tiver produto com variação, cada um deve ter `variant_id` ou `attribute_selections`. O backend valida categoria/modalidade/kit do evento.
+
+**Resposta:** `200 OK` com `data` = inscrição atualizada.
+
+---
+
+### Líderes de grupo – Convites
+
+#### GET /group-leaders/me/invitations
+
+Lista convites do líder autenticado.
+
+**Headers:** `Authorization: Bearer <token>` (role de líder de grupo)
+
+#### GET /group-leaders/me/invitations/available
+
+Lista convites disponíveis (status `available`) do líder.
+
+#### POST /group-leaders/me/invitations/send
+
+Envia um convite a um corredor por CPF. Se o CPF não existir, pode-se enviar `runner_data` para pré-cadastro.
+
+**Headers:** `Authorization: Bearer <token>` (líder de grupo)
+
+**Body:**
+```json
+{
+  "invitation_id": "uuid",
+  "runner_cpf": "12345678901",
+  "runner_data": {
+    "full_name": "Nome",
+    "birth_date": "1990-01-01",
+    "city": "Cidade",
+    "gender": "M",
+    "team": "Equipe (opcional)",
+    "email": "email@exemplo.com (opcional)",
+    "phone": "85999999999 (opcional)"
+  },
+  "runner_chooses_category_modality_kit": true,
+  "category_id": "uuid (opcional; quando runner_chooses = false)",
+  "modality_id": "uuid (opcional)",
+  "kit_id": "uuid (opcional)",
+  "product_selections": [
+    {
+      "product_id": "uuid",
+      "variant_id": "uuid (obrigatório se produto for variável)",
+      "attribute_selections": { "Tamanho": "P" }
+    }
+  ]
+}
+```
+
+**Comportamento:**
+- `runner_chooses_category_modality_kit: true` (padrão): não envie `category_id`, `modality_id`, `kit_id` nem `product_selections`; o corredor escolherá depois.
+- `runner_chooses_category_modality_kit: false`: envie `category_id` (obrigatório). Se escolher um kit com produto variável, `product_selections` é obrigatório para cada produto variável.
+
+**Validações:** Categoria e modalidade devem ser do evento; modalidade da categoria; kit do evento. Se kit tiver produto variável, exige seleção de variante.
+
+**Resposta:** `200 OK` com dados do convite enviado.
+
+#### POST /group-leaders/me/invitations/:id/resend-email
+
+Reenvia o e-mail de convite (convite já enviado).
+
+**Headers:** `Authorization: Bearer <token>`
+
+#### GET /group-leaders/me/invitations/:id/registration
+
+Obtém a inscrição (ingresso) do convite enviado (para visualizar QR/PDF).
+
+**Headers:** `Authorization: Bearer <token>`
+
 ---
 
 ### Configurações da Home

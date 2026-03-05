@@ -14,6 +14,7 @@ import {
   getRegistrationsWithMissingAttributes,
   completeRegistrationAttributes,
   removeRegistrationAttributes,
+  completeInvitationRegistration,
 } from '../services/registrationsService.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { hasRole } from '../services/userRolesService.js';
@@ -617,6 +618,54 @@ export const removeRegistrationAttributesController = asyncHandler(async (req: A
       error: 'Validation error',
       message: error.message || 'Erro ao remover seleções de atributos',
     });
+  }
+});
+
+const completeInvitationBodySchema = z.object({
+  category_id: z.string().uuid(),
+  modality_id: z.string().uuid().nullable().optional(),
+  kit_id: z.string().uuid().nullable().optional(),
+  product_selections: z.array(z.object({
+    product_id: z.string().uuid(),
+    variant_id: z.string().uuid().optional(),
+    attribute_selections: z.record(z.string(), z.string()).optional(),
+  })).optional(),
+});
+
+export const completeInvitationController = asyncHandler(async (req: AuthRequest, res: Response) => {
+  if (!req.user) {
+    res.status(401).json({ success: false, error: 'Not authenticated' });
+    return;
+  }
+  const { id } = req.params;
+  if (!id || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
+    res.status(400).json({ success: false, error: 'Invalid registration ID' });
+    return;
+  }
+  const parse = completeInvitationBodySchema.safeParse(req.body || {});
+  if (!parse.success) {
+    res.status(400).json({ success: false, error: parse.error.errors[0]?.message || 'Dados inválidos.' });
+    return;
+  }
+  const body = parse.data;
+  try {
+    const updated = await completeInvitationRegistration(id, req.user.id, {
+      category_id: body.category_id,
+      modality_id: body.modality_id ?? null,
+      kit_id: body.kit_id ?? null,
+      product_selections: body.product_selections,
+    });
+    res.json({ success: true, data: updated, message: 'Convite completado com sucesso.' });
+  } catch (error: any) {
+    if (error.message?.includes('não encontrada') || error.message?.includes('not found')) {
+      res.status(404).json({ success: false, error: error.message });
+      return;
+    }
+    if (error.message?.includes('permissão') || error.message?.includes('convidado') || error.message?.includes('cancelada')) {
+      res.status(403).json({ success: false, error: error.message });
+      return;
+    }
+    res.status(400).json({ success: false, error: error.message || 'Erro ao completar convite.' });
   }
 });
 

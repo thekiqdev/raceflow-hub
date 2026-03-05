@@ -30,9 +30,9 @@
 | Reenviar email | Endpoint `POST /group-leaders/me/invitations/:id/resend-email` **não existe**. Reutilizar lógica de template (cadastrado vs sem cadastro) e envio. | Etapa 4 |
 | Página frontend `/completar-cadastro` | Rota e tela **não existem**. Fluxo: validar token → formulário “Definir senha” → POST set-password → login e redirecionamento. | Etapa 5 |
 | Completar itens da inscrição (variantes) | Depende do fluxo de “atributos faltantes” (ex.: `MissingAttributesModal`). Garantir que inscrições com `payment_status = 'convidado'` entrem nesse fluxo. | Etapa 6 |
-| Botão “Reenviar” no painel do líder | Não implementado na lista de convites enviados. | Etapa 7 |
-| Log quando email/nome ausente | Plano diz que já foi feito (Etapa 8). Confirmar em `sendInvitationByCpf`: `console.warn` quando `!runner_email || !runner_name`. | Etapa 8 |
-| Líder: ver ingresso / PDF do convite | Endpoint `GET /group-leaders/me/invitations/:id/registration` **não existe**. Front: “Ver ingresso”, “Baixar PDF”, “Reenviar email” (este só se email válido). | Etapa 9 |
+| Botão “Reenviar” no painel do líder | Implementado: botão "Reenviar email" em convites enviados (só quando corredor tem email válido). | Etapa 7 ✅ |
+| Log quando email/nome ausente | Confirmado: `console.warn` em `sendInvitationByCpf` quando `runner_email` ou `runner_name` ausentes. | Etapa 8 ✅ |
+| Líder: ver ingresso / PDF do convite | Endpoint `GET /group-leaders/me/invitations/:id/registration` implementado (ver abaixo). Front: “Ver ingresso”, “Baixar PDF”, “Reenviar email” (este só se email válido). | Etapa 9 ✅ |
 
 ### Ordem sugerida para implementar (sem iniciar ainda)
 
@@ -202,6 +202,13 @@ Com isso, o plano está revisado e pronto para ser implantado por etapas quando 
 
 **Entregável:** Líder consegue reenviar o email do convite com um clique.
 
+**Implementação Etapa 7 (concluída):**
+- Em `LeaderDashboard.tsx`, na lista de convites com status “sent”, cada card exibe:
+  - **Ver ingresso** e **Baixar PDF** (sempre).
+  - **Reenviar email**: exibido apenas quando o corredor tem email válido (`hasValidRunnerEmail`: `runner_email` preenchido e que não contenha `@temp.cronoteam`).
+- Quando o corredor não tem email válido, é exibida a mensagem: “Corredor sem email válido. Baixe o comprovante e envie por outro meio (ex.: WhatsApp).”
+- `handleResendInvitationEmail(invitationId)` chama `resendInvitationEmail(invitationId)`; durante a requisição o botão mostra loading e fica desabilitado; em sucesso exibe toast “Email reenviado com sucesso”.
+
 ---
 
 ### Etapa 8 – Verificação do email para cadastrados e ajustes finais
@@ -217,6 +224,8 @@ Com isso, o plano está revisado e pronto para ser implantado por etapas quando 
 - **Logs:** Em `leaderInvitationsService.sendInvitationByCpf`, quando `runner_email` ou `runner_name` estão vazios, é registrado `console.warn('⚠️ [sendInvitationByCpf] Convite enviado mas email não enviado: runner_email ou runner_name ausente', { invitationId, runner_id, has_email, has_name })`.
 - **Templates no admin:** Os templates `invitation_received` e `invitation_received_no_account` fazem parte do seed em `notificationTemplatesService.initializeDefaultTemplates()`. Após rodar a inicialização (ou deploy), aparecem na listagem GET `/api/notification-templates` e podem ser editados pelo admin (assunto/corpo), mantendo as variáveis necessárias.
 - **Documentação:** O arquivo `docs/PLANO_INTEGRACAO_NOTIFICACOES.md` foi atualizado com: (1) convite do líder em dois templates e log de email ausente; (2) seção 3.6 com endpoints GET validate e POST set-password-invitation; (3) template `invitation_received_no_account` na lista e na tabela de variáveis; (4) resumo de destinatários.
+
+**Etapa 8 – Resumo:** Verificação (email para cadastrados), logs, documentação e templates no admin estão implementados. O checklist abaixo serve para validação manual em ambiente de teste/staging.
 
 **Checklist de verificação (manual):**
 - [ ] Em staging/teste: enviar convite para CPF já cadastrado e confirmar recebimento do email com template `invitation_received` (nome, evento, líder, data, local corretos).
@@ -246,6 +255,13 @@ Com isso, o plano está revisado e pronto para ser implantado por etapas quando 
    - Considerar email “válido” quando não for do tipo `@temp.cronoteam` (ou quando o líder informou email no pré-cadastro). Assim, “Reenviar email” só aparece ou só é enviado quando fizer sentido; para os demais, o fluxo é “Ver ingresso” + “Baixar PDF” para o líder repassar ao corredor.
 
 **Entregável:** Líder consegue, para cada convite enviado, visualizar o QR code da inscrição, baixar o ingresso em PDF e enviar ao corredor (por email, se houver, ou manualmente). Corredor sem email continua sendo atendido pelo líder via download e envio do PDF.
+
+**Implementação Etapa 9 (concluída):**
+- **Backend:** `GET /group-leaders/me/invitations/:id/registration` em `leaderInvitationsService.getInvitationRegistrationForLeader`: valida convite do líder e status `sent`, obtém `bonus_registration_id`, retorna inscrição via `getRegistrationById` + `product_selections`. Controller em `leaderInvitationsController.getInvitationRegistrationController`.
+- **Frontend (LeaderDashboard):** Na lista de convites enviados (status "sent"), cada card tem:
+  - **Ver ingresso:** abre modal que chama `getInvitationRegistration(invitationId)` e exibe QR code (validationUrl), código de confirmação, dados do evento, corredor e inscrição; botão "Baixar comprovante" no modal.
+  - **Baixar PDF:** `handleDownloadInvitationReceiptById(invitationId)` busca a inscrição e gera PDF com jsPDF (evento, corredor, categoria, kit, product_selections, QR code), salvando como `comprovante_<código>.pdf`.
+  - **Reenviar email:** exibido apenas quando `hasValidRunnerEmail(invitation)` (email presente e não `@temp.cronoteam`). Quando não há email válido, mensagem: "Corredor sem email válido. Baixe o comprovante e envie por outro meio (ex.: WhatsApp)."
 
 ---
 

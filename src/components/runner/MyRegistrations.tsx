@@ -25,6 +25,7 @@ import { createTransferRequest, generateTransferPayment, getTransferRequestById,
 import { toast } from "sonner";
 import { PixQrCode } from "@/components/payment/PixQrCode";
 import { MissingAttributesModal } from "@/components/runner/MissingAttributesModal";
+import { CompleteInvitationModal } from "@/components/runner/CompleteInvitationModal";
 
 export function MyRegistrations() {
   const navigate = useNavigate();
@@ -57,6 +58,8 @@ export function MyRegistrations() {
   const [paymentConfirmed, setPaymentConfirmed] = useState(false);
   const [showMissingAttributesModal, setShowMissingAttributesModal] = useState(false);
   const [verifyingPaymentId, setVerifyingPaymentId] = useState<string | null>(null);
+  const [completeInvitationRegistration, setCompleteInvitationRegistration] = useState<Registration | null>(null);
+  const [showCompleteInvitationModal, setShowCompleteInvitationModal] = useState(false);
 
   useEffect(() => {
     if (user) {
@@ -445,6 +448,10 @@ export function MyRegistrations() {
     return cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
   };
 
+  // Mostrar "Completar convite" só quando a inscrição é por convite e ainda não tem categoria (corredor não completou)
+  const needsCompleteInvitation = (reg: Registration) =>
+    reg.payment_status === "convidado" && !reg.category_id;
+
   const RegistrationCard = ({ registration }: { registration: Registration }) => {
     const isUpcoming = registration.event_date && isFuture(new Date(registration.event_date));
     const eventAllowsTransfers = registration.event_transfers_enabled !== false; // Default to true if null/undefined
@@ -457,6 +464,7 @@ export function MyRegistrations() {
     const canCancel = (registration.status === "pending" ||
                       (registration.status === "confirmed" && registration.payment_status === "paid")) &&
                       isUpcoming;
+    const canCompleteInvitation = needsCompleteInvitation(registration);
 
     return (
       <Card className="overflow-hidden hover:shadow-md transition-shadow">
@@ -631,6 +639,21 @@ export function MyRegistrations() {
               </>
             )}
             
+            {/* Botão para completar convite (categoria/modalidade/kit) */}
+            {canCompleteInvitation && (
+              <Button
+                variant="default"
+                size="sm"
+                className="w-full mb-2"
+                onClick={() => {
+                  setCompleteInvitationRegistration(registration);
+                  setShowCompleteInvitationModal(true);
+                }}
+              >
+                <CheckCircle2 className="h-3 w-3 mr-1" />
+                Completar convite (escolher categoria, modalidade e kit)
+              </Button>
+            )}
             {/* Botões para inscrições confirmadas (pagas ou por convite) */}
             {registration.status === "confirmed" &&
               (registration.payment_status === "paid" || registration.payment_status === "convidado") && (
@@ -1069,6 +1092,16 @@ export function MyRegistrations() {
       <MissingAttributesModal
         open={showMissingAttributesModal}
         onOpenChange={setShowMissingAttributesModal}
+        onSuccess={handleAttributesSaved}
+      />
+      {/* Modal para completar convite (categoria, modalidade, kit) */}
+      <CompleteInvitationModal
+        open={showCompleteInvitationModal}
+        onOpenChange={(open) => {
+          setShowCompleteInvitationModal(open);
+          if (!open) setCompleteInvitationRegistration(null);
+        }}
+        registration={completeInvitationRegistration}
         onSuccess={handleAttributesSaved}
       />
     </div>

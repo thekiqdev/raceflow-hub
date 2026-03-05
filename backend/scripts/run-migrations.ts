@@ -117,6 +117,9 @@ const migrations = [
   '089_admin_dashboard_stats_platform_fees.sql',
   '090_backfill_registrations_modality_id.sql',
   '091_add_platform_fee_min.sql',
+  '092_add_runner_preregistered_to_leader_invitations.sql',
+  '092_allow_null_birth_date_phone_profiles.sql',
+  '093_add_runner_chooses_category_modality_kit_to_leader_invitations.sql',
 ];
 
 // Create migrations tracking table

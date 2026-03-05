@@ -46,6 +46,8 @@ export interface Registration {
   platform_fee_amount?: number;
   /** Taxa de atualização aplicada na edição quando o valor mudou (R$). */
   registration_edit_fee_amount?: number;
+  /** Etapa 4: true = corredor deve escolher categoria/modalidade/kit; false/null = líder já definiu (ou convite antigo). */
+  invitation_runner_chooses_category_modality_kit?: boolean | null;
 }
 
 // Credit Card Data Types
@@ -390,6 +392,28 @@ export const removeRegistrationAttributes = async (
   return apiClient.post<{ success: boolean; message: string }>(
     `/registrations/${registrationId}/remove-attributes`,
     data || {}
+  );
+};
+
+// Complete invitation (runner chooses category, modality, kit and optional variant)
+export interface CompleteInvitationData {
+  category_id: string;
+  modality_id?: string | null;
+  kit_id?: string | null;
+  product_selections?: Array<{
+    product_id: string;
+    variant_id?: string;
+    attribute_selections?: Record<string, string>;
+  }>;
+}
+
+export const completeInvitation = async (
+  registrationId: string,
+  data: CompleteInvitationData
+) => {
+  return apiClient.post<Registration>(
+    `/registrations/${registrationId}/complete-invitation`,
+    data
   );
 };
 
