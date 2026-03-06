@@ -140,7 +140,7 @@ export async function calculateRegistrationTotal(
 
   const amountAfterDiscounts = Math.max(0, totalAfterSenior - couponDiscount);
 
-  // 6. Platform fee
+  // 6. Platform fee (evento gratuito: preço = 0 → não cobra taxa)
   const platformFeeEnabled = settings.enabled_modules?.platform_fees === true;
   const platformFeeValue = settings.platform_fee ?? 0;
   const platformFeeType = settings.platform_fee_type || 'fixed';

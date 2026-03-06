@@ -1261,10 +1261,10 @@ const OrganizerRegistrations = () => {
             {/* Step 1: CPF */}
             {registerStep === 1 && (
               <>
-                <div className="space-y-2">
+            <div className="space-y-2">
                   <Label htmlFor="register-cpf">CPF do Atleta * (obrigatório)</Label>
                   <div className="flex gap-2">
-                    <Input
+              <Input
                       id="register-cpf"
                       type="text"
                       inputMode="numeric"
@@ -1380,7 +1380,7 @@ const OrganizerRegistrations = () => {
                     <Label htmlFor="athlete-email">Email (opcional)</Label>
                     <Input
                       id="athlete-email"
-                      type="email"
+                type="email"
                       placeholder="email@exemplo.com"
                       value={athleteFormData.email}
                       onChange={(e) => {
@@ -1389,7 +1389,7 @@ const OrganizerRegistrations = () => {
                       }}
                     />
                     {athleteFormErrors.email && <p className="text-sm text-destructive">{athleteFormErrors.email}</p>}
-                  </div>
+            </div>
                   <div className="space-y-2">
                     <Label htmlFor="athlete-phone">Telefone (opcional)</Label>
                     <Input
@@ -1808,8 +1808,8 @@ const OrganizerRegistrations = () => {
             {registerStep === 1 && (
               <>
                 <Button variant="outline" onClick={handleCloseRegisterDialog}>
-                  Cancelar
-                </Button>
+              Cancelar
+            </Button>
                 {athleteFound === true && (
                   <Button onClick={() => setRegisterStep(3)}>
                     Próximo: Inscrição
@@ -1841,18 +1841,18 @@ const OrganizerRegistrations = () => {
                   onClick={handleRegisterAthlete}
                   disabled={isSubmitting || !selectedEventId || !selectedCategoryId || (athleteFound === false && !runnerData)}
                 >
-                  {isSubmitting ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Inscrevendo...
-                    </>
-                  ) : (
-                    <>
-                      <Mail className="mr-2 h-4 w-4" />
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Inscrevendo...
+                </>
+              ) : (
+                <>
+                  <Mail className="mr-2 h-4 w-4" />
                       Confirmar inscrição
-                    </>
-                  )}
-                </Button>
+                </>
+              )}
+            </Button>
               </>
             )}
           </DialogFooter>

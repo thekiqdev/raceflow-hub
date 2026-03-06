@@ -222,9 +222,9 @@ export function RegistrationFlow({
   const totalAfterSeniorDiscount = Math.max(0, subtotal - seniorDiscountAmount);
   const totalAfterDiscounts = Math.max(0, totalAfterSeniorDiscount - discountAmount);
   
-  // Calculate platform fee (applied after discounts). When percentage, apply minimum if configured.
+  // Calculate platform fee (applied after discounts). Evento gratuito (preço = 0): não cobra taxa.
   let platformFeeAmount = 0;
-  if (platformFeesEnabled && platformFee > 0) {
+  if (platformFeesEnabled && platformFee > 0 && totalAfterDiscounts > 0) {
     if (platformFeeType === 'percentage') {
       const feeFromPercent = (totalAfterDiscounts * platformFee) / 100;
       platformFeeAmount = platformFeeMin > 0 ? Math.max(feeFromPercent, platformFeeMin) : feeFromPercent;

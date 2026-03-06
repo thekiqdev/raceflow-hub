@@ -41,6 +41,7 @@ export function calculateValueWithoutFee(
 /**
  * Calculate the total amount with platform fee.
  * When type is percentage and platformFeeMin is set, applies at least that amount (R$).
+ * Evento gratuito (baseAmount = 0): não aplica taxa, retorna 0.
  *
  * @param baseAmount - The base amount without platform fee
  * @param platformFee - The platform fee value
