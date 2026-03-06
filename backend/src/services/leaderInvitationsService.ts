@@ -280,7 +280,7 @@ export const sendInvitationByCpf = async (
 
   const invitation = invitationResult.rows[0];
 
-  // Check if runner already has a registration for this event
+  // Check if runner already has a registration for this event (permite self-invite: única inscrição pode ser a do bônus)
   const existingRegistration = await query(
     `SELECT id FROM registrations 
      WHERE event_id = $1 AND runner_id = $2`,
@@ -288,8 +288,12 @@ export const sendInvitationByCpf = async (
   );
 
   if (existingRegistration.rows.length > 0) {
-    const existingReg = existingRegistration.rows[0];
-    throw new Error(`Este runner já possui uma inscrição para este evento (ID: ${existingReg.id}).`);
+    const ids = (existingRegistration.rows as { id: string }[]).map((r) => r.id);
+    const isOnlyBonusReg = ids.length === 1 && ids[0] === invitation.bonus_registration_id;
+    if (!isOnlyBonusReg) {
+      const existingReg = existingRegistration.rows[0] as { id: string };
+      throw new Error(`Este runner já possui uma inscrição para este evento (ID: ${existingReg.id}).`);
+    }
   }
 
   // Update invitation to sent status (inclui flag runner_chooses_category_modality_kit – Etapa 2)
@@ -334,6 +338,18 @@ export const sendInvitationByCpf = async (
     runner_id: updateResult.rows[0].runner_id,
   });
 
+  const bonusRegId = invitation.bonus_registration_id as string;
+  const eventId = invitation.event_id as string;
+
+  // Se "deixar o corredor escolher": limpar categoria/modalidade/kit da inscrição bônus para o corredor ver "Completar convite"
+  if (runnerChoosesFlag) {
+    await query(
+      `UPDATE registrations SET category_id = NULL, modality_id = NULL, kit_id = NULL, updated_at = NOW() WHERE id = $1`,
+      [bonusRegId]
+    );
+    await query(`DELETE FROM registration_product_selections WHERE registration_id = $1`, [bonusRegId]);
+  }
+
   if (runnerWasPreregistered) {
     await query(
       `UPDATE leader_invitations SET runner_preregistered = true, updated_at = NOW() WHERE id = $1`,
@@ -341,8 +357,6 @@ export const sendInvitationByCpf = async (
     );
   }
 
-  const eventId = invitation.event_id;
-  const bonusRegId = invitation.bonus_registration_id;
   const hasLeaderChoices =
     options &&
     (options.category_id != null ||

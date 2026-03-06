@@ -120,6 +120,7 @@ const migrations = [
   '092_add_runner_preregistered_to_leader_invitations.sql',
   '092_allow_null_birth_date_phone_profiles.sql',
   '093_add_runner_chooses_category_modality_kit_to_leader_invitations.sql',
+  '094_allow_null_category_id_kit_id_registrations_invitation.sql',
 ];
 
 // Create migrations tracking table

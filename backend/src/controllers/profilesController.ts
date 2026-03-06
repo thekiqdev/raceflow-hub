@@ -154,7 +154,33 @@ export const getPublicProfileByCpfController = asyncHandler(async (req: AuthRequ
 
   console.log('✅ CPF validado, buscando perfil:', { original: cpfString, clean: cleanCpf });
 
-  const profile = await getPublicProfileByCpf(cpfString);
+  let profile = await getPublicProfileByCpf(cpfString);
+
+  // Permite líder (ou qualquer usuário autenticado) encontrar o próprio perfil por CPF mesmo se is_public = false (envio de convite para si)
+  if (!profile && req.user) {
+    const selfResult = await query(
+      `SELECT p.id, p.full_name, p.cpf, p.phone, p.gender, p.birth_date, u.email
+       FROM profiles p
+       JOIN users u ON p.id = u.id
+       WHERE p.id = $1`,
+      [req.user.id]
+    );
+    if (selfResult.rows.length > 0) {
+      const row = selfResult.rows[0] as { id: string; full_name: string; cpf: string | null; phone: string | null; gender: string | null; birth_date: string | null; email: string };
+      const selfCpfClean = (row.cpf || '').replace(/\D/g, '');
+      if (selfCpfClean === cleanCpf) {
+        profile = {
+          id: row.id,
+          full_name: row.full_name,
+          cpf: row.cpf ?? undefined,
+          phone: row.phone ?? undefined,
+          email: row.email,
+          gender: row.gender ?? undefined,
+          birth_date: row.birth_date ?? undefined,
+        };
+      }
+    }
+  }
 
   if (!profile) {
     console.log('⚠️ Perfil não encontrado ou não é público para CPF:', cleanCpf);
