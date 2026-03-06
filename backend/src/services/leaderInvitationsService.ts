@@ -407,8 +407,9 @@ export const sendInvitationByCpf = async (
             'O kit selecionado possui produto(s) com variação (ex.: tamanho). Selecione a variante para cada um antes de enviar o convite.'
           );
         }
+        const selections = options.product_selections!;
         const selectedProductIds = new Set(
-          options.product_selections.map((s) => s.product_id)
+          selections.map((s) => s.product_id)
         );
         const missing = variableProducts.filter((p) => !selectedProductIds.has(p.id));
         if (missing.length > 0) {
@@ -417,7 +418,7 @@ export const sendInvitationByCpf = async (
             `Selecione a variante para: ${names}.`
           );
         }
-        for (const sel of options.product_selections) {
+        for (const sel of selections) {
           const prod = variableProducts.find((p) => p.id === sel.product_id);
           if (prod && !sel.variant_id && (!sel.attribute_selections || Object.keys(sel.attribute_selections).length === 0)) {
             throw new Error(
