@@ -24,7 +24,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { CalendarIcon, Plus, Trash2, Upload, X, ChevronUp, ChevronDown } from "lucide-react";
+import { CalendarIcon, Plus, Trash2, Upload, X, ChevronUp, ChevronDown, AlertTriangle } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { cn, isoToDatetimeLocal, processDatetimeLocalForSave, datetimeLocalToISO } from "@/lib/utils";
@@ -33,7 +33,7 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
-import { createEvent, updateEvent, getEventById } from "@/lib/api/events";
+import { createEvent, updateEvent, getEventById, type CronogramaItemInput } from "@/lib/api/events";
 import { getEventCategories } from "@/lib/api/eventCategories";
 import { getEventKits } from "@/lib/api/eventKits";
 import { getModalities, createModality, updateModality as updateModalityAPI, deleteModality, reorderModalities, type Modality as ModalityType } from "@/lib/api/modalities";
@@ -46,6 +46,8 @@ import { getOrganizers } from "@/lib/api/userManagement";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import { RichTextEditor } from "@/components/ui/rich-text-editor";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 const eventFormSchema = z.object({
   title: z.string().min(3, "Nome deve ter no mínimo 3 caracteres"),
@@ -209,6 +211,9 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
   const [organizers, setOrganizers] = useState<any[]>([]);
   const [loadingOrganizers, setLoadingOrganizers] = useState(false);
   const [registrationAutoMode, setRegistrationAutoMode] = useState(false);
+  const [premiacaoHtml, setPremiacaoHtml] = useState<string>("");
+  const [cronogramaItems, setCronogramaItems] = useState<CronogramaItemInput[]>([]);
+  const [cronogramaHtml, setCronogramaHtml] = useState<string>("");
 
   const form = useForm<EventFormValues>({
     resolver: zodResolver(eventFormSchema),
@@ -267,6 +272,9 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
         setActiveTab("info");
         setSelectedOrganizerId("");
         setOrganizers([]);
+        setPremiacaoHtml("");
+        setCronogramaItems([]);
+        setCronogramaHtml("");
         return;
       }
 
@@ -308,6 +316,15 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
               credit_card_disabled_at: eventData.credit_card_disabled_at || null,
             });
             setRegistrationAutoMode(autoMode);
+            setPremiacaoHtml(eventData.premiacao ?? "");
+            setCronogramaHtml(eventData.cronograma ?? "");
+            const items = (eventData.cronograma_items ?? []).map((it: { time: string; title: string; description?: string | null; display_order: number }) => ({
+              time: it.time,
+              title: it.title,
+              description: it.description ?? null,
+              display_order: it.display_order,
+            }));
+            setCronogramaItems(items);
 
             // Set organizer ID for admin editing
             if (isAdmin && eventData.organizer_id) {
@@ -637,7 +654,7 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
 
   // Função para lidar com mudança de aba com validação
   const handleTabChange = async (newTab: string) => {
-    const tabs = ["info", "modalities", "categories", "kits", "pickup", "payment", "publish"];
+    const tabs = ["info", "premiacao", "cronograma", "modalities", "categories", "kits", "pickup", "payment", "publish"];
     const currentIndex = tabs.indexOf(activeTab);
     const newIndex = tabs.indexOf(newTab);
     
@@ -682,6 +699,47 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
     const updated = [...modalities];
     [updated[index], updated[index + 1]] = [updated[index + 1], updated[index]];
     setModalities(updated);
+  };
+
+  // Cronograma (timeline)
+  const addCronogramaItem = () => {
+    setCronogramaItems((prev) => [
+      ...prev,
+      { time: "07:00", title: "", description: null, display_order: prev.length + 1 },
+    ]);
+  };
+  const removeCronogramaItem = (index: number) => {
+    setCronogramaItems((prev) => {
+      const next = prev.filter((_, i) => i !== index);
+      return next.map((it, i) => ({ ...it, display_order: i + 1 }));
+    });
+  };
+  const updateCronogramaItem = (index: number, field: keyof CronogramaItemInput, value: string | number | null) => {
+    setCronogramaItems((prev) => {
+      const next = [...prev];
+      next[index] = { ...next[index], [field]: value };
+      return next;
+    });
+  };
+  const moveCronogramaUp = (index: number) => {
+    if (index === 0) return;
+    setCronogramaItems((prev) => {
+      const next = [...prev];
+      [next[index], next[index - 1]] = [next[index - 1], next[index]];
+      return next.map((it, i) => ({ ...it, display_order: i + 1 }));
+    });
+  };
+  const moveCronogramaDown = (index: number) => {
+    if (index === cronogramaItems.length - 1) return;
+    setCronogramaItems((prev) => {
+      const next = [...prev];
+      [next[index], next[index + 1]] = [next[index + 1], next[index]];
+      return next.map((it, i) => ({ ...it, display_order: i + 1 }));
+    });
+  };
+  const hasDuplicateCronogramaTimes = () => {
+    const times = cronogramaItems.map((it) => it.time.trim()).filter(Boolean);
+    return times.length !== new Set(times).size;
   };
 
   const addCategory = () => {
@@ -1405,12 +1463,27 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
         pix_disabled_at: values.pix_disabled_at || null,
         credit_card_enabled: values.credit_card_enabled ?? true,
         credit_card_disabled_at: values.credit_card_disabled_at || null,
+        premiacao: premiacaoHtml?.trim() || null,
+        cronograma: cronogramaHtml?.trim() || null,
       };
 
       let eventId = event?.id;
 
+      const normalizedCronogramaItems = cronogramaItems
+        .filter((it) => (it.title ?? "").trim().length > 0 && (it.time ?? "").trim().length > 0)
+        .map((it, i) => ({
+          time: it.time.trim(),
+          title: it.title.trim(),
+          description: (it.description ?? "").trim() || null,
+          display_order: i + 1,
+        }));
+
       if (event?.id) {
-        const response = await updateEvent(event.id, eventData);
+        const eventDataWithCronograma = {
+          ...eventData,
+          cronograma_items: normalizedCronogramaItems,
+        };
+        const response = await updateEvent(event.id, eventDataWithCronograma);
         if (!response.success) {
           throw new Error(response.error || "Erro ao atualizar evento");
         }
@@ -1420,6 +1493,9 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
           throw new Error(response.error || "Erro ao criar evento");
         }
         eventId = response.data.id;
+        if (normalizedCronogramaItems.length > 0) {
+          await updateEvent(eventId, { cronograma_items: normalizedCronogramaItems });
+        }
       }
 
       // Sync modalities first, then categories (categories depend on modality IDs)
@@ -2080,7 +2156,7 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="fixed inset-0 z-50 w-screen h-screen max-w-none translate-x-0 translate-y-0 rounded-none border-0 bg-background p-6 overflow-y-auto data-[state=open]:zoom-in-100">
         <DialogHeader>
           <DialogTitle>
             {event ? "Editar Evento" : "Criar Novo Evento"}
@@ -2106,8 +2182,10 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
             }}
           >
             <Tabs value={activeTab} onValueChange={handleTabChange}>
-              <TabsList className="grid w-full grid-cols-7">
+              <TabsList className="grid w-full grid-cols-9">
                 <TabsTrigger value="info">Informações</TabsTrigger>
+                <TabsTrigger value="premiacao">Premiação</TabsTrigger>
+                <TabsTrigger value="cronograma">Cronograma</TabsTrigger>
                 <TabsTrigger value="modalities">Modalidades</TabsTrigger>
                 <TabsTrigger value="categories">Categorias</TabsTrigger>
                 <TabsTrigger value="kits">Kits</TabsTrigger>
@@ -2324,6 +2402,120 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
                     </FormItem>
                   )}
                 />
+              </TabsContent>
+
+              {/* Tab Premiação */}
+              <TabsContent value="premiacao" className="space-y-4">
+                <div>
+                  <h3 className="text-lg font-semibold">Premiação</h3>
+                  <p className="text-sm text-muted-foreground">
+                    Descreva as premiações do evento (pódios, categorias premiadas, etc.). Opcional.
+                  </p>
+                </div>
+                <RichTextEditor
+                  editorKey={event?.id ?? "new"}
+                  value={premiacaoHtml}
+                  onChange={setPremiacaoHtml}
+                  placeholder="Descreva as premiações do evento…"
+                  minHeight={200}
+                  className="mt-2"
+                />
+              </TabsContent>
+
+              {/* Tab Cronograma */}
+              <TabsContent value="cronograma" className="space-y-4">
+                <div>
+                  <h3 className="text-lg font-semibold">Cronograma</h3>
+                  <p className="text-sm text-muted-foreground">
+                    Itens em formato de timeline (horário, título, descrição) e observações em texto livre. Opcional.
+                  </p>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Ex.: 07:00 – Aquecimento | 08:00 – Largada 5km | 08:10 – Largada 10km | 09:30 – Premiação
+                </p>
+                {hasDuplicateCronogramaTimes() && (
+                  <Alert className="border-amber-500/50 bg-amber-50 dark:bg-amber-950/20">
+                    <AlertTriangle className="h-4 w-4 text-amber-600" />
+                    <AlertTitle>Horários duplicados</AlertTitle>
+                    <AlertDescription>
+                      Existem horários duplicados na lista. Verifique se está correto.
+                    </AlertDescription>
+                  </Alert>
+                )}
+                <div className="flex justify-between items-center">
+                  <span className="text-sm font-medium">Itens da timeline</span>
+                  <Button type="button" onClick={addCronogramaItem} size="sm" disabled={cronogramaItems.length >= 50}>
+                    <Plus className="mr-2 h-4 w-4" />
+                    Adicionar horário
+                  </Button>
+                </div>
+                {cronogramaItems.length === 0 ? (
+                  <Card>
+                    <CardContent className="pt-6 text-center text-muted-foreground">
+                      Nenhum item. Clique em &quot;Adicionar horário&quot; para começar.
+                    </CardContent>
+                  </Card>
+                ) : (
+                  <div className="space-y-3">
+                    {cronogramaItems.map((item, index) => (
+                      <Card key={index}>
+                        <CardContent className="pt-4 pb-4">
+                          <div className="flex gap-2 items-start">
+                            <div className="flex flex-col gap-1 flex-shrink-0">
+                              <Label className="text-xs">Horário</Label>
+                              <Input
+                                type="time"
+                                value={item.time}
+                                onChange={(e) => updateCronogramaItem(index, "time", e.target.value)}
+                                className="w-[100px]"
+                              />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <Label className="text-xs">Título (obrigatório, máx. 120)</Label>
+                              <Input
+                                placeholder="Ex: Largada 5km"
+                                value={item.title}
+                                onChange={(e) => updateCronogramaItem(index, "title", e.target.value)}
+                                maxLength={120}
+                              />
+                            </div>
+                            <div className="flex flex-col gap-1 flex-shrink-0">
+                              <Button type="button" variant="ghost" size="icon" onClick={() => moveCronogramaUp(index)} disabled={index === 0} title="Mover para cima">
+                                <ChevronUp className="h-4 w-4" />
+                              </Button>
+                              <Button type="button" variant="ghost" size="icon" onClick={() => moveCronogramaDown(index)} disabled={index === cronogramaItems.length - 1} title="Mover para baixo">
+                                <ChevronDown className="h-4 w-4" />
+                              </Button>
+                              <Button type="button" variant="ghost" size="icon" onClick={() => removeCronogramaItem(index)} title="Remover">
+                                <Trash2 className="h-4 w-4 text-destructive" />
+                              </Button>
+                            </div>
+                          </div>
+                          <div className="mt-2">
+                            <Label className="text-xs text-muted-foreground">Descrição (opcional)</Label>
+                            <Input
+                              placeholder="Detalhes do item"
+                              value={item.description ?? ""}
+                              onChange={(e) => updateCronogramaItem(index, "description", e.target.value)}
+                              className="mt-1"
+                            />
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                )}
+                <div>
+                  <Label className="text-sm font-medium">Observações / informações adicionais (opcional)</Label>
+                  <RichTextEditor
+                    editorKey={`cronograma-${event?.id ?? "new"}`}
+                    value={cronogramaHtml}
+                    onChange={setCronogramaHtml}
+                    placeholder="Informações adicionais de cronograma em texto livre…"
+                    minHeight={120}
+                    className="mt-2"
+                  />
+                </div>
               </TabsContent>
 
               {/* Tab 2: Modalidades */}
@@ -4170,7 +4362,7 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
                     type="button"
                     variant="outline"
                     onClick={() => {
-                      const tabs = ["info", "modalities", "categories", "kits", "pickup", "payment", "publish"];
+                      const tabs = ["info", "premiacao", "cronograma", "modalities", "categories", "kits", "pickup", "payment", "publish"];
                       const currentIndex = tabs.indexOf(activeTab);
                       if (currentIndex > 0) {
                       setActiveTab(tabs[currentIndex - 1]);
@@ -4197,7 +4389,7 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
                     <Button
                       type="button"
                       onClick={async () => {
-                        const tabs = ["info", "modalities", "categories", "kits", "pickup", "payment", "publish"];
+                        const tabs = ["info", "premiacao", "cronograma", "modalities", "categories", "kits", "pickup", "payment", "publish"];
                         const currentIndex = tabs.indexOf(activeTab);
                         if (currentIndex < tabs.length - 1) {
                           // Validar etapa atual antes de avançar

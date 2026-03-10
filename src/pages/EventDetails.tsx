@@ -32,6 +32,7 @@ import { getEventPickupLocations } from "@/lib/api/kitPickup";
 import { getModalities, Modality } from "@/lib/api/modalities";
 import { toast } from "sonner";
 import { getEffectiveRegistrationStatus, getRegistrationStatusMessage, getRegistrationStatusLabel, getRegistrationStatusVariant } from "@/lib/utils/eventRegistration";
+import { sanitizeHtml } from "@/lib/utils/sanitizeHtml";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import {
@@ -70,6 +71,9 @@ interface EventDetail {
   organizer_contact_phone?: string;
   organizer_website_url?: string;
   organizer_bio?: string;
+  premiacao?: string | null;
+  cronograma?: string | null;
+  cronograma_items?: Array<{ id: string; time: string; title: string; description: string | null; display_order: number }>;
 }
 
 interface CategoryBatch {
@@ -212,6 +216,9 @@ const EventDetails = () => {
             organizer_contact_phone: eventResponse.data.organizer_contact_phone,
             organizer_website_url: eventResponse.data.organizer_website_url,
             organizer_bio: eventResponse.data.organizer_bio,
+            premiacao: eventResponse.data.premiacao ?? null,
+            cronograma: eventResponse.data.cronograma ?? null,
+            cronograma_items: eventResponse.data.cronograma_items ?? undefined,
           });
         } else {
           toast.error(eventResponse.error || "Erro ao carregar evento");
@@ -528,6 +535,63 @@ const EventDetails = () => {
                   )}
                 </CardContent>
               </Card>
+
+              {/* Premiação */}
+              {event.premiacao && event.premiacao.trim() !== "" && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Trophy className="h-5 w-5" />
+                      Premiação
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div
+                      className="prose prose-sm dark:prose-invert max-w-none text-muted-foreground leading-relaxed"
+                      dangerouslySetInnerHTML={{ __html: sanitizeHtml(event.premiacao) }}
+                    />
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Cronograma */}
+              {(event.cronograma_items && event.cronograma_items.length > 0) || (event.cronograma && event.cronograma.trim() !== "") ? (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Clock className="h-5 w-5" />
+                      Cronograma
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    {event.cronograma_items && event.cronograma_items.length > 0 && (
+                      <div className="space-y-2">
+                        <ul className="space-y-2 list-none p-0 m-0">
+                          {[...event.cronograma_items]
+                            .sort((a, b) => a.display_order - b.display_order)
+                            .map((item) => (
+                              <li key={item.id} className="flex gap-3 items-start border-b border-border/50 pb-2 last:border-0 last:pb-0">
+                                <span className="font-mono text-sm font-medium text-foreground shrink-0 w-12">{item.time}</span>
+                                <div>
+                                  <p className="font-medium text-foreground">{item.title}</p>
+                                  {item.description && (
+                                    <p className="text-sm text-muted-foreground mt-0.5">{item.description}</p>
+                                  )}
+                                </div>
+                              </li>
+                            ))}
+                        </ul>
+                      </div>
+                    )}
+                    {event.cronograma && event.cronograma.trim() !== "" && (
+                      <div
+                        className="prose prose-sm dark:prose-invert max-w-none text-muted-foreground leading-relaxed"
+                        dangerouslySetInnerHTML={{ __html: sanitizeHtml(event.cronograma) }}
+                      />
+                    )}
+                  </CardContent>
+                </Card>
+              ) : null}
 
               {/* Categories */}
               <Card>

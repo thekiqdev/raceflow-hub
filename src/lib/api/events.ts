@@ -2,6 +2,24 @@ import { apiClient } from './client.js';
 
 export type EventRegistrationStatus = 'not_open' | 'open' | 'closed';
 
+/** Item da timeline de cronograma (horário, título, descrição). */
+export interface CronogramaItem {
+  id: string;
+  event_id: string;
+  time: string;
+  title: string;
+  description: string | null;
+  display_order: number;
+}
+
+/** Payload para criar/atualizar itens de cronograma (sem id). */
+export interface CronogramaItemInput {
+  time: string;
+  title: string;
+  description?: string | null;
+  display_order: number;
+}
+
 export interface Event {
   id: string;
   organizer_id: string;
@@ -38,6 +56,12 @@ export interface Event {
   confirmed_registrations?: number;
   revenue?: number;
   avg_ticket?: number;
+  /** Conteúdo HTML (TipTap) da premiação. Opcional. */
+  premiacao?: string | null;
+  /** Conteúdo HTML (TipTap) texto livre do cronograma. Opcional. */
+  cronograma?: string | null;
+  /** Itens da timeline do cronograma, ordenados por display_order. */
+  cronograma_items?: CronogramaItem[];
 }
 
 export interface CreateEventData {
@@ -62,6 +86,9 @@ export interface CreateEventData {
   credit_card_enabled?: boolean;
   credit_card_disabled_at?: string | null;
   transfers_enabled?: boolean;
+  premiacao?: string | null;
+  cronograma?: string | null;
+  cronograma_items?: CronogramaItemInput[];
 }
 
 export interface UpdateEventData {
@@ -85,6 +112,9 @@ export interface UpdateEventData {
   credit_card_enabled?: boolean;
   credit_card_disabled_at?: string | null;
   transfers_enabled?: boolean;
+  premiacao?: string | null;
+  cronograma?: string | null;
+  cronograma_items?: CronogramaItemInput[];
 }
 
 // Get all events

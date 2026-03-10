@@ -126,6 +126,16 @@ export interface UpdateLeaderEventCommissionData {
   coupon_discount?: number;
 }
 
+// Cronograma item (timeline do evento)
+export interface CronogramaItem {
+  id: string;
+  event_id: string;
+  time: string;
+  title: string;
+  description: string | null;
+  display_order: number;
+}
+
 // Event types
 export interface Event {
   id: string;
@@ -152,6 +162,9 @@ export interface Event {
   transfers_enabled: boolean | null;
   created_at: Date | null;
   updated_at: Date | null;
+  premiacao?: string | null;
+  cronograma?: string | null;
+  cronograma_items?: CronogramaItem[];
 }
 
 // Legacy EventCategory (mantida para compatibilidade durante transição)

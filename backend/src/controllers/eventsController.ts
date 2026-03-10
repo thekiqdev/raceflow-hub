@@ -41,6 +41,8 @@ const createEventSchema = z.object({
   credit_card_enabled: z.boolean().optional(),
   credit_card_disabled_at: z.string().datetime('Data de desabilitação do cartão de crédito inválida').nullable().optional(),
   transfers_enabled: z.boolean().optional(),
+  premiacao: z.string().max(50000, 'Premiação deve ter no máximo 50.000 caracteres').nullable().optional(),
+  cronograma: z.string().max(50000, 'Cronograma deve ter no máximo 50.000 caracteres').nullable().optional(),
 }).refine((data) => {
   // Se modo automático está ativado, datas são obrigatórias
   if (data.registration_auto_mode === true) {
@@ -62,6 +64,13 @@ const createEventSchema = z.object({
 }, {
   message: 'Data de encerramento deve ser maior ou igual à data de abertura',
   path: ['registration_end_date'],
+});
+
+const cronogramaItemSchema = z.object({
+  time: z.string().regex(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/, 'Horário deve estar no formato HH:mm (ex.: 07:00)'),
+  title: z.string().min(1, 'Título é obrigatório').max(120, 'Título deve ter no máximo 120 caracteres'),
+  description: z.string().max(5000).nullable().optional(),
+  display_order: z.number().int().min(1, 'display_order deve ser >= 1'),
 });
 
 // Schema for update event request
@@ -91,6 +100,9 @@ const updateEventSchema = z.object({
   credit_card_enabled: z.boolean().optional(),
   credit_card_disabled_at: z.string().datetime('Data de desabilitação do cartão de crédito inválida').nullable().optional(),
   transfers_enabled: z.boolean().optional(),
+  premiacao: z.string().max(50000, 'Premiação deve ter no máximo 50.000 caracteres').nullable().optional(),
+  cronograma: z.string().max(50000, 'Cronograma deve ter no máximo 50.000 caracteres').nullable().optional(),
+  cronograma_items: z.array(cronogramaItemSchema).max(50, 'Máximo de 50 itens de cronograma por evento').optional(),
 }).refine((data) => {
   // Se modo automático está ativado, datas são obrigatórias
   if (data.registration_auto_mode === true) {

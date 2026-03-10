@@ -1,6 +1,17 @@
-import { query } from '../config/database.js';
-import { EventStatus, EventRegistrationStatus, Event } from '../types/index.js';
+import { query, getClient } from '../config/database.js';
+import { EventStatus, EventRegistrationStatus, Event, CronogramaItem } from '../types/index.js';
 import { generateSlug } from '../utils/slug.js';
+
+/** Formato HH:mm para horário em cronograma_items */
+const TIME_HHMM_REGEX = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/;
+const MAX_CRONOGRAMA_ITEMS = 50;
+
+export interface CronogramaItemInput {
+  time: string;
+  title: string;
+  description?: string | null;
+  display_order: number;
+}
 
 export interface CreateEventData {
   organizer_id: string;
@@ -24,6 +35,8 @@ export interface CreateEventData {
   credit_card_enabled?: boolean;
   credit_card_disabled_at?: string | null;
   transfers_enabled?: boolean;
+  premiacao?: string | null;
+  cronograma?: string | null;
 }
 
 export interface UpdateEventData {
@@ -48,6 +61,9 @@ export interface UpdateEventData {
   credit_card_enabled?: boolean;
   credit_card_disabled_at?: string | null;
   transfers_enabled?: boolean;
+  premiacao?: string | null;
+  cronograma?: string | null;
+  cronograma_items?: CronogramaItemInput[];
 }
 
 /**
@@ -399,6 +415,8 @@ export const getEventById = async (eventIdOrSlug: string) => {
       e.transfers_enabled,
       e.created_at,
       e.updated_at,
+      e.premiacao,
+      e.cronograma,
       p.full_name as organizer_name,
       p.logo_url as organizer_logo_url,
       p.organization_name as organizer_organization_name,
@@ -416,12 +434,28 @@ export const getEventById = async (eventIdOrSlug: string) => {
     return null;
   }
 
-  // Import getFileUrl to convert file paths to URLs
-  const { getFileUrl } = await import('../middleware/upload.js');
-  
   const row = result.rows[0];
-  
-  // Calcular status de inscrições se modo automático estiver ativado
+  const eventId = row.id;
+
+  // Query 2: cronograma_items do evento (uma única query, sem loop)
+  const itemsResult = await query(
+    `SELECT id, event_id, time, title, description, display_order
+     FROM cronograma_items
+     WHERE event_id = $1
+     ORDER BY display_order ASC`,
+    [eventId]
+  );
+  const cronograma_items: CronogramaItem[] = itemsResult.rows.map((r: any) => ({
+    id: r.id,
+    event_id: r.event_id,
+    time: r.time,
+    title: r.title,
+    description: r.description ?? null,
+    display_order: r.display_order,
+  }));
+
+  const { getFileUrl } = await import('../middleware/upload.js');
+
   let effectiveRegistrationStatus = row.registration_status;
   if (row.registration_auto_mode && row.registration_start_date && row.registration_end_date) {
     const calculatedStatus = calculateRegistrationStatus({
@@ -439,6 +473,7 @@ export const getEventById = async (eventIdOrSlug: string) => {
     banner_url: row.banner_url ? getFileUrl(row.banner_url) : null,
     regulation_url: row.regulation_url ? getFileUrl(row.regulation_url) : null,
     registration_status: effectiveRegistrationStatus,
+    cronograma_items,
   };
 };
 
@@ -474,7 +509,6 @@ export const createEvent = async (data: CreateEventData) => {
     }
   }
   
-  // Construir query dinamicamente baseado na existência da coluna slug
   const fields = [
     'organizer_id', 'title',
     ...(hasSlugColumn ? ['slug'] : []),
@@ -482,9 +516,9 @@ export const createEvent = async (data: CreateEventData) => {
     'city', 'state', 'banner_url', 'regulation_url', 'result_url', 'status',
     'registration_status', 'registration_start_date', 'registration_end_date', 'registration_auto_mode',
     'pix_enabled', 'pix_disabled_at', 'credit_card_enabled', 'credit_card_disabled_at',
-    'transfers_enabled'
+    'transfers_enabled',
+    'premiacao', 'cronograma',
   ];
-  
   const values = [
     data.organizer_id,
     data.title,
@@ -507,6 +541,8 @@ export const createEvent = async (data: CreateEventData) => {
     data.credit_card_enabled !== undefined ? data.credit_card_enabled : true,
     data.credit_card_disabled_at || null,
     data.transfers_enabled !== undefined ? data.transfers_enabled : true,
+    data.premiacao ?? null,
+    data.cronograma ?? null,
   ];
   
   const placeholders = values.map((_, i) => `$${i + 1}`).join(', ');
@@ -526,6 +562,57 @@ export const createEvent = async (data: CreateEventData) => {
 
   return result.rows[0];
 };
+
+/**
+ * Substitui todos os itens de cronograma do evento (replace).
+ * Normaliza display_order para 1..n e aplica trim em title.
+ * Usa transação: DELETE + INSERTs.
+ */
+async function replaceCronogramaItems(eventId: string, items: CronogramaItemInput[]): Promise<void> {
+  if (items.length > MAX_CRONOGRAMA_ITEMS) {
+    throw new Error(`Máximo de ${MAX_CRONOGRAMA_ITEMS} itens de cronograma por evento`);
+  }
+  const normalized = items
+    .map((item) => ({
+      time: item.time.trim(),
+      title: (item.title ?? '').trim(),
+      description: item.description != null ? String(item.description).trim() : null,
+      display_order: Number(item.display_order),
+    }))
+    .filter((item) => {
+      if (!TIME_HHMM_REGEX.test(item.time)) {
+        throw new Error(`Horário inválido: "${item.time}". Use formato HH:mm (ex.: 07:00).`);
+      }
+      if (!item.title || item.title.length > 120) {
+        throw new Error('Título do item é obrigatório e deve ter no máximo 120 caracteres.');
+      }
+      if (!Number.isInteger(item.display_order) || item.display_order < 1) {
+        throw new Error('display_order deve ser um inteiro >= 1.');
+      }
+      return true;
+    })
+    .sort((a, b) => a.display_order - b.display_order)
+    .map((item, index) => ({ ...item, display_order: index + 1 }));
+
+  const client = await getClient();
+  try {
+    await client.query('BEGIN');
+    await client.query('DELETE FROM cronograma_items WHERE event_id = $1', [eventId]);
+    for (const item of normalized) {
+      await client.query(
+        `INSERT INTO cronograma_items (event_id, time, title, description, display_order)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [eventId, item.time, item.title, item.description, item.display_order]
+      );
+    }
+    await client.query('COMMIT');
+  } catch (e) {
+    await client.query('ROLLBACK');
+    throw e;
+  } finally {
+    client.release();
+  }
+}
 
 // Update event
 export const updateEvent = async (eventId: string, data: UpdateEventData) => {
@@ -573,6 +660,10 @@ export const updateEvent = async (eventId: string, data: UpdateEventData) => {
     }
   }
 
+  // Extrair cronograma_items para não ir no UPDATE events (não é coluna de events)
+  const cronogramaItems = data.cronograma_items;
+  delete data.cronograma_items;
+
   const fields: string[] = [];
   const values: any[] = [];
   let paramIndex = 1;
@@ -585,25 +676,27 @@ export const updateEvent = async (eventId: string, data: UpdateEventData) => {
     }
   });
 
-  if (fields.length === 0) {
+  if (fields.length > 0) {
+    values.push(eventId);
+    const result = await query(
+      `UPDATE events 
+       SET ${fields.join(', ')}
+       WHERE id = $${paramIndex}
+       RETURNING *`,
+      values
+    );
+    if (result.rows.length === 0) {
+      return null;
+    }
+  } else if (cronogramaItems === undefined || cronogramaItems === null) {
     throw new Error('No fields to update');
   }
 
-  values.push(eventId);
-
-  const result = await query(
-    `UPDATE events 
-     SET ${fields.join(', ')}
-     WHERE id = $${paramIndex}
-     RETURNING *`,
-    values
-  );
-
-  if (result.rows.length === 0) {
-    return null;
+  if (cronogramaItems !== undefined) {
+    await replaceCronogramaItems(eventId, cronogramaItems);
   }
 
-  return result.rows[0];
+  return getEventById(eventId);
 };
 
 /**

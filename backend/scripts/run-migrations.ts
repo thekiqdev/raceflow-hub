@@ -121,6 +121,7 @@ const migrations = [
   '092_allow_null_birth_date_phone_profiles.sql',
   '093_add_runner_chooses_category_modality_kit_to_leader_invitations.sql',
   '094_allow_null_category_id_kit_id_registrations_invitation.sql',
+  '095_add_premiacao_cronograma_and_cronograma_items.sql',
 ];
 
 // Create migrations tracking table
