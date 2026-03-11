@@ -657,7 +657,7 @@ const EventDetails = () => {
                         return (
                           <div
                             key={category.id}
-                            className={`p-4 border rounded-lg hover:bg-muted/50 transition-colors ${
+                            className={`p-4 border rounded-lg ${
                               isFull ? 'opacity-60' : ''
                             } ${category.is_default ? 'border-primary border-2' : ''}`}
                           >
@@ -822,7 +822,7 @@ const EventDetails = () => {
                       {modalities.map((modality) => (
                         <div
                           key={modality.id}
-                          className="p-4 border rounded-lg hover:bg-muted/50 transition-colors"
+                          className="p-4 border rounded-lg"
                         >
                           <div className="flex items-start justify-between gap-4">
                             <div className="flex-1">
@@ -878,7 +878,7 @@ const EventDetails = () => {
                   ) : (
                     <div className="grid md:grid-cols-3 gap-4">
                       {kits.map((kit) => (
-                        <Card key={kit.id} className="border-2 hover:border-primary transition-colors">
+                        <Card key={kit.id} className="border-2">
                           <CardHeader>
                             <CardTitle className="text-lg">{kit.name}</CardTitle>
                           </CardHeader>
@@ -1257,11 +1257,11 @@ const EventDetails = () => {
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3">
-                  <div className="flex items-center gap-3 p-2 rounded-lg hover:bg-muted/50 transition-colors">
+                  <div className="flex items-center gap-3 p-2 rounded-lg">
                     <CreditCard className="h-5 w-5 text-primary" />
                     <span className="text-sm">Cartão de Crédito</span>
                   </div>
-                  <div className="flex items-center gap-3 p-2 rounded-lg hover:bg-muted/50 transition-colors">
+                  <div className="flex items-center gap-3 p-2 rounded-lg">
                     <Smartphone className="h-5 w-5 text-primary" />
                     <span className="text-sm">PIX</span>
                   </div>
@@ -1505,7 +1505,7 @@ const EventDetails = () => {
                             effectiveStatus === 'closed' ? "Inscrições Encerradas" :
                             "Inscrições Indisponíveis"
                           ) : (
-                            "Inscreva-se Agora"
+                            "Inscrever-se aqui"
                           )}
                         </Button>
                       </span>
