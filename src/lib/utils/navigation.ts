@@ -15,6 +15,7 @@ export const ADMIN_SECTION_TO_PATH: Record<string, string> = {
   reports: 'relatorios',
   knowledge: 'base-de-conhecimento',
   customize: 'personalizar',
+  banners: 'banners',
   settings: 'configuracoes',
   support: 'suporte',
 };
@@ -32,6 +33,7 @@ export const ADMIN_SECTION_LABELS: Record<string, string> = {
   reports: 'Relatórios',
   knowledge: 'Base de Conhecimento',
   customize: 'Personalizar',
+  banners: 'Banners',
   settings: 'Configurações',
   support: 'Suporte',
 };

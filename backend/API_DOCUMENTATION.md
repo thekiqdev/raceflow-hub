@@ -501,6 +501,91 @@ Atualiza configurações da home page (requer role `admin`).
 
 ---
 
+### Banners da Home (slider)
+
+Endpoints para os banners exibidos no slider da página inicial. Apenas banners com `is_active: true` são retornados no endpoint público.
+
+#### GET /home-banners
+
+Lista os banners **ativos** para exibição na home (público, sem autenticação). Ordenados por `display_order` ascendente.
+
+**Resposta:**
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "uuid",
+      "image_url": "https://...",
+      "title": "Título opcional",
+      "link_url": "https://... ou null",
+      "is_active": true,
+      "display_order": 0,
+      "created_at": "...",
+      "updated_at": "..."
+    }
+  ]
+}
+```
+
+#### GET /admin/home-banners
+
+Lista **todos** os banners (requer autenticação e role `admin`). Mesma ordem: `display_order` ascendente.
+
+**Headers:** `Authorization: Bearer <token>`
+
+**Resposta:** mesmo formato de `data` acima, incluindo banners inativos.
+
+#### GET /admin/home-banners/:id
+
+Obtém um banner por ID (admin).
+
+**Headers:** `Authorization: Bearer <token>`
+
+**Resposta:** `{ "success": true, "data": { ... } }`  
+**404:** banner não encontrado.
+
+#### POST /admin/home-banners
+
+Cria um novo banner (admin).
+
+**Headers:** `Authorization: Bearer <token>`
+
+**Body:**
+```json
+{
+  "image_url": "https://... (obrigatório)",
+  "title": "Título (opcional)",
+  "link_url": "https://... ou null (opcional)",
+  "is_active": true,
+  "display_order": 0
+}
+```
+
+**Resposta:** `201` com `{ "success": true, "data": { ... } }`
+
+#### PUT /admin/home-banners/:id
+
+Atualiza um banner (admin). Todos os campos do body são opcionais; apenas os enviados são alterados.
+
+**Headers:** `Authorization: Bearer <token>`
+
+**Body:** mesmos campos do POST (todos opcionais).
+
+**Resposta:** `200` com `{ "success": true, "data": { ... } }`  
+**404:** banner não encontrado.
+
+#### DELETE /admin/home-banners/:id
+
+Remove um banner (admin).
+
+**Headers:** `Authorization: Bearer <token>`
+
+**Resposta:** `200` com `{ "success": true, "message": "..." }`  
+**404:** banner não encontrado.
+
+---
+
 ## Códigos de Status HTTP
 
 - `200 OK`: Requisição bem-sucedida

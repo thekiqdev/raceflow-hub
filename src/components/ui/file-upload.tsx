@@ -10,6 +10,8 @@ interface FileUploadProps {
   accept?: string;
   maxSize?: number; // em MB
   type: 'banner' | 'regulation';
+  /** Id único do input (obrigatório quando há mais de um FileUpload do mesmo type na mesma página) */
+  inputId?: string;
   label?: string;
   description?: string;
   disabled?: boolean;
@@ -22,10 +24,12 @@ export function FileUpload({
   accept,
   maxSize = 10,
   type,
+  inputId,
   label,
   description,
   disabled = false,
 }: FileUploadProps) {
+  const resolvedInputId = inputId ?? `file-upload-${type}`;
   const [uploading, setUploading] = useState(false);
   const [preview, setPreview] = useState<string | null>(value || null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -150,9 +154,9 @@ export function FileUpload({
           onChange={handleFileSelect}
           disabled={disabled || uploading}
           className="hidden"
-          id={`file-upload-${type}`}
+          id={resolvedInputId}
         />
-        <label htmlFor={`file-upload-${type}`}>
+        <label htmlFor={resolvedInputId}>
           <Button
             type="button"
             variant="outline"

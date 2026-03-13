@@ -122,6 +122,9 @@ const migrations = [
   '093_add_runner_chooses_category_modality_kit_to_leader_invitations.sql',
   '094_allow_null_category_id_kit_id_registrations_invitation.sql',
   '095_add_premiacao_cronograma_and_cronograma_items.sql',
+  '096_create_home_banners.sql',
+  '097_add_image_url_mobile_to_home_banners.sql',
+  '098_allow_null_image_url_home_banners.sql',
 ];
 
 // Create migrations tracking table

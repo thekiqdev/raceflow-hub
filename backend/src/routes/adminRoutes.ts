@@ -124,6 +124,13 @@ import {
 } from '../controllers/adminScriptsController.js';
 import { removeCommissionController, getRegistrationCommissionController } from '../controllers/adminCommissionsController.js';
 import { getLeaderCouponRegistrationsController } from '../controllers/leaderRegistrationsController.js';
+import {
+  getAllBannersController,
+  getBannerByIdController,
+  createBannerController,
+  updateBannerController,
+  deleteBannerController,
+} from '../controllers/homeBannersController.js';
 
 const router = Router();
 
@@ -205,6 +212,13 @@ router.get('/support/announcements', getAnnouncementsController);
 router.post('/support/announcements', createAnnouncementController);
 router.put('/support/announcements/:id', updateAnnouncementController);
 router.delete('/support/announcements/:id', deleteAnnouncementController);
+
+// Home Banners (admin)
+router.get('/home-banners', getAllBannersController);
+router.get('/home-banners/:id', getBannerByIdController);
+router.post('/home-banners', createBannerController);
+router.put('/home-banners/:id', updateBannerController);
+router.delete('/home-banners/:id', deleteBannerController);
 
 // Group Leaders endpoints (admin only)
 router.post('/group-leaders', createGroupLeaderController);

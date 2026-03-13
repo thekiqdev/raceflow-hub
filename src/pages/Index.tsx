@@ -12,6 +12,7 @@ import { EventFilters, EventFiltersState } from "@/components/event/EventFilters
 import { Header } from "@/components/Header";
 import { useAuth } from "@/contexts/AuthContext";
 import { getHomePageSettings, updateHomePageSettings } from "@/lib/api/homePageSettings";
+import { getActiveBanners } from "@/lib/api/homeBanners";
 import { getEvents } from "@/lib/api/events";
 import { getEffectiveRegistrationStatus, getRegistrationStatusLabel, getRegistrationStatusVariant, isRegistrationClosed } from "@/lib/utils/eventRegistration";
 import { getSystemSettings } from "@/lib/api/systemSettings";
@@ -20,6 +21,9 @@ import { EditableText } from "@/components/visual-editor/EditableText";
 import { EditableImage } from "@/components/visual-editor/EditableImage";
 import { EditorToolbar } from "@/components/visual-editor/EditorToolbar";
 import { toast } from "sonner";
+import { HomeBannerSlider } from "@/components/home/HomeBannerSlider";
+import type { HomeBanner } from "@/lib/api/homeBanners";
+
 interface Event {
   id: string;
   slug?: string;
@@ -48,6 +52,7 @@ const Index = () => {
     order_by_date: 'asc',
   });
   const [oldResultsUrl, setOldResultsUrl] = useState<string | null>(null);
+  const [activeBanners, setActiveBanners] = useState<HomeBanner[]>([]);
   const [pageSettings, setPageSettings] = useState({
     hero_title: "SOMOS UMA EMPRESA DE CRONOMETRAGEM ESPORTIVA",
     hero_subtitle: "ESPECIALIZADA EM CORRIDA DE RUA, TRABALHANDO COM O SISTEMA DE CHIPS",
@@ -68,7 +73,19 @@ const Index = () => {
   useEffect(() => {
     loadPageSettings();
     loadSystemSettings();
+    loadActiveBanners();
   }, []);
+
+  const loadActiveBanners = async () => {
+    try {
+      const res = await getActiveBanners();
+      if (res.success && res.data) {
+        setActiveBanners(res.data);
+      }
+    } catch (e) {
+      console.error("Erro ao carregar banners da home:", e);
+    }
+  };
 
   useEffect(() => {
     loadUpcomingEvents(); // Load events from API when order filter changes
@@ -224,42 +241,46 @@ const Index = () => {
         {/* Navigation */}
         <Header />
 
-        {/* Hero Section */}
-        <section className="relative h-[600px] flex items-center justify-center overflow-hidden">
-          <div className="absolute inset-0 z-0">
-            <EditableImage
-              contentKey="hero_image_url"
-              defaultValue={pageSettings.hero_image_url}
-              className="w-full h-full object-cover"
-              alt="Corredores em ação"
-            />
-            <div className="absolute inset-0 bg-black/60" />
-          </div>
-
-          <div className="relative z-10 container mx-auto px-4 text-center text-white">
-            <EditableText
-              contentKey="hero_title"
-              defaultValue={pageSettings.hero_title}
-              as="h1"
-              className="text-4xl md:text-5xl font-bold mb-6 leading-tight"
-            />
-            <EditableText
-              contentKey="hero_subtitle"
-              defaultValue={pageSettings.hero_subtitle}
-              as="p"
-              className="text-lg md:text-xl mb-8 max-w-3xl mx-auto"
-            />
-            <Button size="lg" className="shadow-lg">
-              SAIBA MAIS
-            </Button>
-          </div>
-
-          <div className="absolute bottom-8 left-1/2 -translate-x-1/2 animate-bounce">
-            <div className="w-8 h-12 border-2 border-white rounded-full flex items-start justify-center p-2">
-              <div className="w-1 h-3 bg-white rounded-full"></div>
+        {/* Hero: slider de banners ativos ou hero estático */}
+        {activeBanners.length > 0 ? (
+          <HomeBannerSlider banners={activeBanners} />
+        ) : (
+          <section className="relative h-[600px] flex items-center justify-center overflow-hidden">
+            <div className="absolute inset-0 z-0">
+              <EditableImage
+                contentKey="hero_image_url"
+                defaultValue={pageSettings.hero_image_url}
+                className="w-full h-full object-cover"
+                alt="Corredores em ação"
+              />
+              <div className="absolute inset-0 bg-black/60" />
             </div>
-          </div>
-        </section>
+
+            <div className="relative z-10 container mx-auto px-4 text-center text-white">
+              <EditableText
+                contentKey="hero_title"
+                defaultValue={pageSettings.hero_title}
+                as="h1"
+                className="text-4xl md:text-5xl font-bold mb-6 leading-tight"
+              />
+              <EditableText
+                contentKey="hero_subtitle"
+                defaultValue={pageSettings.hero_subtitle}
+                as="p"
+                className="text-lg md:text-xl mb-8 max-w-3xl mx-auto"
+              />
+              <Button size="lg" className="shadow-lg">
+                SAIBA MAIS
+              </Button>
+            </div>
+
+            <div className="absolute bottom-8 left-1/2 -translate-x-1/2 animate-bounce">
+              <div className="w-8 h-12 border-2 border-white rounded-full flex items-start justify-center p-2">
+                <div className="w-1 h-3 bg-white rounded-full"></div>
+              </div>
+            </div>
+          </section>
+        )}
 
         {/* WhatsApp Contact Section */}
         <section className="py-16 bg-muted">

@@ -13,6 +13,7 @@ import eventsRouter from './routes/events.js';
 import profilesRouter from './routes/profiles.js';
 import registrationsRouter from './routes/registrations.js';
 import homePageSettingsRouter from './routes/homePageSettings.js';
+import homeBannersRouter from './routes/homeBanners.js';
 import adminRouter from './routes/adminRoutes.js';
 import organizerRouter from './routes/organizerRoutes.js';
 import runnerRouter from './routes/runnerRoutes.js';
@@ -246,6 +247,7 @@ app.use('/api/events', eventsRouter);
 app.use('/api/profiles', profilesRouter);
 app.use('/api/registrations', registrationsRouter);
 app.use('/api/home-page-settings', homePageSettingsRouter);
+app.use('/api/home-banners', homeBannersRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api/organizer', organizerRouter);
 app.use('/api/runner', runnerRouter);
@@ -276,6 +278,7 @@ app.get('/', (_req: Request, res: Response) => {
       profiles: '/api/profiles',
       registrations: '/api/registrations',
       homePageSettings: '/api/home-page-settings',
+      homeBanners: '/api/home-banners',
     },
   });
 });

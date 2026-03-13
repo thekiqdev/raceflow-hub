@@ -1,4 +1,4 @@
-import { LayoutDashboard, Users, Calendar, DollarSign, FileText, Settings, MessageSquare, Building2, Palette, ArrowRightLeft, UserCog, Calculator, ClipboardList } from "lucide-react";
+import { LayoutDashboard, Users, Calendar, DollarSign, FileText, Settings, MessageSquare, Building2, Palette, ArrowRightLeft, UserCog, Calculator, ClipboardList, Image } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import {
@@ -34,6 +34,7 @@ const menuItems = [
   { id: "reports", title: "Relatórios", icon: FileText },
   { id: "knowledge", title: "Base de Conhecimento", icon: FileText },
   { id: "customize", title: "Personalizar", icon: Palette },
+  { id: "banners", title: "Banners", icon: Image },
   { id: "settings", title: "Configurações", icon: Settings },
   { id: "support", title: "Suporte", icon: MessageSquare, badge: true }, // Badge para documentos e contatos pendentes
 ];

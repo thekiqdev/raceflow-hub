@@ -18,6 +18,7 @@ import TransferManagement from "@/components/admin/TransferManagement";
 import { GroupLeadersManagement } from "@/components/admin/GroupLeadersManagement";
 import QuotesManagement from "@/components/admin/QuotesManagement";
 import AdminRegistrations from "@/components/admin/AdminRegistrations";
+import AdminBanners from "@/components/admin/AdminBanners";
 import { getSystemSettings } from "@/lib/api/systemSettings";
 import { getAdminPath, getAdminSectionFromPath, getBreadcrumbForPath } from "@/lib/utils/navigation";
 
@@ -96,6 +97,8 @@ const AdminDashboard = () => {
         return <KnowledgeBase />;
       case "customize":
         return <HomeCustomization />;
+      case "banners":
+        return <AdminBanners />;
       case "settings":
         return <SystemSettings />;
       case "support":
