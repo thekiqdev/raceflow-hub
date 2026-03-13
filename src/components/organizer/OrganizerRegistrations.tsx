@@ -1978,6 +1978,7 @@ const OrganizerRegistrations = () => {
                         <SelectContent>
                           <SelectItem value="pending">Pendente</SelectItem>
                           <SelectItem value="paid">Pago</SelectItem>
+                          <SelectItem value="convidado">Convite</SelectItem>
                           <SelectItem value="partially_paid">Pago parcialmente</SelectItem>
                           <SelectItem value="refunded">Reembolsado</SelectItem>
                           <SelectItem value="failed">Falhou</SelectItem>

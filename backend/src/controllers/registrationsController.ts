@@ -2210,6 +2210,18 @@ export const updateRegistrationController = asyncHandler(async (req: AuthRequest
     updatePayload.category_batch_id = req.body.batch_id;
   }
 
+  // Etapa 3 + Etapa 4: quando status for ou permanecer convite, zerar valores e taxa da plataforma.
+  // Inclui o caso em que o frontend não envia payment_status (edição só de categoria/kit): inscrição convite continua convite com totais zerados.
+  const willBeConvite =
+    req.body.payment_status === 'convidado' ||
+    (registration.payment_status === 'convidado' && req.body.payment_status === undefined);
+  if (willBeConvite) {
+    updatePayload.total_amount = 0;
+    updatePayload.platform_fee_amount = 0;
+    updatePayload.registration_edit_fee_amount = null;
+    updatePayload.payment_method = 'free_bonus';
+  }
+
   // Validate category_id belongs to the registration's event (admin/organizer only)
   if (updatePayload.category_id !== undefined) {
     const categoryId = updatePayload.category_id as string;
@@ -2284,11 +2296,11 @@ export const updateRegistrationController = asyncHandler(async (req: AuthRequest
     }
   }
 
-  // Recalcular total e aplicar taxa de atualização quando categoria/kit/modalidade/lote mudam
+  // Recalcular total e aplicar taxa quando categoria/kit/modalidade/lote mudam. Etapa 4: não recalcular se for convite (preservar totais zerados).
   const priceRelatedKeys = ['category_id', 'kit_id', 'modality_id', 'category_batch_id'];
   const anyPriceChange = priceRelatedKeys.some((k) => updatePayload[k] !== undefined);
   let newTotalForOrganizer: number | undefined; // usado no bloco de pagamento para diferença a cobrar (sem taxa de inscrição de novo)
-  if (anyPriceChange) {
+  if (!willBeConvite && anyPriceChange) {
     const { calculateRegistrationTotal } = await import('../services/registrationTotalService.js');
     const { getSystemSettings } = await import('../services/systemSettingsService.js');
     const categoryId = (updatePayload.category_id as string) ?? registration.category_id;

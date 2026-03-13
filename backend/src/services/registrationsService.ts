@@ -95,8 +95,10 @@ export interface UpdateRegistrationData {
   category_batch_id?: string | null;
   /** Valor total recalculado na edição (quando category/kit/batch mudam) */
   total_amount?: number;
-  /** Taxa de atualização aplicada na edição quando o valor muda (R$). OK Etapa 1. */
-  registration_edit_fee_amount?: number;
+  /** Taxa da plataforma (permite zerar quando status = convite). Etapa 3. */
+  platform_fee_amount?: number | null;
+  /** Taxa de atualização aplicada na edição quando o valor muda (R$). OK Etapa 1. Null para zerar (ex.: convite). */
+  registration_edit_fee_amount?: number | null;
 }
 
 // Get registrations with filters
