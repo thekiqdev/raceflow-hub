@@ -77,6 +77,8 @@ export interface CreateRegistrationData {
   // Credit card data (only when payment_method is 'credit_card')
   credit_card?: CreditCardData;
   credit_card_holder_info?: CreditCardHolderInfo;
+  /** Valores dos campos personalizados da categoria (category_custom_field_id -> value) */
+  custom_field_values?: Record<string, string>;
 }
 
 export interface UpdateRegistrationData {
@@ -99,6 +101,37 @@ export interface UpdateRegistrationData {
   platform_fee_amount?: number | null;
   /** Taxa de atualização aplicada na edição quando o valor muda (R$). OK Etapa 1. Null para zerar (ex.: convite). */
   registration_edit_fee_amount?: number | null;
+  /** Valores dos campos personalizados da categoria (category_custom_field_id -> value). Ao editar, substitui todos os valores. */
+  custom_field_values?: Record<string, string>;
+}
+
+/**
+ * Load custom field values for one or more registrations.
+ * Returns a Map: registrationId -> { category_custom_field_id: value }
+ */
+async function getRegistrationCustomFieldValuesMap(
+  registrationIds: string[]
+): Promise<Map<string, Record<string, string>>> {
+  if (registrationIds.length === 0) {
+    return new Map();
+  }
+  const result = await query(
+    `SELECT registration_id, category_custom_field_id, value
+     FROM registration_custom_field_values
+     WHERE registration_id = ANY($1::uuid[])`,
+    [registrationIds]
+  );
+  const map = new Map<string, Record<string, string>>();
+  for (const id of registrationIds) {
+    map.set(id, {});
+  }
+  for (const row of result.rows) {
+    const regId = row.registration_id;
+    if (!map.has(regId)) map.set(regId, {});
+    const obj = map.get(regId)!;
+    obj[row.category_custom_field_id] = row.value ?? '';
+  }
+  return map;
 }
 
 // Get registrations with filters
@@ -267,10 +300,11 @@ export const getRegistrations = async (filters?: {
   const { getPendingDifferenceAmountsForRegistrationIds, getTotalPaidForRegistrationIds } = await import('./asaasService.js');
   const { getSystemSettings } = await import('./systemSettingsService.js');
   const ids = result.rows.map((r: any) => r.id);
-  const [pendingMap, totalPaidMap, settings] = await Promise.all([
+  const [pendingMap, totalPaidMap, settings, customFieldValuesMap] = await Promise.all([
     getPendingDifferenceAmountsForRegistrationIds(ids),
     getTotalPaidForRegistrationIds(ids),
     getSystemSettings(),
+    getRegistrationCustomFieldValuesMap(ids),
   ]);
   const registrationEditFee = settings.registration_edit_fee ?? 0;
 
@@ -298,6 +332,7 @@ export const getRegistrations = async (filters?: {
       has_pending_difference: pendingDifferenceAmount > 0.005,
       amount_paid: amountPaid,
       registration_edit_fee: registrationEditFee,
+      custom_field_values: customFieldValuesMap.get(row.id) ?? {},
     };
   });
 };
@@ -384,10 +419,11 @@ export const getRegistrationById = async (registrationId: string, viewerId?: str
   const { getSystemSettings } = await import('./systemSettingsService.js');
 
   const row = result.rows[0];
-  const [pendingDifferenceAmount, amountPaid, settings] = await Promise.all([
+  const [pendingDifferenceAmount, amountPaid, settings, customFieldValuesMap] = await Promise.all([
     getPendingDifferenceAmountForRegistration(registrationId),
     getTotalPaidForRegistration(registrationId),
     getSystemSettings(),
+    getRegistrationCustomFieldValuesMap([registrationId]),
   ]);
   // Fallback: inscrições antigas sem modality_id mostram a primeira modalidade da categoria
   const modalityName = row.modality_name || (row.modality_names && row.modality_names[0]) || null;
@@ -400,6 +436,7 @@ export const getRegistrationById = async (registrationId: string, viewerId?: str
     has_pending_difference: pendingDifferenceAmount > 0.005,
     amount_paid: amountPaid,
     registration_edit_fee: settings.registration_edit_fee ?? 0,
+    custom_field_values: customFieldValuesMap.get(registrationId) ?? {},
   };
 };
 
@@ -686,6 +723,26 @@ export const createRegistration = async (data: CreateRegistrationData) => {
     }
   }
 
+  // Etapa 3: persist custom field values (campos personalizados da categoria)
+  if (data.custom_field_values && Object.keys(data.custom_field_values).length > 0) {
+    const { getByCategoryId } = await import('./categoryCustomFieldsService.js');
+    const categoryFields = await getByCategoryId(data.category_id);
+    const validFieldIds = new Set(categoryFields.map((f) => f.id));
+    for (const [fieldId, value] of Object.entries(data.custom_field_values)) {
+      if (!validFieldIds.has(fieldId)) {
+        throw new Error(`Campo personalizado inválido ou não pertence à categoria: ${fieldId}`);
+      }
+      const valueStr = value != null ? String(value).trim() : '';
+      await query(
+        `INSERT INTO registration_custom_field_values (registration_id, category_custom_field_id, value)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (registration_id, category_custom_field_id) DO UPDATE SET value = $3, updated_at = NOW()`,
+        [registration.id, fieldId, valueStr || null]
+      );
+    }
+    console.log(`✅ Campos personalizados salvos para inscrição ${registration.id}`);
+  }
+
   // Check if user has a referral OR if coupon belongs to a leader, and create commission if applicable
   // Only create commission if payment is already paid (free registrations or instant payments)
   // For pending payments, commission will be created when payment is confirmed
@@ -765,37 +822,72 @@ export const updateRegistration = async (
   registrationId: string,
   data: UpdateRegistrationData
 ) => {
-  const fields: string[] = [];
-  const values: any[] = [];
-  let paramIndex = 1;
+  const customFieldValues = data.custom_field_values;
+  const updatePayload = { ...data };
+  delete (updatePayload as any).custom_field_values;
 
-  Object.entries(data).forEach(([key, value]) => {
-    if (value !== undefined) {
-      fields.push(`${key} = $${paramIndex}`);
-      values.push(value);
-      paramIndex++;
+  let result: { rows: any[] };
+  if (Object.keys(updatePayload).length > 0) {
+    const fields: string[] = [];
+    const values: any[] = [];
+    let paramIndex = 1;
+    Object.entries(updatePayload).forEach(([key, value]) => {
+      if (value !== undefined) {
+        fields.push(`${key} = $${paramIndex}`);
+        values.push(value);
+        paramIndex++;
+      }
+    });
+    if (fields.length === 0) {
+      throw new Error('No fields to update');
     }
-  });
-
-  if (fields.length === 0) {
-    throw new Error('No fields to update');
+    values.push(registrationId);
+    result = await query(
+      `UPDATE registrations 
+       SET ${fields.join(', ')}
+       WHERE id = $${paramIndex}
+       RETURNING *`,
+      values
+    );
+  } else {
+    const current = await query(
+      `SELECT * FROM registrations WHERE id = $1`,
+      [registrationId]
+    );
+    if (current.rows.length === 0) return null;
+    result = current;
   }
-
-  values.push(registrationId);
-
-  const result = await query(
-    `UPDATE registrations 
-     SET ${fields.join(', ')}
-     WHERE id = $${paramIndex}
-     RETURNING *`,
-    values
-  );
 
   if (result.rows.length === 0) {
     return null;
   }
 
-  return result.rows[0];
+  const updated = result.rows[0];
+  const effectiveCategoryId = updated.category_id;
+
+  // Etapa 3: sync custom field values when provided
+  if (customFieldValues !== undefined) {
+    const { getByCategoryId } = await import('./categoryCustomFieldsService.js');
+    const categoryFields = await getByCategoryId(effectiveCategoryId);
+    const validFieldIds = new Set(categoryFields.map((f) => f.id));
+    await query(
+      `DELETE FROM registration_custom_field_values WHERE registration_id = $1`,
+      [registrationId]
+    );
+    for (const [fieldId, value] of Object.entries(customFieldValues)) {
+      if (!validFieldIds.has(fieldId)) {
+        throw new Error(`Campo personalizado inválido ou não pertence à categoria: ${fieldId}`);
+      }
+      const valueStr = value != null ? String(value).trim() : '';
+      await query(
+        `INSERT INTO registration_custom_field_values (registration_id, category_custom_field_id, value)
+         VALUES ($1, $2, $3)`,
+        [registrationId, fieldId, valueStr || null]
+      );
+    }
+  }
+
+  return updated;
 };
 
 // Find user by CPF
@@ -1415,6 +1507,7 @@ export const completeInvitationRegistration = async (
       variant_id?: string;
       attribute_selections?: Record<string, string>;
     }>;
+    custom_field_values?: Record<string, string>;
   }
 ) => {
   const registration = await getRegistrationById(registrationId);
@@ -1432,7 +1525,7 @@ export const completeInvitationRegistration = async (
   }
 
   const eventId = registration.event_id;
-  const { category_id, modality_id, kit_id, product_selections } = data;
+  const { category_id, modality_id, kit_id, product_selections, custom_field_values } = data;
 
   const catCheck = await query(
     'SELECT id FROM categories WHERE id = $1 AND event_id = $2',
@@ -1582,6 +1675,25 @@ export const completeInvitationRegistration = async (
           }
         }
       }
+    }
+  }
+
+  if (custom_field_values !== undefined && Object.keys(custom_field_values).length > 0) {
+    const { getByCategoryId } = await import('./categoryCustomFieldsService.js');
+    const categoryFields = await getByCategoryId(category_id);
+    const validFieldIds = new Set(categoryFields.map((f) => f.id));
+    await query(
+      'DELETE FROM registration_custom_field_values WHERE registration_id = $1',
+      [registrationId]
+    );
+    for (const [fieldId, value] of Object.entries(custom_field_values)) {
+      if (!validFieldIds.has(fieldId)) continue;
+      const valueStr = value != null ? String(value).trim() : '';
+      await query(
+        `INSERT INTO registration_custom_field_values (registration_id, category_custom_field_id, value)
+         VALUES ($1, $2, $3)`,
+        [registrationId, fieldId, valueStr || null]
+      );
     }
   }
 

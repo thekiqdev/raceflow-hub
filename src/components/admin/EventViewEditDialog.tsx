@@ -14,6 +14,8 @@ import { getRegistrations, updateRegistration, cancelRegistration, deleteRegistr
 import { getModalities, createModality, updateModality, deleteModality, reorderModalities } from "@/lib/api/modalities";
 import { getCategories, createCategory, updateCategory, deleteCategory, reorderCategories, type CategoryType as CategoryTypeEnum, type CategoryGender, type CategoryBatch } from "@/lib/api/categories";
 import { getCategoryBatches, createCategoryBatch, updateCategoryBatch, deleteCategoryBatch } from "@/lib/api/categoryBatches";
+import { createCategoryCustomField, updateCategoryCustomField, deleteCategoryCustomField } from "@/lib/api/categoryCustomFields";
+import type { CategoryCustomField } from "@/lib/api/categoryCustomFields";
 import { getEventKits, syncEventKits } from "@/lib/api/eventKits";
 import { getEventPickupLocations, createPickupLocation, updatePickupLocation, deletePickupLocation } from "@/lib/api/kitPickup";
 import { getOrganizers } from "@/lib/api/userManagement";
@@ -59,6 +61,13 @@ export function EventViewEditDialog({
   const [selectedOrganizerId, setSelectedOrganizerId] = useState<string>("");
   const [organizers, setOrganizers] = useState<any[]>([]);
   const [loadingOrganizers, setLoadingOrganizers] = useState(false);
+  const [customFieldAddingCategoryIndex, setCustomFieldAddingCategoryIndex] = useState<number | null>(null);
+  const [addingCustomFieldLabel, setAddingCustomFieldLabel] = useState("");
+  const [addingCustomFieldType, setAddingCustomFieldType] = useState<"text" | "number">("text");
+  const [customFieldEditing, setCustomFieldEditing] = useState<{ fieldId: string; categoryId: string; categoryIndex: number; label: string; field_type: "text" | "number" } | null>(null);
+  const [editingCustomFieldLabel, setEditingCustomFieldLabel] = useState("");
+  const [editingCustomFieldType, setEditingCustomFieldType] = useState<"text" | "number">("text");
+  const [customFieldSaving, setCustomFieldSaving] = useState(false);
 
   const [formData, setFormData] = useState({
     title: "",
@@ -314,10 +323,10 @@ export function EventViewEditDialog({
       try {
         const categoriesResponse = await getCategories(eventId);
         if (categoriesResponse.success && categoriesResponse.data) {
-          // Ensure batches array exists for each category
-          const categoriesWithBatches = categoriesResponse.data.map(cat => ({
+          const categoriesWithBatches = categoriesResponse.data.map((cat: any) => ({
             ...cat,
             batches: cat.batches || [],
+            custom_fields: cat.custom_fields || [],
           }));
           setCategories(categoriesWithBatches);
         } else {
@@ -432,6 +441,7 @@ export function EventViewEditDialog({
         is_default: categories.length === 0,
         modality_ids: [],
         id: `temp-${Date.now()}`,
+        custom_fields: [],
       },
     ]);
   };
@@ -468,6 +478,114 @@ export function EventViewEditDialog({
     const updated = [...categories];
     [updated[index], updated[index + 1]] = [updated[index + 1], updated[index]];
     setCategories(updated);
+  };
+
+  const isPendingCustomField = (f: { id: string }) => f.id.startsWith("temp-");
+  const isCategorySaved = (c: any) => c.id && !c.id.startsWith("temp-");
+
+  const refetchCategoriesForCustomFields = async () => {
+    if (!eventId) return;
+    const res = await getCategories(eventId);
+    if (res.success && res.data) setCategories(res.data.map((cat: any) => ({ ...cat, batches: cat.batches || [], custom_fields: cat.custom_fields || [] })));
+  };
+
+  const addPendingCustomField = (categoryIndex: number, label: string, field_type: "text" | "number") => {
+    const updated = [...categories];
+    const cat = updated[categoryIndex];
+    const list = cat.custom_fields || [];
+    const newField: CategoryCustomField = {
+      id: `temp-cf-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+      category_id: cat.id ?? "",
+      label: label.trim(),
+      field_type,
+      display_order: list.length,
+      created_at: "",
+      updated_at: "",
+    };
+    updated[categoryIndex] = { ...cat, custom_fields: [...list, newField] };
+    setCategories(updated);
+    setCustomFieldAddingCategoryIndex(null);
+  };
+
+  const updatePendingCustomField = (categoryIndex: number, fieldId: string, label: string, field_type: "text" | "number") => {
+    if (!fieldId.startsWith("temp-")) return;
+    const updated = [...categories];
+    const cat = updated[categoryIndex];
+    const list = cat.custom_fields || [];
+    updated[categoryIndex] = { ...cat, custom_fields: list.map((f) => (f.id === fieldId ? { ...f, label: label.trim(), field_type } : f)) };
+    setCategories(updated);
+    setCustomFieldEditing(null);
+  };
+
+  const removeCustomFieldLocal = (categoryIndex: number, fieldId: string) => {
+    const updated = [...categories];
+    const cat = updated[categoryIndex];
+    updated[categoryIndex] = { ...cat, custom_fields: (cat.custom_fields || []).filter((f) => f.id !== fieldId) };
+    setCategories(updated);
+    setCustomFieldEditing(null);
+  };
+
+  const handleCreateCustomField = async (categoryIndex: number, label: string, field_type: "text" | "number") => {
+    const category = categories[categoryIndex];
+    if (!label.trim()) return;
+    if (!isCategorySaved(category)) {
+      addPendingCustomField(categoryIndex, label, field_type);
+      toast({ title: "Campo adicionado", description: "Será salvo ao salvar o evento.", variant: "default" });
+      return;
+    }
+    setCustomFieldSaving(true);
+    try {
+      const res = await createCategoryCustomField(category.id, { label: label.trim(), field_type });
+      if (res.success) {
+        await refetchCategoriesForCustomFields();
+        setCustomFieldAddingCategoryIndex(null);
+        toast({ title: "Campo adicionado", description: "Campo personalizado criado com sucesso.", variant: "default" });
+      } else {
+        toast({ title: "Erro", description: res.message || res.error || "Não foi possível criar o campo.", variant: "destructive" });
+      }
+    } catch (e: any) {
+      toast({ title: "Erro", description: e?.message || "Não foi possível criar o campo.", variant: "destructive" });
+    } finally {
+      setCustomFieldSaving(false);
+    }
+  };
+
+  const handleUpdateCustomField = async (categoryId: string, fieldId: string, label: string, field_type: "text" | "number") => {
+    if (!label.trim()) return;
+    setCustomFieldSaving(true);
+    try {
+      const res = await updateCategoryCustomField(categoryId, fieldId, { label: label.trim(), field_type });
+      if (res.success) {
+        await refetchCategoriesForCustomFields();
+        setCustomFieldEditing(null);
+        toast({ title: "Campo atualizado", description: "Campo personalizado atualizado com sucesso.", variant: "default" });
+      } else {
+        toast({ title: "Erro", description: res.message || res.error || "Não foi possível atualizar.", variant: "destructive" });
+      }
+    } catch (e: any) {
+      toast({ title: "Erro", description: e?.message || "Não foi possível atualizar.", variant: "destructive" });
+    } finally {
+      setCustomFieldSaving(false);
+    }
+  };
+
+  const handleDeleteCustomField = async (categoryId: string, fieldId: string) => {
+    if (!confirm("Remover este campo personalizado? Os valores já preenchidos em inscrições serão mantidos.")) return;
+    setCustomFieldSaving(true);
+    try {
+      const res = await deleteCategoryCustomField(categoryId, fieldId);
+      if (res.success) {
+        await refetchCategoriesForCustomFields();
+        setCustomFieldEditing(null);
+        toast({ title: "Campo removido", description: "Campo personalizado removido.", variant: "default" });
+      } else {
+        toast({ title: "Erro", description: res.message || res.error || "Não foi possível remover.", variant: "destructive" });
+      }
+    } catch (e: any) {
+      toast({ title: "Erro", description: e?.message || "Não foi possível remover.", variant: "destructive" });
+    } finally {
+      setCustomFieldSaving(false);
+    }
   };
 
   // Batch functions
@@ -1068,12 +1186,34 @@ export function EventViewEditDialog({
                 console.log('✅ Batch atualizado:', updateResponse);
               }
             }
+
+            // Sync custom fields (create pending/temp ones)
+            const customFields = category.custom_fields || [];
+            for (const cf of customFields) {
+              if (cf.id.startsWith('temp-')) {
+                try {
+                  await createCategoryCustomField(categoryId, {
+                    label: cf.label,
+                    field_type: cf.field_type,
+                    display_order: cf.display_order ?? 0,
+                  });
+                } catch (err: any) {
+                  console.error('Error creating custom field:', err);
+                }
+              }
+            }
+          }
+
+          // Reload categories to get custom_fields with real IDs
+          const afterCfReload = await getCategories(eventId);
+          if (afterCfReload.success && afterCfReload.data) {
+            setCategories(afterCfReload.data.map((cat: any) => ({ ...cat, batches: cat.batches || [], custom_fields: cat.custom_fields || [] })));
           }
         } catch (error: any) {
-          console.error('Error syncing batches:', error);
+          console.error('Error syncing batches/custom fields:', error);
           toast({
             title: "Aviso",
-            description: "Evento atualizado, mas houve erro ao salvar lotes de preço",
+            description: "Evento atualizado, mas houve erro ao salvar lotes ou campos personalizados",
             variant: "destructive",
           });
         }
@@ -2389,13 +2529,180 @@ export function EventViewEditDialog({
                                           onClick={() => removeBatchFromCategory(index, batchIndex)}
                                           className="text-destructive hover:text-destructive"
                                         >
-                                          <Trash2 className="h-4 w-4 mr-1" />
+                                            <Trash2 className="h-4 w-4 mr-1" />
                                           Remover
                                         </Button>
                                       </div>
                                     </CardContent>
                                   </Card>
                                 ))}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Campos personalizados */}
+                          <div className="border-t pt-4 mt-4">
+                            <div className="flex justify-between items-center mb-3">
+                              <div>
+                                <label className="text-sm font-medium">Campos personalizados</label>
+                                <p className="text-xs text-muted-foreground">
+                                  Campos que o corredor preenche ao se inscrever nesta categoria (ex.: número da camisa)
+                                </p>
+                              </div>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => {
+                                  setCustomFieldAddingCategoryIndex(index);
+                                  setCustomFieldEditing(null);
+                                }}
+                                disabled={customFieldAddingCategoryIndex !== null}
+                              >
+                                <Plus className="mr-2 h-3 w-3" />
+                                Adicionar campo personalizado
+                              </Button>
+                            </div>
+                            {(category.custom_fields?.length ?? 0) === 0 && customFieldAddingCategoryIndex !== index ? (
+                              <p className="text-sm text-muted-foreground text-center py-3 border rounded-md">
+                                Nenhum campo personalizado. Clique em &quot;Adicionar campo personalizado&quot; para criar.
+                              </p>
+                            ) : (
+                              <div className="space-y-2">
+                                {customFieldAddingCategoryIndex === index && (
+                                  <Card className="bg-muted/30">
+                                    <CardContent className="pt-4">
+                                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-end">
+                                        <div className="space-y-2">
+                                          <Label className="text-xs font-medium">Nome do campo</Label>
+                                          <Input
+                                            placeholder="Ex.: Número da camisa"
+                                            value={addingCustomFieldLabel}
+                                            onChange={(e) => setAddingCustomFieldLabel(e.target.value)}
+                                            className="h-9"
+                                          />
+                                        </div>
+                                        <div className="space-y-2">
+                                          <Label className="text-xs font-medium">Tipo</Label>
+                                          <select
+                                            className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                                            value={addingCustomFieldType}
+                                            onChange={(e) => setAddingCustomFieldType(e.target.value as "text" | "number")}
+                                          >
+                                            <option value="text">Texto</option>
+                                            <option value="number">Número</option>
+                                          </select>
+                                        </div>
+                                        <div className="flex gap-2 md:col-span-2">
+                                          <Button
+                                            type="button"
+                                            size="sm"
+                                            onClick={() => {
+                                              if (addingCustomFieldLabel.trim()) {
+                                                handleCreateCustomField(index, addingCustomFieldLabel.trim(), addingCustomFieldType);
+                                                setAddingCustomFieldLabel("");
+                                                setAddingCustomFieldType("text");
+                                              }
+                                            }}
+                                            disabled={customFieldSaving || !addingCustomFieldLabel.trim()}
+                                          >
+                                            {customFieldSaving ? "Salvando..." : "Salvar"}
+                                          </Button>
+                                          <Button
+                                            type="button"
+                                            size="sm"
+                                            variant="outline"
+                                            onClick={() => { setCustomFieldAddingCategoryIndex(null); setAddingCustomFieldLabel(""); setAddingCustomFieldType("text"); }}
+                                            disabled={customFieldSaving}
+                                          >
+                                            Cancelar
+                                          </Button>
+                                        </div>
+                                      </div>
+                                    </CardContent>
+                                  </Card>
+                                )}
+                                {(category.custom_fields ?? []).map((f) =>
+                                  customFieldEditing?.fieldId === f.id ? (
+                                    <Card key={f.id} className="bg-muted/30">
+                                      <CardContent className="pt-4">
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-end">
+                                          <div className="space-y-2">
+                                            <Label className="text-xs font-medium">Nome do campo</Label>
+                                            <Input
+                                              value={editingCustomFieldLabel}
+                                              onChange={(e) => setEditingCustomFieldLabel(e.target.value)}
+                                              className="h-9"
+                                            />
+                                          </div>
+                                          <div className="space-y-2">
+                                            <Label className="text-xs font-medium">Tipo</Label>
+                                            <select
+                                              className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                                              value={editingCustomFieldType}
+                                              onChange={(e) => setEditingCustomFieldType(e.target.value as "text" | "number")}
+                                            >
+                                              <option value="text">Texto</option>
+                                              <option value="number">Número</option>
+                                            </select>
+                                          </div>
+                                          <div className="flex gap-2 md:col-span-2">
+                                            <Button
+                                              type="button"
+                                              size="sm"
+                                              onClick={() => {
+                                                if (editingCustomFieldLabel.trim()) {
+                                                  if (isPendingCustomField(f)) updatePendingCustomField(index, f.id, editingCustomFieldLabel.trim(), editingCustomFieldType);
+                                                  else handleUpdateCustomField(category.id, f.id, editingCustomFieldLabel.trim(), editingCustomFieldType);
+                                                }
+                                              }}
+                                              disabled={customFieldSaving || !editingCustomFieldLabel.trim()}
+                                            >
+                                              {customFieldSaving ? "Salvando..." : "Salvar"}
+                                            </Button>
+                                            <Button type="button" size="sm" variant="outline" onClick={() => { setCustomFieldEditing(null); setEditingCustomFieldLabel(""); setEditingCustomFieldType("text"); }} disabled={customFieldSaving}>
+                                              Cancelar
+                                            </Button>
+                                          </div>
+                                        </div>
+                                      </CardContent>
+                                    </Card>
+                                  ) : (
+                                    <div key={f.id} className="flex items-center justify-between rounded-md border px-3 py-2">
+                                      <span className="text-sm font-medium">{f.label}</span>
+                                      <div className="flex items-center gap-2">
+                                        {isPendingCustomField(f) && <Badge variant="outline" className="text-xs">Pendente</Badge>}
+                                        <Badge variant="secondary" className="text-xs">{f.field_type === "number" ? "Número" : "Texto"}</Badge>
+                                        <Button
+                                          type="button"
+                                          variant="ghost"
+                                          size="sm"
+                                          onClick={() => {
+                                            setCustomFieldEditing({ fieldId: f.id, categoryId: category.id ?? "", categoryIndex: index, label: f.label, field_type: f.field_type });
+                                            setEditingCustomFieldLabel(f.label);
+                                            setEditingCustomFieldType(f.field_type);
+                                          }}
+                                          disabled={customFieldSaving}
+                                        >
+                                          Editar
+                                        </Button>
+                                        <Button
+                                          type="button"
+                                          variant="ghost"
+                                          size="sm"
+                                          className="text-destructive hover:text-destructive"
+                                          onClick={() => {
+                                            if (isPendingCustomField(f)) removeCustomFieldLocal(index, f.id);
+                                            else if (category.id) handleDeleteCustomField(category.id, f.id);
+                                          }}
+                                          disabled={customFieldSaving}
+                                        >
+                                          <Trash2 className="h-4 w-4" />
+                                        </Button>
+                                      </div>
+                                    </div>
+                                  )
+                                )}
                               </div>
                             )}
                           </div>

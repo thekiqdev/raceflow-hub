@@ -1,6 +1,7 @@
 import { query } from '../config/database.js';
 import { Category, CategoryBatch, CreateCategoryData, UpdateCategoryData } from '../types/index.js';
 import { getEventById } from './eventsService.js';
+import { getByCategoryId as getCustomFieldsByCategoryId } from './categoryCustomFieldsService.js';
 
 /**
  * Helper function to convert event slug or UUID to UUID
@@ -87,10 +88,20 @@ export const getCategoriesByEvent = async (eventIdOrSlug: string): Promise<Categ
       batchesByCategory.get(row.category_id)!.push(batch);
     });
 
-    // Attach batches to categories
+    // Load custom fields for all categories
+    const customFieldsByCategory = new Map<string, Awaited<ReturnType<typeof getCustomFieldsByCategoryId>>>();
+    await Promise.all(
+      categoryIds.map(async (cid) => {
+        const fields = await getCustomFieldsByCategoryId(cid);
+        customFieldsByCategory.set(cid, fields);
+      })
+    );
+
+    // Attach batches and custom_fields to categories
     return categories.map(category => ({
       ...category,
       batches: batchesByCategory.get(category.id) || [],
+      custom_fields: customFieldsByCategory.get(category.id) || [],
     }));
   }
 
@@ -159,10 +170,20 @@ export const getCategoriesByModality = async (modalityId: string): Promise<Categ
       batchesByCategory.get(row.category_id)!.push(batch);
     });
 
-    // Attach batches to categories
+    // Load custom fields for all categories
+    const customFieldsByCategory = new Map<string, Awaited<ReturnType<typeof getCustomFieldsByCategoryId>>>();
+    await Promise.all(
+      categoryIds.map(async (cid) => {
+        const fields = await getCustomFieldsByCategoryId(cid);
+        customFieldsByCategory.set(cid, fields);
+      })
+    );
+
+    // Attach batches and custom_fields to categories
     return categories.map(category => ({
       ...category,
       batches: batchesByCategory.get(category.id) || [],
+      custom_fields: customFieldsByCategory.get(category.id) || [],
     }));
   }
 
@@ -209,11 +230,15 @@ export const getCategoryById = async (categoryId: string): Promise<Category | nu
     modality_ids: row.modality_ids || [],
   };
 
-  // Load batches for this category
-  const batches = await getCategoryBatches(categoryId);
+  // Load batches and custom fields for this category
+  const [batches, custom_fields] = await Promise.all([
+    getCategoryBatches(categoryId),
+    getCustomFieldsByCategoryId(categoryId),
+  ]);
   return {
     ...category,
     batches,
+    custom_fields,
   };
 };
 

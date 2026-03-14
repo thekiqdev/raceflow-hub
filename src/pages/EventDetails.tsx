@@ -86,6 +86,13 @@ interface CategoryBatch {
   created_at?: string | null;
 }
 
+interface CategoryCustomField {
+  id: string;
+  label: string;
+  field_type: "text" | "number";
+  display_order?: number;
+}
+
 interface Category {
   id: string;
   name: string;
@@ -97,6 +104,7 @@ interface Category {
   is_default: boolean;
   modality_ids?: string[];
   batches?: CategoryBatch[];
+  custom_fields?: CategoryCustomField[];
 }
 
 interface Kit {

@@ -13,6 +13,16 @@ export interface CategoryBatch {
   created_at: string;
 }
 
+export interface CategoryCustomField {
+  id: string;
+  category_id: string;
+  label: string;
+  field_type: 'text' | 'number';
+  display_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Category {
   id: string;
   event_id: string;
@@ -29,6 +39,7 @@ export interface Category {
   updated_at: string;
   modality_ids?: string[]; // IDs das modalidades associadas
   batches?: CategoryBatch[]; // Lotes de preço da categoria
+  custom_fields?: CategoryCustomField[]; // Campos personalizados da categoria
 }
 
 export interface CreateCategoryData {

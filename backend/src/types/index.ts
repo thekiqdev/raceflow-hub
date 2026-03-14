@@ -194,6 +194,16 @@ export interface Modality {
   updated_at: Date;
 }
 
+export interface CategoryCustomField {
+  id: string;
+  category_id: string;
+  label: string;
+  field_type: 'text' | 'number';
+  display_order: number;
+  created_at: Date;
+  updated_at: Date;
+}
+
 export interface Category {
   id: string;
   event_id: string;
@@ -210,6 +220,7 @@ export interface Category {
   updated_at: Date;
   modality_ids?: string[]; // Para relacionamento (não está no banco, apenas para API)
   batches?: CategoryBatch[]; // Lotes de preço da categoria
+  custom_fields?: CategoryCustomField[]; // Campos personalizados da categoria (ex.: número da camisa)
 }
 
 export interface CategoryBatch {

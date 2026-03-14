@@ -111,6 +111,8 @@ const createRegistrationSchema = z.object({
   product_selections: z.array(productSelectionSchema).optional(),
   credit_card: creditCardDataSchema.optional(),
   credit_card_holder_info: creditCardHolderInfoSchema.optional(),
+  /** Valores dos campos personalizados da categoria (category_custom_field_id -> value) */
+  custom_field_values: z.record(z.string().uuid(), z.string()).optional(),
 }).refine((data) => {
   // If payment_method is 'credit_card', credit_card and credit_card_holder_info are required
   if (data.payment_method === 'credit_card') {
@@ -630,6 +632,7 @@ const completeInvitationBodySchema = z.object({
     variant_id: z.string().uuid().optional(),
     attribute_selections: z.record(z.string(), z.string()).optional(),
   })).optional(),
+  custom_field_values: z.record(z.string().uuid(), z.string()).optional(),
 });
 
 export const completeInvitationController = asyncHandler(async (req: AuthRequest, res: Response) => {
@@ -654,6 +657,7 @@ export const completeInvitationController = asyncHandler(async (req: AuthRequest
       modality_id: body.modality_id ?? null,
       kit_id: body.kit_id ?? null,
       product_selections: body.product_selections,
+      custom_field_values: body.custom_field_values,
     });
     res.json({ success: true, data: updated, message: 'Convite completado com sucesso.' });
   } catch (error: any) {
@@ -1572,7 +1576,7 @@ export const createRegistrationByOrganizerController = asyncHandler(async (req: 
     return;
   }
 
-  const { cpf, runner_data, event_id, category_id, kit_id, modality_id, product_selections } = req.body;
+  const { cpf, runner_data, event_id, category_id, kit_id, modality_id, product_selections, custom_field_values } = req.body;
 
   if (!cpf || !event_id || !category_id) {
     res.status(400).json({
@@ -1704,6 +1708,7 @@ export const createRegistrationByOrganizerController = asyncHandler(async (req: 
     status: 'confirmed' as const, // Inscrições criadas por organizador vêm como confirmadas
     payment_status: 'convidado' as const, // Mark as 'convidado' to exclude from revenue calculation
     product_selections: product_selections || undefined,
+    custom_field_values: custom_field_values || undefined,
   };
 
   console.log('📝 Organizador criando inscrição para atleta:', {
@@ -2198,7 +2203,7 @@ export const updateRegistrationController = asyncHandler(async (req: AuthRequest
   const statusJustConfirmed = !wasConfirmed && willBeConfirmed;
 
   // Allowlist: only these fields can be updated via this endpoint
-  const allowedKeys = ['status', 'payment_status', 'payment_method', 'coupon_code', 'category_id', 'kit_id', 'modality_id', 'category_batch_id'] as const;
+  const allowedKeys = ['status', 'payment_status', 'payment_method', 'coupon_code', 'category_id', 'kit_id', 'modality_id', 'category_batch_id', 'custom_field_values'] as const;
   const updatePayload: Record<string, unknown> = {};
   for (const key of allowedKeys) {
     if (req.body[key] !== undefined) {
@@ -3247,14 +3252,26 @@ export const exportRegistrationsController = asyncHandler(async (req: AuthReques
 
   // Import service to get product selections
   const { getRegistrationProductSelections } = await import('../services/registrationProductSelectionsService.js');
-  
+  const { getByCategoryId } = await import('../services/categoryCustomFieldsService.js');
+
+  // Etapa 4: collect all custom fields from categories present in this export (ordered for stable columns)
+  const categoryIds = [...new Set((registrations as any[]).map((r: any) => r.category_id).filter(Boolean))];
+  const customFieldsOrdered: { id: string; label: string }[] = [];
+  for (const cid of categoryIds) {
+    const fields = await getByCategoryId(cid);
+    for (const f of fields) {
+      customFieldsOrdered.push({ id: f.id, label: f.label });
+    }
+  }
+  const sanitizeHeader = (s: string) => String(s ?? '').replace(/[;\r\n]/g, ' ').trim() || 'Campo';
+
   // Get platform fee settings to calculate value without fee
   const { getSystemSettings } = await import('../services/systemSettingsService.js');
   const systemSettings = await getSystemSettings();
   const platformFee = systemSettings.platform_fee || 0;
   const platformFeeType = systemSettings.platform_fee_type || 'fixed';
 
-  // Generate CSV in the requested format
+  // Generate CSV in the requested format (fixed headers + custom field columns)
   const headers = [
     'NUMERO',
     'NOME MINUSCULO',
@@ -3273,6 +3290,7 @@ export const exportRegistrationsController = asyncHandler(async (req: AuthReques
     'MEIO DE PAGAMENTO',
     'VALOR',
     'LÍDER',
+    ...customFieldsOrdered.map((f) => sanitizeHeader(f.label)),
   ];
 
   // Helper function to format date as DD/MM/YYYY
@@ -3478,6 +3496,9 @@ export const exportRegistrationsController = asyncHandler(async (req: AuthReques
     const valueWithoutFee = calculateValueWithoutFee(totalAmountValue);
     const totalAmount = valueWithoutFee.toFixed(2).replace('.', ',');
     const leaderName = reg.leader_name || '';
+    const customValues = (reg.custom_field_values as Record<string, string> | undefined) ?? {};
+    const sanitizeCell = (v: string) => String(v ?? '').replace(/[;\r\n]/g, ' ').trim();
+    const customCells = customFieldsOrdered.map((f) => sanitizeCell(customValues[f.id] ?? ''));
 
     return [
       index + 1, // NUMERO (sequential number)
@@ -3497,6 +3518,7 @@ export const exportRegistrationsController = asyncHandler(async (req: AuthReques
       paymentMethod, // MEIO DE PAGAMENTO
       totalAmount, // VALOR
       leaderName, // LÍDER
+      ...customCells,
     ];
   }));
 
@@ -3925,7 +3947,7 @@ export const createRegistrationByLeaderController = asyncHandler(async (req: Aut
     return;
   }
 
-  const { email, event_id, category_id, kit_id, commission_id, product_selections } = req.body;
+  const { email, event_id, category_id, kit_id, commission_id, product_selections, custom_field_values } = req.body;
 
   if (!email || !event_id || !category_id) {
     res.status(400).json({
@@ -4250,6 +4272,7 @@ export const createRegistrationByLeaderController = asyncHandler(async (req: Aut
     payment_method: 'pix' as const,
     coupon_code: couponCode,
     product_selections: product_selections || undefined,
+    custom_field_values: custom_field_values || undefined,
   };
 
   console.log('📝 [createRegistrationByLeader] Líder criando inscrição para atleta:', {

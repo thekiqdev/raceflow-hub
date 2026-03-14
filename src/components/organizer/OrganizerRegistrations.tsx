@@ -38,7 +38,7 @@ import { validateCpf } from "@/lib/utils/validators";
 import { getEventCommissionsByEvent, type EventCommissionOption } from "@/lib/api/leaderEventCommissions";
 import { getEvents, type Event } from "@/lib/api/events";
 import { getModalities, type Modality } from "@/lib/api/modalities";
-import { getCategories, type Category } from "@/lib/api/categories";
+import { getCategories, getCategoryById, type Category } from "@/lib/api/categories";
 import { getEventKits, type EventKit, type KitProduct, type ProductVariant } from "@/lib/api/eventKits";
 import { toast } from "sonner";
 import { useDebounce } from "@/hooks/useDebounce";
@@ -75,6 +75,7 @@ const OrganizerRegistrations = () => {
   const [selectedModalityId, setSelectedModalityId] = useState<string>("");
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>("");
   const [selectedKitId, setSelectedKitId] = useState<string>("");
+  const [customFieldValues, setCustomFieldValues] = useState<Record<string, string>>({});
   const [modalities, setModalities] = useState<Modality[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [kits, setKits] = useState<EventKit[]>([]);
@@ -105,6 +106,8 @@ const OrganizerRegistrations = () => {
   const [kitProducts, setKitProducts] = useState<KitProduct[]>([]);
   const [loadingKit, setLoadingKit] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [selectedCategoryForDetails, setSelectedCategoryForDetails] = useState<Category | null>(null);
+  const [editingCustomFieldValues, setEditingCustomFieldValues] = useState<Record<string, string>>({});
 
   // Atrelar inscrição a comissão (cupom criado após a compra)
   const [isAttachCommissionDialogOpen, setIsAttachCommissionDialogOpen] = useState(false);
@@ -329,6 +332,7 @@ const OrganizerRegistrations = () => {
     setSelectedModalityId("");
     setSelectedCategoryId("");
     setSelectedKitId("");
+    setCustomFieldValues({});
     setExpandedKits(new Set());
     setSelectedProducts(new Map());
     setVariantSelections(new Map());
@@ -349,6 +353,7 @@ const OrganizerRegistrations = () => {
     setSelectedModalityId("");
     setSelectedCategoryId("");
     setSelectedKitId("");
+    setCustomFieldValues({});
     setExpandedKits(new Set());
     setSelectedProducts(new Map());
     setVariantSelections(new Map());
@@ -462,6 +467,7 @@ const OrganizerRegistrations = () => {
         kit_id: selectedKitId || undefined,
         modality_id: selectedModalityId || undefined,
         product_selections: productSelections.length > 0 ? productSelections : undefined,
+        custom_field_values: Object.keys(customFieldValues).length > 0 ? customFieldValues : undefined,
       });
 
       if (response.success) {
@@ -493,6 +499,11 @@ const OrganizerRegistrations = () => {
         setRegistrationDetails(response.data);
         setEditingStatus(response.data.status || "pending");
         setEditingPaymentStatus(response.data.payment_status || "pending");
+        setSelectedCategoryForDetails(null);
+        if (response.data.category_id) {
+          const catRes = await getCategoryById(response.data.category_id);
+          if (catRes.success && catRes.data) setSelectedCategoryForDetails(catRes.data);
+        }
       } else {
         toast.error(response.error || "Erro ao carregar detalhes da inscrição");
       }
@@ -591,6 +602,7 @@ const OrganizerRegistrations = () => {
     }
 
     setIsEditMode(true);
+    setEditingCustomFieldValues((registrationDetails.custom_field_values && typeof registrationDetails.custom_field_values === "object") ? { ...registrationDetails.custom_field_values } : {});
     setLoadingKit(true);
 
     try {
@@ -627,6 +639,7 @@ const OrganizerRegistrations = () => {
   const handleCancelEdit = () => {
     setIsEditMode(false);
     setEditingProductAttributes({});
+    setEditingCustomFieldValues({});
     // Reset to original values
     if (registrationDetails) {
       setEditingStatus(registrationDetails.status || "pending");
@@ -640,13 +653,18 @@ const OrganizerRegistrations = () => {
     setSaving(true);
 
     try {
-      // Update registration status and payment status
+      // Update registration status, payment status and custom field values
       const updateData: any = {};
       if (editingStatus !== registrationDetails.status) {
         updateData.status = editingStatus;
       }
       if (editingPaymentStatus !== registrationDetails.payment_status) {
         updateData.payment_status = editingPaymentStatus;
+      }
+      if (selectedCategoryForDetails?.custom_fields?.length) {
+        updateData.custom_field_values = editingCustomFieldValues;
+      } else if (selectedCategoryForDetails) {
+        updateData.custom_field_values = {};
       }
 
       if (Object.keys(updateData).length > 0) {
@@ -727,11 +745,17 @@ const OrganizerRegistrations = () => {
         setRegistrationDetails(response.data);
         setEditingStatus(response.data.status || "pending");
         setEditingPaymentStatus(response.data.payment_status || "pending");
+        if (response.data.category_id) {
+          const catRes = await getCategoryById(response.data.category_id);
+          if (catRes.success && catRes.data) setSelectedCategoryForDetails(catRes.data);
+        } else {
+          setSelectedCategoryForDetails(null);
+        }
       }
-      
+
       // Reload registrations list
       loadRegistrations();
-      
+
       setIsEditMode(false);
     } catch (error: any) {
       console.error("Error saving registration:", error);
@@ -1493,7 +1517,10 @@ const OrganizerRegistrations = () => {
                 <Label htmlFor="category">Categoria *</Label>
                 <Select 
                   value={selectedCategoryId} 
-                  onValueChange={setSelectedCategoryId}
+                  onValueChange={(v) => {
+                    setSelectedCategoryId(v);
+                    setCustomFieldValues({});
+                  }}
                   disabled={loadingCategories}
                 >
                   <SelectTrigger id="category">
@@ -1509,6 +1536,37 @@ const OrganizerRegistrations = () => {
                 </Select>
               </div>
             )}
+
+            {/* Campos personalizados da categoria */}
+            {selectedCategoryId && (() => {
+              const selectedCat = categories.find((c) => c.id === selectedCategoryId);
+              const customFields = selectedCat?.custom_fields ?? [];
+              if (customFields.length === 0) return null;
+              return (
+                <div className="space-y-3">
+                  <Label className="text-sm font-medium">Campos extras</Label>
+                  <div className="grid gap-2">
+                    {customFields.map((f) => (
+                      <div key={f.id} className="space-y-1.5">
+                        <Label htmlFor={`org-custom-${f.id}`} className="text-xs text-muted-foreground">
+                          {f.label}
+                        </Label>
+                        <Input
+                          id={`org-custom-${f.id}`}
+                          type={f.field_type === "number" ? "number" : "text"}
+                          value={customFieldValues[f.id] ?? ""}
+                          onChange={(e) =>
+                            setCustomFieldValues((prev) => ({ ...prev, [f.id]: e.target.value }))
+                          }
+                          placeholder={f.field_type === "number" ? "0" : ""}
+                          className="max-w-xs"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* Kit (optional) */}
             {selectedEventId && (
@@ -1925,6 +1983,41 @@ const OrganizerRegistrations = () => {
                     <Label className="text-sm text-muted-foreground">Tipo de Categoria</Label>
                     <p className="font-medium capitalize">{registrationDetails.category_type || "N/A"}</p>
                   </div>
+                  {!isEditMode && selectedCategoryForDetails?.custom_fields?.length ? (
+                    <div className="space-y-2 md:col-span-2">
+                      <Label className="text-sm text-muted-foreground">Campos personalizados</Label>
+                      <div className="space-y-1.5">
+                        {selectedCategoryForDetails.custom_fields
+                          .sort((a, b) => a.display_order - b.display_order)
+                          .map((f) => (
+                            <div key={f.id}>
+                              <span className="text-xs text-muted-foreground">{f.label}:</span>{" "}
+                              <span className="font-medium">{registrationDetails.custom_field_values?.[f.id] ?? "—"}</span>
+                            </div>
+                          ))}
+                      </div>
+                    </div>
+                  ) : null}
+                  {isEditMode && selectedCategoryForDetails?.custom_fields?.length ? (
+                    <div className="space-y-2 md:col-span-2">
+                      <Label className="text-sm text-muted-foreground">Campos personalizados</Label>
+                      <div className="space-y-2">
+                        {[...selectedCategoryForDetails.custom_fields]
+                          .sort((a, b) => a.display_order - b.display_order)
+                          .map((f) => (
+                            <div key={f.id}>
+                              <Label className="text-xs">{f.label}</Label>
+                              <Input
+                                type={f.field_type === "number" ? "number" : "text"}
+                                className="mt-1"
+                                value={editingCustomFieldValues[f.id] ?? ""}
+                                onChange={(e) => setEditingCustomFieldValues((prev) => ({ ...prev, [f.id]: e.target.value }))}
+                              />
+                            </div>
+                          ))}
+                      </div>
+                    </div>
+                  ) : null}
                   {registrationDetails.modality_names && registrationDetails.modality_names.length > 0 && (
                     <div>
                       <Label className="text-sm text-muted-foreground">Modalidade(s)</Label>

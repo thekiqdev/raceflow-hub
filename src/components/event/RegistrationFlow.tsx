@@ -53,6 +53,7 @@ interface Category extends EventCategory {
 
 interface NewCategory extends CategoryType {
   available_spots?: number | null;
+  custom_fields?: Array<{ id: string; label: string; field_type: 'text' | 'number' }>;
 }
 
 interface Kit extends EventKit {
@@ -169,6 +170,7 @@ export function RegistrationFlow({
     phone: "",
     cpf: "",
   });
+  const [customFieldValues, setCustomFieldValues] = useState<Record<string, string>>({});
 
   // Coupon state
   const [couponCode, setCouponCode] = useState("");
@@ -721,6 +723,7 @@ export function RegistrationFlow({
     }
     
     setSelectedCategory(category);
+    setCustomFieldValues({});
     // Reset batch selection when changing category
     setSelectedBatch(null);
     
@@ -1166,6 +1169,7 @@ export function RegistrationFlow({
         total_amount: totalPrice,
         coupon_code: appliedCoupon?.code || undefined,
         product_selections: productSelections.length > 0 ? productSelections : undefined,
+        custom_field_values: Object.keys(customFieldValues).length > 0 ? customFieldValues : undefined,
       };
 
       // Add credit card data if payment method is credit card
@@ -2209,52 +2213,80 @@ export function RegistrationFlow({
                     const activeBatch = getActiveBatch(category);
                     const displayPrice = activeBatch ? activeBatch.price : category.price;
                     const batchName = activeBatch?.name || null;
-                    
+                    const isSelected = selectedCategory?.id === category.id;
+                    const categoryCustomFields = (category as NewCategory).custom_fields;
+                    const hasCustomFields = categoryCustomFields && categoryCustomFields.length > 0;
+
                     return (
-                      <Card
-                        key={category.id}
-                        className={`transition-all hover:shadow-md ${
-                          isFull 
-                            ? "opacity-60 cursor-not-allowed" 
-                            : "cursor-pointer"
-                        } ${
-                          selectedCategory?.id === category.id
-                            ? "ring-2 ring-primary"
-                            : ""
-                        }`}
-                        onClick={() => !isFull && handleCategorySelect(category)}
-                      >
-                        <CardContent className="p-4">
-                          <div className="flex justify-between items-start">
-                            <div className="flex-1">
-                              <h4 className="font-semibold">{category.name}</h4>
-                              <div className="mt-2 flex flex-wrap gap-2">
-                                <Badge variant="outline">{category.category_type}</Badge>
-                                <Badge variant="outline">
-                                  {category.gender === 'ambos' ? 'Ambos' : category.gender === 'masculino' ? 'Masculino' : 'Feminino'}
-                                </Badge>
-                                {category.min_age && (
-                                  <Badge variant="outline">Idade mínima: {category.min_age} anos</Badge>
+                      <div key={category.id} className="space-y-3">
+                        <Card
+                          className={`transition-all hover:shadow-md ${
+                            isFull
+                              ? "opacity-60 cursor-not-allowed"
+                              : "cursor-pointer"
+                          } ${
+                            isSelected
+                              ? "ring-2 ring-primary"
+                              : ""
+                          }`}
+                          onClick={() => !isFull && handleCategorySelect(category)}
+                        >
+                          <CardContent className="p-4">
+                            <div className="flex justify-between items-start">
+                              <div className="flex-1">
+                                <h4 className="font-semibold">{category.name}</h4>
+                                <div className="mt-2 flex flex-wrap gap-2">
+                                  <Badge variant="outline">{category.category_type}</Badge>
+                                  <Badge variant="outline">
+                                    {category.gender === 'ambos' ? 'Ambos' : category.gender === 'masculino' ? 'Masculino' : 'Feminino'}
+                                  </Badge>
+                                  {category.min_age && (
+                                    <Badge variant="outline">Idade mínima: {category.min_age} anos</Badge>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="text-right ml-4">
+                                <div className="text-lg font-bold">
+                                  {formatPrice(displayPrice)}
+                                </div>
+                                {batchName && (
+                                  <div className="text-xs text-muted-foreground mt-1">
+                                    {batchName}
+                                  </div>
                                 )}
                               </div>
                             </div>
-                            <div className="text-right ml-4">
-                              <div className="text-lg font-bold">
-                                {formatPrice(displayPrice)}
-                              </div>
-                              {batchName && (
-                                <div className="text-xs text-muted-foreground mt-1">
-                                  {batchName}
+                          </CardContent>
+                        </Card>
+                        {isSelected && hasCustomFields && (
+                          <div className="space-y-3 pl-1">
+                            <h4 className="text-sm font-medium">Campos extras</h4>
+                            <div className="grid gap-3">
+                              {categoryCustomFields!.map((f) => (
+                                <div key={f.id} className="space-y-1.5">
+                                  <Label htmlFor={`custom-${f.id}`} className="text-sm">
+                                    {f.label}
+                                  </Label>
+                                  <Input
+                                    id={`custom-${f.id}`}
+                                    type={f.field_type === "number" ? "number" : "text"}
+                                    value={customFieldValues[f.id] ?? ""}
+                                    onChange={(e) =>
+                                      setCustomFieldValues((prev) => ({ ...prev, [f.id]: e.target.value }))
+                                    }
+                                    placeholder={f.field_type === "number" ? "0" : ""}
+                                    className="w-full"
+                                  />
                                 </div>
-                              )}
+                              ))}
                             </div>
                           </div>
-                        </CardContent>
-                      </Card>
+                        )}
+                      </div>
                     );
                   })}
                 </div>
-                
+
                 <div className="flex justify-between pt-4">
                   <Button
                     variant="outline"
@@ -3165,6 +3197,7 @@ export function RegistrationFlow({
                               product_selections: productSelections.length > 0 ? productSelections : undefined,
                               credit_card: data.credit_card,
                               credit_card_holder_info: data.credit_card_holder_info,
+                              custom_field_values: Object.keys(customFieldValues).length > 0 ? customFieldValues : undefined,
                             };
 
                             const response = await createRegistration(registrationData);

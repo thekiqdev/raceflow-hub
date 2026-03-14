@@ -124,6 +124,7 @@ export function LeaderDashboard() {
   const [selectedModalityId, setSelectedModalityId] = useState<string>("");
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>("");
   const [selectedKitId, setSelectedKitId] = useState<string>("");
+  const [customFieldValues, setCustomFieldValues] = useState<Record<string, string>>({});
   const [modalities, setModalities] = useState<Modality[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [kits, setKits] = useState<EventKit[]>([]);
@@ -359,6 +360,7 @@ export function LeaderDashboard() {
     setSelectedModalityId("");
     setSelectedCategoryId("");
     setSelectedKitId("");
+    setCustomFieldValues({});
   };
 
   const handleRegisterAthlete = async () => {
@@ -382,6 +384,7 @@ export function LeaderDashboard() {
         category_id: selectedCategoryId,
         kit_id: selectedKitId || undefined,
         commission_id: selectedCommissionId || undefined,
+        custom_field_values: Object.keys(customFieldValues).length > 0 ? customFieldValues : undefined,
       });
 
       if (response.success) {
@@ -2343,7 +2346,10 @@ export function LeaderDashboard() {
                 <Label htmlFor="category">Categoria *</Label>
                 <Select 
                   value={selectedCategoryId} 
-                  onValueChange={setSelectedCategoryId}
+                  onValueChange={(v) => {
+                    setSelectedCategoryId(v);
+                    setCustomFieldValues({});
+                  }}
                   disabled={loadingCategories}
                 >
                   <SelectTrigger id="category">
@@ -2359,6 +2365,37 @@ export function LeaderDashboard() {
                 </Select>
               </div>
             )}
+
+            {/* Campos personalizados da categoria */}
+            {selectedCategoryId && (() => {
+              const selectedCat = categories.find((c) => c.id === selectedCategoryId);
+              const customFields = selectedCat?.custom_fields ?? [];
+              if (customFields.length === 0) return null;
+              return (
+                <div className="space-y-3">
+                  <Label className="text-sm font-medium">Campos extras</Label>
+                  <div className="grid gap-2">
+                    {customFields.map((f) => (
+                      <div key={f.id} className="space-y-1.5">
+                        <Label htmlFor={`leader-custom-${f.id}`} className="text-xs text-muted-foreground">
+                          {f.label}
+                        </Label>
+                        <Input
+                          id={`leader-custom-${f.id}`}
+                          type={f.field_type === "number" ? "number" : "text"}
+                          value={customFieldValues[f.id] ?? ""}
+                          onChange={(e) =>
+                            setCustomFieldValues((prev) => ({ ...prev, [f.id]: e.target.value }))
+                          }
+                          placeholder={f.field_type === "number" ? "0" : ""}
+                          className="max-w-xs"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* Kit (optional) */}
             {selectedEventForRegistration && (

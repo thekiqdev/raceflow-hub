@@ -17,6 +17,12 @@ import {
   updateCategoryBatchController,
   deleteCategoryBatchController,
 } from '../controllers/categoryBatchesController.js';
+import {
+  getCategoryCustomFieldsController,
+  createCategoryCustomFieldController,
+  updateCategoryCustomFieldController,
+  deleteCategoryCustomFieldController,
+} from '../controllers/categoryCustomFieldsController.js';
 
 const router = Router();
 
@@ -40,6 +46,12 @@ router.get('/:categoryId/batches/active', optionalAuth, getActiveBatchesControll
 router.post('/:categoryId/batches', authenticate, requireAnyRole(['organizer', 'admin']), createCategoryBatchController);
 router.put('/:categoryId/batches/:batchId', authenticate, requireAnyRole(['organizer', 'admin']), updateCategoryBatchController);
 router.delete('/:categoryId/batches/:batchId', authenticate, requireAnyRole(['organizer', 'admin']), deleteCategoryBatchController);
+
+// Category custom fields (campos personalizados por categoria)
+router.get('/:categoryId/custom-fields', optionalAuth, getCategoryCustomFieldsController);
+router.post('/:categoryId/custom-fields', authenticate, requireAnyRole(['organizer', 'admin']), createCategoryCustomFieldController);
+router.put('/:categoryId/custom-fields/:fieldId', authenticate, requireAnyRole(['organizer', 'admin']), updateCategoryCustomFieldController);
+router.delete('/:categoryId/custom-fields/:fieldId', authenticate, requireAnyRole(['organizer', 'admin']), deleteCategoryCustomFieldController);
 
 export default router;
 

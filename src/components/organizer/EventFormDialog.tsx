@@ -37,7 +37,8 @@ import { createEvent, updateEvent, getEventById, type CronogramaItemInput } from
 import { getEventCategories } from "@/lib/api/eventCategories";
 import { getEventKits } from "@/lib/api/eventKits";
 import { getModalities, createModality, updateModality as updateModalityAPI, deleteModality, reorderModalities, type Modality as ModalityType } from "@/lib/api/modalities";
-import { getCategories, createCategory, updateCategory, deleteCategory, reorderCategories, type Category as CategoryType, type CategoryType as CategoryTypeEnum, type CategoryGender, type CategoryBatch } from "@/lib/api/categories";
+import { getCategories, createCategory, updateCategory, deleteCategory, reorderCategories, type Category as CategoryType, type CategoryType as CategoryTypeEnum, type CategoryGender, type CategoryBatch, type CategoryCustomField } from "@/lib/api/categories";
+import { createCategoryCustomField, updateCategoryCustomField, deleteCategoryCustomField } from "@/lib/api/categoryCustomFields";
 import { getCategoryBatches, createCategoryBatch, updateCategoryBatch, deleteCategoryBatch } from "@/lib/api/categoryBatches";
 import { reorderEventKits } from "@/lib/api/eventKits";
 import { FileUpload } from "@/components/ui/file-upload";
@@ -124,6 +125,7 @@ interface Category {
   is_default: boolean;
   modality_ids: string[];
   batches?: CategoryBatch[];
+  custom_fields?: CategoryCustomField[];
 }
 
 interface ProductVariant {
@@ -198,6 +200,60 @@ interface EventFormDialogProps {
   isAdmin?: boolean; // Se true, permite selecionar o organizador
 }
 
+function CustomFieldInlineForm({
+  label: initialLabel,
+  field_type: initialFieldType,
+  saving,
+  onSave,
+  onCancel,
+}: {
+  label: string;
+  field_type: "text" | "number";
+  saving: boolean;
+  onSave: (label: string, field_type: "text" | "number") => void;
+  onCancel: () => void;
+}) {
+  const [label, setLabel] = useState(initialLabel);
+  const [fieldType, setFieldType] = useState<"text" | "number">(initialFieldType);
+  useEffect(() => {
+    setLabel(initialLabel);
+    setFieldType(initialFieldType);
+  }, [initialLabel, initialFieldType]);
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-end">
+      <div className="space-y-2">
+        <Label className="text-xs font-medium">Nome do campo</Label>
+        <Input
+          placeholder="Ex.: Número da camisa"
+          value={label}
+          onChange={(e) => setLabel(e.target.value)}
+          className="h-9"
+        />
+      </div>
+      <div className="space-y-2">
+        <Label className="text-xs font-medium">Tipo</Label>
+        <Select value={fieldType} onValueChange={(v) => setFieldType(v as "text" | "number")}>
+          <SelectTrigger className="h-9">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="text">Texto</SelectItem>
+            <SelectItem value="number">Número</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="flex gap-2 md:col-span-2">
+        <Button type="button" size="sm" onClick={() => onSave(label, fieldType)} disabled={saving || !label.trim()}>
+          {saving ? "Salvando..." : "Salvar"}
+        </Button>
+        <Button type="button" size="sm" variant="outline" onClick={onCancel} disabled={saving}>
+          Cancelar
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin = false }: EventFormDialogProps) {
   const { toast } = useToast();
   const { user } = useAuth();
@@ -214,6 +270,9 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
   const [premiacaoHtml, setPremiacaoHtml] = useState<string>("");
   const [cronogramaItems, setCronogramaItems] = useState<CronogramaItemInput[]>([]);
   const [cronogramaHtml, setCronogramaHtml] = useState<string>("");
+  const [customFieldAddingCategoryIndex, setCustomFieldAddingCategoryIndex] = useState<number | null>(null);
+  const [customFieldEditing, setCustomFieldEditing] = useState<{ fieldId: string; categoryId: string; categoryIndex: number; label: string; field_type: "text" | "number" } | null>(null);
+  const [customFieldSaving, setCustomFieldSaving] = useState(false);
 
   const form = useForm<EventFormValues>({
     resolver: zodResolver(eventFormSchema),
@@ -363,6 +422,7 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
                 is_default: cat.is_default === true, // Garantir boolean explícito
                 modality_ids: cat.modality_ids || [],
                 batches: cat.batches || [],
+                custom_fields: cat.custom_fields || [],
               }));
               console.log("✅ Categorias carregadas:", loadedCategories.length);
               console.log("📋 Categorias com is_default:", loadedCategories.map(c => ({ name: c.name, is_default: c.is_default })));
@@ -756,6 +816,7 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
         is_default: categories.length === 0, // Primeira categoria sempre é padrão
         modality_ids: [],
         batches: [],
+        custom_fields: [],
       },
     ]);
   };
@@ -845,6 +906,120 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
       batches: updatedBatches,
     };
     setCategories(updated);
+  };
+
+  const refetchCategoriesForCustomFields = async () => {
+    if (!event?.id) return;
+    const res = await getCategories(event.id);
+    if (res.success && res.data) setCategories(res.data as Category[]);
+  };
+
+  const isPendingCustomField = (f: { id: string }) => f.id.startsWith("temp-");
+  const isCategorySaved = (c: Category) => c.id && !c.id.startsWith("temp-");
+
+  const addPendingCustomField = (categoryIndex: number, label: string, field_type: "text" | "number") => {
+    const updated = [...categories];
+    const cat = updated[categoryIndex];
+    const list = cat.custom_fields ?? [];
+    const newField: CategoryCustomField = {
+      id: `temp-cf-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+      category_id: cat.id ?? "",
+      label: label.trim(),
+      field_type,
+      display_order: list.length,
+      created_at: "",
+      updated_at: "",
+    };
+    updated[categoryIndex] = { ...cat, custom_fields: [...list, newField] };
+    setCategories(updated);
+    setCustomFieldAddingCategoryIndex(null);
+  };
+
+  const updatePendingCustomField = (categoryIndex: number, fieldId: string, label: string, field_type: "text" | "number") => {
+    if (!fieldId.startsWith("temp-")) return;
+    const updated = [...categories];
+    const cat = updated[categoryIndex];
+    const list = cat.custom_fields ?? [];
+    updated[categoryIndex] = {
+      ...cat,
+      custom_fields: list.map((f) =>
+        f.id === fieldId ? { ...f, label: label.trim(), field_type } : f
+      ),
+    };
+    setCategories(updated);
+    setCustomFieldEditing(null);
+  };
+
+  const removeCustomFieldLocal = (categoryIndex: number, fieldId: string) => {
+    const updated = [...categories];
+    const cat = updated[categoryIndex];
+    const list = cat.custom_fields ?? [];
+    updated[categoryIndex] = { ...cat, custom_fields: list.filter((f) => f.id !== fieldId) };
+    setCategories(updated);
+    setCustomFieldEditing(null);
+  };
+
+  const handleCreateCustomField = async (categoryIndex: number, label: string, field_type: "text" | "number") => {
+    const category = categories[categoryIndex];
+    if (!label.trim()) return;
+    if (!isCategorySaved(category)) {
+      addPendingCustomField(categoryIndex, label, field_type);
+      toast({ title: "Campo adicionado", description: "Será salvo ao salvar o evento." });
+      return;
+    }
+    setCustomFieldSaving(true);
+    try {
+      const res = await createCategoryCustomField(category.id!, { label: label.trim(), field_type });
+      if (res.success) {
+        await refetchCategoriesForCustomFields();
+        setCustomFieldAddingCategoryIndex(null);
+        toast({ title: "Campo adicionado", description: "Campo personalizado criado com sucesso." });
+      } else {
+        toast({ title: "Erro", description: res.message || res.error || "Não foi possível criar o campo.", variant: "destructive" });
+      }
+    } catch (e: any) {
+      toast({ title: "Erro", description: e?.message || "Não foi possível criar o campo.", variant: "destructive" });
+    } finally {
+      setCustomFieldSaving(false);
+    }
+  };
+
+  const handleUpdateCustomField = async (categoryId: string, fieldId: string, label: string, field_type: "text" | "number") => {
+    if (!label.trim()) return;
+    setCustomFieldSaving(true);
+    try {
+      const res = await updateCategoryCustomField(categoryId, fieldId, { label: label.trim(), field_type });
+      if (res.success) {
+        await refetchCategoriesForCustomFields();
+        setCustomFieldEditing(null);
+        toast({ title: "Campo atualizado", description: "Campo personalizado atualizado com sucesso." });
+      } else {
+        toast({ title: "Erro", description: res.message || res.error || "Não foi possível atualizar.", variant: "destructive" });
+      }
+    } catch (e: any) {
+      toast({ title: "Erro", description: e?.message || "Não foi possível atualizar.", variant: "destructive" });
+    } finally {
+      setCustomFieldSaving(false);
+    }
+  };
+
+  const handleDeleteCustomField = async (categoryId: string, fieldId: string) => {
+    if (!confirm("Remover este campo personalizado? Os valores já preenchidos em inscrições serão mantidos, mas o campo não aparecerá mais na categoria.")) return;
+    setCustomFieldSaving(true);
+    try {
+      const res = await deleteCategoryCustomField(categoryId, fieldId);
+      if (res.success) {
+        await refetchCategoriesForCustomFields();
+        setCustomFieldEditing(null);
+        toast({ title: "Campo removido", description: "Campo personalizado removido." });
+      } else {
+        toast({ title: "Erro", description: res.message || res.error || "Não foi possível remover.", variant: "destructive" });
+      }
+    } catch (e: any) {
+      toast({ title: "Erro", description: e?.message || "Não foi possível remover.", variant: "destructive" });
+    } finally {
+      setCustomFieldSaving(false);
+    }
   };
 
   const addKit = () => {
@@ -1853,6 +2028,7 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
                 is_default: cat.is_default === true,
                 modality_ids: cat.modality_ids || [],
                 batches: cat.batches || [],
+                custom_fields: cat.custom_fields || [],
               }));
               console.log("🔄 Categorias recarregadas após salvar:", reloadedCategories.map(c => ({ name: c.name, is_default: c.is_default })));
               setCategories(reloadedCategories);
@@ -1951,12 +2127,48 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
                       });
                     }
                   }
+
+                  // Sync custom fields (criar no backend os que estavam pendentes / temp)
+                  const customFields = category.custom_fields ?? [];
+                  for (const cf of customFields) {
+                    if (cf.id.startsWith("temp-")) {
+                      try {
+                        await createCategoryCustomField(categoryId, {
+                          label: cf.label,
+                          field_type: cf.field_type,
+                          display_order: cf.display_order,
+                        });
+                      } catch (err: any) {
+                        console.error("Error creating custom field:", err);
+                      }
+                    }
+                  }
+                }
+
+                // Recarregar categorias para trazer custom_fields com IDs reais
+                const finalReload = await getCategories(eventId);
+                if (finalReload.success && finalReload.data) {
+                  const withCustomFields: Category[] = finalReload.data.map((cat: CategoryType) => ({
+                    id: cat.id,
+                    name: cat.name,
+                    price: cat.price,
+                    category_type: cat.category_type,
+                    gender: cat.gender,
+                    min_age: cat.min_age,
+                    max_age: cat.max_age,
+                    max_participants: cat.max_participants,
+                    is_default: cat.is_default === true,
+                    modality_ids: cat.modality_ids || [],
+                    batches: cat.batches || [],
+                    custom_fields: cat.custom_fields || [],
+                  }));
+                  setCategories(withCustomFields);
                 }
               } catch (error: any) {
-                console.error('Error syncing batches:', error);
+                console.error('Error syncing batches/custom fields:', error);
             toast({
               title: "Aviso",
-                  description: "Evento salvo, mas houve erro ao salvar lotes de preço",
+                  description: "Evento salvo, mas houve erro ao salvar lotes ou campos personalizados",
               variant: "destructive",
             });
               }
@@ -1975,13 +2187,23 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
       // Sync kits
       if (kits.length > 0 && eventId) {
         try {
+          const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+          const isValidId = (id: string | null | undefined): id is string =>
+            typeof id === "string" && id.length > 0 && !id.startsWith("temp-") && uuidRegex.test(id);
+          const savedCatsRes = await getCategories(eventId);
+          const savedCategoryList = savedCatsRes.success && savedCatsRes.data ? savedCatsRes.data : [];
+          const validCategoryIds = (ids: (string | null | undefined)[] | undefined): string[] | undefined => {
+            if (!ids?.length) return undefined;
+            const mapped = ids.map((id, i) => (isValidId(id) ? id : savedCategoryList[i]?.id)).filter((id): id is string => isValidId(id));
+            return mapped.length > 0 ? mapped : undefined;
+          };
           const kitsData = kits.map((kit, index) => ({
             id: kit.id,
             name: kit.name,
             description: kit.description || null,
             price: kit.price,
             display_order: index,
-            category_ids: kit.category_ids && kit.category_ids.length > 0 ? kit.category_ids : undefined,
+            category_ids: validCategoryIds(kit.category_ids),
             products: kit.products.map((product) => {
               // Extract variant_attributes from product if available
               const variantAttributeNames = product.variant_attributes || 
@@ -3227,6 +3449,108 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
                             </div>
                             )}
                           </div>
+
+                          {/* Campos personalizados */}
+                          <div className="border-t pt-4 mt-4">
+                            <div className="flex justify-between items-center mb-3">
+                              <div>
+                                <label className="text-sm font-medium">Campos personalizados</label>
+                                <p className="text-xs text-muted-foreground">
+                                  Campos que o corredor preenche ao se inscrever nesta categoria (ex.: número da camisa)
+                                </p>
+                              </div>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => {
+                                  setCustomFieldAddingCategoryIndex(index);
+                                  setCustomFieldEditing(null);
+                                }}
+                                disabled={customFieldAddingCategoryIndex !== null}
+                              >
+                                <Plus className="mr-2 h-3 w-3" />
+                                Adicionar campo personalizado
+                              </Button>
+                            </div>
+                            {(category.custom_fields?.length ?? 0) === 0 && customFieldAddingCategoryIndex !== index ? (
+                              <p className="text-sm text-muted-foreground text-center py-3 border rounded-md">
+                                Nenhum campo personalizado. Clique em &quot;Adicionar campo personalizado&quot; para criar.
+                              </p>
+                            ) : (
+                              <div className="space-y-2">
+                                {customFieldAddingCategoryIndex === index && (
+                                  <Card className="bg-muted/30">
+                                    <CardContent className="pt-4">
+                                      <CustomFieldInlineForm
+                                        label=""
+                                        field_type="text"
+                                        saving={customFieldSaving}
+                                        onSave={(label, field_type) => handleCreateCustomField(index, label, field_type)}
+                                        onCancel={() => setCustomFieldAddingCategoryIndex(null)}
+                                      />
+                                    </CardContent>
+                                  </Card>
+                                )}
+                                {(category.custom_fields ?? []).map((f) =>
+                                  customFieldEditing?.fieldId === f.id ? (
+                                    <Card key={f.id} className="bg-muted/30">
+                                      <CardContent className="pt-4">
+                                        <CustomFieldInlineForm
+                                          label={customFieldEditing.label}
+                                          field_type={customFieldEditing.field_type}
+                                          saving={customFieldSaving}
+                                          onSave={(label, field_type) =>
+                                            isPendingCustomField(f)
+                                              ? updatePendingCustomField(index, f.id, label, field_type)
+                                              : handleUpdateCustomField(category.id!, f.id, label, field_type)
+                                          }
+                                          onCancel={() => setCustomFieldEditing(null)}
+                                        />
+                                      </CardContent>
+                                    </Card>
+                                  ) : (
+                                    <div key={f.id} className="flex items-center justify-between rounded-md border px-3 py-2">
+                                      <span className="text-sm font-medium">{f.label}</span>
+                                      <div className="flex items-center gap-2">
+                                        {isPendingCustomField(f) && (
+                                          <Badge variant="outline" className="text-xs">Pendente</Badge>
+                                        )}
+                                        <Badge variant="secondary" className="text-xs">
+                                          {f.field_type === "number" ? "Número" : "Texto"}
+                                        </Badge>
+                                        <Button
+                                          type="button"
+                                          variant="ghost"
+                                          size="sm"
+                                          onClick={() => setCustomFieldEditing({ fieldId: f.id, categoryId: category.id ?? "", categoryIndex: index, label: f.label, field_type: f.field_type })}
+                                          disabled={customFieldSaving}
+                                        >
+                                          Editar
+                                        </Button>
+                                        <Button
+                                          type="button"
+                                          variant="ghost"
+                                          size="sm"
+                                          className="text-destructive hover:text-destructive"
+                                          onClick={() => {
+                                            if (isPendingCustomField(f)) {
+                                              removeCustomFieldLocal(index, f.id);
+                                            } else if (category.id) {
+                                              handleDeleteCustomField(category.id, f.id);
+                                            }
+                                          }}
+                                          disabled={customFieldSaving}
+                                        >
+                                          <Trash2 className="h-4 w-4" />
+                                        </Button>
+                                      </div>
+                                    </div>
+                                  )
+                                )}
+                              </div>
+                            )}
+                          </div>
                         </CardContent>
                       </Card>
                     ))}
@@ -3362,10 +3686,10 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
                                    const isChecked = kit.category_ids?.includes(categoryId) || false;
                                    
                                    return (
-                                     <div key={categoryId} className="flex items-center space-x-2">
+                                     <div key={categoryId ?? index} className="flex items-center space-x-2">
                                        <input
                                          type="checkbox"
-                                         id={`kit-${index}-category-${categoryId}`}
+                                         id={`kit-${index}-category-${categoryId ?? index}`}
                                          checked={isChecked}
                                          onChange={() => {
                                            const currentCategoryIds = kit.category_ids || [];

@@ -48,6 +48,8 @@ export interface Registration {
   registration_edit_fee_amount?: number;
   /** Etapa 4: true = corredor deve escolher categoria/modalidade/kit; false/null = líder já definiu (ou convite antigo). */
   invitation_runner_chooses_category_modality_kit?: boolean | null;
+  /** Valores dos campos personalizados da categoria (category_custom_field_id -> value). */
+  custom_field_values?: Record<string, string>;
 }
 
 // Credit Card Data Types
@@ -89,6 +91,8 @@ export interface CreateRegistrationData {
   // Credit card data (only when payment_method is 'credit_card')
   credit_card?: CreditCardData;
   credit_card_holder_info?: CreditCardHolderInfo;
+  /** Valores dos campos personalizados da categoria (category_custom_field_id -> value). */
+  custom_field_values?: Record<string, string>;
 }
 
 export interface UpdateRegistrationData {
@@ -103,6 +107,8 @@ export interface UpdateRegistrationData {
   modality_id?: string | null;
   /** Lote da categoria (admin escolhe na edição; usado para preço) */
   batch_id?: string | null;
+  /** Valores dos campos personalizados da categoria (category_custom_field_id -> value). Substitui todos ao editar. */
+  custom_field_values?: Record<string, string>;
 }
 
 export interface PreviewRegistrationEditBody {
@@ -246,6 +252,7 @@ export interface CreateRegistrationByOrganizerData {
   kit_id?: string;
   modality_id?: string | null;
   product_selections?: ProductSelection[];
+  custom_field_values?: Record<string, string>;
 }
 
 export const createRegistrationByOrganizer = async (data: CreateRegistrationByOrganizerData) => {
@@ -260,6 +267,7 @@ export interface CreateRegistrationByLeaderData {
   kit_id?: string;
   commission_id?: string; // NOVO: ID da comissão específica (opcional)
   product_selections?: ProductSelection[];
+  custom_field_values?: Record<string, string>;
 }
 
 export const createRegistrationByLeader = async (data: CreateRegistrationByLeaderData) => {
@@ -405,6 +413,7 @@ export interface CompleteInvitationData {
     variant_id?: string;
     attribute_selections?: Record<string, string>;
   }>;
+  custom_field_values?: Record<string, string>;
 }
 
 export const completeInvitation = async (

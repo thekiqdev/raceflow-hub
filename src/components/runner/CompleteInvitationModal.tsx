@@ -8,6 +8,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -40,6 +41,7 @@ export function CompleteInvitationModal({
   const [modalityId, setModalityId] = useState("");
   const [kitId, setKitId] = useState("");
   const [variantSelections, setVariantSelections] = useState<Record<string, string>>({});
+  const [customFieldValues, setCustomFieldValues] = useState<Record<string, string>>({});
   const [categories, setCategories] = useState<Category[]>([]);
   const [modalities, setModalities] = useState<Modality[]>([]);
   const [kits, setKits] = useState<EventKit[]>([]);
@@ -57,6 +59,7 @@ export function CompleteInvitationModal({
       setModalityId("");
       setKitId("");
       setVariantSelections({});
+      setCustomFieldValues({});
       return;
     }
     let cancelled = false;
@@ -103,6 +106,7 @@ export function CompleteInvitationModal({
     setModalityId("");
     setKitId("");
     setVariantSelections({});
+    setCustomFieldValues({});
   };
 
   const handleKitChange = (v: string) => {
@@ -138,6 +142,7 @@ export function CompleteInvitationModal({
         modality_id: modalityId || undefined,
         kit_id: kitId || undefined,
         product_selections: productSelections,
+        custom_field_values: Object.keys(customFieldValues).length > 0 ? customFieldValues : undefined,
       });
       if (response.success) {
         toast.success("Convite completado com sucesso!");
@@ -200,6 +205,35 @@ export function CompleteInvitationModal({
                     </SelectContent>
                   </Select>
                 </div>
+                {categoryId && (() => {
+                  const selectedCat = categories.find((c) => c.id === categoryId);
+                  const customFields = selectedCat?.custom_fields ?? [];
+                  if (customFields.length === 0) return null;
+                  return (
+                    <div className="space-y-3">
+                      <Label className="text-sm font-medium">Campos extras</Label>
+                      <div className="grid gap-2">
+                        {customFields.map((f) => (
+                          <div key={f.id} className="space-y-1.5">
+                            <Label htmlFor={`inv-custom-${f.id}`} className="text-xs text-muted-foreground">
+                              {f.label}
+                            </Label>
+                            <Input
+                              id={`inv-custom-${f.id}`}
+                              type={f.field_type === "number" ? "number" : "text"}
+                              value={customFieldValues[f.id] ?? ""}
+                              onChange={(e) =>
+                                setCustomFieldValues((prev) => ({ ...prev, [f.id]: e.target.value }))
+                              }
+                              placeholder={f.field_type === "number" ? "0" : ""}
+                              className="max-w-xs"
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
                 <div className="space-y-2">
                   <Label>Modalidade</Label>
                   <Select

@@ -34,7 +34,7 @@ import { getEventCommissionsByEvent, type EventCommissionOption } from "@/lib/ap
 import { getRegistrationCommission, removeCommission, type LeaderCommissionRecord } from "@/lib/api/admin";
 import { getEvents, type Event } from "@/lib/api/events";
 import { getEventKits, type EventKit, type KitProduct } from "@/lib/api/eventKits";
-import { getCategoriesByModality, type Category } from "@/lib/api/categories";
+import { getCategoriesByModality, getCategoryById, type Category } from "@/lib/api/categories";
 import { getCategoryBatches } from "@/lib/api/categoryBatches";
 import type { CategoryBatch } from "@/lib/api/categories";
 import { getModalities, type Modality } from "@/lib/api/modalities";
@@ -83,6 +83,8 @@ const AdminRegistrations = () => {
   const [previewData, setPreviewData] = useState<PreviewRegistrationEditResponse | null>(null);
   const [loadingPreview, setLoadingPreview] = useState(false);
   const [isConfirmDiffDialogOpen, setIsConfirmDiffDialogOpen] = useState(false);
+  const [selectedCategoryForDetails, setSelectedCategoryForDetails] = useState<Category | null>(null);
+  const [editingCustomFieldValues, setEditingCustomFieldValues] = useState<Record<string, string>>({});
   const [confirmingDiff, setConfirmingDiff] = useState(false);
 
   // Atrelar inscrição a comissão (admin)
@@ -213,6 +215,11 @@ const AdminRegistrations = () => {
         setRegistrationDetails(response.data);
         setEditingStatus(response.data.status || "pending");
         setEditingPaymentStatus(response.data.payment_status || "pending");
+        setSelectedCategoryForDetails(null);
+        if (response.data.category_id) {
+          const catRes = await getCategoryById(response.data.category_id);
+          if (catRes.success && catRes.data) setSelectedCategoryForDetails(catRes.data);
+        }
       } else {
         toast.error(response.error || "Erro ao carregar detalhes");
       }
@@ -348,6 +355,7 @@ const AdminRegistrations = () => {
     setEditingCategoryId(registrationDetails.category_id || "");
     setEditingKitId(registrationDetails.kit_id || "");
     setEditingBatchId((registrationDetails as any).category_batch_id || "");
+    setEditingCustomFieldValues((registrationDetails.custom_field_values && typeof registrationDetails.custom_field_values === "object") ? { ...registrationDetails.custom_field_values } : {});
     setPreviewData(null);
     setLoadingKit(true);
 
@@ -428,6 +436,7 @@ const AdminRegistrations = () => {
     setEditingKitId("");
     setEditingModalityId("");
     setEditingBatchId("");
+    setEditingCustomFieldValues({});
     setEventCategoriesList([]);
     setEventKitsList([]);
     setEventModalitiesList([]);
@@ -516,6 +525,7 @@ const AdminRegistrations = () => {
     setEditingCategoryId(newCategoryId);
     setEditingKitId("");
     setEditingBatchId("");
+    setEditingCustomFieldValues({});
     setKitProducts([]);
     if (!registrationDetails?.event_id) return;
     const currentKitId = registrationDetails.kit_id;
@@ -609,6 +619,11 @@ const AdminRegistrations = () => {
         updateData.batch_id = editingBatchId || null;
       }
 
+      const effectiveCategory = eventCategoriesList.find((c) => c.id === (editingCategoryId || registrationDetails.category_id));
+      if (effectiveCategory) {
+        updateData.custom_field_values = effectiveCategory.custom_fields?.length ? editingCustomFieldValues : {};
+      }
+
       if (Object.keys(updateData).length > 0) {
         const updateResponse = await updateRegistration(registrationDetails.id, updateData);
         if (!updateResponse.success) {
@@ -687,11 +702,17 @@ const AdminRegistrations = () => {
         setRegistrationDetails(response.data);
         setEditingStatus(response.data.status || "pending");
         setEditingPaymentStatus(response.data.payment_status || "pending");
+        if (response.data.category_id) {
+          const catRes = await getCategoryById(response.data.category_id);
+          if (catRes.success && catRes.data) setSelectedCategoryForDetails(catRes.data);
+        } else {
+          setSelectedCategoryForDetails(null);
+        }
       }
-      
+
       // Reload registrations list
       loadRegistrations();
-      
+
       setIsEditMode(false);
     } catch (error: any) {
       console.error("Error saving registration:", error);
@@ -1352,6 +1373,42 @@ const AdminRegistrations = () => {
                       <p className="font-medium capitalize">{registrationDetails.category_type || "N/A"}</p>
                     </div>
                   )}
+                  {!isEditMode && selectedCategoryForDetails?.custom_fields?.length ? (
+                    <div className="space-y-2">
+                      <Label className="text-sm text-muted-foreground">Campos personalizados</Label>
+                      <div className="space-y-1.5">
+                        {selectedCategoryForDetails.custom_fields
+                          .sort((a, b) => a.display_order - b.display_order)
+                          .map((f) => (
+                            <div key={f.id}>
+                              <span className="text-xs text-muted-foreground">{f.label}:</span>{" "}
+                              <span className="font-medium">{registrationDetails.custom_field_values?.[f.id] ?? "—"}</span>
+                            </div>
+                          ))}
+                      </div>
+                    </div>
+                  ) : null}
+                  {isEditMode && (() => {
+                    const cat = eventCategoriesList.find((c) => c.id === editingCategoryId);
+                    return cat?.custom_fields?.length ? (
+                      <div className="space-y-2">
+                        <Label className="text-sm text-muted-foreground">Campos personalizados</Label>
+                        <div className="space-y-2">
+                          {[...cat.custom_fields].sort((a, b) => a.display_order - b.display_order).map((f) => (
+                            <div key={f.id}>
+                              <Label className="text-xs">{f.label}</Label>
+                              <Input
+                                type={f.field_type === "number" ? "number" : "text"}
+                                className="mt-1"
+                                value={editingCustomFieldValues[f.id] ?? ""}
+                                onChange={(e) => setEditingCustomFieldValues((prev) => ({ ...prev, [f.id]: e.target.value }))}
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null;
+                  })()}
                   <div>
                     <Label className="text-sm text-muted-foreground">Kit</Label>
                     {isEditMode ? (
