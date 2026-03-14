@@ -22,7 +22,7 @@ export interface CreateHomeBannerData {
 }
 
 export interface UpdateHomeBannerData {
-  image_url?: string;
+  image_url?: string | null;
   image_url_mobile?: string | null;
   title?: string | null;
   link_url?: string | null;
