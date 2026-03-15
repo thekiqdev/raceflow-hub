@@ -1673,8 +1673,9 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
         }
       }
 
-      // Sync modalities first, then categories (categories depend on modality IDs)
+      // Sync modalities first (create/update only), then categories; delete modalities only after categories no longer reference them
       let finalModalities = modalities;
+      let modalitiesToDelete: string[] = [];
       if (eventId) {
         try {
           console.log('📤 Syncing modalities:', modalities.length);
@@ -1685,12 +1686,12 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
             ? existingModalitiesResponse.data 
             : [];
           
-          // Find modalities to create, update, and delete
+          // Find modalities to create, update, and delete (delete will run after categories sync)
           const modalitiesToCreate = modalities.filter(m => !m.id && m.name && m.distance);
           const modalitiesToUpdate = modalities.filter(m => m.id && m.name && m.distance);
           const existingIds = existingModalities.map(m => m.id);
           const currentIds = modalities.filter(m => m.id).map(m => m.id!);
-          const modalitiesToDelete = existingIds.filter(id => !currentIds.includes(id));
+          modalitiesToDelete = existingIds.filter(id => !currentIds.includes(id));
           
           // Create new modalities and update local state with returned IDs
           const createdModalities: Modality[] = [];
@@ -1769,18 +1770,8 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
             }
           }
           
-          // Delete removed modalities
-          for (const id of modalitiesToDelete) {
-            try {
-              const response = await deleteModality(id);
-              if (response && !response.success) {
-                console.error('Error deleting modality:', response.error);
-              }
-            } catch (error) {
-              console.error('Error deleting modality:', error);
-            }
-          }
-          
+          // Do not delete modalities here: categories may still reference them. Delete after categories sync.
+
           // Update local modalities state with new IDs from created modalities
           if (createdModalities.length > 0) {
             finalModalities = modalities.map(mod => {
@@ -1879,7 +1870,8 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
                 // Se for um ID real, retornar como está
                 return id;
               })
-              .filter((id): id is string => id !== null && id !== undefined);
+              .filter((id): id is string => id !== null && id !== undefined)
+              .filter(id => !modalitiesToDelete.includes(id)); // Excluir modalidades que serão removidas (permite deletar depois)
           };
           
           // Garantir que apenas uma categoria seja padrão antes de processar
@@ -2181,6 +2173,18 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
             description: "Evento salvo, mas houve erro ao salvar categorias",
             variant: "destructive",
           });
+        }
+
+        // Excluir modalidades removidas somente após as categorias não as referenciarem
+        for (const id of modalitiesToDelete) {
+          try {
+            const response = await deleteModality(id);
+            if (response && !response.success) {
+              console.error('Error deleting modality:', response.error);
+            }
+          } catch (error) {
+            console.error('Error deleting modality:', error);
+          }
         }
       }
 

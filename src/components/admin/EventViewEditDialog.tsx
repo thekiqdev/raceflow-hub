@@ -916,19 +916,19 @@ export function EventViewEditDialog({
         throw new Error(response.error || "Erro ao atualizar evento");
       }
 
-      // Sync modalities
+      let modalitiesToDelete: string[] = [];
+      // Sync modalities (create/update only; delete after categories sync)
       try {
         const existingModalitiesResponse = await getModalities(eventId);
         const existingModalities = existingModalitiesResponse.success && existingModalitiesResponse.data 
           ? existingModalitiesResponse.data 
           : [];
         
-        // Filter out temporary IDs (those starting with "temp-")
         const modalitiesToCreate = modalities.filter(m => (!m.id || m.id.startsWith('temp-')) && m.name && m.distance);
         const modalitiesToUpdate = modalities.filter(m => m.id && !m.id.startsWith('temp-') && m.name && m.distance);
         const existingIds = existingModalities.map(m => m.id);
         const currentIds = modalities.filter(m => m.id && !m.id.startsWith('temp-')).map(m => m.id!);
-        const modalitiesToDelete = existingIds.filter(id => !currentIds.includes(id));
+        modalitiesToDelete = existingIds.filter(id => !currentIds.includes(id));
         
         // Create new modalities
         const createdModalities: any[] = [];
@@ -957,11 +957,8 @@ export function EventViewEditDialog({
           }
         }
         
-        // Delete removed modalities
-        for (const id of modalitiesToDelete) {
-          await deleteModality(id);
-        }
-        
+        // Do not delete modalities here; categories may still reference them. Delete after categories sync.
+
         // Reorder modalities - reload to get all IDs (including newly created ones)
         const reloadModalitiesResponse = await getModalities(eventId);
         if (reloadModalitiesResponse.success && reloadModalitiesResponse.data) {
@@ -1014,10 +1011,8 @@ export function EventViewEditDialog({
           return modalityIds
             .map(id => {
               if (id && id.startsWith('temp-')) {
-                // Find the modality in the original modalities array by matching the temp ID
                 const tempModality = modalities.find(m => m.id === id);
                 if (tempModality) {
-                  // Find the created modality by matching name and distance
                   const createdModality = finalModalities.find(fm => 
                     fm.name === tempModality.name && fm.distance === tempModality.distance
                   );
@@ -1027,7 +1022,8 @@ export function EventViewEditDialog({
               }
               return id;
             })
-            .filter((id): id is string => id !== null && id !== undefined);
+            .filter((id): id is string => id !== null && id !== undefined)
+            .filter(id => !modalitiesToDelete.includes(id));
         };
         
         // Ensure only one default category
@@ -1224,6 +1220,15 @@ export function EventViewEditDialog({
           description: "Evento atualizado, mas houve erro ao salvar categorias",
           variant: "destructive",
         });
+      }
+
+      // Excluir modalidades removidas somente após as categorias não as referenciarem
+      for (const id of modalitiesToDelete) {
+        try {
+          await deleteModality(id);
+        } catch (err: any) {
+          console.error('Error deleting modality:', err);
+        }
       }
 
       // Sync kits
