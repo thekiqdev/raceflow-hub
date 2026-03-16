@@ -163,6 +163,7 @@ export const getRegistrations = async (filters?: {
       p.city as runner_city,
       p.state as runner_state,
       p.team as runner_team,
+      p.phone as runner_phone,
       u.email as runner_email,
       ek.name as kit_name,
       -- Modalidade selecionada na inscrição

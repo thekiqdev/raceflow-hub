@@ -3278,6 +3278,7 @@ export const exportRegistrationsController = asyncHandler(async (req: AuthReques
     'NOME',
     'CPF',
     'E-MAIL',
+    'TELEFONE',
     'EQUIPE',
     'SEXO',
     'NASCIMENTO',
@@ -3459,6 +3460,7 @@ export const exportRegistrationsController = asyncHandler(async (req: AuthReques
     const runnerNameUpper = runnerName.toUpperCase();
     const runnerCpf = formatCPF(reg.runner_cpf);
     const runnerEmail = reg.runner_email || '';
+    const runnerPhone = reg.runner_phone ?? '';
     const runnerTeam = reg.runner_team || '';
     // Debug: logar o valor do gênero para as primeiras 3 inscrições
     if (index < 3) {
@@ -3506,6 +3508,7 @@ export const exportRegistrationsController = asyncHandler(async (req: AuthReques
       runnerNameUpper, // NOME
       runnerCpf, // CPF
       runnerEmail, // E-MAIL
+      runnerPhone, // TELEFONE
       runnerTeam, // EQUIPE
       gender, // SEXO
       birthDate, // NASCIMENTO
