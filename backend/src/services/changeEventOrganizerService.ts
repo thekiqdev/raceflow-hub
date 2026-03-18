@@ -158,7 +158,7 @@ export interface ResolveLeadersResult {
 async function validateInput(
   eventId: string,
   newOrganizerId: string,
-  executorId: string
+  _executorId: string
 ): Promise<{ ok: true } | { ok: false; status: MigrationStatus; message: string }> {
   const client = await getClient();
   try {
@@ -1140,7 +1140,7 @@ async function migrateInvitations(
   eventId: string,
   migrationId: string,
   leaderMap: LeaderIdMap,
-  organizerTo: string
+  _organizerTo: string
 ): Promise<number> {
   let totalUpdated = 0;
   for (const [oldLeaderId, newLeaderId] of leaderMap.entries()) {
@@ -1152,7 +1152,7 @@ async function migrateInvitations(
          AND (migration_id IS NULL)`,
       [newLeaderId, migrationId, eventId, oldLeaderId]
     );
-    totalUpdated += result.rowCount ?? 0;
+    totalUpdated += (result as { rowCount?: number }).rowCount ?? 0;
   }
   return totalUpdated;
 }
@@ -1197,7 +1197,7 @@ async function migrateContactMessages(
      WHERE event_id = $2 AND organizer_id = $3`,
     [organizerTo, eventId, organizerFrom]
   );
-  return result.rowCount ?? 0;
+  return (result as { rowCount?: number }).rowCount ?? 0;
 }
 
 // ---------------------------------------------------------------------------
