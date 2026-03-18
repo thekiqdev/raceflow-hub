@@ -1,17 +1,22 @@
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Users, Calendar, DollarSign, TrendingUp, CheckCircle, Clock, FileText, MessageSquare, Loader2 } from "lucide-react";
+import { Users, Calendar, DollarSign, TrendingUp, CheckCircle, MessageSquare, Loader2, Receipt } from "lucide-react";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import { getDashboardStats, getDashboardCharts, type DashboardStats } from "@/lib/api/admin";
+import { getSupportTickets } from "@/lib/api/support";
+import { getAdminPath } from "@/lib/utils/navigation";
 import { toast } from "sonner";
 
 const DashboardOverview = () => {
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [registrationsByMonth, setRegistrationsByMonth] = useState<Array<{ month: string; inscrições: number }>>([]);
   const [revenueByMonth, setRevenueByMonth] = useState<Array<{ month: string; faturamento: number }>>([]);
+  const [newTicketsCount, setNewTicketsCount] = useState<number>(0);
 
   useEffect(() => {
     loadDashboardData();
@@ -20,9 +25,10 @@ const DashboardOverview = () => {
   const loadDashboardData = async () => {
     setLoading(true);
     try {
-      const [statsResponse, chartsResponse] = await Promise.all([
+      const [statsResponse, chartsResponse, ticketsResponse] = await Promise.all([
         getDashboardStats(),
         getDashboardCharts(6),
+        getSupportTickets({ status: 'aberto' }).catch(() => ({ success: false, data: [] })),
       ]);
 
       if (statsResponse.success && statsResponse.data) {
@@ -47,6 +53,11 @@ const DashboardOverview = () => {
         );
       } else {
         toast.error("Erro ao carregar dados dos gráficos");
+      }
+
+      // Contar tickets abertos
+      if (ticketsResponse.success && ticketsResponse.data) {
+        setNewTicketsCount(ticketsResponse.data.length);
       }
     } catch (error) {
       console.error("Erro ao carregar dados do dashboard:", error);
@@ -213,6 +224,27 @@ const DashboardOverview = () => {
             <div className="text-2xl font-bold">{formatNumber(stats.finished_events)}</div>
           </CardContent>
         </Card>
+
+        {/* OK Etapa 4: Taxas da plataforma (inscrição + atualização) */}
+        {(stats.total_platform_fees != null || stats.platform_fee_revenue != null || stats.registration_edit_fee_revenue != null) && (
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Taxas da Plataforma</CardTitle>
+              <Receipt className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {formatCurrency(stats.total_platform_fees ?? (stats.platform_fee_revenue ?? 0) + (stats.registration_edit_fee_revenue ?? 0))}
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                Inscrição: {formatCurrency(stats.platform_fee_revenue ?? 0)}
+                {(stats.registration_edit_fee_revenue ?? 0) > 0 && (
+                  <> · Atualização: {formatCurrency(stats.registration_edit_fee_revenue ?? 0)}</>
+                )}
+              </p>
+            </CardContent>
+          </Card>
+        )}
       </div>
 
       {/* Ações rápidas */}
@@ -222,17 +254,23 @@ const DashboardOverview = () => {
           <CardDescription>Acesse rapidamente as principais funcionalidades</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-wrap gap-2">
-          <Button variant="outline">
-            <Clock className="mr-2 h-4 w-4" />
-            Aprovar Organizadores ({stats.pending_organizers > 0 ? stats.pending_organizers : 0})
+          <Button 
+            variant="outline"
+            onClick={() => navigate(getAdminPath('events'))}
+          >
+            <Calendar className="mr-2 h-4 w-4" />
+            Eventos {stats.pending_events > 0 && `(${stats.pending_events})`}
           </Button>
-          <Button variant="outline">
-            <FileText className="mr-2 h-4 w-4" />
-            Ver Relatórios
+          <Button 
+            variant="outline"
+            onClick={() => navigate(getAdminPath('support'))}
+          >
+            <MessageSquare className="mr-2 h-4 w-4" />
+            Suporte {newTicketsCount > 0 && `(${newTicketsCount})`}
           </Button>
           <Button variant="outline">
             <MessageSquare className="mr-2 h-4 w-4" />
-            Enviar Comunicado Global
+            Enviar Comunicado
           </Button>
         </CardContent>
       </Card>

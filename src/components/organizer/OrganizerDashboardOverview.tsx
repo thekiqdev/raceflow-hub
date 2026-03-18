@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Users, DollarSign, TrendingUp, Calendar, BarChart3, Plus, FileDown, Send, Loader2 } from "lucide-react";
+import { Users, DollarSign, TrendingUp, Calendar, BarChart3, Plus, Send, Loader2 } from "lucide-react";
 import {
   LineChart,
   Line,
@@ -173,13 +173,20 @@ const OrganizerDashboardOverview = () => {
           <CardDescription>Acesso rápido às principais funcionalidades</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-wrap gap-4">
-          <Button>
+          <Button
+            onClick={() => {
+              // Marcar no sessionStorage que o dialog deve ser aberto
+              sessionStorage.setItem('organizer:should-open-create-dialog', 'true');
+              // Navegar para a seção de eventos
+              window.dispatchEvent(new CustomEvent('organizer:navigate-to-section', { detail: 'events' }));
+              // Também disparar o evento imediatamente (caso o componente já esteja montado)
+              setTimeout(() => {
+                window.dispatchEvent(new CustomEvent('organizer:open-create-event'));
+              }, 150);
+            }}
+          >
             <Plus className="mr-2 h-4 w-4" />
             Criar Novo Evento
-          </Button>
-          <Button variant="outline">
-            <FileDown className="mr-2 h-4 w-4" />
-            Exportar Relatório
           </Button>
           <Button variant="outline">
             <Send className="mr-2 h-4 w-4" />

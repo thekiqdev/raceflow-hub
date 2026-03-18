@@ -6,9 +6,21 @@ export interface RegisterData {
   full_name: string;
   cpf: string;
   phone: string;
-  gender?: string;
+  gender?: 'M' | 'F';
   birth_date: string;
+  preferred_name?: string;
+  profession?: string;
+  cbat?: string;
+  team?: string;
+  postal_code?: string;
+  street?: string;
+  address_number?: string;
+  address_complement?: string;
+  neighborhood?: string;
+  city?: string;
+  state?: string;
   lgpd_consent: boolean;
+  referral_code?: string;
 }
 
 export interface LoginData {

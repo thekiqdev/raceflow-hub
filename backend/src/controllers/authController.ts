@@ -1,6 +1,6 @@
 import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth.js';
-import { register, login, getUserById, RegisterData, LoginData } from '../services/authService.js';
+import { register, login, getUserById, setPasswordByInvitationToken, RegisterData, LoginData } from '../services/authService.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 
 // Register new user
@@ -110,6 +110,59 @@ export const getCurrentUser = asyncHandler(async (req: AuthRequest, res: Respons
     success: true,
     data: user,
   });
+});
+
+/**
+ * POST /api/auth/set-password-invitation
+ * Define senha usando token do link de completar cadastro (convite sem cadastro).
+ * Body: { token, newPassword }. Retorna token de login para o front autenticar.
+ */
+export const setPasswordInvitationController = asyncHandler(async (req: AuthRequest, res: Response) => {
+  const { token, newPassword } = req.body || {};
+  if (!token || typeof token !== 'string' || !token.trim()) {
+    res.status(400).json({
+      success: false,
+      error: 'Token é obrigatório.',
+      message: 'Token é obrigatório.',
+    });
+    return;
+  }
+  if (!newPassword || typeof newPassword !== 'string') {
+    res.status(400).json({
+      success: false,
+      error: 'Nova senha é obrigatória.',
+      message: 'Nova senha é obrigatória.',
+    });
+    return;
+  }
+
+  try {
+    const result = await setPasswordByInvitationToken(token.trim(), newPassword);
+    res.json({
+      success: true,
+      data: result,
+      message: 'Senha definida com sucesso. Você já está logado.',
+    });
+  } catch (error: any) {
+    const msg = error.message || 'Não foi possível definir a senha.';
+    if (msg.includes('inválido') || msg.includes('expirado') || msg.includes('não encontrado')) {
+      res.status(400).json({
+        success: false,
+        error: msg,
+        message: msg,
+      });
+      return;
+    }
+    if (msg.includes('mínimo 6')) {
+      res.status(400).json({
+        success: false,
+        error: msg,
+        message: msg,
+      });
+      return;
+    }
+    throw error;
+  }
 });
 
 // Logout (client-side token removal, but we can add token blacklist here if needed)

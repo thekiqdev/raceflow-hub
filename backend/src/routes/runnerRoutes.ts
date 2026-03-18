@@ -9,6 +9,13 @@ import {
   getRunnerAchievementsController,
   getRunnerPaymentsController,
 } from '../controllers/runnerResultsController.js';
+import {
+  getRunnerDocumentsController,
+  getRunnerDocumentByIdController,
+  uploadRunnerDocumentController,
+  deleteRunnerDocumentController,
+} from '../controllers/documentsController.js';
+import { uploadDocument } from '../middleware/upload.js';
 
 const router = Router();
 
@@ -27,6 +34,12 @@ router.get('/achievements', getRunnerAchievementsController);
 
 // Payments endpoint
 router.get('/payments', getRunnerPaymentsController);
+
+// Documents endpoints
+router.get('/documents', getRunnerDocumentsController);
+router.get('/documents/:id', getRunnerDocumentByIdController);
+router.post('/documents', uploadDocument.single('file'), uploadRunnerDocumentController);
+router.delete('/documents/:id', deleteRunnerDocumentController);
 
 export default router;
 

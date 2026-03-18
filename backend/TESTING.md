@@ -476,7 +476,25 @@ Authorization: Bearer <token_admin>
 - [ ] Queries otimizadas
 - [ ] Sem memory leaks
 
-## 9. Scripts de Teste Automatizado
+## 9. Testes de Convites (Líder escolhe x Corredor escolhe)
+
+Funcionalidade: envio de convite com opção de o líder definir categoria/modalidade/kit ou deixar o corredor escolher.
+
+**Endpoints:**
+- `POST /group-leaders/me/invitations/send` – envia convite (body pode incluir `runner_chooses_category_modality_kit`, `category_id`, `modality_id`, `kit_id`, `product_selections`).
+- `POST /registrations/:id/complete-invitation` – corredor completa categoria/modalidade/kit do convite (body: `category_id`, `modality_id`, `kit_id`, `product_selections`).
+
+**Cenários manuais:**
+1. **Líder escolhe:** Desmarcar "Deixar o corredor escolher", preencher categoria, modalidade, kit e variante (se houver). Enviar. Corredor deve ver inscrição já preenchida.
+2. **Corredor escolhe:** Manter "Deixar o corredor escolher" marcado e enviar. Corredor deve ver botão "Completar convite" e conseguir escolher categoria, modalidade, kit e variante no modal.
+3. **Validação:** Enviar com kit que tem produto variável sem `product_selections` → backend deve retornar 400.
+
+Documentação detalhada e checklist: **`docs/TESTES_CONVITE_LIDER_ESCOLHE_CATEGORIA_MODALIDADE_KIT.md`**.  
+API: **`backend/API_DOCUMENTATION.md`** (seções "Líderes de grupo – Convites" e "Inscrições" → complete-invitation).
+
+---
+
+## 10. Scripts de Teste Automatizado
 
 ### Usando curl
 
@@ -499,7 +517,7 @@ curl http://localhost:3001/api/auth/me \
   -H "Authorization: Bearer TOKEN"
 ```
 
-## 10. Problemas Comuns
+## 11. Problemas Comuns
 
 ### Erro de Conexão com Banco
 - Verificar se PostgreSQL está rodando
@@ -516,7 +534,7 @@ curl http://localhost:3001/api/auth/me \
 - Verificar ownership do recurso
 - Verificar se middleware de autorização está aplicado
 
-## 11. Próximos Passos
+## 12. Próximos Passos
 
 Após validar todos os testes:
 1. Documentar qualquer problema encontrado

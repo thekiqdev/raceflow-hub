@@ -1,10 +1,12 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Card, CardContent } from "@/components/ui/card";
-import { Lock, Unlock, Info } from "lucide-react";
+import { Lock, Unlock, Info, Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import { getOwnProfile, updateOwnProfile } from "@/lib/api/profiles";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface PrivacySettingsProps {
   open: boolean;
@@ -12,15 +14,59 @@ interface PrivacySettingsProps {
 }
 
 export function PrivacySettings({ open, onOpenChange }: PrivacySettingsProps) {
+  const { user } = useAuth();
   const [isPublicProfile, setIsPublicProfile] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
 
-  const handleToggle = (checked: boolean) => {
-    setIsPublicProfile(checked);
-    toast.success(
-      checked
-        ? "Perfil público: Outras pessoas podem inscrever você usando seu CPF"
-        : "Perfil privado: Apenas você pode fazer inscrições"
-    );
+  // Load current privacy setting when dialog opens
+  useEffect(() => {
+    if (open && user) {
+      loadPrivacySetting();
+    }
+  }, [open, user]);
+
+  const loadPrivacySetting = async () => {
+    if (!user) return;
+    
+    setLoading(true);
+    try {
+      const response = await getOwnProfile();
+      if (response.success && response.data) {
+        setIsPublicProfile(response.data.is_public || false);
+      }
+    } catch (error) {
+      console.error("Error loading privacy setting:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleToggle = async (checked: boolean) => {
+    if (!user) {
+      toast.error("Você precisa estar logado para alterar esta configuração");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const response = await updateOwnProfile({ is_public: checked });
+      if (response.success) {
+        setIsPublicProfile(checked);
+        toast.success(
+          checked
+            ? "Perfil público: Outras pessoas podem inscrever você usando seu CPF"
+            : "Perfil privado: Apenas você pode fazer inscrições"
+        );
+      } else {
+        toast.error(response.error || "Erro ao atualizar configuração de privacidade");
+      }
+    } catch (error: any) {
+      console.error("Error updating privacy setting:", error);
+      toast.error("Erro ao atualizar configuração de privacidade");
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -58,7 +104,11 @@ export function PrivacySettings({ open, onOpenChange }: PrivacySettingsProps) {
                   id="public-profile"
                   checked={isPublicProfile}
                   onCheckedChange={handleToggle}
+                  disabled={loading || saving}
                 />
+                {(loading || saving) && (
+                  <Loader2 className="w-4 h-4 animate-spin text-muted-foreground ml-2" />
+                )}
               </div>
             </CardContent>
           </Card>

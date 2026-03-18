@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -26,31 +26,33 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { Plus, Search, MoreVertical, Edit, Eye, Trash2, BarChart3, Calendar, Award, Loader2 } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Plus, Search, MoreVertical, Edit, Eye, Trash2, BarChart3, Calendar, Loader2, ExternalLink, ArrowRightLeft } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { formatDateShortBrasilia } from "@/lib/utils";
 import { EventFormDialog } from "./EventFormDialog";
-import { getEvents, updateEvent, deleteEvent, type Event } from "@/lib/api/events";
+import EventDetailedReport from "./EventDetailedReport";
+import { getEvents, deleteEvent, updateEvent, type Event } from "@/lib/api/events";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
+import { useNavigate } from "react-router-dom";
+import { getEffectiveRegistrationStatus, getRegistrationStatusLabel, getRegistrationStatusVariant } from "@/lib/utils/eventRegistration";
 
 const OrganizerEvents = () => {
+  const navigate = useNavigate();
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [events, setEvents] = useState<Event[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
+  const [dateOrderFilter, setDateOrderFilter] = useState<string>("asc"); // 'asc' = mais próximo, 'desc' = mais longe
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
-  const [isResultDialogOpen, setIsResultDialogOpen] = useState(false);
-  const [resultUrl, setResultUrl] = useState("");
-  const [eventForResult, setEventForResult] = useState<Event | null>(null);
   const [isDeleting, setIsDeleting] = useState<string | null>(null);
+  const [editingRegistrationStatus, setEditingRegistrationStatus] = useState<string | null>(null);
+  const [selectedEventIdForReport, setSelectedEventIdForReport] = useState<string | null>(null);
 
-  useEffect(() => {
-    loadEvents();
-  }, []);
-
-  const loadEvents = async () => {
+  const loadEvents = useCallback(async () => {
     if (!user) {
       console.log("❌ No user, skipping loadEvents");
       return;
@@ -60,19 +62,21 @@ const OrganizerEvents = () => {
       setLoading(true);
       console.log("🔄 Loading events for organizer:", user.id);
       
-      const response = await getEvents({ organizer_id: user.id });
+      const filters: any = { organizer_id: user.id };
+      if (searchQuery && searchQuery.trim()) {
+        filters.search = searchQuery.trim();
+      }
+      if (dateOrderFilter) {
+        filters.order_by_date = dateOrderFilter;
+      }
 
-      console.log("📥 Full response:", response);
-      console.log("📥 Response success:", response.success);
-      console.log("📥 Response data:", response.data);
-      console.log("📥 Response data type:", typeof response.data);
-      console.log("📥 Response data is array:", Array.isArray(response.data));
-      console.log("📥 Response data length:", response.data?.length);
+      console.log('🔍 OrganizerEvents - Carregando eventos com filtros:', filters);
+      
+      const response = await getEvents(filters);
 
       if (response.success && response.data) {
         const eventsArray = Array.isArray(response.data) ? response.data : [];
-        console.log("✅ Events loaded:", eventsArray.length, "events");
-        console.log("✅ Events data:", eventsArray);
+        console.log(`✅ OrganizerEvents - ${eventsArray.length} eventos carregados`);
         setEvents(eventsArray);
       } else {
         console.error("❌ Error loading events:", response);
@@ -86,7 +90,42 @@ const OrganizerEvents = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [user, searchQuery, dateOrderFilter, toast]);
+
+  // Load events on mount and when search query changes (with debounce)
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      loadEvents();
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [loadEvents]);
+
+  useEffect(() => {
+    // Escutar evento para abrir o dialog de criação
+    const handleOpenCreateEvent = () => {
+      console.log('🎯 Evento recebido: abrir dialog de criação');
+      setSelectedEvent(null);
+      setIsDialogOpen(true);
+    };
+
+    window.addEventListener('organizer:open-create-event', handleOpenCreateEvent);
+    
+    return () => {
+      window.removeEventListener('organizer:open-create-event', handleOpenCreateEvent);
+    };
+  }, []);
+
+  // Também escutar quando o componente é montado para verificar se há um evento pendente
+  useEffect(() => {
+    // Verificar se há um evento pendente no localStorage
+    const shouldOpenDialog = sessionStorage.getItem('organizer:should-open-create-dialog');
+    if (shouldOpenDialog === 'true') {
+      sessionStorage.removeItem('organizer:should-open-create-dialog');
+      setSelectedEvent(null);
+      setIsDialogOpen(true);
+    }
+  }, []);
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -98,37 +137,6 @@ const OrganizerEvents = () => {
         return <Badge variant="outline">Finalizado</Badge>;
       default:
         return <Badge variant="secondary">{status}</Badge>;
-    }
-  };
-
-  const filteredEvents = events.filter(event =>
-    event.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    event.city.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    event.state.toLowerCase().includes(searchQuery.toLowerCase())
-  );
-
-  const handleSendResult = async () => {
-    if (!resultUrl.trim() || !eventForResult) {
-      toast.error("Por favor, insira o link dos resultados");
-      return;
-    }
-
-    try {
-      const response = await updateEvent(eventForResult.id, { result_url: resultUrl });
-
-      if (!response.success) {
-        throw new Error(response.error || "Erro ao atualizar evento");
-      }
-
-      toast.success("Link de resultados enviado com sucesso!");
-      setIsResultDialogOpen(false);
-      setResultUrl("");
-      setEventForResult(null);
-      // Refresh events list
-      loadEvents();
-    } catch (error: any) {
-      console.error("Error updating result URL:", error);
-      toast.error(error.message || "Erro ao enviar link de resultados");
     }
   };
 
@@ -155,6 +163,41 @@ const OrganizerEvents = () => {
     }
   };
 
+  const handleToggleTransfers = async (event: Event) => {
+    const newValue = !(event.transfers_enabled ?? true);
+    const action = newValue ? "ativar" : "desativar";
+    
+    if (!confirm(`Deseja ${action} as transferências de inscrições para este evento?`)) {
+      return;
+    }
+
+    try {
+      const response = await updateEvent(event.id, {
+        transfers_enabled: newValue,
+      });
+
+      if (!response.success) {
+        throw new Error(response.error || "Erro ao atualizar transferências");
+      }
+
+      toast.success(`Transferências ${newValue ? "ativadas" : "desativadas"} com sucesso!`);
+      loadEvents();
+    } catch (error: any) {
+      console.error("Error toggling transfers:", error);
+      toast.error(error.message || "Erro ao atualizar transferências");
+    }
+  };
+
+  // Se um evento foi selecionado para relatório, mostrar apenas o relatório
+  if (selectedEventIdForReport) {
+    return (
+      <EventDetailedReport
+        eventId={selectedEventIdForReport}
+        onBack={() => setSelectedEventIdForReport(null)}
+      />
+    );
+  }
+
   return (
     <div className="space-y-6">
       <div>
@@ -166,14 +209,25 @@ const OrganizerEvents = () => {
       <Card>
         <CardContent className="pt-6">
           <div className="flex flex-col sm:flex-row gap-4 justify-between">
-            <div className="relative flex-1 max-w-md">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Buscar por nome ou cidade..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10"
-              />
+            <div className="flex gap-2 flex-1">
+              <div className="relative flex-1 max-w-md">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Buscar por nome ou cidade..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-10"
+                />
+              </div>
+              <Select value={dateOrderFilter} onValueChange={setDateOrderFilter}>
+                <SelectTrigger className="w-[200px]">
+                  <SelectValue placeholder="Ordenar por data" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="asc">Mais próximo primeiro</SelectItem>
+                  <SelectItem value="desc">Mais longe primeiro</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <Button onClick={() => {
               setSelectedEvent(null);
@@ -191,7 +245,7 @@ const OrganizerEvents = () => {
         <CardHeader>
           <CardTitle>Meus Eventos</CardTitle>
           <CardDescription>
-            {loading ? "Carregando..." : `${filteredEvents.length} ${filteredEvents.length === 1 ? "evento encontrado" : "eventos encontrados"}`}
+            {loading ? "Carregando..." : `${events.length} ${events.length === 1 ? "evento encontrado" : "eventos encontrados"}`}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -199,7 +253,7 @@ const OrganizerEvents = () => {
             <div className="flex items-center justify-center h-64">
               <Loader2 className="h-8 w-8 animate-spin text-primary" />
             </div>
-          ) : filteredEvents.length === 0 ? (
+          ) : events.length === 0 ? (
             <div className="text-center py-12 text-muted-foreground">
               {searchQuery ? "Nenhum evento encontrado com essa busca" : "Você ainda não criou nenhum evento"}
             </div>
@@ -212,25 +266,80 @@ const OrganizerEvents = () => {
                     <TableHead>Data</TableHead>
                     <TableHead>Localização</TableHead>
                     <TableHead>Status</TableHead>
+                    <TableHead>Status Inscrições</TableHead>
                     <TableHead className="text-right">Inscrições</TableHead>
                     <TableHead className="text-right">Faturamento</TableHead>
                     <TableHead className="text-right">Ações</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredEvents.map((event) => (
+                  {events.map((event) => (
                     <TableRow key={event.id}>
                       <TableCell className="font-medium">{event.title}</TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
                           <Calendar className="h-4 w-4 text-muted-foreground" />
-                          {format(new Date(event.event_date), "dd 'de' MMM, yyyy", { locale: ptBR })}
+                          {formatDateShortBrasilia(event.event_date)}
                         </div>
                       </TableCell>
                       <TableCell>
                         {event.city}, {event.state}
                       </TableCell>
                       <TableCell>{getStatusBadge(event.status || "draft")}</TableCell>
+                      <TableCell>
+                        {(() => {
+                          const effectiveStatus = getEffectiveRegistrationStatus(event);
+                          if (effectiveStatus !== null) {
+                            return editingRegistrationStatus === event.id ? (
+                              <Select
+                                value={effectiveStatus || "default"}
+                                onValueChange={async (value) => {
+                                  try {
+                                    const newStatus = value === "default" ? null : value;
+                                    const response = await updateEvent(event.id, {
+                                      registration_status: newStatus,
+                                      registration_auto_mode: false, // Desativa modo automático ao mudar manualmente
+                                    });
+                                    if (response.success) {
+                                      toast.success("Status de inscrições atualizado com sucesso!");
+                                      setEditingRegistrationStatus(null);
+                                      loadEvents();
+                                    } else {
+                                      throw new Error(response.error || "Erro ao atualizar status");
+                                    }
+                                  } catch (error: any) {
+                                    toast.error(error.message || "Erro ao atualizar status de inscrições");
+                                  }
+                                }}
+                                onOpenChange={(open) => {
+                                  if (!open) {
+                                    setEditingRegistrationStatus(null);
+                                  }
+                                }}
+                              >
+                                <SelectTrigger className="w-[200px]">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="not_open">Inscrições em Breve</SelectItem>
+                                  <SelectItem value="open">Inscrições Abertas</SelectItem>
+                                  <SelectItem value="closed">Inscrições Encerradas</SelectItem>
+                                  <SelectItem value="default">Usar Status Padrão</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            ) : (
+                              <Badge
+                                variant={getRegistrationStatusVariant(event)}
+                                className="cursor-pointer hover:opacity-80"
+                                onClick={() => setEditingRegistrationStatus(event.id)}
+                              >
+                                {getRegistrationStatusLabel(event)}
+                              </Badge>
+                            );
+                          }
+                          return <span className="text-muted-foreground text-sm">-</span>;
+                        })()}
+                      </TableCell>
                       <TableCell className="text-right">
                         <span className="font-medium">{event.confirmed_registrations || event.registration_count || 0}</span>
                       </TableCell>
@@ -251,9 +360,9 @@ const OrganizerEvents = () => {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
-                            <DropdownMenuItem>
-                              <Eye className="mr-2 h-4 w-4" />
-                              Ver Detalhes
+                            <DropdownMenuItem onClick={() => navigate(event.slug ? `/evento/${event.slug}` : `/events/${event.id}`)}>
+                              <ExternalLink className="mr-2 h-4 w-4" />
+                              Visualizar Evento
                             </DropdownMenuItem>
                             <DropdownMenuItem onClick={() => {
                               setSelectedEvent(event);
@@ -262,17 +371,13 @@ const OrganizerEvents = () => {
                               <Edit className="mr-2 h-4 w-4" />
                               Editar
                             </DropdownMenuItem>
-                            <DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => setSelectedEventIdForReport(event.id)}>
                               <BarChart3 className="mr-2 h-4 w-4" />
                               Estatísticas
                             </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => {
-                              setEventForResult(event);
-                              setResultUrl(event.result_url || "");
-                              setIsResultDialogOpen(true);
-                            }}>
-                              <Award className="mr-2 h-4 w-4" />
-                              Enviar Resultado
+                            <DropdownMenuItem onClick={() => handleToggleTransfers(event)}>
+                              <ArrowRightLeft className="mr-2 h-4 w-4" />
+                              {event.transfers_enabled ?? true ? "Desativar" : "Ativar"} Transferências
                             </DropdownMenuItem>
                             <DropdownMenuItem 
                               className="text-destructive"
@@ -350,37 +455,6 @@ const OrganizerEvents = () => {
           await loadEvents();
         }}
       />
-
-      {/* Result URL Dialog */}
-      <Dialog open={isResultDialogOpen} onOpenChange={setIsResultDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Enviar Resultado do Evento</DialogTitle>
-            <DialogDescription>
-              Insira o link para os resultados de {eventForResult?.title}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="result-url">Link dos Resultados</Label>
-              <Input
-                id="result-url"
-                placeholder="https://exemplo.com/resultados"
-                value={resultUrl}
-                onChange={(e) => setResultUrl(e.target.value)}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsResultDialogOpen(false)}>
-              Cancelar
-            </Button>
-            <Button onClick={handleSendResult}>
-              Enviar Resultado
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 };

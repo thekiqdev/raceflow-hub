@@ -109,6 +109,7 @@ cronoteam/
 - [backend/TESTING.md](./backend/TESTING.md) - Guia de testes
 - [backend/SECURITY.md](./backend/SECURITY.md) - Documentação de segurança
 - [MIGRACAO_SUPABASE_PARA_DOCKER_POSTGRES.md](./MIGRACAO_SUPABASE_PARA_DOCKER_POSTGRES.md) - Documentação da migração
+- [docs/PLANO_INSCREVER_ATLETA_ORGANIZADOR.md](./docs/PLANO_INSCREVER_ATLETA_ORGANIZADOR.md) - Fluxo **Inscrever Atleta por CPF** (painel do organizador: inscrições por CPF, cadastro de atleta quando não existir, inscrição como convite)
 
 ## 🔐 Autenticação
 

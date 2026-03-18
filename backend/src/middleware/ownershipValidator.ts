@@ -3,6 +3,16 @@ import { AuthRequest } from './auth.js';
 import { query } from '../config/database.js';
 import { hasRole } from '../services/userRolesService.js';
 
+/**
+ * Verifica se uma string é um UUID válido
+ * @param str - String a ser verificada
+ * @returns true se for UUID, false caso contrário
+ */
+function isUUID(str: string): boolean {
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  return uuidRegex.test(str);
+}
+
 // Check if user owns a resource by checking a specific field
 export const requireResourceOwnership = (
   tableName: string,
@@ -89,9 +99,13 @@ export const requireEventOwnership = (eventIdParam: string = 'eventId') => {
       return next();
     }
 
+    // Detectar se é UUID ou slug
+    const isId = isUUID(eventId);
+    const whereClause = isId ? 'id = $1' : 'slug = $1';
+    
     // Check if user is organizer
     const result = await query(
-      'SELECT organizer_id FROM events WHERE id = $1',
+      `SELECT organizer_id FROM events WHERE ${whereClause}`,
       [eventId]
     );
 

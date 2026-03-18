@@ -26,6 +26,15 @@ export interface OrganizerStats {
  * Get all organizers with statistics
  */
 export const getOrganizers = async (searchTerm?: string): Promise<UserWithStats[]> => {
+  // Get platform fee settings
+  const { getSystemSettings } = await import('./systemSettingsService.js');
+  const settings = await getSystemSettings();
+  const platformFee = settings.platform_fee || 0;
+  const platformFeeType = (settings.platform_fee_type || 'fixed') as 'fixed' | 'percentage';
+  const platformFeeMin = settings.platform_fee_min ?? 0;
+  const { calculateValueWithoutFee } = await import('../utils/feeCalculations.js');
+
+  // First, get organizers with basic info and events count
   let queryText = `
     SELECT 
       p.id,
@@ -35,14 +44,11 @@ export const getOrganizers = async (searchTerm?: string): Promise<UserWithStats[
       p.phone,
       COALESCE(p.status, 'active') as status,
       p.created_at,
-      COUNT(DISTINCT e.id) as events,
-      COUNT(DISTINCT r.id) as registrations,
-      COALESCE(SUM(CASE WHEN r.payment_status = 'paid' THEN r.total_amount ELSE 0 END), 0) as revenue
+      COUNT(DISTINCT e.id) as events
     FROM profiles p
     JOIN users u ON p.id = u.id
     JOIN user_roles ur ON p.id = ur.user_id
     LEFT JOIN events e ON p.id = e.organizer_id
-    LEFT JOIN registrations r ON e.id = r.event_id
     WHERE ur.role = 'organizer'
   `;
 
@@ -62,23 +68,62 @@ export const getOrganizers = async (searchTerm?: string): Promise<UserWithStats[
     ORDER BY p.full_name
   `;
 
-  const result = await query(queryText, params);
-  return result.rows.map((row) => ({
-    id: row.id,
-    name: row.name,
-    email: row.email,
-    cpf: row.cpf,
-    phone: row.phone,
-    status: row.status || 'active',
-    events: parseInt(row.events) || 0,
-    registrations: parseInt(row.registrations) || 0,
-    revenue: parseFloat(row.revenue) || 0,
-    created_at: row.created_at,
-  }));
+  const organizersResult = await query(queryText, params);
+  
+  // Get registrations for all organizers
+  const organizerIds = organizersResult.rows.map((row: any) => row.id);
+  const registrationsResult = organizerIds.length > 0 ? await query(
+    `SELECT 
+      e.organizer_id,
+      r.id as registration_id,
+      r.payment_status,
+      r.total_amount
+    FROM registrations r
+    JOIN events e ON r.event_id = e.id
+    WHERE e.organizer_id = ANY($1::uuid[])`,
+    [organizerIds]
+  ) : { rows: [] };
+
+  // Group registrations by organizer
+  const organizerStats = new Map<string, { registrations: number; revenue: number }>();
+  registrationsResult.rows.forEach((row) => {
+    const organizerId = row.organizer_id;
+    if (!organizerStats.has(organizerId)) {
+      organizerStats.set(organizerId, { registrations: 0, revenue: 0 });
+    }
+    const stats = organizerStats.get(organizerId)!;
+    stats.registrations++;
+    if (row.payment_status === 'paid') {
+      stats.revenue += calculateValueWithoutFee(
+        parseFloat(row.total_amount) || 0,
+        platformFee,
+        platformFeeType,
+        platformFeeMin
+      );
+    }
+  });
+
+  return organizersResult.rows.map((row: any) => {
+    const stats = organizerStats.get(row.id) || { registrations: 0, revenue: 0 };
+    return {
+      id: row.id,
+      name: row.name,
+      email: row.email,
+      cpf: row.cpf,
+      phone: row.phone,
+      status: row.status || 'active',
+      events: parseInt(row.events) || 0,
+      registrations: stats.registrations,
+      revenue: stats.revenue,
+      created_at: row.created_at,
+    };
+  });
 };
 
 /**
  * Get all athletes with statistics
+ * Includes users with 'runner' role OR users without any role (default runners)
+ * Excludes users who have 'admin' or 'organizer' roles
  */
 export const getAthletes = async (searchTerm?: string): Promise<UserWithStats[]> => {
   let queryText = `
@@ -93,9 +138,23 @@ export const getAthletes = async (searchTerm?: string): Promise<UserWithStats[]>
       COUNT(DISTINCT r.id) as registrations
     FROM profiles p
     JOIN users u ON p.id = u.id
-    JOIN user_roles ur ON p.id = ur.user_id
+    LEFT JOIN user_roles ur ON p.id = ur.user_id
     LEFT JOIN registrations r ON p.id = r.runner_id
-    WHERE ur.role = 'runner'
+    WHERE p.id NOT IN (
+      SELECT DISTINCT user_id 
+      FROM user_roles 
+      WHERE role IN ('admin', 'organizer')
+    )
+    AND (
+      EXISTS (
+        SELECT 1 FROM user_roles ur2 
+        WHERE ur2.user_id = p.id AND ur2.role = 'runner'
+      )
+      OR NOT EXISTS (
+        SELECT 1 FROM user_roles ur3 
+        WHERE ur3.user_id = p.id
+      )
+    )
   `;
 
   const params: any[] = [];
@@ -203,6 +262,89 @@ export const getUserById = async (userId: string): Promise<UserWithStats | null>
 };
 
 /**
+ * Get user profile by ID (for admin)
+ */
+export const getUserProfileById = async (userId: string) => {
+  // First, get the profile data with all fields
+  const profileQuery = `
+    SELECT 
+      p.id,
+      p.full_name,
+      u.email,
+      p.cpf,
+      p.phone,
+      p.gender,
+      p.birth_date,
+      COALESCE(p.status, 'active') as status,
+      p.lgpd_consent,
+      p.is_public,
+      p.preferred_name,
+      p.profession,
+      p.cbat,
+      p.team,
+      p.postal_code,
+      p.street,
+      p.address_number,
+      p.address_complement,
+      p.neighborhood,
+      p.city,
+      p.state,
+      p.created_at,
+      p.updated_at
+    FROM profiles p
+    JOIN users u ON p.id = u.id
+    WHERE p.id = $1
+  `;
+
+  const profileResult = await query(profileQuery, [userId]);
+
+  if (profileResult.rows.length === 0) {
+    return null;
+  }
+
+  const profileRow = profileResult.rows[0];
+
+  // Then, get the roles separately
+  const rolesQuery = `
+    SELECT role
+    FROM user_roles
+    WHERE user_id = $1
+    ORDER BY role
+    LIMIT 1
+  `;
+
+  const rolesResult = await query(rolesQuery, [userId]);
+  const role = rolesResult.rows.length > 0 ? rolesResult.rows[0].role : null;
+  
+  return {
+    id: profileRow.id,
+    full_name: profileRow.full_name,
+    email: profileRow.email,
+    cpf: profileRow.cpf,
+    phone: profileRow.phone,
+    gender: profileRow.gender,
+    birth_date: profileRow.birth_date,
+    status: profileRow.status || 'active',
+    role: role,
+    lgpd_consent: profileRow.lgpd_consent,
+    is_public: profileRow.is_public,
+    preferred_name: profileRow.preferred_name,
+    profession: profileRow.profession,
+    cbat: profileRow.cbat,
+    team: profileRow.team,
+    postal_code: profileRow.postal_code,
+    street: profileRow.street,
+    address_number: profileRow.address_number,
+    address_complement: profileRow.address_complement,
+    neighborhood: profileRow.neighborhood,
+    city: profileRow.city,
+    state: profileRow.state,
+    created_at: profileRow.created_at,
+    updated_at: profileRow.updated_at,
+  };
+};
+
+/**
  * Update user status
  */
 export const updateUserStatus = async (userId: string, status: 'active' | 'pending' | 'blocked'): Promise<void> => {
@@ -210,6 +352,145 @@ export const updateUserStatus = async (userId: string, status: 'active' | 'pendi
     'UPDATE profiles SET status = $1, updated_at = NOW() WHERE id = $2',
     [status, userId]
   );
+};
+
+/**
+ * Update user role
+ */
+export const updateUserRole = async (userId: string, role: 'admin' | 'organizer' | 'runner'): Promise<void> => {
+  const client = await getClient();
+  
+  try {
+    await client.query('BEGIN');
+
+    // Remove all existing roles
+    await client.query(
+      'DELETE FROM user_roles WHERE user_id = $1',
+      [userId]
+    );
+
+    // Add new role
+    await client.query(
+      'INSERT INTO user_roles (user_id, role) VALUES ($1, $2)',
+      [userId, role]
+    );
+
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+};
+
+/**
+ * Delete user (soft delete by setting status to blocked and removing roles)
+ */
+export const deleteUser = async (userId: string): Promise<void> => {
+  const client = await getClient();
+  
+  try {
+    await client.query('BEGIN');
+
+    // Set status to blocked
+    await client.query(
+      'UPDATE profiles SET status = $1, updated_at = NOW() WHERE id = $2',
+      ['blocked', userId]
+    );
+
+    // Remove all roles
+    await client.query(
+      'DELETE FROM user_roles WHERE user_id = $1',
+      [userId]
+    );
+
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+};
+
+/**
+ * Hard delete user - completely removes user profile and all related data
+ * WARNING: This is a destructive operation that cannot be undone
+ */
+export const hardDeleteUser = async (userId: string): Promise<void> => {
+  const client = await getClient();
+  
+  try {
+    await client.query('BEGIN');
+
+    // Delete in order to respect foreign key constraints
+    
+    // 1. Delete user roles
+    await client.query('DELETE FROM user_roles WHERE user_id = $1', [userId]);
+    
+    // 2. Delete asaas customers
+    await client.query('DELETE FROM asaas_customers WHERE user_id = $1', [userId]);
+    
+    // 3. Delete asaas webhook events (via registrations)
+    await client.query(
+      `DELETE FROM asaas_webhook_events 
+       WHERE registration_id IN (SELECT id FROM registrations WHERE runner_id = $1 OR registered_by = $1)`,
+      [userId]
+    );
+    
+    // 4. Delete asaas payments (via registrations)
+    await client.query(
+      `DELETE FROM asaas_payments 
+       WHERE registration_id IN (SELECT id FROM registrations WHERE runner_id = $1 OR registered_by = $1)`,
+      [userId]
+    );
+    
+    // 5. Delete refund requests
+    await client.query('DELETE FROM refund_requests WHERE athlete_id = $1 OR processed_by = $1', [userId]);
+    await client.query(
+      `DELETE FROM refund_requests 
+       WHERE registration_id IN (SELECT id FROM registrations WHERE runner_id = $1 OR registered_by = $1)`,
+      [userId]
+    );
+    
+    // 6. Delete support ticket messages
+    await client.query('DELETE FROM support_ticket_messages WHERE user_id = $1', [userId]);
+    
+    // 7. Delete support tickets
+    await client.query('DELETE FROM support_tickets WHERE user_id = $1 OR assigned_to = $1', [userId]);
+    
+    // 8. Delete announcement reads
+    await client.query('DELETE FROM announcement_reads WHERE user_id = $1', [userId]);
+    
+    // 9. Delete announcements created by user
+    await client.query('DELETE FROM announcements WHERE created_by = $1', [userId]);
+    
+    // 10. Delete knowledge articles created by user
+    await client.query('DELETE FROM knowledge_articles WHERE created_by = $1', [userId]);
+    
+    // 11. Delete withdraw requests
+    await client.query('DELETE FROM withdraw_requests WHERE organizer_id = $1 OR processed_by = $1', [userId]);
+    
+    // 12. Delete registrations (this will cascade to related data)
+    await client.query('DELETE FROM registrations WHERE runner_id = $1 OR registered_by = $1', [userId]);
+    
+    // 13. Delete events created by organizer (if user is organizer)
+    await client.query('DELETE FROM events WHERE organizer_id = $1', [userId]);
+    
+    // 14. Delete profile
+    await client.query('DELETE FROM profiles WHERE id = $1', [userId]);
+    
+    // 15. Delete user
+    await client.query('DELETE FROM users WHERE id = $1', [userId]);
+
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
 };
 
 /**
@@ -287,6 +568,63 @@ export const createAdmin = async (data: {
 
     await client.query('COMMIT');
     return userId;
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+};
+
+/**
+ * Convert athlete to organizer
+ * Removes 'runner' role and adds 'organizer' role
+ */
+export const convertAthleteToOrganizer = async (userId: string): Promise<void> => {
+  const client = await getClient();
+  
+  try {
+    await client.query('BEGIN');
+
+    // Check if user has runner role
+    const runnerCheck = await client.query(
+      'SELECT 1 FROM user_roles WHERE user_id = $1 AND role = $2',
+      [userId, 'runner']
+    );
+
+    if (runnerCheck.rows.length === 0) {
+      throw new Error('User is not an athlete (does not have runner role)');
+    }
+
+    // Check if user already has organizer role
+    const organizerCheck = await client.query(
+      'SELECT 1 FROM user_roles WHERE user_id = $1 AND role = $2',
+      [userId, 'organizer']
+    );
+
+    if (organizerCheck.rows.length > 0) {
+      throw new Error('User already has organizer role');
+    }
+
+    // Remove runner role
+    await client.query(
+      'DELETE FROM user_roles WHERE user_id = $1 AND role = $2',
+      [userId, 'runner']
+    );
+
+    // Add organizer role
+    await client.query(
+      'INSERT INTO user_roles (user_id, role) VALUES ($1, $2)',
+      [userId, 'organizer']
+    );
+
+    // Update profile status to active if it was blocked
+    await client.query(
+      'UPDATE profiles SET status = $1, updated_at = NOW() WHERE id = $2 AND status = $3',
+      ['active', userId, 'blocked']
+    );
+
+    await client.query('COMMIT');
   } catch (error) {
     await client.query('ROLLBACK');
     throw error;

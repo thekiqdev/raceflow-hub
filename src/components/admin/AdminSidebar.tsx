@@ -1,5 +1,6 @@
-import { LayoutDashboard, Users, Calendar, DollarSign, FileText, Settings, MessageSquare, Building2, Palette } from "lucide-react";
+import { LayoutDashboard, Users, Calendar, DollarSign, FileText, Settings, MessageSquare, Building2, Palette, ArrowRightLeft, UserCog, Calculator, ClipboardList, Image } from "lucide-react";
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Sidebar,
   SidebarContent,
@@ -11,39 +12,97 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
+import { getSystemSettings } from "@/lib/api/systemSettings";
+import { getNewQuotesCount } from "@/lib/api/quotes";
+import { getNewContactMessagesCount } from "@/lib/api/contactMessages";
+import { getPendingDocuments } from "@/lib/api/documents";
+import { getAdminPath } from "@/lib/utils/navigation";
 
 interface AdminSidebarProps {
   activeSection: string;
-  onSectionChange: (section: string) => void;
 }
 
 const menuItems = [
   { id: "overview", title: "Dashboard", icon: LayoutDashboard },
   { id: "users", title: "Usuários", icon: Users },
   { id: "events", title: "Eventos", icon: Calendar },
+  { id: "registrations", title: "Inscrições", icon: ClipboardList },
+  { id: "quotes", title: "Orçamentos", icon: Calculator, badge: true },
   { id: "financial", title: "Financeiro", icon: DollarSign },
+  { id: "transfers", title: "Transferências", icon: ArrowRightLeft },
+  { id: "group-leaders", title: "Líderes de Grupo", icon: UserCog },
   { id: "reports", title: "Relatórios", icon: FileText },
   { id: "knowledge", title: "Base de Conhecimento", icon: FileText },
   { id: "customize", title: "Personalizar", icon: Palette },
+  { id: "banners", title: "Banners", icon: Image },
   { id: "settings", title: "Configurações", icon: Settings },
-  { id: "support", title: "Suporte", icon: MessageSquare },
+  { id: "support", title: "Suporte", icon: MessageSquare, badge: true }, // Badge para documentos e contatos pendentes
 ];
 
-export function AdminSidebar({ activeSection, onSectionChange }: AdminSidebarProps) {
+export function AdminSidebar({ activeSection }: AdminSidebarProps) {
+  const navigate = useNavigate();
   const { open } = useSidebar();
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const [transfersEnabled, setTransfersEnabled] = useState(false);
+  const [newQuotesCount, setNewQuotesCount] = useState(0);
+  const [newContactMessagesCount, setNewContactMessagesCount] = useState(0);
+  const [pendingDocumentsCount, setPendingDocumentsCount] = useState(0);
+  
+  // Total de notificações para o menu Suporte (documentos + contatos)
+  const supportNotificationsCount = pendingDocumentsCount + newContactMessagesCount;
 
   useEffect(() => {
     loadAdminLogo();
+    loadSystemSettings();
+    loadNewQuotesCount();
+    loadNewContactMessagesCount();
+    loadPendingDocumentsCount();
     
     // Listen for logo updates
     const handleLogoUpdate = () => {
       loadAdminLogo();
     };
     
+    // Listen for settings updates
+    const handleSettingsUpdate = () => {
+      loadSystemSettings();
+    };
+    
+    // Listen for quotes updates
+    const handleQuotesUpdate = () => {
+      loadNewQuotesCount();
+    };
+    
+    // Listen for contact messages updates
+    const handleContactMessagesUpdate = () => {
+      loadNewContactMessagesCount();
+    };
+    
+    // Listen for documents updates
+    const handleDocumentsUpdate = () => {
+      loadPendingDocumentsCount();
+    };
+    
     window.addEventListener('admin-logo-updated', handleLogoUpdate);
+    window.addEventListener('admin-settings-updated', handleSettingsUpdate);
+    window.addEventListener('quotes-updated', handleQuotesUpdate);
+    window.addEventListener('contact-messages-updated', handleContactMessagesUpdate);
+    window.addEventListener('documents-updated', handleDocumentsUpdate);
+    
+    // Refresh counts every 30 seconds
+    const interval = setInterval(() => {
+      loadNewQuotesCount();
+      loadNewContactMessagesCount();
+      loadPendingDocumentsCount();
+    }, 30000);
+    
     return () => {
       window.removeEventListener('admin-logo-updated', handleLogoUpdate);
+      window.removeEventListener('admin-settings-updated', handleSettingsUpdate);
+      window.removeEventListener('quotes-updated', handleQuotesUpdate);
+      window.removeEventListener('contact-messages-updated', handleContactMessagesUpdate);
+      window.removeEventListener('documents-updated', handleDocumentsUpdate);
+      clearInterval(interval);
     };
   }, []);
 
@@ -51,6 +110,58 @@ export function AdminSidebar({ activeSection, onSectionChange }: AdminSidebarPro
     const savedLogo = localStorage.getItem('admin-logo');
     if (savedLogo) {
       setLogoUrl(savedLogo);
+    }
+  };
+
+  const loadSystemSettings = async () => {
+    try {
+      const response = await getSystemSettings();
+      if (response.success && response.data) {
+        setTransfersEnabled(response.data.enabled_modules?.transfers || false);
+        // Logo da plataforma (Configurações > Geral): usar na sidebar e manter em sync com localStorage
+        if (response.data.platform_logo_url) {
+          setLogoUrl(response.data.platform_logo_url);
+          localStorage.setItem('admin-logo', response.data.platform_logo_url);
+        } else {
+          setLogoUrl(null);
+          localStorage.removeItem('admin-logo');
+        }
+      }
+    } catch (error) {
+      console.error("Erro ao carregar configurações:", error);
+    }
+  };
+
+  const loadNewQuotesCount = async () => {
+    try {
+      const response = await getNewQuotesCount();
+      if (response.success && response.data) {
+        setNewQuotesCount(response.data.count);
+      }
+    } catch (error) {
+      console.error("Erro ao carregar contagem de orçamentos:", error);
+    }
+  };
+
+  const loadNewContactMessagesCount = async () => {
+    try {
+      const response = await getNewContactMessagesCount();
+      if (response.success && response.data) {
+        setNewContactMessagesCount(response.data.count);
+      }
+    } catch (error) {
+      console.error("Erro ao carregar contagem de mensagens de contato:", error);
+    }
+  };
+
+  const loadPendingDocumentsCount = async () => {
+    try {
+      const response = await getPendingDocuments();
+      if (response.success && response.data) {
+        setPendingDocumentsCount(response.data.length);
+      }
+    } catch (error) {
+      console.error("Erro ao carregar contagem de documentos pendentes:", error);
     }
   };
 
@@ -63,7 +174,7 @@ export function AdminSidebar({ activeSection, onSectionChange }: AdminSidebarPro
             {logoUrl ? (
               <img 
                 src={logoUrl} 
-                alt="Logo" 
+                alt="Logo da plataforma" 
                 className={`object-contain ${open ? 'max-h-20 max-w-full' : 'max-h-12 max-w-12'}`}
               />
             ) : (
@@ -79,18 +190,60 @@ export function AdminSidebar({ activeSection, onSectionChange }: AdminSidebarPro
         <SidebarGroup>
           <SidebarGroupContent>
             <SidebarMenu>
-              {menuItems.map((item) => (
-                <SidebarMenuItem key={item.id}>
-                  <SidebarMenuButton
-                    onClick={() => onSectionChange(item.id)}
-                    isActive={activeSection === item.id}
-                    className="hover:bg-muted/50"
-                  >
-                    <item.icon className="h-4 w-4" />
-                    {open && <span>{item.title}</span>}
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
+              {menuItems
+                .filter((item) => {
+                  // Hide transfers menu item if module is disabled
+                  if (item.id === "transfers" && !transfersEnabled) {
+                    return false;
+                  }
+                  return true;
+                })
+                .map((item) => (
+                  <SidebarMenuItem key={item.id}>
+                    <SidebarMenuButton
+                      onClick={() => navigate(getAdminPath(item.id))}
+                      isActive={activeSection === item.id}
+                      className="hover:bg-muted/50 relative"
+                    >
+                      <item.icon className="h-4 w-4" />
+                           {open && (
+                             <>
+                               <span>{item.title}</span>
+                               {item.badge && item.id === 'quotes' && newQuotesCount > 0 && (
+                                 <span className="ml-auto bg-primary text-primary-foreground text-xs font-bold rounded-full h-5 w-5 flex items-center justify-center">
+                                   {newQuotesCount > 9 ? '9+' : newQuotesCount}
+                                 </span>
+                               )}
+                               {item.badge && item.id === 'contact-messages' && newContactMessagesCount > 0 && (
+                                 <span className="ml-auto bg-primary text-primary-foreground text-xs font-bold rounded-full h-5 w-5 flex items-center justify-center">
+                                   {newContactMessagesCount > 9 ? '9+' : newContactMessagesCount}
+                                 </span>
+                               )}
+                               {item.badge && item.id === 'support' && supportNotificationsCount > 0 && (
+                                 <span className="ml-auto bg-primary text-primary-foreground text-xs font-bold rounded-full h-5 w-5 flex items-center justify-center">
+                                   {supportNotificationsCount > 9 ? '9+' : supportNotificationsCount}
+                                 </span>
+                               )}
+                             </>
+                           )}
+                           {!open && item.badge && item.id === 'quotes' && newQuotesCount > 0 && (
+                             <span className="absolute -top-1 -right-1 bg-primary text-primary-foreground text-xs font-bold rounded-full h-4 w-4 flex items-center justify-center">
+                               {newQuotesCount > 9 ? '9+' : newQuotesCount}
+                             </span>
+                           )}
+                           {!open && item.badge && item.id === 'contact-messages' && newContactMessagesCount > 0 && (
+                             <span className="absolute -top-1 -right-1 bg-primary text-primary-foreground text-xs font-bold rounded-full h-4 w-4 flex items-center justify-center">
+                               {newContactMessagesCount > 9 ? '9+' : newContactMessagesCount}
+                             </span>
+                           )}
+                           {!open && item.badge && item.id === 'support' && supportNotificationsCount > 0 && (
+                             <span className="absolute -top-1 -right-1 bg-primary text-primary-foreground text-xs font-bold rounded-full h-4 w-4 flex items-center justify-center">
+                               {supportNotificationsCount > 9 ? '9+' : supportNotificationsCount}
+                             </span>
+                           )}
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                ))}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>

@@ -32,6 +32,7 @@ import {
   type WithdrawRequest,
 } from "@/lib/api/organizerFinancial";
 import { toast } from "sonner";
+import { getEnabledModules } from "@/lib/api/systemSettings";
 
 const OrganizerFinancial = () => {
   const { user } = useAuth();
@@ -44,6 +45,7 @@ const OrganizerFinancial = () => {
   const [withdrawAmount, setWithdrawAmount] = useState("");
   const [paymentMethod, setPaymentMethod] = useState<"PIX" | "TED" | "BANK_TRANSFER">("PIX");
   const [pixKey, setPixKey] = useState("");
+  
 
   useEffect(() => {
     if (user) {
@@ -56,9 +58,10 @@ const OrganizerFinancial = () => {
 
     try {
       setLoading(true);
-      const [overviewResponse, withdrawalsResponse] = await Promise.all([
+      const [overviewResponse, withdrawalsResponse, settingsResponse] = await Promise.all([
         getOrganizerFinancialOverview(),
         getOrganizerWithdrawals(),
+        getEnabledModules(),
       ]);
 
       if (overviewResponse.success && overviewResponse.data) {
@@ -72,6 +75,7 @@ const OrganizerFinancial = () => {
       } else {
         toast.error(withdrawalsResponse.error || "Erro ao carregar saques");
       }
+
     } catch (error: any) {
       console.error("Error loading financial data:", error);
       toast.error("Erro ao carregar dados financeiros");
@@ -149,8 +153,33 @@ const OrganizerFinancial = () => {
     }).format(value);
   };
 
+  // Load withdrawal fee settings
+  const [withdrawalFee, setWithdrawalFee] = useState<number>(0);
+  const [withdrawalFeeType, setWithdrawalFeeType] = useState<'fixed' | 'percentage'>('fixed');
+
+  useEffect(() => {
+    const loadWithdrawalFee = async () => {
+      try {
+        const response = await getEnabledModules();
+        if (response.success && response.data) {
+          setWithdrawalFee(response.data.withdrawal_fee || 0);
+          setWithdrawalFeeType(response.data.withdrawal_fee_type || 'fixed');
+        }
+      } catch (error) {
+        console.error("Erro ao carregar taxa de saque:", error);
+      }
+    };
+    if (user) {
+      loadWithdrawalFee();
+    }
+  }, [user]);
+
   const calculateWithdrawFee = (amount: number) => {
-    return amount * 0.01; // 1% fee
+    if (withdrawalFeeType === 'percentage') {
+      return (amount * withdrawalFee) / 100;
+    } else {
+      return withdrawalFee;
+    }
   };
 
   const calculateNetAmount = (amount: number) => {
@@ -175,7 +204,7 @@ const OrganizerFinancial = () => {
       ) : (
         <>
           {/* Financial Summary */}
-          <div className="grid gap-6 md:grid-cols-4">
+          <div className="grid gap-6 md:grid-cols-3">
             <Card className="bg-gradient-card">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">Total Arrecadado</CardTitle>
@@ -198,9 +227,6 @@ const OrganizerFinancial = () => {
                 <div className="text-2xl font-bold text-secondary">
                   {overview ? formatCurrency(overview.total_revenue - overview.platform_commissions) : "R$ 0,00"}
                 </div>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Após taxas ({overview ? ((overview.platform_commissions / overview.total_revenue) * 100).toFixed(1) : 0}%)
-                </p>
               </CardContent>
             </Card>
 
@@ -217,20 +243,6 @@ const OrganizerFinancial = () => {
               </CardContent>
             </Card>
 
-            <Card className="bg-gradient-card">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Taxas da Plataforma</CardTitle>
-                <TrendingDown className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold text-muted-foreground">
-                  {overview ? formatCurrency(overview.platform_commissions) : "R$ 0,00"}
-                </div>
-                <p className="text-xs text-muted-foreground mt-1">
-                  {overview ? ((overview.platform_commissions / overview.total_revenue) * 100).toFixed(1) : 0}% do total
-                </p>
-              </CardContent>
-            </Card>
           </div>
 
           {/* Tabs */}
@@ -301,7 +313,9 @@ const OrganizerFinancial = () => {
                         <span className="font-medium">{formatCurrency(withdrawAmountNum)}</span>
                       </div>
                       <div className="flex justify-between text-sm">
-                        <span>Taxa de saque (1%):</span>
+                        <span>
+                          Taxa de saque {withdrawalFeeType === 'percentage' ? `(${withdrawalFee}%)` : `(R$ ${withdrawalFee.toFixed(2)})`}:
+                        </span>
                         <span className="font-medium">-{formatCurrency(withdrawFee)}</span>
                       </div>
                       <div className="flex justify-between text-base font-bold pt-2 border-t">
