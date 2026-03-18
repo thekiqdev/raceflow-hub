@@ -20,7 +20,8 @@
     "check-bonus-status": "tsx scripts/check-bonus-status.ts",
     "verify-bonus-eligibility": "tsx scripts/verify-bonus-eligibility.ts",
     "grant-missing-bonuses": "tsx scripts/grant-missing-bonuses.ts",
-    "fix-invitation-registrations": "tsx scripts/fix-invitation-registrations.ts"
+    "fix-invitation-registrations": "tsx scripts/fix-invitation-registrations.ts",
+    "test:migration-leaders": "node --import tsx --test tests/changeEventOrganizerService.leaders.test.ts"
   },
   "keywords": [
     "raceflow",

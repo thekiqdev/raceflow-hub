@@ -126,6 +126,8 @@ const migrations = [
   '097_add_image_url_mobile_to_home_banners.sql',
   '098_allow_null_image_url_home_banners.sql',
   '099_create_category_custom_fields.sql',
+  '100_event_organizer_migration_prep.sql',
+  '101_event_organizer_migration_rollback_status.sql',
 ];
 
 // Create migrations tracking table

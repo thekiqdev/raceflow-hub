@@ -20,12 +20,13 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Search, Download, Edit, Eye, CheckCircle, XCircle, Ban, ExternalLink, BarChart, Loader2, Award, Filter, Trash2, Plus, MoreVertical } from "lucide-react";
-import { getEvents, updateEvent, deleteEvent } from "@/lib/api/events";
+import { Search, Download, Edit, Eye, CheckCircle, XCircle, Ban, ExternalLink, BarChart, Loader2, Award, Filter, Trash2, Plus, MoreVertical, UserCog } from "lucide-react";
+import { getEvents, getEventById, updateEvent, deleteEvent } from "@/lib/api/events";
 import { useToast } from "@/hooks/use-toast";
 import { EventViewEditDialog } from "./EventViewEditDialog";
 import { EventFormDialog } from "@/components/organizer/EventFormDialog";
 import EventDetailedReport from "@/components/organizer/EventDetailedReport";
+import { ChangeOrganizerModal } from "./ChangeOrganizerModal";
 import { useNavigate } from "react-router-dom";
 import { getEffectiveRegistrationStatus, getRegistrationStatusLabel, getRegistrationStatusVariant } from "@/lib/utils/eventRegistration";
 
@@ -48,6 +49,8 @@ const EventManagement = () => {
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [editingRegistrationStatus, setEditingRegistrationStatus] = useState<string | null>(null);
   const [selectedEventIdForReport, setSelectedEventIdForReport] = useState<string | null>(null);
+  const [changeOrganizerEvent, setChangeOrganizerEvent] = useState<{ id: string; organizer_id?: string; title: string; organizer?: string } | null>(null);
+  const [changeOrganizerModalOpen, setChangeOrganizerModalOpen] = useState(false);
   const { toast } = useToast();
 
   const loadEvents = useCallback(async () => {
@@ -79,6 +82,7 @@ const EventManagement = () => {
             slug: event.slug, // Incluir slug para URLs amigáveis
             title: event.title,
             organizer: event.organizer_name || "Desconhecido",
+            organizer_id: event.organizer_id,
             date: event.event_date,
             city: event.city,
             state: event.state,
@@ -494,6 +498,20 @@ const EventManagement = () => {
                                   <Edit className="mr-2 h-4 w-4" />
                                   Editar
                                 </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  onClick={async () => {
+                                    let organizerId = event.organizer_id;
+                                    if (organizerId == null) {
+                                      const r = await getEventById(event.id);
+                                      if (r.success && r.data) organizerId = (r.data as any).organizer_id;
+                                    }
+                                    setChangeOrganizerEvent({ id: event.id, organizer_id: organizerId, title: event.title, organizer: event.organizer });
+                                    setChangeOrganizerModalOpen(true);
+                                  }}
+                                >
+                                  <UserCog className="mr-2 h-4 w-4" />
+                                  Alterar organizador
+                                </DropdownMenuItem>
                                 <DropdownMenuItem 
                                   onClick={() => setSelectedEventIdForReport(event.id)}
                                 >
@@ -570,6 +588,20 @@ const EventManagement = () => {
                                   <DropdownMenuItem onClick={() => handleEditEvent(event.id)}>
                                     <Edit className="mr-2 h-4 w-4" />
                                     Editar
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    onClick={async () => {
+                                      let organizerId = event.organizer_id;
+                                      if (organizerId == null) {
+                                        const r = await getEventById(event.id);
+                                        if (r.success && r.data) organizerId = (r.data as any).organizer_id;
+                                      }
+                                      setChangeOrganizerEvent({ id: event.id, organizer_id: organizerId, title: event.title, organizer: event.organizer });
+                                      setChangeOrganizerModalOpen(true);
+                                    }}
+                                  >
+                                    <UserCog className="mr-2 h-4 w-4" />
+                                    Alterar organizador
                                   </DropdownMenuItem>
                                   <DropdownMenuItem onClick={() => setSelectedEventIdForReport(event.id)}>
                                     <BarChart className="mr-2 h-4 w-4" />
@@ -720,6 +752,13 @@ const EventManagement = () => {
         mode={dialogMode}
         open={dialogOpen}
         onOpenChange={setDialogOpen}
+        onSuccess={loadEvents}
+      />
+
+      <ChangeOrganizerModal
+        open={changeOrganizerModalOpen}
+        onOpenChange={setChangeOrganizerModalOpen}
+        event={changeOrganizerEvent}
         onSuccess={loadEvents}
       />
 

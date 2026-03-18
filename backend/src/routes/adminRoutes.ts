@@ -131,6 +131,12 @@ import {
   updateBannerController,
   deleteBannerController,
 } from '../controllers/homeBannersController.js';
+import {
+  changeEventOrganizerController,
+  getEventMigrationLogsController,
+  getMigrationLogByIdController,
+  rollbackMigrationController,
+} from '../controllers/changeEventOrganizerController.js';
 
 const router = Router();
 
@@ -263,6 +269,12 @@ router.get('/document-types/:id', getDocumentTypeByIdController);
 router.post('/document-types', createDocumentTypeController);
 router.put('/document-types/:id', updateDocumentTypeController);
 router.delete('/document-types/:id', deleteDocumentTypeController);
+
+// Event organizer migration (change event owner)
+router.post('/events/:eventId/change-organizer', changeEventOrganizerController);
+router.get('/events/:eventId/migration-log', getEventMigrationLogsController);
+router.get('/migration-log/:migrationId', getMigrationLogByIdController);
+router.post('/migration-rollback', rollbackMigrationController);
 
 // Admin Scripts endpoints
 router.post('/scripts/fix-organizer-registrations', fixOrganizerRegistrationsController);
