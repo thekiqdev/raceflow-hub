@@ -47,7 +47,20 @@ COMMENT ON COLUMN public.leader_invitations.migration_id IS 'ID da execução de
 
 -- ---------------------------------------------------------------------------
 -- 3. Unicidade de convites (evitar duplicidade pós-migração / reprocessamento)
+-- Remove duplicatas (mantém uma linha por event_id, leader_id, status) e cria o índice.
 -- ---------------------------------------------------------------------------
+DO $$
+BEGIN
+  -- Remove duplicatas: mantém a linha com menor id por (event_id, leader_id, status)
+  DELETE FROM public.leader_invitations a
+  USING public.leader_invitations b
+  WHERE a.event_id = b.event_id
+    AND a.leader_id = b.leader_id
+    AND a.status = b.status
+    AND a.status IN ('available', 'sent')
+    AND a.id > b.id;
+END $$;
+
 CREATE UNIQUE INDEX IF NOT EXISTS uq_leader_invitation_unique
     ON public.leader_invitations (event_id, leader_id, status)
     WHERE status IN ('available', 'sent');
