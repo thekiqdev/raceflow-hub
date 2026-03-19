@@ -48,6 +48,7 @@ export interface InvitationBonusAuditCommissionRow {
   registration_ids_bonus_validos: string[];
   registration_ids_bonus_excesso: string[];
   registration_ids_bonus_orfaos: string[];
+  registration_ids_bonus_sem_convite: string[];
   leader_invitation_ids_validos: string[];
   leader_invitation_ids_sem_registration: string[];
   leader_invitation_ids_excesso: string[];
@@ -87,6 +88,31 @@ export interface InvitationBonusAuditPayload {
       leader_invitation_id: string | null;
       classification: string[];
     }>;
+    bonus_event_summary: {
+      convites_esperados: number;
+      convites_existentes: number;
+      inscricoes_bonus_existentes: number;
+      inscricoes_bonus_validas: number;
+      inscricoes_bonus_excedentes: number;
+      inscricoes_bonus_sem_lastro_em_leader_invitations: number;
+      convites_sem_inscricao_bonus_correspondente: number;
+      registration_ids_bonus_validos: string[];
+      registration_ids_bonus_excesso: string[];
+      registration_ids_bonus_orfaos: string[];
+      registration_ids_bonus_sem_convite: string[];
+      leader_invitation_ids_validos: string[];
+      leader_invitation_ids_sem_registration: string[];
+      leader_invitation_ids_excesso: string[];
+    };
+    diagnostic_conclusion: {
+      principal_cause:
+        | 'bonus_reprocessing'
+        | 'ui_scope_event_vs_global_leader'
+        | 'criacao_indevida_real_de_inscricoes_bonus'
+        | 'inconclusivo';
+      confidence: 'baixa' | 'media' | 'alta';
+      evidence: string[];
+    };
     error_classification_aggregate: string[];
     notes: string[];
   };
