@@ -36,6 +36,21 @@ export interface InvitationBonusAuditCommissionRow {
   bonus_registration_ids_in_db_not_in_canonical: string[];
   registration_ids_production_without_equivalent_in_invites: string[];
   diagnostic_hypotheses: string[];
+  comparativo_bonus_extras: {
+    convites_esperados: number;
+    convites_existentes: number;
+    inscricoes_bonus_existentes: number;
+    inscricoes_bonus_validas: number;
+    inscricoes_bonus_excedentes: number;
+    inscricoes_bonus_sem_lastro_em_leader_invitations: number;
+    convites_sem_inscricao_bonus_correspondente: number;
+  };
+  registration_ids_bonus_validos: string[];
+  registration_ids_bonus_excesso: string[];
+  registration_ids_bonus_orfaos: string[];
+  leader_invitation_ids_validos: string[];
+  leader_invitation_ids_sem_registration: string[];
+  leader_invitation_ids_excesso: string[];
   convites_no_evento_por_status: Record<string, number>;
   divergencia_paid_count: number;
   divergencia_expected_bonuses: number;
@@ -59,6 +74,19 @@ export interface InvitationBonusAuditPayload {
   technical_log: {
     rows: InvitationBonusAuditCommissionRow[];
     leaders_scope: InvitationBonusAuditLeaderScope[];
+    bonus_registrations_event: Array<{
+      registration_id: string;
+      leader_id: string | null;
+      commission_id: string | null;
+      event_id: string;
+      created_at: string | null;
+      status: string | null;
+      payment_status: string | null;
+      coupon_code: string | null;
+      bonus_registration_id: string | null;
+      leader_invitation_id: string | null;
+      classification: string[];
+    }>;
     error_classification_aggregate: string[];
     notes: string[];
   };

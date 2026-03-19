@@ -25,6 +25,28 @@ export type InvitationBonusDiagnostic =
   | 'convites concedidos mas não exibidos ao líder'
   | 'registros free_bonus aparecendo na aba inscrições sem equivalência em convites disponíveis';
 
+export type BonusRegistrationClassification =
+  | 'valida'
+  | 'sem_convite_correspondente'
+  | 'duplicada'
+  | 'orfa'
+  | 'acima_do_esperado'
+  | 'criada_fora_da_regra_da_comissao';
+
+export interface EventBonusRegistrationAuditItem {
+  registration_id: string;
+  leader_id: string | null;
+  commission_id: string | null;
+  event_id: string;
+  created_at: string | null;
+  status: string | null;
+  payment_status: string | null;
+  coupon_code: string | null;
+  bonus_registration_id: string | null;
+  leader_invitation_id: string | null;
+  classification: BonusRegistrationClassification[];
+}
+
 export interface InvitationBonusAuditCommissionRow {
   leader_id: string;
   commission_id: string;
@@ -72,6 +94,23 @@ export interface InvitationBonusAuditCommissionRow {
   /** Hipóteses diagnósticas para facilitar o entendimento no log técnico. */
   diagnostic_hypotheses: InvitationBonusDiagnostic[];
 
+  comparativo_bonus_extras: {
+    convites_esperados: number;
+    convites_existentes: number;
+    inscricoes_bonus_existentes: number;
+    inscricoes_bonus_validas: number;
+    inscricoes_bonus_excedentes: number;
+    inscricoes_bonus_sem_lastro_em_leader_invitations: number;
+    convites_sem_inscricao_bonus_correspondente: number;
+  };
+
+  registration_ids_bonus_validos: string[];
+  registration_ids_bonus_excesso: string[];
+  registration_ids_bonus_orfaos: string[];
+  leader_invitation_ids_validos: string[];
+  leader_invitation_ids_sem_registration: string[];
+  leader_invitation_ids_excesso: string[];
+
   /** Convites deste evento por status (escopo do líder, agregados). Útil pra separar “global vs evento” no report. */
   convites_no_evento_por_status: Record<string, number>;
   divergencia_paid_count: number;
@@ -98,6 +137,7 @@ export interface InvitationBonusAuditResult {
   technical_log: {
     rows: InvitationBonusAuditCommissionRow[];
     leaders_scope: InvitationBonusAuditLeaderScope[];
+    bonus_registrations_event: EventBonusRegistrationAuditItem[];
     error_classification_aggregate: ErrorClassificationCode[];
     notes: string[];
   };
@@ -285,6 +325,175 @@ function formatIdListWithOrigin(
   };
 }
 
+interface RawBonusEventRow {
+  registration_id: string;
+  event_id: string;
+  created_at: string | null;
+  status: string | null;
+  payment_status: string | null;
+  coupon_code: string | null;
+  leader_invitation_id: string | null;
+  invitation_leader_id: string | null;
+  invitation_commission_id: string | null;
+  bonus_registration_id: string | null;
+  invitation_status: string | null;
+  commission_bonus_type: string | null;
+  commission_event_id: string | null;
+}
+
+interface CommissionBonusAuditArtifacts {
+  items: EventBonusRegistrationAuditItem[];
+  registration_ids_bonus_validos: string[];
+  registration_ids_bonus_excesso: string[];
+  registration_ids_bonus_orfaos: string[];
+  leader_invitation_ids_validos: string[];
+  leader_invitation_ids_sem_registration: string[];
+  leader_invitation_ids_excesso: string[];
+  comparativo_bonus_extras: InvitationBonusAuditCommissionRow['comparativo_bonus_extras'];
+}
+
+function hasRegClass(
+  cls: BonusRegistrationClassification[],
+  target: BonusRegistrationClassification
+): boolean {
+  return cls.includes(target);
+}
+
+function groupByRegistration(rows: RawBonusEventRow[]): Map<string, RawBonusEventRow[]> {
+  const out = new Map<string, RawBonusEventRow[]>();
+  for (const r of rows) {
+    const arr = out.get(r.registration_id) ?? [];
+    arr.push(r);
+    out.set(r.registration_id, arr);
+  }
+  return out;
+}
+
+function pickLeaderInvitationId(rows: RawBonusEventRow[]): string | null {
+  for (const r of rows) {
+    if (r.leader_invitation_id) return r.leader_invitation_id;
+  }
+  return null;
+}
+
+function buildCommissionBonusArtifacts(params: {
+  eventId: string;
+  leaderId: string;
+  commissionId: string;
+  expectedBonusesCanonical: number;
+  rawRows: RawBonusEventRow[];
+  invitationIdsNoRegistration: string[];
+}): CommissionBonusAuditArtifacts {
+  const filtered = params.rawRows.filter(
+    (r) => r.invitation_leader_id === params.leaderId && r.invitation_commission_id === params.commissionId
+  );
+  const byReg = groupByRegistration(filtered);
+
+  const items: EventBonusRegistrationAuditItem[] = [];
+  const validRegIds: string[] = [];
+  const excessRegIds: string[] = [];
+  const orphanRegIds: string[] = [];
+  const validInvitationIds: string[] = [];
+  const excessInvitationIds: string[] = [];
+  const invitationsNoRegistration = uniqueSorted(params.invitationIdsNoRegistration);
+
+  const regIdsByCreatedAsc = Array.from(byReg.entries())
+    .sort((a, b) => {
+      const ca = a[1][0]?.created_at || '';
+      const cb = b[1][0]?.created_at || '';
+      return ca.localeCompare(cb);
+    })
+    .map((x) => x[0]);
+  const allowedSet = new Set<string>(regIdsByCreatedAsc.slice(0, Math.max(0, params.expectedBonusesCanonical)));
+
+  for (const [registrationId, regRows] of byReg.entries()) {
+    const first = regRows[0];
+    const invitationIds = uniqueSorted(
+      regRows
+        .map((r) => r.leader_invitation_id)
+        .filter((x): x is string => !!x)
+    );
+    const classes: BonusRegistrationClassification[] = [];
+
+    if (invitationIds.length === 0) classes.push('sem_convite_correspondente');
+    if (invitationIds.length > 1) classes.push('duplicada');
+
+    const outsideRule = regRows.some((r) => {
+      if (!r.invitation_commission_id) return true;
+      if (!r.commission_bonus_type || !['invitation', 'both'].includes(String(r.commission_bonus_type))) return true;
+      if (r.commission_event_id && r.commission_event_id !== params.eventId) return true;
+      return false;
+    });
+    if (outsideRule) classes.push('criada_fora_da_regra_da_comissao');
+
+    const orphan =
+      regRows.some((r) => !r.invitation_leader_id || !r.invitation_commission_id) || invitationIds.length === 0;
+    if (orphan) classes.push('orfa');
+
+    if (!allowedSet.has(registrationId)) classes.push('acima_do_esperado');
+
+    if (classes.length === 0) classes.push('valida');
+
+    const dedupClasses = uniqueSorted(classes);
+    const liId = pickLeaderInvitationId(regRows);
+    items.push({
+      registration_id: registrationId,
+      leader_id: first?.invitation_leader_id ?? null,
+      commission_id: first?.invitation_commission_id ?? null,
+      event_id: first?.event_id ?? params.eventId,
+      created_at: first?.created_at ?? null,
+      status: first?.status ?? null,
+      payment_status: first?.payment_status ?? null,
+      coupon_code: first?.coupon_code ?? null,
+      bonus_registration_id: first?.bonus_registration_id ?? registrationId,
+      leader_invitation_id: liId,
+      classification: dedupClasses,
+    });
+
+    if (dedupClasses.length === 1 && dedupClasses[0] === 'valida') {
+      validRegIds.push(registrationId);
+      if (liId) validInvitationIds.push(liId);
+    }
+    if (hasRegClass(dedupClasses, 'acima_do_esperado') || hasRegClass(dedupClasses, 'duplicada')) {
+      excessRegIds.push(registrationId);
+      for (const id of invitationIds) excessInvitationIds.push(id);
+    }
+    if (
+      hasRegClass(dedupClasses, 'orfa') ||
+      hasRegClass(dedupClasses, 'sem_convite_correspondente') ||
+      hasRegClass(dedupClasses, 'criada_fora_da_regra_da_comissao')
+    ) {
+      orphanRegIds.push(registrationId);
+    }
+  }
+
+  const registration_ids_bonus_validos = uniqueSorted(validRegIds);
+  const registration_ids_bonus_excesso = uniqueSorted(excessRegIds);
+  const registration_ids_bonus_orfaos = uniqueSorted(orphanRegIds);
+  const leader_invitation_ids_validos = uniqueSorted(validInvitationIds);
+  const leader_invitation_ids_excesso = uniqueSorted(excessInvitationIds);
+  const leader_invitation_ids_sem_registration = invitationsNoRegistration;
+
+  return {
+    items: items.sort((a, b) => (a.created_at || '').localeCompare(b.created_at || '')),
+    registration_ids_bonus_validos,
+    registration_ids_bonus_excesso,
+    registration_ids_bonus_orfaos,
+    leader_invitation_ids_validos,
+    leader_invitation_ids_sem_registration,
+    leader_invitation_ids_excesso,
+    comparativo_bonus_extras: {
+      convites_esperados: params.expectedBonusesCanonical,
+      convites_existentes: filtered.length + invitationsNoRegistration.length,
+      inscricoes_bonus_existentes: byReg.size,
+      inscricoes_bonus_validas: registration_ids_bonus_validos.length,
+      inscricoes_bonus_excedentes: registration_ids_bonus_excesso.length,
+      inscricoes_bonus_sem_lastro_em_leader_invitations: registration_ids_bonus_orfaos.length,
+      convites_sem_inscricao_bonus_correspondente: invitationsNoRegistration.length,
+    },
+  };
+}
+
 /**
  * Executa auditoria + simulador (leitura apenas).
  */
@@ -327,11 +536,69 @@ export async function runInvitationBonusAudit(params: {
 
   const rows: InvitationBonusAuditCommissionRow[] = [];
   const leadersScope: InvitationBonusAuditLeaderScope[] = [];
+  const bonusRegistrationsEvent: EventBonusRegistrationAuditItem[] = [];
   const notes: string[] = [
     'Cálculo PRODUÇÃO: espelha getCouponByEventCommission + getRegistrationsByLeaderCoupons (com ou sem coupon_code), como em checkAndGrantInvitationBonus.',
     'Cálculo CANÔNICO: apenas inscrições pagas, não canceladas, no evento, com coupon_code igual ao cupom da comissão e cupom do líder (sem contar só-referral).',
     'times_granted_db: COUNT leader_invitations com status IN (available, sent, used) por comissão.',
+    'Auditoria de inscrições bônus/extras (v1.3): leitura de registrations + leader_invitations, com classificação e arrays para futura correção na Fase 2.',
   ];
+
+  const rawBonusRowsResult = await query(
+    `SELECT
+       r.id::text AS registration_id,
+       r.event_id::text AS event_id,
+       r.created_at::text AS created_at,
+       r.status::text AS status,
+       r.payment_status::text AS payment_status,
+       r.coupon_code::text AS coupon_code,
+       li.id::text AS leader_invitation_id,
+       li.leader_id::text AS invitation_leader_id,
+       li.commission_id::text AS invitation_commission_id,
+       li.bonus_registration_id::text AS bonus_registration_id,
+       li.status::text AS invitation_status,
+       lec.bonus_type::text AS commission_bonus_type,
+       lec.event_id::text AS commission_event_id
+     FROM registrations r
+     LEFT JOIN leader_invitations li
+       ON li.bonus_registration_id = r.id
+      AND li.event_id = r.event_id
+     LEFT JOIN leader_event_commissions lec
+       ON lec.id = li.commission_id
+     WHERE r.event_id = $1
+       AND (
+         LOWER(COALESCE(r.payment_method::text, '')) = 'free_bonus'
+         OR li.id IS NOT NULL
+       )
+     ORDER BY r.created_at ASC`,
+    [eventId]
+  );
+  const rawBonusRows = rawBonusRowsResult.rows as RawBonusEventRow[];
+
+  const invitationNoRegistrationResult = await query(
+    `SELECT
+       li.id::text AS leader_invitation_id,
+       li.leader_id::text AS leader_id,
+       li.commission_id::text AS commission_id
+     FROM leader_invitations li
+     LEFT JOIN registrations r ON r.id = li.bonus_registration_id
+     WHERE li.event_id = $1
+       AND li.commission_id IS NOT NULL
+       AND li.bonus_registration_id IS NOT NULL
+       AND r.id IS NULL`,
+    [eventId]
+  );
+  const invitationIdsNoRegistrationByPair = new Map<string, string[]>();
+  for (const r of invitationNoRegistrationResult.rows as {
+    leader_invitation_id: string;
+    leader_id: string;
+    commission_id: string;
+  }[]) {
+    const key = `${r.leader_id}:${r.commission_id}`;
+    const arr = invitationIdsNoRegistrationByPair.get(key) ?? [];
+    arr.push(r.leader_invitation_id);
+    invitationIdsNoRegistrationByPair.set(key, arr);
+  }
 
   for (const leaderId of leaderIds) {
     const globalCounts = await countInvitationsByStatus(leaderId, null);
@@ -491,6 +758,17 @@ export async function runInvitationBonusAudit(params: {
         (id) => !bonusActiveSet.has(id)
       );
 
+      const pairKey = `${leaderId}:${comm.id}`;
+      const commissionBonusArtifacts = buildCommissionBonusArtifacts({
+        eventId,
+        leaderId,
+        commissionId: comm.id,
+        expectedBonusesCanonical: expectedBonuses_canonical,
+        rawRows: rawBonusRows,
+        invitationIdsNoRegistration: invitationIdsNoRegistrationByPair.get(pairKey) ?? [],
+      });
+      bonusRegistrationsEvent.push(...commissionBonusArtifacts.items);
+
       const baseRow: InvitationBonusAuditCommissionRow = {
         leader_id: leaderId,
         commission_id: comm.id,
@@ -538,6 +816,13 @@ export async function runInvitationBonusAudit(params: {
           registration_ids_canonical_expected_but_missing_invites,
           registration_ids_production_without_equivalent_in_invites,
         }),
+        comparativo_bonus_extras: commissionBonusArtifacts.comparativo_bonus_extras,
+        registration_ids_bonus_validos: commissionBonusArtifacts.registration_ids_bonus_validos,
+        registration_ids_bonus_excesso: commissionBonusArtifacts.registration_ids_bonus_excesso,
+        registration_ids_bonus_orfaos: commissionBonusArtifacts.registration_ids_bonus_orfaos,
+        leader_invitation_ids_validos: commissionBonusArtifacts.leader_invitation_ids_validos,
+        leader_invitation_ids_sem_registration: commissionBonusArtifacts.leader_invitation_ids_sem_registration,
+        leader_invitation_ids_excesso: commissionBonusArtifacts.leader_invitation_ids_excesso,
 
         convites_no_evento_por_status,
         divergencia_paid_count: paidCount_production - paidCount_canonical,
@@ -557,12 +842,63 @@ export async function runInvitationBonusAudit(params: {
     agg.add('ui_scope_event_vs_global_leader');
   }
 
+  // Complementa a seção de inscrições bônus/extras com itens do evento que não entraram em linhas de comissão auditadas.
+  const existingBonusItemKeys = new Set(
+    bonusRegistrationsEvent.map(
+      (x) => `${x.registration_id}:${x.leader_id ?? 'null'}:${x.commission_id ?? 'null'}`
+    )
+  );
+  const rawByReg = groupByRegistration(rawBonusRows);
+  for (const [regId, regRows] of rawByReg.entries()) {
+    const first = regRows[0];
+    const leaderId = first?.invitation_leader_id ?? null;
+    const commissionId = first?.invitation_commission_id ?? null;
+    const itemKey = `${regId}:${leaderId ?? 'null'}:${commissionId ?? 'null'}`;
+    if (existingBonusItemKeys.has(itemKey)) continue;
+
+    const invitationIds = uniqueSorted(
+      regRows
+        .map((r) => r.leader_invitation_id)
+        .filter((x): x is string => !!x)
+    );
+    const classes: BonusRegistrationClassification[] = [];
+    if (invitationIds.length === 0) classes.push('sem_convite_correspondente');
+    if (invitationIds.length > 1) classes.push('duplicada');
+    const outsideRule = regRows.some((r) => {
+      if (!r.invitation_commission_id) return false;
+      if (!r.commission_bonus_type || !['invitation', 'both'].includes(String(r.commission_bonus_type))) return true;
+      if (r.commission_event_id && r.commission_event_id !== eventId) return true;
+      return false;
+    });
+    if (outsideRule) classes.push('criada_fora_da_regra_da_comissao');
+    if (classes.length === 0) classes.push('valida');
+
+    bonusRegistrationsEvent.push({
+      registration_id: regId,
+      leader_id: leaderId,
+      commission_id: commissionId,
+      event_id: first?.event_id ?? eventId,
+      created_at: first?.created_at ?? null,
+      status: first?.status ?? null,
+      payment_status: first?.payment_status ?? null,
+      coupon_code: first?.coupon_code ?? null,
+      bonus_registration_id: first?.bonus_registration_id ?? regId,
+      leader_invitation_id: pickLeaderInvitationId(regRows),
+      classification: uniqueSorted(classes),
+    });
+  }
+
+  const bonusRegistrationsEventSorted = bonusRegistrationsEvent.sort((a, b) =>
+    `${a.created_at ?? ''}:${a.registration_id}`.localeCompare(`${b.created_at ?? ''}:${b.registration_id}`)
+  );
+
   const functional_report_markdown = buildFunctionalMarkdown({
     eventId,
     eventTitle: eventRow.title,
     leaderIdFilter,
     rows,
     leadersScope,
+    bonusRegistrationsEvent: bonusRegistrationsEventSorted,
     agg: Array.from(agg),
   });
 
@@ -577,6 +913,7 @@ export async function runInvitationBonusAudit(params: {
     technical_log: {
       rows,
       leaders_scope: leadersScope,
+      bonus_registrations_event: bonusRegistrationsEventSorted,
       error_classification_aggregate: Array.from(agg),
       notes,
     },
@@ -589,6 +926,7 @@ function buildFunctionalMarkdown(p: {
   leaderIdFilter?: string | null;
   rows: InvitationBonusAuditCommissionRow[];
   leadersScope: InvitationBonusAuditLeaderScope[];
+  bonusRegistrationsEvent: EventBonusRegistrationAuditItem[];
   agg: ErrorClassificationCode[];
 }): string {
   const lines: string[] = [];
@@ -623,6 +961,22 @@ function buildFunctionalMarkdown(p: {
     );
     lines.push('');
   }
+  lines.push(`## Inscrições bônus/extras do evento (v1.3)`);
+  lines.push(`- **Total mapeado no evento:** ${p.bonusRegistrationsEvent.length}`);
+  lines.push(
+    `- **Classificações:** valida | sem_convite_correspondente | duplicada | orfa | acima_do_esperado | criada_fora_da_regra_da_comissao`
+  );
+  lines.push('');
+  lines.push(
+    `| registration_id | leader_id | commission_id | event_id | created_at | status | payment_status | coupon_code | bonus_registration_id | leader_invitation_id | classificação |`
+  );
+  lines.push(`|---|---|---|---|---|---|---|---|---|---|---|`);
+  for (const b of p.bonusRegistrationsEvent) {
+    lines.push(
+      `| ${b.registration_id} | ${b.leader_id ?? '—'} | ${b.commission_id ?? '—'} | ${b.event_id} | ${b.created_at ?? '—'} | ${b.status ?? '—'} | ${b.payment_status ?? '—'} | ${b.coupon_code ?? '—'} | ${b.bonus_registration_id ?? '—'} | ${b.leader_invitation_id ?? '—'} | ${b.classification.join(', ')} |`
+    );
+  }
+  lines.push('');
   lines.push(`## Por comissão (configuração, cálculo e convites reais)`);
   for (const r of p.rows) {
     lines.push(`### Líder \`${r.leader_id}\` · Comissão \`${r.commission_id}\``);
@@ -716,6 +1070,31 @@ function buildFunctionalMarkdown(p: {
     // 5) Separação: "produção sem equivalência" (auxilia diagnóstico)
     const prodWithoutInvitesFmt = formatIdList(r.registration_ids_production_without_equivalent_in_invites, 18);
     lines.push(`- **produção (atual) sem equivalência em convites concedidos:** ${prodWithoutInvitesFmt.text}`);
+
+    lines.push('');
+    lines.push(`#### Comparativo obrigatório (convites x inscrições bônus)`);
+    lines.push(`- **convites_esperados:** ${r.comparativo_bonus_extras.convites_esperados}`);
+    lines.push(`- **convites_existentes:** ${r.comparativo_bonus_extras.convites_existentes}`);
+    lines.push(`- **inscrições_bonus_existentes:** ${r.comparativo_bonus_extras.inscricoes_bonus_existentes}`);
+    lines.push(`- **inscrições_bonus_válidas:** ${r.comparativo_bonus_extras.inscricoes_bonus_validas}`);
+    lines.push(`- **inscrições_bonus_excedentes:** ${r.comparativo_bonus_extras.inscricoes_bonus_excedentes}`);
+    lines.push(
+      `- **inscrições_bonus_sem_lastro_em_leader_invitations:** ${r.comparativo_bonus_extras.inscricoes_bonus_sem_lastro_em_leader_invitations}`
+    );
+    lines.push(
+      `- **convites_sem_inscrição_bonus_correspondente:** ${r.comparativo_bonus_extras.convites_sem_inscricao_bonus_correspondente}`
+    );
+
+    lines.push('');
+    lines.push(`#### Arrays explícitos para futura correção (somente referência)`);
+    lines.push(`- **registration_ids_bonus_validos:** ${formatIdList(r.registration_ids_bonus_validos, 18).text}`);
+    lines.push(`- **registration_ids_bonus_excesso:** ${formatIdList(r.registration_ids_bonus_excesso, 18).text}`);
+    lines.push(`- **registration_ids_bonus_orfaos:** ${formatIdList(r.registration_ids_bonus_orfaos, 18).text}`);
+    lines.push(`- **leader_invitation_ids_validos:** ${formatIdList(r.leader_invitation_ids_validos, 18).text}`);
+    lines.push(
+      `- **leader_invitation_ids_sem_registration:** ${formatIdList(r.leader_invitation_ids_sem_registration, 18).text}`
+    );
+    lines.push(`- **leader_invitation_ids_excesso:** ${formatIdList(r.leader_invitation_ids_excesso, 18).text}`);
 
     lines.push('');
     lines.push(`#### Diagnóstico (hipóteses — para log técnico)`);

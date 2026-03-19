@@ -1,6 +1,6 @@
 # Plano técnico: auditoria e correção controlada de vendas/inscrições e convites após migração de organizador
 
-**Versão:** 1.2 (plano apenas — sem implementação)  
+**Versão:** 1.3 (plano apenas — sem implementação)  
 **Contexto:** Em produção, após migrar um evento em andamento, o número de inscrições/vendas exibido ou usado para bônus ficou inflado, gerando convites em excesso para líderes (ex.: painel mostra uma quantidade; em evento > inscrições aparecem 100+ convites).  
 **Princípio:** Antes de qualquer correção em massa, garantir leitura, diagnóstico e relatório; depois dry run e aplicação em **um único evento**; em paralelo, corrigir a **causa raiz no código** para o problema não voltar.
 
@@ -193,6 +193,57 @@ Para cada combinação analisada (no mínimo uma linha por **`leader_id` + `comm
 | `convites_esperados` | `floor(paidCount_correto / required_purchases)` (ajustar se regra de negócio evoluir). |
 | `convites_existentes_por_status` | Objetos por `available`, `sent`, `used`, `expired`, outros — **apenas para este `event_id`**, `leader_id` e `commission_id`. |
 
+### 4.6.1 Seção obrigatória: auditoria de inscrições bônus/extras do evento (somente leitura)
+
+Além da visão por `leader_id + commission_id`, a Fase 1 deve ter seção dedicada para **inscrições bônus/extras geradas no evento** (`event_id` analisado), com rastreabilidade completa para correção futura.
+
+**Listagem obrigatória por inscrição bônus/extras no evento**
+
+| Campo | Descrição |
+|-------|-----------|
+| `registration_id` | ID da inscrição no evento. |
+| `leader_id` | Líder associado (quando existir vínculo). |
+| `commission_id` | Comissão associada (quando existir vínculo). |
+| `event_id` | Evento analisado. |
+| `created_at` | Data/hora de criação da inscrição. |
+| `status` | Status da inscrição (`registrations.status`). |
+| `payment_status` | Status de pagamento (`registrations.payment_status`). |
+| `coupon_code` | Cupom aplicado na inscrição (quando houver). |
+| `bonus_registration_id` | ID de inscrição bônus referenciada por `leader_invitations` (quando houver). |
+| `leader_invitation_id` | ID de `leader_invitations` vinculado à inscrição bônus (quando houver). |
+
+**Classificação obrigatória de cada inscrição bônus/extras**
+
+- `válida`
+- `sem_convite_correspondente`
+- `duplicada`
+- `órfã`
+- `acima_do_esperado`
+- `criada_fora_da_regra_da_comissão`
+
+### 4.6.2 Comparativo obrigatório (por comissão e consolidado no evento)
+
+O relatório funcional deve incluir, de forma explícita e legível:
+
+- `convites_esperados`
+- `convites_existentes`
+- `inscrições_bonus_existentes`
+- `inscrições_bonus_válidas`
+- `inscrições_bonus_excedentes`
+- `inscrições_bonus_sem_lastro_em_leader_invitations`
+- `convites_sem_inscrição_bonus_correspondente`
+
+### 4.6.3 Arrays explícitos obrigatórios no log técnico (O2)
+
+Adicionar no log técnico estruturado, por `leader_id + commission_id` (e também no consolidado por evento quando aplicável):
+
+- `registration_ids_bonus_validos`
+- `registration_ids_bonus_excesso`
+- `registration_ids_bonus_orfaos`
+- `leader_invitation_ids_validos`
+- `leader_invitation_ids_sem_registration`
+- `leader_invitation_ids_excesso`
+
 ### 4.7 Separação explícita no relatório: evento vs global
 
 O relatório deve incluir **duas seções distintas** (não misturar totais):
@@ -239,7 +290,37 @@ Estrutura mínima sugerida (campos podem ser aninhados):
       "registration_ids_somente_correto": [],
       "origem_por_registration_id": {},
       "convites_existentes_por_status": {},
-      "timesGranted_db": 0
+      "timesGranted_db": 0,
+      "comparativo_bonus_extras": {
+        "convites_esperados": 0,
+        "convites_existentes": 0,
+        "inscricoes_bonus_existentes": 0,
+        "inscricoes_bonus_validas": 0,
+        "inscricoes_bonus_excedentes": 0,
+        "inscricoes_bonus_sem_lastro_em_leader_invitations": 0,
+        "convites_sem_inscricao_bonus_correspondente": 0
+      },
+      "registration_ids_bonus_validos": [],
+      "registration_ids_bonus_excesso": [],
+      "registration_ids_bonus_orfaos": [],
+      "leader_invitation_ids_validos": [],
+      "leader_invitation_ids_sem_registration": [],
+      "leader_invitation_ids_excesso": []
+    }
+  ],
+  "bonus_registrations_event": [
+    {
+      "registration_id": "uuid",
+      "leader_id": "uuid | null",
+      "commission_id": "uuid | null",
+      "event_id": "uuid",
+      "created_at": "ISO-8601",
+      "status": "string | null",
+      "payment_status": "string | null",
+      "coupon_code": "string | null",
+      "bonus_registration_id": "uuid | null",
+      "leader_invitation_id": "uuid | null",
+      "classification": "valida | sem_convite_correspondente | duplicada | orfa | acima_do_esperado | criada_fora_da_regra_da_comissao"
     }
   ],
   "invitations_scope": {
@@ -330,6 +411,7 @@ Executar após o relatório **depois** da frente 2 e com o código da frente 3 j
 - [ ] **Sem `event_id` → execução bloqueada** (auditoria e correção).  
 - [ ] **Sem lote** na primeira versão (um evento por execução).  
 - [ ] Fase 1 concluída: **simulador (§4.1)** + saídas **O1–O3**; critérios **A–E** (seção **4.4**) satisfeitos antes de `apply`.  
+- [ ] Fase 1 inclui seção obrigatória de **inscrições bônus/extras do evento** (§4.6.1) + comparativo e arrays obrigatórios (§4.6.2–4.6.3).  
 - [ ] `dry_run` antes de `apply`; **confirmação explícita** para `apply`.  
 - [ ] Correção v1: só excesso de **`available`**; **não** apagar `used`; **não** mexer em `free_bonus`.  
 - [ ] Três relatórios (antes / plano / depois) arquivados.  
@@ -369,11 +451,11 @@ Executar após o relatório **depois** da frente 2 e com o código da frente 3 j
 
 | Frente | Entregável |
 |--------|------------|
-| 1 | Script/rota `audit-event-invitations` — leitura + **simulador** (§4.1); `event_id` obrigatório, `leader_id` opcional; saídas **O1–O3** (§4.2); classificação §4.3; pré-requisitos **A–E** §4.4; detalhamento §4.6–4.8; **nenhuma** correção de dados. |
+| 1 | Script/rota `audit-event-invitations` — leitura + **simulador** (§4.1); `event_id` obrigatório, `leader_id` opcional; saídas **O1–O3** (§4.2); classificação §4.3; pré-requisitos **A–E** §4.4; detalhamento §4.6–4.8 incluindo auditoria completa de inscrições bônus/extras e arrays obrigatórios (§4.6.1–§4.6.3); **nenhuma** correção de dados. |
 | 2 | Script/rota `reconcile-event-invitations` — `dry_run` / `apply`; três relatórios; bloqueio sem `event_id`; confirmação explícita; só `available` em excesso na v1. |
 | 3 | PRs no backend (e front se necessário) + testes de regressão documentados. |
 | (Opcional) | Tabela `invitation_reconciliation_log`; UI “Configurações > Avançados”. |
 
 ---
 
-**Fim do plano (v1.1).** Implementação deliberadamente **não** incluída neste documento.
+**Fim do plano (v1.3).** Implementação deliberadamente **não** incluída neste documento.
