@@ -5,11 +5,17 @@ export type RegistrationOrigin = 'cupom' | 'referral' | 'ambos';
 export interface InvitationBonusAuditCommissionRow {
   leader_id: string;
   commission_id: string;
+  event_id: string;
   bonus_type: string;
   required_purchases: number;
+  commission_percentage: number | null;
+  commission_name: string | null;
+
   coupon_id: string | null;
   coupon_code: string | null;
+  coupon_organizer_id: string | null;
   coupon_resolved: boolean;
+  coupon_resolution_rule: string;
   registration_ids_production: string[];
   registration_ids_canonical: string[];
   registration_ids_only_production: string[];
@@ -20,6 +26,16 @@ export interface InvitationBonusAuditCommissionRow {
   expectedBonuses_production: number;
   expectedBonuses_canonical: number;
   times_granted_db: number;
+  convites_por_status_comissao: Record<string, number>;
+  times_available_db: number;
+  times_sent_db: number;
+  times_used_db: number;
+  times_expired_db: number;
+  bonus_registration_ids_por_status: Record<string, string[]>;
+  registration_ids_canonical_expected_but_missing_invites: string[];
+  bonus_registration_ids_in_db_not_in_canonical: string[];
+  registration_ids_production_without_equivalent_in_invites: string[];
+  diagnostic_hypotheses: string[];
   convites_no_evento_por_status: Record<string, number>;
   divergencia_paid_count: number;
   divergencia_expected_bonuses: number;

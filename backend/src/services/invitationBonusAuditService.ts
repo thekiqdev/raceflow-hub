@@ -8,7 +8,7 @@ import { query } from '../config/database.js';
 import { getRegistrationsByLeaderCoupons } from './leaderRegistrationsService.js';
 import { getCouponByEventCommission } from './couponsService.js';
 
-export const AUDIT_SCHEMA_VERSION = '1.0';
+export const AUDIT_SCHEMA_VERSION = '1.1';
 
 export type RegistrationOrigin = 'cupom' | 'referral' | 'ambos';
 
@@ -19,24 +19,60 @@ export type ErrorClassificationCode =
   | 'bonus_reprocessing'
   | 'ui_scope_event_vs_global_leader';
 
+export type InvitationBonusDiagnostic =
+  | 'cálculo inflado'
+  | 'convites não concedidos apesar do esperado'
+  | 'convites concedidos mas não exibidos ao líder'
+  | 'registros free_bonus aparecendo na aba inscrições sem equivalência em convites disponíveis';
+
 export interface InvitationBonusAuditCommissionRow {
   leader_id: string;
   commission_id: string;
+  event_id: string;
   bonus_type: string;
   required_purchases: number;
+  commission_percentage: number | null;
+  commission_name: string | null;
+
   coupon_id: string | null;
   coupon_code: string | null;
+  coupon_organizer_id: string | null;
   coupon_resolved: boolean;
+  coupon_resolution_rule: string;
+
   registration_ids_production: string[];
   registration_ids_canonical: string[];
   registration_ids_only_production: string[];
   registration_ids_only_canonical: string[];
   origem_por_registration_id: Record<string, RegistrationOrigin>;
+
   paidCount_production: number;
   paidCount_canonical: number;
   expectedBonuses_production: number;
   expectedBonuses_canonical: number;
+
   times_granted_db: number;
+  convites_por_status_comissao: Record<string, number>;
+  times_available_db: number;
+  times_sent_db: number;
+  times_used_db: number;
+  times_expired_db: number;
+
+  /** leader_invitations.bonus_registration_id agrupados por status (quando não-nulos). */
+  bonus_registration_ids_por_status: Record<string, string[]>;
+
+  /** Canônico esperado para esta comissão mas não encontrado como bonus_registration_id em leader_invitations (statuses available/sent/used). */
+  registration_ids_canonical_expected_but_missing_invites: string[];
+  /** Concedidos no DB (available/sent/used) mas não explicados pelos ids canônicos. */
+  bonus_registration_ids_in_db_not_in_canonical: string[];
+
+  /** Produção (atual) explicada por inscrições mas sem equivalência em convites concedidos (available/sent/used). */
+  registration_ids_production_without_equivalent_in_invites: string[];
+
+  /** Hipóteses diagnósticas para facilitar o entendimento no log técnico. */
+  diagnostic_hypotheses: InvitationBonusDiagnostic[];
+
+  /** Convites deste evento por status (escopo do líder, agregados). Útil pra separar “global vs evento” no report. */
   convites_no_evento_por_status: Record<string, number>;
   divergencia_paid_count: number;
   divergencia_expected_bonuses: number;
@@ -178,6 +214,77 @@ function classifyRow(row: InvitationBonusAuditCommissionRow): ErrorClassificatio
   return Array.from(codes);
 }
 
+function uniqueSorted<T extends string>(ids: T[]): T[] {
+  return Array.from(new Set(ids)).sort() as T[];
+}
+
+function sumByKeys(map: Record<string, number>, keys: string[]): number {
+  let s = 0;
+  for (const k of keys) s += map[k] ?? 0;
+  return s;
+}
+
+function buildDiagnosticHypotheses(params: {
+  paidCount_production: number;
+  paidCount_canonical: number;
+  expectedBonuses_canonical: number;
+  times_granted_db: number;
+  bonus_registration_ids_in_db_not_in_canonical: string[];
+  registration_ids_canonical_expected_but_missing_invites: string[];
+  registration_ids_production_without_equivalent_in_invites: string[];
+}): InvitationBonusDiagnostic[] {
+  const out: InvitationBonusDiagnostic[] = [];
+
+  if (params.paidCount_production > params.paidCount_canonical) {
+    out.push('cálculo inflado');
+  }
+
+  if (params.expectedBonuses_canonical > params.times_granted_db) {
+    out.push('convites não concedidos apesar do esperado');
+  }
+
+  if (params.bonus_registration_ids_in_db_not_in_canonical.length > 0) {
+    out.push('convites concedidos mas não exibidos ao líder');
+  }
+
+  if (
+    params.registration_ids_production_without_equivalent_in_invites.length > 0 &&
+    params.registration_ids_canonical_expected_but_missing_invites.length > 0
+  ) {
+    out.push('registros free_bonus aparecendo na aba inscrições sem equivalência em convites disponíveis');
+  }
+
+  return uniqueSorted(out);
+}
+
+function formatIdList(ids: string[], maxIds = 25): { text: string; truncated: boolean } {
+  if (!ids.length) return { text: '—', truncated: false };
+  const truncated = ids.length > maxIds;
+  const shown = truncated ? ids.slice(0, maxIds) : ids;
+  const compact = shown.map((id) => `\`${id.slice(0, 8)}…\``).join(', ');
+  return { text: truncated ? `${compact} (+${ids.length - maxIds} outros)` : compact, truncated };
+}
+
+function formatIdListWithOrigin(
+  ids: string[],
+  originMap: Record<string, RegistrationOrigin>,
+  maxIds = 25
+): { text: string; truncated: boolean } {
+  if (!ids.length) return { text: '—', truncated: false };
+  const truncated = ids.length > maxIds;
+  const shown = truncated ? ids.slice(0, maxIds) : ids;
+  const compact = shown
+    .map((id) => {
+      const origin = originMap[id] ?? '?';
+      return `\`${id.slice(0, 8)}…\`(${origin})`;
+    })
+    .join(', ');
+  return {
+    text: truncated ? `${compact} (+${ids.length - maxIds} outros)` : compact,
+    truncated,
+  };
+}
+
 /**
  * Executa auditoria + simulador (leitura apenas).
  */
@@ -235,8 +342,25 @@ export async function runInvitationBonusAudit(params: {
       convites_neste_evento_por_status: eventCounts,
     });
 
+    // Cupom: contagem de cupons do líder ligados ao evento para ajudar a explicar a regra de resolução.
+    const eventCouponCountResult = await query(
+      `SELECT COUNT(DISTINCT c.id)::int AS cnt
+       FROM coupons c
+       LEFT JOIN coupon_events ce ON ce.coupon_id = c.id
+       WHERE c.leader_id = $1
+         AND (ce.event_id = $2 OR c.event_id = $2)`,
+      [leaderId, eventId]
+    );
+    const eventCouponCount = (eventCouponCountResult.rows[0] as { cnt: number })?.cnt ?? 0;
+
     const commissions = await query(
-      `SELECT id::text AS id, bonus_type::text AS bonus_type, required_purchases, leader_id::text AS leader_id
+      `SELECT
+         id::text AS id,
+         bonus_type::text AS bonus_type,
+         required_purchases,
+         commission_percentage,
+         name,
+         leader_id::text AS leader_id
        FROM leader_event_commissions
        WHERE event_id = $1 AND leader_id = $2
          AND bonus_type IN ('invitation', 'both')
@@ -248,17 +372,46 @@ export async function runInvitationBonusAudit(params: {
       id: string;
       bonus_type: string;
       required_purchases: number | null;
+      commission_percentage: number | null;
+      name: string | null;
       leader_id: string;
     }[]) {
       const req = requiredPurchasesSafe(comm.required_purchases);
-      let coupon: { id: string; code: string } | null = null;
+
+      let coupon: { id: string; code: string; organizer_id: string | null; name: string | null } | null = null;
+      let coupon_resolution_rule = 'não resolvido';
       try {
         const c = await getCouponByEventCommission(leaderId, eventId, comm.id);
         if (c?.id && c?.code) {
-          coupon = { id: c.id, code: c.code };
+          coupon = {
+            id: c.id,
+            code: c.code,
+            organizer_id: (c as any).organizer_id ?? null,
+            name: (c as any).name ?? null,
+          };
+
+          const commissionIdShort = comm.id.replace(/-/g, '').substring(0, 8).toUpperCase();
+          const codeMatches = !!coupon?.code && coupon.code.includes(commissionIdShort);
+          const nameMatches =
+            !!comm.name && !!coupon?.name && coupon.name.includes(comm.name);
+
+          if (codeMatches) {
+            coupon_resolution_rule = 'cupom resolvido pelo match do commission_id_short no código';
+          } else if (nameMatches) {
+            coupon_resolution_rule = 'cupom resolvido pelo match do nome da comissão no nome do cupom';
+          } else if (eventCouponCount === 1) {
+            coupon_resolution_rule = 'fallback: único cupom do evento para o líder';
+          } else {
+            coupon_resolution_rule = 'fallback: múltiplos cupons do evento para o líder (primeiro após filtros)';
+          }
         }
       } catch {
         coupon = null;
+        coupon_resolution_rule = 'erro ao resolver cupom (tratado como não resolvido)';
+      }
+
+      if (!coupon) {
+        coupon_resolution_rule = 'nenhum cupom encontrado para esta comissão';
       }
 
       const prodRegs = await getRegistrationsByLeaderCoupons(leaderId, {
@@ -284,24 +437,78 @@ export async function runInvitationBonusAudit(params: {
       const expectedBonuses_production = Math.floor(paidCount_production / req);
       const expectedBonuses_canonical = Math.floor(paidCount_canonical / req);
 
-      const grantedResult = await query(
-        `SELECT COUNT(*)::text AS cnt FROM leader_invitations
-         WHERE leader_id = $1 AND event_id = $2 AND commission_id = $3
-           AND status IN ('available', 'sent', 'used')`,
+      // Convites reais no DB para esta comissão (por status) + mapeamento do bonus_registration_id.
+      const invRes = await query(
+        `SELECT
+           li.status::text AS status,
+           li.bonus_registration_id::text AS bonus_registration_id
+         FROM leader_invitations li
+         WHERE li.leader_id = $1
+           AND li.event_id = $2
+           AND li.commission_id = $3`,
         [leaderId, eventId, comm.id]
       );
-      const times_granted_db = parseInt((grantedResult.rows[0] as { cnt: string })?.cnt || '0', 10) || 0;
+      const convites_por_status_comissao: Record<string, number> = {};
+      const bonus_registration_ids_por_status: Record<string, string[]> = {};
+      for (const r of invRes.rows as { status: string; bonus_registration_id: string | null }[]) {
+        convites_por_status_comissao[r.status] = (convites_por_status_comissao[r.status] ?? 0) + 1;
+        if (r.bonus_registration_id) {
+          bonus_registration_ids_por_status[r.status] = bonus_registration_ids_por_status[r.status] ?? [];
+          bonus_registration_ids_por_status[r.status].push(r.bonus_registration_id);
+        }
+      }
 
+      const times_available_db = convites_por_status_comissao['available'] ?? 0;
+      const times_sent_db = convites_por_status_comissao['sent'] ?? 0;
+      const times_used_db = convites_por_status_comissao['used'] ?? 0;
+      const times_expired_db = convites_por_status_comissao['expired'] ?? 0;
+      const times_granted_db = times_available_db + times_sent_db + times_used_db;
+
+      // Convites deste evento por status (agregados do líder) — mantém separação global vs evento no report.
       const convites_no_evento_por_status = await countInvitationsByStatus(leaderId, eventId);
+
+      const bonusActiveSet = new Set<string>([
+        ...(bonus_registration_ids_por_status['available'] ?? []),
+        ...(bonus_registration_ids_por_status['sent'] ?? []),
+        ...(bonus_registration_ids_por_status['used'] ?? []),
+      ]);
+
+      const canonicalSet = new Set<string>(registration_ids_canonical);
+
+      const registration_ids_canonical_expected_but_missing_invites = registration_ids_canonical.filter(
+        (id) => !bonusActiveSet.has(id)
+      );
+
+      const bonusActiveIds = uniqueSorted([
+        ...(bonus_registration_ids_por_status['available'] ?? []),
+        ...(bonus_registration_ids_por_status['sent'] ?? []),
+        ...(bonus_registration_ids_por_status['used'] ?? []),
+      ]);
+
+      const bonus_registration_ids_in_db_not_in_canonical = bonusActiveIds.filter((id) => !canonicalSet.has(id));
+
+      const registration_ids_production_without_equivalent_in_invites = registration_ids_production.filter(
+        (id) => !bonusActiveSet.has(id)
+      );
 
       const baseRow: InvitationBonusAuditCommissionRow = {
         leader_id: leaderId,
         commission_id: comm.id,
+        event_id: eventId,
         bonus_type: comm.bonus_type,
         required_purchases: req,
+        commission_percentage:
+          comm.commission_percentage === null || comm.commission_percentage === undefined
+            ? null
+            : Number.isFinite(Number(comm.commission_percentage))
+              ? Number(comm.commission_percentage)
+              : parseFloat(String(comm.commission_percentage)),
+        commission_name: comm.name,
         coupon_id: coupon?.id ?? null,
         coupon_code: coupon?.code ?? null,
+        coupon_organizer_id: coupon?.organizer_id ?? null,
         coupon_resolved: !!coupon,
+        coupon_resolution_rule,
         registration_ids_production,
         registration_ids_canonical,
         registration_ids_only_production: onlyProd,
@@ -311,7 +518,27 @@ export async function runInvitationBonusAudit(params: {
         paidCount_canonical,
         expectedBonuses_production,
         expectedBonuses_canonical,
+
+        times_available_db,
+        times_sent_db,
+        times_used_db,
+        times_expired_db,
         times_granted_db,
+        convites_por_status_comissao,
+        bonus_registration_ids_por_status,
+        registration_ids_canonical_expected_but_missing_invites,
+        bonus_registration_ids_in_db_not_in_canonical,
+        registration_ids_production_without_equivalent_in_invites,
+        diagnostic_hypotheses: buildDiagnosticHypotheses({
+          paidCount_production,
+          paidCount_canonical,
+          expectedBonuses_canonical,
+          times_granted_db,
+          bonus_registration_ids_in_db_not_in_canonical,
+          registration_ids_canonical_expected_but_missing_invites,
+          registration_ids_production_without_equivalent_in_invites,
+        }),
+
         convites_no_evento_por_status,
         divergencia_paid_count: paidCount_production - paidCount_canonical,
         divergencia_expected_bonuses: expectedBonuses_production - expectedBonuses_canonical,
@@ -375,46 +602,126 @@ function buildFunctionalMarkdown(p: {
   lines.push(`## Classificação agregada (indicativa)`);
   lines.push(p.agg.length ? p.agg.map((x) => `- \`${x}\``).join('\n') : '- (nenhum sinal automático)');
   lines.push('');
-  lines.push(`## Convites: evento vs global por líder`);
+  lines.push(`## Convites reais: global vs neste evento por líder`);
   for (const ls of p.leadersScope) {
     lines.push(`### Líder \`${ls.leader_id}\``);
-    lines.push(`- **Globais (todos os eventos):** ${JSON.stringify(ls.convites_globais_por_status)}`);
-    const noEvento = p.rows.filter((r) => r.leader_id === ls.leader_id);
-    const ev = p.leadersScope.find((x) => x.leader_id === ls.leader_id);
-    lines.push(`- **Neste evento (total real por status):** ${JSON.stringify(ev?.convites_neste_evento_por_status || {})}`);
-    if (noEvento.length === 0) {
-      lines.push(`- **Comissões invitation/both neste evento:** nenhuma linha analisada`);
-    }
-    lines.push('');
-  }
-  lines.push(`## Por comissão (produção vs canônico)`);
-  lines.push(`| Líder | Comissão | Cupom resolvido | paid ∏ | paid ✓ | exp ∏ | exp ✓ | concedidos (DB) | Δ paid |`);
-  lines.push(`|-------|----------|-----------------|--------|--------|-------|-------|-----------------|--------|`);
-  for (const r of p.rows) {
+    lines.push(`- **Globais (todos os eventos) por status:** ${JSON.stringify(ls.convites_globais_por_status)}`);
     lines.push(
-      `| ${r.leader_id.slice(0, 8)}… | ${r.commission_id.slice(0, 8)}… | ${r.coupon_resolved ? 'sim' : 'não'} | ${r.paidCount_production} | ${r.paidCount_canonical} | ${r.expectedBonuses_production} | ${r.expectedBonuses_canonical} | ${r.times_granted_db} | ${r.divergencia_paid_count} |`
+      `- **Convites disponíveis reais (globais: available+sent+used):** ${sumByKeys(ls.convites_globais_por_status, [
+        'available',
+        'sent',
+        'used',
+      ])}`
     );
-  }
-  lines.push('');
-  lines.push(`## Divergências detalhadas (registration_ids)`);
-  for (const r of p.rows) {
-    if (
-      r.registration_ids_only_production.length === 0 &&
-      r.registration_ids_only_canonical.length === 0
-    ) {
-      continue;
-    }
-    lines.push(`### Comissão \`${r.commission_id}\` — líder \`${r.leader_id}\``);
-    if (r.registration_ids_only_production.length) {
-      lines.push(`- **Só na produção (excesso):** ${r.registration_ids_only_production.join(', ')}`);
-      for (const id of r.registration_ids_only_production) {
-        lines.push(`  - \`${id}\` → origem: **${r.origem_por_registration_id[id] || '?'}**`);
-      }
-    }
-    if (r.registration_ids_only_canonical.length) {
-      lines.push(`- **Só no canônico (faltando na produção):** ${r.registration_ids_only_canonical.join(', ')}`);
-    }
+    lines.push(`- **Neste evento por status:** ${JSON.stringify(ls.convites_neste_evento_por_status)}`);
+    lines.push(
+      `- **Convites disponíveis reais (neste evento: available+sent+used):** ${sumByKeys(ls.convites_neste_evento_por_status, [
+        'available',
+        'sent',
+        'used',
+      ])}`
+    );
     lines.push('');
+  }
+  lines.push(`## Por comissão (configuração, cálculo e convites reais)`);
+  for (const r of p.rows) {
+    lines.push(`### Líder \`${r.leader_id}\` · Comissão \`${r.commission_id}\``);
+
+    // 1) Configuração do bônus identificada (obrigatória)
+    lines.push('');
+    lines.push(`#### Configuração do bônus identificada`);
+    lines.push(`- **event_id:** \`${r.event_id}\``);
+    lines.push(`- **leader_id:** \`${r.leader_id}\``);
+    lines.push(`- **commission_id:** \`${r.commission_id}\``);
+    lines.push(`- **bonus_type:** \`${r.bonus_type}\``);
+    lines.push(`- **required_purchases:** ${r.required_purchases}`);
+    lines.push(`- **commission_percentage:** ${r.commission_percentage ?? '—'}`);
+    if (r.commission_name) lines.push(`- **commission name:** ${r.commission_name}`);
+    lines.push(
+      `- **Regra legível:** 1 convite a cada **${r.required_purchases}** vendas (expectedBonuses = floor(paidCount / required_purchases)).`
+    );
+
+    // 2) Cupom resolvido
+    lines.push('');
+    lines.push(`#### Cupom resolvido (e regra usada)`);
+    lines.push(`- **cupom resolvido com sucesso:** ${r.coupon_resolved ? 'sim' : 'não'}`);
+    lines.push(`- **coupon_id:** ${r.coupon_id ? `\`${r.coupon_id}\`` : '—'}`);
+    lines.push(`- **coupon_code:** ${r.coupon_code ? `\`${r.coupon_code}\`` : '—'}`);
+    lines.push(`- **coupon organizer_id:** ${r.coupon_organizer_id ? `\`${r.coupon_organizer_id}\`` : '—'}`);
+    lines.push(`- **regra de resolução do cupom:** ${r.coupon_resolution_rule}`);
+
+    // 3) Transparência do cálculo
+    lines.push('');
+    lines.push(`#### Transparência do cálculo (produção vs canônico)`);
+    lines.push(`- **paidCount_atual (produção):** ${r.paidCount_production}`);
+    lines.push(`- **paidCount_correto (canônico):** ${r.paidCount_canonical}`);
+    lines.push(`- **expectedBonuses_atual (produção):** ${r.expectedBonuses_production}`);
+    lines.push(`- **expectedBonuses_correto (canônico):** ${r.expectedBonuses_canonical}`);
+    lines.push(`- **timesGranted_db (DB, available/sent/used):** ${r.times_granted_db}`);
+    lines.push(
+      `- **status (DB, por comissão):** available=${r.times_available_db} | sent=${r.times_sent_db} | used=${r.times_used_db} | expired=${r.times_expired_db}`
+    );
+    lines.push(`- **convites por status (esta comissão):** ${JSON.stringify(r.convites_por_status_comissao)}`);
+    lines.push(`- **Δ paid (produção - canônico):** ${r.divergencia_paid_count}`);
+    lines.push(`- **Δ expectedBonuses (produção - canônico):** ${r.divergencia_expected_bonuses}`);
+
+    // Registro / ids list
+    const onlyCanonFmt = formatIdList(r.registration_ids_only_canonical, 18);
+    lines.push('');
+    lines.push(
+      `- **registration_ids_considerados_como_producao (com origem):** ${formatIdListWithOrigin(r.registration_ids_production, r.origem_por_registration_id, 18).text}`
+    );
+    lines.push(
+      `- **registration_ids_considerados_correto (com origem se aplicável):** ${formatIdListWithOrigin(r.registration_ids_canonical, r.origem_por_registration_id, 18).text}`
+    );
+    lines.push(
+      `- **registration_ids_excesso (só na produção, com origem):** ${formatIdListWithOrigin(r.registration_ids_only_production, r.origem_por_registration_id, 18).text}`
+    );
+    lines.push(`- **registration_ids_faltando na produção (só no canônico):** ${onlyCanonFmt.text}`);
+
+    // 4) Convites reais vs inscrições vinculadas
+    lines.push('');
+    lines.push(`#### Convites reais e equivalência com registros (bonus_registration_id)`);
+    lines.push(
+      `- **inscrições bônus/free_bonus ligadas à comissão (bonus_registration_id em leader_invitations por status):** ${JSON.stringify(
+        Object.fromEntries(
+          Object.entries(r.bonus_registration_ids_por_status).map(([k, v]) => [k, v.length])
+        )
+      )}`
+    );
+
+    lines.push(
+      `- **bonus_registration_id ativo (available+sent+used):** ${formatIdList(
+        [
+          ...(r.bonus_registration_ids_por_status['available'] ?? []),
+          ...(r.bonus_registration_ids_por_status['sent'] ?? []),
+          ...(r.bonus_registration_ids_por_status['used'] ?? []),
+        ],
+        18
+      ).text}`
+    );
+    lines.push(
+      `- **bonus_registration_id expirado (expired):** ${formatIdList(
+        r.bonus_registration_ids_por_status['expired'] ?? [],
+        18
+      ).text}`
+    );
+
+    const missingFmt = formatIdList(r.registration_ids_canonical_expected_but_missing_invites, 18);
+    lines.push(`- **canônico esperado mas sem convite disponível (available/sent/used):** ${missingFmt.text}`);
+
+    const notExpectedFmt = formatIdList(r.bonus_registration_ids_in_db_not_in_canonical, 18);
+    lines.push(`- **convites concedidos no DB mas sem equivalência no canônico esperado:** ${notExpectedFmt.text}`);
+
+    // 5) Separação: "produção sem equivalência" (auxilia diagnóstico)
+    const prodWithoutInvitesFmt = formatIdList(r.registration_ids_production_without_equivalent_in_invites, 18);
+    lines.push(`- **produção (atual) sem equivalência em convites concedidos:** ${prodWithoutInvitesFmt.text}`);
+
+    lines.push('');
+    lines.push(`#### Diagnóstico (hipóteses — para log técnico)`);
+    lines.push(
+      r.diagnostic_hypotheses.length ? r.diagnostic_hypotheses.map((x) => `- \`${x}\``).join('\n') : '- (sem hipótese automática)'
+    );
   }
   return lines.join('\n');
 }
