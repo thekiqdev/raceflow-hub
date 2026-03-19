@@ -137,6 +137,8 @@ import {
   getMigrationLogByIdController,
   rollbackMigrationController,
 } from '../controllers/changeEventOrganizerController.js';
+import { runInvitationBonusAuditController } from '../controllers/invitationBonusAuditController.js';
+import { getInvitationBonusAuditContextController } from '../controllers/invitationBonusAuditContextController.js';
 
 const router = Router();
 
@@ -269,6 +271,10 @@ router.get('/document-types/:id', getDocumentTypeByIdController);
 router.post('/document-types', createDocumentTypeController);
 router.put('/document-types/:id', updateDocumentTypeController);
 router.delete('/document-types/:id', deleteDocumentTypeController);
+
+// Fase 1 — Auditoria / simulador bônus de convite (somente leitura)
+router.get('/audit/invitation-bonus-context/:eventId', getInvitationBonusAuditContextController);
+router.post('/audit/invitation-bonus-simulator', runInvitationBonusAuditController);
 
 // Event organizer migration (change event owner)
 router.post('/events/:eventId/change-organizer', changeEventOrganizerController);

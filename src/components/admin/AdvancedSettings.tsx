@@ -6,6 +6,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Loader2, Play, Download, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
 import { executeFixOrganizerRegistrationsScript, executeDisableAsaasNotificationsScript, executeBackfillPlatformFeeAmountScript } from "@/lib/api/systemSettings";
+import { InvitationBonusAuditPanel } from "@/components/admin/InvitationBonusAuditPanel";
 
 const AdvancedSettings = () => {
   const [isRunning, setIsRunning] = useState(false);
@@ -210,6 +211,8 @@ const AdvancedSettings = () => {
 
   return (
     <div className="space-y-6">
+      <InvitationBonusAuditPanel />
+
       <Card>
         <CardHeader>
           <CardTitle>Corrigir Inscrições de Organizadores</CardTitle>
