@@ -139,6 +139,7 @@ import {
 } from '../controllers/changeEventOrganizerController.js';
 import { runInvitationBonusAuditController } from '../controllers/invitationBonusAuditController.js';
 import { getInvitationBonusAuditContextController } from '../controllers/invitationBonusAuditContextController.js';
+import { runInvitationBonusReconciliationController } from '../controllers/invitationBonusReconciliationController.js';
 
 const router = Router();
 
@@ -275,6 +276,8 @@ router.delete('/document-types/:id', deleteDocumentTypeController);
 // Fase 1 — Auditoria / simulador bônus de convite (somente leitura)
 router.get('/audit/invitation-bonus-context/:eventId', getInvitationBonusAuditContextController);
 router.post('/audit/invitation-bonus-simulator', runInvitationBonusAuditController);
+// Frente 2 — Correção controlada (integrada ao contexto da Frente 1)
+router.post('/reconcile/invitation-bonus-controlled', runInvitationBonusReconciliationController);
 
 // Event organizer migration (change event owner)
 router.post('/events/:eventId/change-organizer', changeEventOrganizerController);

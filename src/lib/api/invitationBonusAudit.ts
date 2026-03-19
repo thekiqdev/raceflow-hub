@@ -118,6 +118,88 @@ export interface InvitationBonusAuditPayload {
   };
 }
 
+export interface InvitationBonusReconciliationItemA {
+  leader_invitation_id: string;
+  leader_id: string;
+  commission_id: string;
+  event_id: string;
+  current_status: string;
+  justification: string;
+  action_proposed: 'set_status_expired';
+  reversibility_note: string;
+}
+
+export interface InvitationBonusReconciliationItemB {
+  registration_id: string;
+  leader_id: string | null;
+  commission_id: string | null;
+  event_id: string;
+  current_status: string | null;
+  payment_status: string | null;
+  classification: string[];
+  justification: string;
+  action_proposed: 'none_in_v1_dry_run_only';
+  reversibility_note: string;
+}
+
+export interface InvitationBonusReconciliationPayload {
+  mode: 'dry_run' | 'apply';
+  event_id: string;
+  leader_id: string | null;
+  scope_type: 'single_leader' | 'all_event_leaders';
+  free_bonus_block_status: 'executável' | 'dry_run-only';
+  free_bonus_block_reason: string;
+  audit_snapshot_hash: string;
+  dry_run_hash: string;
+  consistency_guard: {
+    can_apply: boolean;
+    reason: string;
+    expected_event_id: string;
+    expected_leader_scope: string;
+    expected_audit_snapshot_hash: string;
+    expected_dry_run_hash: string;
+  };
+  reports: {
+    before: {
+      invitations_available: number;
+      invitations_sent: number;
+      invitations_used: number;
+      invitations_expired: number;
+      convites_esperados: number;
+      free_bonus_total: number;
+      free_bonus_validas: number;
+      free_bonus_excesso: number;
+      free_bonus_sem_convite: number;
+    };
+    change_plan: {
+      bloco_a_leader_invitations: {
+        status: 'executável' | 'dry_run-only';
+        items: InvitationBonusReconciliationItemA[];
+      };
+      bloco_b_registrations_free_bonus: {
+        status: 'executável' | 'dry_run-only';
+        items: InvitationBonusReconciliationItemB[];
+      };
+      summary: {
+        invitations_to_change: number;
+        registrations_free_bonus_planned: number;
+      };
+    };
+    preview_after: {
+      invitations_available: number;
+      invitations_expired: number;
+      free_bonus_total: number;
+      note: string;
+    };
+    after_apply?: {
+      invitations_changed: number;
+      invitations_changed_ids: string[];
+      free_bonus_changed: number;
+      note: string;
+    };
+  };
+}
+
 export async function runInvitationBonusSimulator(params: {
   event_id: string;
   leader_id?: string | null;
@@ -175,5 +257,24 @@ export async function getInvitationBonusAuditContext(
 ): Promise<ApiResponse<InvitationBonusAuditContextResult>> {
   return apiClient.get<InvitationBonusAuditContextResult>(
     `/admin/audit/invitation-bonus-context/${eventId}`
+  );
+}
+
+export async function runInvitationBonusReconciliation(params: {
+  event_id: string;
+  leader_id?: string | null;
+  mode: 'dry_run' | 'apply';
+  audit_snapshot_hash?: string;
+  dry_run_hash?: string;
+}): Promise<ApiResponse<InvitationBonusReconciliationPayload>> {
+  return apiClient.post<InvitationBonusReconciliationPayload>(
+    '/admin/reconcile/invitation-bonus-controlled',
+    {
+      event_id: params.event_id,
+      leader_id: params.leader_id || undefined,
+      mode: params.mode,
+      audit_snapshot_hash: params.audit_snapshot_hash,
+      dry_run_hash: params.dry_run_hash,
+    }
   );
 }

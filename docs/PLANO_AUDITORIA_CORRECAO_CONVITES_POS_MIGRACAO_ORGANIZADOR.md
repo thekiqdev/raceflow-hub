@@ -1,6 +1,6 @@
 # Plano técnico: auditoria e correção controlada de vendas/inscrições e convites após migração de organizador
 
-**Versão:** 1.3 (plano apenas — sem implementação)  
+**Versão:** 1.6 (plano apenas — sem implementação)  
 **Contexto:** Em produção, após migrar um evento em andamento, o número de inscrições/vendas exibido ou usado para bônus ficou inflado, gerando convites em excesso para líderes (ex.: painel mostra uma quantidade; em evento > inscrições aparecem 100+ convites).  
 **Princípio:** Antes de qualquer correção em massa, garantir leitura, diagnóstico e relatório; depois dry run e aplicação em **um único evento**; em paralelo, corrigir a **causa raiz no código** para o problema não voltar.
 
@@ -346,16 +346,48 @@ Estrutura mínima sugerida (campos podem ser aninhados):
 
 ## 5. Frente 2 — Correção controlada do evento (dados)
 
-**Entrega:** script/rotina separada da auditoria/simulador, com **três saídas obrigatórias** e parâmetros alinhados à seção **4.5**. Os limites de convites a revogar na Frente 2 devem preferencialmente usar **`expectedBonuses_correto`** / `convites_esperados` derivados do **simulador (§4.1)**, não do cálculo inflado.
+**Entrega:** script/rotina separada da auditoria/simulador, com **três saídas obrigatórias** e parâmetros alinhados à seção **4.5**.
+
+**Escopo explícito da Frente 2 (v1 de correção de dados):**
+
+1. Corrigir **`leader_invitations` em excesso** (prioridade inicial em `available`, conforme regras de segurança).  
+2. Corrigir **`registrations` bônus (`payment_method = free_bonus`) extras/indevidas** associadas ao evento analisado.  
+3. **Não corrigir cupons na v1** da correção de dados, **exceto** quando o relatório técnico da Fase 1 comprovar necessidade direta e inequívoca para aquele `event_id` (com evidência rastreável por IDs).
+
+Os limites de correção devem preferencialmente usar **`expectedBonuses_correto`** / `convites_esperados` derivados do **simulador (§4.1)**, não do cálculo inflado.
+
+### 5.0 Integração obrigatória com a Frente 1 (hub único)
+
+**Diretriz de implementação:** não criar recurso isolado em Configurações para a Frente 2.
+
+A Frente 2 deve ser acionada **diretamente do resultado da Frente 1**, na mesma interface, como continuação do contexto de auditoria já executado.
+
+**Fluxo obrigatório (UI/UX):**
+
+1. Usuário executa a auditoria (Frente 1).  
+2. Após geração do relatório, aparece a ação **“Iniciar correção controlada”** na mesma tela.  
+3. Ao abrir o fluxo da Frente 2:
+   - `event_id` vem do contexto da auditoria e fica **não editável**;
+   - `leader_id` é opcional;
+   - modo padrão é **`dry_run`**.
+4. Frente 2 executa com base no contexto auditado e gera:
+   - relatório antes;
+   - plano de alteração (Bloco A e Bloco B);
+   - preview do resultado.
+5. `apply` só pode ser habilitado após `dry_run` concluído e revisado.
+6. Sempre que possível, antes do `apply`, validar que o estado não mudou desde a auditoria/dry_run (guardas de consistência).
+
+**Objetivo:** transformar a auditoria em um **hub de decisão** e impedir execução de correção fora de contexto.
 
 ### 5.1 Garantias da primeira versão (escopo restrito)
 
 | Regra | Detalhe |
 |-------|---------|
-| Prioridade | Ajustar **apenas convites `available` em excesso** em relação ao `convites_esperados` validado na auditoria. |
+| Prioridade 1 | Ajustar **convites `available` em excesso** em relação ao `convites_esperados` validado na auditoria. |
+| Prioridade 2 | Ajustar **inscrições `free_bonus` extras/indevidas** vinculadas ao mesmo `event_id` (com base nos arrays e classificações da Fase 1). |
 | Proibido na v1 | **Não** apagar automaticamente convites `used`. |
-| Proibido na v1 | **Não** alterar inscrições `free_bonus` (nem cancelar, nem remover vínculos) — tratar em versão futura se necessário. |
 | `sent` | Fora do escopo da v1 salvo decisão explícita de produto (documentar como “não aplicar na primeira versão”). |
+| Cupons | Não alterar cupons na v1, salvo necessidade direta comprovada no relatório técnico. |
 
 ### 5.2 Parâmetros e bloqueios
 
@@ -365,22 +397,58 @@ Estrutura mínima sugerida (campos podem ser aninhados):
 
 ### 5.3 Modos
 
-- **`dry_run` (padrão):** gera relatório **antes**, **plano de alteração** (lista de `leader_invitations.id` e ação proposta), e simula fim — **sem** `COMMIT`.  
+- **`dry_run` (padrão):** gera relatório **antes**, **plano de alteração** e simula fim — **sem** `COMMIT`.  
+  O dry_run deve listar explicitamente:
+  - quais `leader_invitations` estão em excesso;
+  - quais `registrations` `free_bonus` são válidas;
+  - quais `registrations` `free_bonus` estão em excesso;
+  - quais `registrations` `free_bonus` não possuem `leader_invitation_id`;
+  - quais `registrations` `free_bonus` seriam afetadas no `apply`.
 - **`apply`:** só após `dry_run` revisado; exige **confirmação explícita** (ex.: `confirm: true` + string que inclua o `event_id`).
+  - Primeira execução em produção: `event_id` obrigatório + `leader_id` opcional, iniciando por **um líder problemático**.
+  - Só após validação, executar para o **evento inteiro**.
+  - `apply` somente liberado após `dry_run` no mesmo contexto auditado (mesmo `event_id` e filtros aplicáveis).
+  - Evitar `DELETE` físico na v1; preferir reversão segura/desativação lógica/cancelamento seguro, se o modelo permitir.
+  - **Regra objetiva para `registrations free_bonus`:**
+    - se existir mecanismo seguro de reversão lógica no modelo atual, o `apply` **poderá agir** nessas inscrições;
+    - se **não** existir mecanismo seguro, o `apply` deve permanecer em **`dry_run` para `registrations free_bonus`** e aplicar somente correções em `leader_invitations`.
+  - Se não houver estratégia segura de reversão para um tipo de registro, o `apply` deve **parar no dry_run** até definição formal.
 
 ### 5.4 Três relatórios obrigatórios (saída do script de correção)
 
 | Ordem | Nome | Conteúdo mínimo |
 |-------|------|------------------|
-| 1 | **Relatório antes** | Snapshot: contagens por `leader_id` / `commission_id` / status; IDs de `available` candidatos; mesmas métricas resumidas da auditoria para comparação. |
-| 2 | **Plano de alteração** | Para cada linha afetada: `invitation_id`, `leader_id`, `commission_id`, `status` atual, ação (`UPDATE` status / revogação), ordem de aplicação; limites máximos por execução. |
-| 3 | **Relatório depois** | Mesmo formato do “antes” + delta (o que mudou). |
+| 1 | **Relatório antes** | Snapshot por `leader_id` / `commission_id`: convites por status, IDs de `available` candidatos, `registrations free_bonus` válidas/excesso/sem lastro, e métricas resumidas da auditoria para comparação. |
+| 2 | **Plano de alteração** | Estruturar em dois blocos obrigatórios: **Bloco A — `leader_invitations` afetados** e **Bloco B — `registrations free_bonus` afetadas**. Em cada bloco listar IDs, justificativa, ação proposta e observação de reversibilidade. |
+| 3 | **Relatório depois** | Mesmo formato do “antes” + delta completo de convites e inscrições bônus, com IDs explícitos impactados. |
 
-Transação: `BEGIN` → aplicar apenas o plano → `COMMIT` ou `ROLLBACK`. Preferir `UPDATE` de status (ex.: `expired` / `revoked_by_reconciliation`) em vez de `DELETE`, para rollback lógico.
+Transação: `BEGIN` → aplicar apenas o plano → `COMMIT` ou `ROLLBACK`. Preferir `UPDATE` de status (ex.: `expired` / `revoked_by_reconciliation`) e/ou marcação lógica reversível em vez de `DELETE`, para rollback lógico.
 
-### 5.5 Log persistente
+#### Estrutura obrigatória do **Plano de alteração** (Frente 2)
+
+- **Bloco A — `leader_invitations` afetados**
+  - Campos mínimos por item: `leader_invitation_id`, `leader_id`, `commission_id`, `event_id`, justificativa, ação proposta, observação de reversibilidade.
+- **Bloco B — `registrations free_bonus` afetadas**
+  - Campos mínimos por item: `registration_id`, `leader_id`, `commission_id`, `event_id`, justificativa, ação proposta, observação de reversibilidade.
+  - Se não houver mecanismo seguro de reversão lógica, este bloco deve ser emitido como **“planejado (dry_run-only)”** e **não executado** no `apply`.
+
+### 5.5 Saída principal esperada da Frente 2
+
+A Frente 2 deve produzir simultaneamente:
+
+1. Correção de **convites disponíveis em excesso**.  
+2. Correção de **inscrições bônus/free_bonus extras geradas indevidamente**.  
+3. Geração dos três relatórios (antes / plano / depois) com **IDs explícitos** de tudo que foi analisado e afetado.
+
+### 5.6 Log persistente
 
 Registrar em tabela dedicada (ex.: `invitation_reconciliation_log`) ou anexo ao relatório: `event_id`, `leader_id` (se filtrado), executor, timestamp, hashes dos três relatórios.
+
+Incluir metadados de integração com a auditoria para rastreabilidade:
+
+- `audit_run_id` / hash do relatório da Frente 1;
+- hash do `dry_run` que precede o `apply`;
+- indicação de validação de consistência pré-apply (estado igual ou divergente).
 
 ---
 
@@ -412,8 +480,12 @@ Executar após o relatório **depois** da frente 2 e com o código da frente 3 j
 - [ ] **Sem lote** na primeira versão (um evento por execução).  
 - [ ] Fase 1 concluída: **simulador (§4.1)** + saídas **O1–O3**; critérios **A–E** (seção **4.4**) satisfeitos antes de `apply`.  
 - [ ] Fase 1 inclui seção obrigatória de **inscrições bônus/extras do evento** (§4.6.1) + comparativo e arrays obrigatórios (§4.6.2–4.6.3).  
+- [ ] Frente 2 acionada apenas a partir da própria tela/resultado da Frente 1 (hub único), sem execução isolada fora de contexto.  
 - [ ] `dry_run` antes de `apply`; **confirmação explícita** para `apply`.  
-- [ ] Correção v1: só excesso de **`available`**; **não** apagar `used`; **não** mexer em `free_bonus`.  
+- [ ] Primeira execução de `apply` em produção feita com `event_id` + `leader_id` (1 líder problemático), e só depois expandida para o evento inteiro.  
+- [ ] Correção v1 contempla `available` em excesso **e** `free_bonus` extras, com estratégia reversível; sem `DELETE` físico por padrão.  
+- [ ] Se não houver estratégia segura de reversão para determinado ajuste, execução deve ficar em `dry_run` até decisão técnica formal.  
+- [ ] Cupons não são corrigidos na v1, exceto necessidade direta comprovada no relatório técnico.  
 - [ ] Três relatórios (antes / plano / depois) arquivados.  
 - [ ] Validação pós-correção **V1–V3** documentada como concluída ou não.  
 - [ ] Logs (quem, quando, IP, versão).  
@@ -427,7 +499,8 @@ Executar após o relatório **depois** da frente 2 e com o código da frente 3 j
 |-------|-----------|
 | Dados corrigidos, código não | Frente 3 obrigatória; validação V3. |
 | Remover `available` que o líder já “vendeu” verbalmente | Ordem de revogação (ex.: mais recentes); comunicação. |
-| `free_bonus` órfãs | Fora da v1; plano futuro. |
+| `free_bonus` órfãs / extras sem convite | Incluir no escopo da Frente 2 com ação reversível e rastreada por IDs. |
+| Ausência de estratégia de reversão segura | Bloquear `apply` e manter somente `dry_run` até definição formal. |
 | UI ainda confunde global vs evento | Documentar no relatório; ajuste de front opcional na frente 3. |
 
 ---
@@ -438,11 +511,11 @@ Executar após o relatório **depois** da frente 2 e com o código da frente 3 j
 2. Rodar com **`event_id` + opcional `leader_id`** (começar por um líder problemático); gerar **O1** (funcional), **O2** (técnico), **O3** (`error_classification`).  
 3. Validar **A–E** (§4.4), resultado do **simulador S1–S3** (§4.1), granularidade §4.6 e escopo evento vs global §4.7.  
 4. **Frente 3:** implementar e deployar fix de causa raiz (ou desligar temporariamente o disparo problemático com flag).  
-5. **Frente 2:** `dry_run` → revisar plano → `apply` com confirmação explícita.  
-6. Arquivar os **três relatórios** da correção.  
-7. Executar **validação pós-correção V1–V3**.  
-8. Reauditoria somente leitura após 24–48 h.  
-9. Repetir para outro líder no mesmo evento ou para o evento inteiro (sem `leader_id`), ainda **sem lote multi-evento**.  
+5. **Frente 2 (na mesma interface da auditoria):** `dry_run` → revisar plano por 1 líder (`leader_id`) → validar consistência pré-apply → `apply` com confirmação explícita e estratégia reversível.  
+6. Se validado para 1 líder, repetir para o evento inteiro (sem `leader_id`).  
+7. Arquivar os **três relatórios** da correção.  
+8. Executar **validação pós-correção V1–V3**.  
+9. Reauditoria somente leitura após 24–48 h.  
 10. Versão futura: generalização e eventual lote (fora do escopo da v1).
 
 ---
@@ -452,10 +525,10 @@ Executar após o relatório **depois** da frente 2 e com o código da frente 3 j
 | Frente | Entregável |
 |--------|------------|
 | 1 | Script/rota `audit-event-invitations` — leitura + **simulador** (§4.1); `event_id` obrigatório, `leader_id` opcional; saídas **O1–O3** (§4.2); classificação §4.3; pré-requisitos **A–E** §4.4; detalhamento §4.6–4.8 incluindo auditoria completa de inscrições bônus/extras e arrays obrigatórios (§4.6.1–§4.6.3); **nenhuma** correção de dados. |
-| 2 | Script/rota `reconcile-event-invitations` — `dry_run` / `apply`; três relatórios; bloqueio sem `event_id`; confirmação explícita; só `available` em excesso na v1. |
+| 2 | Fluxo/rota `reconcile-event-invitations` **integrado ao resultado da auditoria** — `dry_run` / `apply`; três relatórios; `event_id` herdado da Frente 1 (não editável na UI); confirmação explícita; correção de `available` em excesso + `free_bonus` extras/indevidas com estratégia reversível; execução inicial por 1 líder e depois evento inteiro; sem correção de cupons na v1 salvo evidência direta. |
 | 3 | PRs no backend (e front se necessário) + testes de regressão documentados. |
 | (Opcional) | Tabela `invitation_reconciliation_log`; UI “Configurações > Avançados”. |
 
 ---
 
-**Fim do plano (v1.3).** Implementação deliberadamente **não** incluída neste documento.
+**Fim do plano (v1.6).** Implementação deliberadamente **não** incluída neste documento.

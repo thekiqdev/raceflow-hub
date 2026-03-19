@@ -61,7 +61,9 @@ import { getEvents, type Event } from "@/lib/api/events";
 import {
   getInvitationBonusAuditContext,
   runInvitationBonusSimulator,
+  runInvitationBonusReconciliation,
   type InvitationBonusAuditPayload,
+  type InvitationBonusReconciliationPayload,
   type InvitationBonusAuditContextResult,
   type AuditContextLinkType,
 } from "@/lib/api/invitationBonusAudit";
@@ -129,6 +131,10 @@ export function InvitationBonusAuditPanel() {
 
   const [isAuditRunning, setIsAuditRunning] = useState(false);
   const [auditPayload, setAuditPayload] = useState<InvitationBonusAuditPayload | null>(null);
+  const [showReconciliation, setShowReconciliation] = useState(false);
+  const [reconcileLeaderScope, setReconcileLeaderScope] = useState<string>(LEADER_ALL);
+  const [isReconciliationRunning, setIsReconciliationRunning] = useState(false);
+  const [reconciliationResult, setReconciliationResult] = useState<InvitationBonusReconciliationPayload | null>(null);
 
   const loadEvents = useCallback(async (search: string) => {
     setEventsLoading(true);
@@ -170,6 +176,9 @@ export function InvitationBonusAuditPanel() {
     setEventOpen(false);
     setLeaderScope(LEADER_ALL);
     setAuditPayload(null);
+    setShowReconciliation(false);
+    setReconcileLeaderScope(LEADER_ALL);
+    setReconciliationResult(null);
     void loadContext(ev.id);
   };
 
@@ -178,6 +187,9 @@ export function InvitationBonusAuditPanel() {
     setContext(null);
     setLeaderScope(LEADER_ALL);
     setAuditPayload(null);
+    setShowReconciliation(false);
+    setReconcileLeaderScope(LEADER_ALL);
+    setReconciliationResult(null);
   };
 
   const handleRunAudit = async () => {
@@ -194,6 +206,9 @@ export function InvitationBonusAuditPanel() {
     setIsAuditRunning(false);
     if (res.success && res.data) {
       setAuditPayload(res.data);
+      setShowReconciliation(false);
+      setReconcileLeaderScope(leaderScope);
+      setReconciliationResult(null);
       toast.success("Auditoria concluída (somente leitura).");
     } else {
       toast.error(res.error || res.message || "Falha ao executar auditoria.");
@@ -230,6 +245,54 @@ export function InvitationBonusAuditPanel() {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
     toast.success("Log técnico (.json) baixado.");
+  };
+
+  const handleRunReconciliationDryRun = async () => {
+    if (!selectedEvent || !auditPayload) {
+      toast.error("Execute a auditoria antes de iniciar a correção controlada.");
+      return;
+    }
+    setIsReconciliationRunning(true);
+    setReconciliationResult(null);
+    const res = await runInvitationBonusReconciliation({
+      event_id: selectedEvent.id,
+      leader_id: reconcileLeaderScope === LEADER_ALL ? undefined : reconcileLeaderScope,
+      mode: "dry_run",
+    });
+    setIsReconciliationRunning(false);
+    if (res.success && res.data) {
+      setReconciliationResult(res.data);
+      toast.success("Dry run da Frente 2 concluído.");
+    } else {
+      toast.error(res.error || res.message || "Falha no dry run da correção controlada.");
+    }
+  };
+
+  const handleRunReconciliationApply = async () => {
+    if (!selectedEvent || !reconciliationResult) {
+      toast.error("Execute e revise o dry run antes do apply.");
+      return;
+    }
+    if (!reconciliationResult.consistency_guard.can_apply) {
+      toast.error("Apply bloqueado pelo guard de consistência.");
+      return;
+    }
+
+    setIsReconciliationRunning(true);
+    const res = await runInvitationBonusReconciliation({
+      event_id: selectedEvent.id,
+      leader_id: reconcileLeaderScope === LEADER_ALL ? undefined : reconcileLeaderScope,
+      mode: "apply",
+      audit_snapshot_hash: reconciliationResult.audit_snapshot_hash,
+      dry_run_hash: reconciliationResult.dry_run_hash,
+    });
+    setIsReconciliationRunning(false);
+    if (res.success && res.data) {
+      setReconciliationResult(res.data);
+      toast.success("Apply executado com segurança no contexto validado.");
+    } else {
+      toast.error(res.error || res.message || "Apply bloqueado/falhou.");
+    }
   };
 
   const summary = context?.summary;
@@ -613,6 +676,199 @@ export function InvitationBonusAuditPanel() {
                 </ScrollArea>
               </CardContent>
             </Card>
+          </section>
+        )}
+
+        {/* 6 — Frente 2 integrada ao resultado da Frente 1 */}
+        {auditPayload && selectedEvent && (
+          <section className="space-y-3 rounded-lg border bg-card p-4 shadow-sm">
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <p className="text-sm font-semibold">Frente 2 — Correção controlada (integrada)</p>
+                <p className="text-xs text-muted-foreground">
+                  Fluxo acoplado ao resultado da auditoria. Sem contexto auditado, não há execução de correção.
+                </p>
+              </div>
+              {!showReconciliation ? (
+                <Button type="button" onClick={() => setShowReconciliation(true)}>
+                  Iniciar correção controlada
+                </Button>
+              ) : (
+                <Button type="button" variant="ghost" onClick={() => setShowReconciliation(false)}>
+                  Ocultar
+                </Button>
+              )}
+            </div>
+
+            {showReconciliation && (
+              <div className="space-y-4 rounded-md border bg-muted/20 p-4">
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="rounded-md border bg-background p-3 text-sm">
+                    <p className="text-xs text-muted-foreground">event_id (herdado da auditoria, não editável)</p>
+                    <p className="font-mono text-xs">{selectedEvent.id}</p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Escopo da correção controlada</Label>
+                    <Select
+                      value={reconcileLeaderScope}
+                      onValueChange={(v) => {
+                        setReconcileLeaderScope(v);
+                        setReconciliationResult(null);
+                      }}
+                      disabled={isReconciliationRunning}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={LEADER_ALL}>Evento inteiro (recomendado só depois de validar 1 líder)</SelectItem>
+                        {context?.leaders.map((l) => (
+                          <SelectItem key={l.leader_id} value={l.leader_id}>
+                            {l.leader_name || l.referral_code || l.leader_id.slice(0, 8) + "…"}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                {reconcileLeaderScope === LEADER_ALL && (
+                  <Alert>
+                    <AlertDescription>
+                      Recomendação operacional: rode primeiro por <strong>1 líder problemático</strong>. Depois, se validado,
+                      execute no evento inteiro.
+                    </AlertDescription>
+                  </Alert>
+                )}
+
+                <div className="flex flex-wrap gap-2">
+                  <Button type="button" onClick={handleRunReconciliationDryRun} disabled={isReconciliationRunning}>
+                    {isReconciliationRunning ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Executando dry_run...
+                      </>
+                    ) : (
+                      "Executar dry_run"
+                    )}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    onClick={handleRunReconciliationApply}
+                    disabled={
+                      isReconciliationRunning ||
+                      !reconciliationResult ||
+                      !reconciliationResult.consistency_guard.can_apply
+                    }
+                  >
+                    Executar apply
+                  </Button>
+                </div>
+
+                {reconciliationResult && (
+                  <div className="space-y-3">
+                    <Alert>
+                      <AlertDescription className="space-y-1 text-sm">
+                        <p>
+                          <strong>Guard de consistência:</strong>{" "}
+                          {reconciliationResult.consistency_guard.can_apply ? "OK" : "BLOQUEADO"} ·{" "}
+                          {reconciliationResult.consistency_guard.reason}
+                        </p>
+                        <p>
+                          <strong>audit_snapshot_hash:</strong>{" "}
+                          <span className="font-mono text-xs">{reconciliationResult.audit_snapshot_hash}</span>
+                        </p>
+                        <p>
+                          <strong>dry_run_hash:</strong>{" "}
+                          <span className="font-mono text-xs">{reconciliationResult.dry_run_hash}</span>
+                        </p>
+                      </AlertDescription>
+                    </Alert>
+
+                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                      <div className="rounded-md border bg-background p-3">
+                        <p className="text-xs text-muted-foreground">Convites available (antes)</p>
+                        <p className="text-lg font-semibold tabular-nums">
+                          {reconciliationResult.reports.before.invitations_available}
+                        </p>
+                      </div>
+                      <div className="rounded-md border bg-background p-3">
+                        <p className="text-xs text-muted-foreground">Convites a ajustar (Bloco A)</p>
+                        <p className="text-lg font-semibold tabular-nums">
+                          {reconciliationResult.reports.change_plan.summary.invitations_to_change}
+                        </p>
+                      </div>
+                      <div className="rounded-md border bg-background p-3">
+                        <p className="text-xs text-muted-foreground">free_bonus planejadas (Bloco B)</p>
+                        <p className="text-lg font-semibold tabular-nums">
+                          {reconciliationResult.reports.change_plan.summary.registrations_free_bonus_planned}
+                        </p>
+                      </div>
+                      <div className="rounded-md border bg-background p-3">
+                        <p className="text-xs text-muted-foreground">Status Bloco B</p>
+                        <p className="text-sm font-medium">{reconciliationResult.free_bonus_block_status}</p>
+                      </div>
+                    </div>
+
+                    <Card>
+                      <CardHeader className="py-3">
+                        <CardTitle className="text-sm">
+                          Plano de alteração — Bloco A (leader_invitations)
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <ScrollArea className="h-44 rounded-md border p-2">
+                          <div className="space-y-2 text-xs">
+                            {reconciliationResult.reports.change_plan.bloco_a_leader_invitations.items.length === 0 ? (
+                              <p className="text-muted-foreground">Nenhum leader_invitation em excesso.</p>
+                            ) : (
+                              reconciliationResult.reports.change_plan.bloco_a_leader_invitations.items.map((x) => (
+                                <div key={x.leader_invitation_id} className="rounded border p-2">
+                                  <p className="font-mono">{x.leader_invitation_id}</p>
+                                  <p>{x.justification}</p>
+                                  <p className="text-muted-foreground">
+                                    ação: {x.action_proposed} · reversibilidade: {x.reversibility_note}
+                                  </p>
+                                </div>
+                              ))
+                            )}
+                          </div>
+                        </ScrollArea>
+                      </CardContent>
+                    </Card>
+
+                    <Card>
+                      <CardHeader className="py-3">
+                        <CardTitle className="text-sm">
+                          Plano de alteração — Bloco B (registrations free_bonus)
+                        </CardTitle>
+                        <CardDescription>{reconciliationResult.free_bonus_block_reason}</CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <ScrollArea className="h-44 rounded-md border p-2">
+                          <div className="space-y-2 text-xs">
+                            {reconciliationResult.reports.change_plan.bloco_b_registrations_free_bonus.items.length === 0 ? (
+                              <p className="text-muted-foreground">Nenhuma registration free_bonus planejada.</p>
+                            ) : (
+                              reconciliationResult.reports.change_plan.bloco_b_registrations_free_bonus.items.map((x) => (
+                                <div key={x.registration_id} className="rounded border p-2">
+                                  <p className="font-mono">{x.registration_id}</p>
+                                  <p>{x.justification}</p>
+                                  <p className="text-muted-foreground">
+                                    classificação: {x.classification.join(", ")} · reversibilidade: {x.reversibility_note}
+                                  </p>
+                                </div>
+                              ))
+                            )}
+                          </div>
+                        </ScrollArea>
+                      </CardContent>
+                    </Card>
+                  </div>
+                )}
+              </div>
+            )}
           </section>
         )}
 
