@@ -128,6 +128,7 @@ const migrations = [
   '099_create_category_custom_fields.sql',
   '100_event_organizer_migration_prep.sql',
   '101_event_organizer_migration_rollback_status.sql',
+  '102_registration_reconciliation_backup.sql',
 ];
 
 // Create migrations tracking table
@@ -168,18 +169,29 @@ async function executeMigration(client: pg.PoolClient, migrationName: string) {
     const sql = readFileSync(migrationPath, 'utf-8');
     
     console.log(`🔄 Executando migração: ${migrationName}`);
-    
-    await client.query('BEGIN');
-    
+
+    // VACUUM (e alguns comandos) não podem rodar dentro de um bloco de transação explícito.
+    const needsNonTransactional = /\bVACUUM\b/i.test(sql);
+
     try {
-      await client.query(sql);
-      await markMigrationExecuted(client, migrationName);
-      await client.query('COMMIT');
-      
+      if (needsNonTransactional) {
+        await client.query(sql);
+        await markMigrationExecuted(client, migrationName);
+      } else {
+        await client.query('BEGIN');
+        try {
+          await client.query(sql);
+          await markMigrationExecuted(client, migrationName);
+          await client.query('COMMIT');
+        } catch (error: any) {
+          await client.query('ROLLBACK');
+          throw error;
+        }
+      }
+
       console.log(`✅ Migração ${migrationName} executada com sucesso!`);
       return true;
     } catch (error: any) {
-      await client.query('ROLLBACK');
       throw error;
     }
   } catch (error: any) {
