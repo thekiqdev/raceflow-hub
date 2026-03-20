@@ -46,6 +46,7 @@ import {
   deleteLeaderEventCommissionController,
 } from '../controllers/leaderEventCommissionsController.js';
 import { getLeaderCouponRegistrationsController } from '../controllers/leaderRegistrationsController.js';
+import { getLeadersInvitationsGrantedByEventController } from '../controllers/leadersInvitationsReportController.js';
 
 const router = Router();
 
@@ -65,6 +66,10 @@ router.post('/financial/withdrawals', createWithdrawalController);
 // Reports endpoints
 router.get('/reports/financial-summary', getFinancialSummaryController);
 router.get('/reports/event-revenues', getEventRevenuesController);
+router.get(
+  '/reports/leaders-invitations-granted/:eventId',
+  getLeadersInvitationsGrantedByEventController
+);
 
 // Settings endpoints
 router.get('/settings', getOrganizerSettingsController);

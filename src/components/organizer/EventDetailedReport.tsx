@@ -5,6 +5,10 @@ import { getEventById, getAttributeSelectionStats, AttributeSelectionStats } fro
 import { getRegistrations } from "@/lib/api/registrations";
 import { getModalities, type Modality } from "@/lib/api/modalities";
 import { getEnabledModules } from "@/lib/api/systemSettings";
+import {
+  getLeadersInvitationsGrantedByEvent,
+  getOrganizerLeadersInvitationsGrantedByEvent,
+} from "@/lib/api/reports";
 import { calculateValueWithoutFee } from "@/lib/utils/feeCalculations";
 import { ArrowLeft, Users, DollarSign, Package, CreditCard, Smartphone, MapPin } from "lucide-react";
 import { toast } from "sonner";
@@ -19,6 +23,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface EventDetailedReportProps {
   eventId: string;
@@ -43,6 +48,11 @@ interface RegistrationDetail {
   /** Modalidade escolhida na inscrição (uma por inscrição). */
   modality_id?: string | null;
   modality_name?: string | null;
+  /** Cupom utilizado na inscrição (se houver). */
+  coupon_code?: string | null;
+  /** Leader associado ao cupom (se houver). */
+  leader_id?: string | null;
+  leader_name?: string | null;
   /** OK Etapa 1: Taxa da plataforma na inscrição inicial (R$). */
   platform_fee_amount?: number;
   /** OK Etapa 1: Taxa de atualização na edição (R$). */
@@ -75,6 +85,16 @@ interface KitRevenue {
   revenue: number;
 }
 
+interface LeaderCouponSalesRow {
+  leader_id: string;
+  leader_name: string | null;
+  sales_paid_count: number;
+  coupons_total_count: number;
+  coupons_sent_count: number;
+  coupons_total_codes: string[];
+  coupons_sent_codes: string[];
+}
+
 interface AttributeSelectionInfo {
   kitName: string;
   productName: string;
@@ -86,6 +106,9 @@ interface AttributeSelectionInfo {
 
 const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
   const [loading, setLoading] = useState(true);
+  const { user } = useAuth();
+  const isAdmin = (user?.roles || []).includes('admin');
+  const isOrganizer = (user?.roles || []).includes('organizer');
   const [eventTitle, setEventTitle] = useState("");
   const [registrations, setRegistrations] = useState<RegistrationDetail[]>([]);
   const [categoryRevenues, setCategoryRevenues] = useState<CategoryRevenue[]>([]);
@@ -102,6 +125,8 @@ const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
   const [modalityStats, setModalityStats] = useState<Map<string, { count: number; revenue: number }>>(new Map());
   const [platformFee, setPlatformFee] = useState<number>(0);
   const [platformFeeType, setPlatformFeeType] = useState<'fixed' | 'percentage'>('fixed');
+  const [leaderCouponSales, setLeaderCouponSales] = useState<LeaderCouponSalesRow[]>([]);
+  const [leaderInvitationsGranted, setLeaderInvitationsGranted] = useState<Record<string, number>>({});
 
   useEffect(() => {
     loadEventDetails();
@@ -159,6 +184,9 @@ const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
         modality_names: reg.modality_names || [],
         modality_id: reg.modality_id ?? null,
         modality_name: reg.modality_name ?? null,
+        coupon_code: reg.coupon_code ?? null,
+        leader_id: reg.leader_id ?? null,
+        leader_name: reg.leader_name ?? null,
         platform_fee_amount: reg.platform_fee_amount != null ? Number(reg.platform_fee_amount) : undefined,
         registration_edit_fee_amount: reg.registration_edit_fee_amount != null ? Number(reg.registration_edit_fee_amount) : undefined,
         kit_name: reg.kit_name ?? null,
@@ -174,6 +202,88 @@ const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
       }));
 
       setRegistrations(regs);
+
+      // Relatório de líderes (sessão operacional):
+      // - Vendas: inscrições pagas do evento (payment_status === "paid") associadas ao líder via cupom
+      // - Cupons (tem): códigos de cupom que aparecem nas inscrições do evento para este líder (paid + demais)
+      // - Cupons (enviou/usou): códigos de cupom que aparecem nas inscrições pagas para este líder
+      const leaderMap = new Map<
+        string,
+        {
+          leader_name: string | null;
+          sales_paid_count: number;
+          coupons_total_codes: Set<string>;
+          coupons_sent_codes: Set<string>;
+        }
+      >();
+
+      regs.forEach((reg) => {
+        const leaderId = reg.leader_id ?? null;
+        const couponCode = reg.coupon_code ?? null;
+        if (!leaderId || !couponCode) return;
+
+        if (!leaderMap.has(leaderId)) {
+          leaderMap.set(leaderId, {
+            leader_name: reg.leader_name ?? null,
+            sales_paid_count: 0,
+            coupons_total_codes: new Set<string>(),
+            coupons_sent_codes: new Set<string>(),
+          });
+        }
+
+        const entry = leaderMap.get(leaderId)!;
+        entry.coupons_total_codes.add(couponCode);
+
+        if (reg.payment_status === "paid") {
+          entry.sales_paid_count += 1;
+          entry.coupons_sent_codes.add(couponCode);
+        }
+      });
+
+      const leaderRows: LeaderCouponSalesRow[] = Array.from(leaderMap.entries())
+        .map(([leader_id, entry]) => {
+          const coupons_total_codes = Array.from(entry.coupons_total_codes.values()).sort();
+          const coupons_sent_codes = Array.from(entry.coupons_sent_codes.values()).sort();
+          return {
+            leader_id,
+            leader_name: entry.leader_name,
+            sales_paid_count: entry.sales_paid_count,
+            coupons_total_count: coupons_total_codes.length,
+            coupons_sent_count: coupons_sent_codes.length,
+            coupons_total_codes,
+            coupons_sent_codes,
+          };
+        })
+        .sort(
+          (a, b) =>
+            b.sales_paid_count - a.sales_paid_count ||
+            (a.leader_name || a.leader_id).localeCompare(b.leader_name || b.leader_id)
+        );
+
+      setLeaderCouponSales(leaderRows);
+
+      // Convites ganhos: count de leader_invitations válidos (available/sent/used) por líder no evento.
+      // Para /admin/eventos, isso deve estar disponível via endpoint read-only.
+      if (isAdmin || isOrganizer) {
+        try {
+          const invRes = isAdmin
+            ? await getLeadersInvitationsGrantedByEvent(eventId)
+            : await getOrganizerLeadersInvitationsGrantedByEvent(eventId);
+          if (invRes?.success && invRes.data) {
+            const map: Record<string, number> = {};
+            for (const r of invRes.data) {
+              map[r.leader_id] = r.invitations_granted;
+            }
+            setLeaderInvitationsGranted(map);
+          } else {
+            setLeaderInvitationsGranted({});
+          }
+        } catch (e) {
+          setLeaderInvitationsGranted({});
+        }
+      } else {
+        setLeaderInvitationsGranted({});
+      }
 
       // OK Etapa 3: Receita só com "paid"; valor líquido (getValorLiquido). Convidado não entra na receita.
       const getValorLiquidoHere = (r: RegistrationDetail): number => {
@@ -505,6 +615,67 @@ const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
           </div>
         </Card>
       </div>
+
+      {/* Relatório de líderes */}
+      {leaderCouponSales.length > 0 && (
+        <Card className="p-6">
+          <h3 className="text-lg font-semibold mb-4">Relatório de líderes (vendas e cupons)</h3>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Líder</TableHead>
+                <TableHead className="text-right tabular-nums">Vendas (pagas)</TableHead>
+                <TableHead className="text-right tabular-nums">Cupons (tem)</TableHead>
+                <TableHead className="text-right tabular-nums">Cupons (enviou/usou)</TableHead>
+                <TableHead className="text-right tabular-nums">Convites ganhos</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {leaderCouponSales.map((row) => (
+                <TableRow key={row.leader_id}>
+                  <TableCell className="font-medium">{row.leader_name || row.leader_id}</TableCell>
+                  <TableCell className="text-right tabular-nums">{row.sales_paid_count}</TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex flex-col items-end">
+                      <span className="tabular-nums">{row.coupons_total_count}</span>
+                      <span className="text-[11px] text-muted-foreground">
+                        {row.coupons_total_codes.length === 0
+                          ? "—"
+                          : `${row.coupons_total_codes.slice(0, 3).join(", ")}${
+                              row.coupons_total_codes.length > 3
+                                ? ` +${row.coupons_total_codes.length - 3}`
+                                : ""
+                            }`}
+                      </span>
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex flex-col items-end">
+                      <span className="tabular-nums">{row.coupons_sent_count}</span>
+                      <span className="text-[11px] text-muted-foreground">
+                        {row.coupons_sent_codes.length === 0
+                          ? "—"
+                          : `${row.coupons_sent_codes.slice(0, 3).join(", ")}${
+                              row.coupons_sent_codes.length > 3
+                                ? ` +${row.coupons_sent_codes.length - 3}`
+                                : ""
+                            }`}
+                      </span>
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {isAdmin || isOrganizer ? leaderInvitationsGranted[row.leader_id] ?? 0 : "—"}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+          <p className="mt-3 text-xs text-muted-foreground">
+            “Cupons (tem)” e “Cupons (enviou/usou)” são derivados dos cupons presentes nas inscrições do evento
+            (sem consulta independente à tabela de cupons).
+          </p>
+        </Card>
+      )}
 
       {/* Revenue by Category */}
       <Card className="p-6">

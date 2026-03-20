@@ -65,6 +65,7 @@ import {
   getMonthlyEvolutionController,
   getEventPerformanceController,
 } from '../controllers/reportsController.js';
+import { getLeadersInvitationsGrantedByEventController } from '../controllers/leadersInvitationsReportController.js';
 import {
   getSupportTicketsController,
   getTicketByIdController,
@@ -210,6 +211,10 @@ router.get('/reports/top-organizers', getTopOrganizersController);
 router.get('/reports/athlete-behavior', getAthleteBehaviorController);
 router.get('/reports/monthly-evolution', getMonthlyEvolutionController);
 router.get('/reports/event-performance', getEventPerformanceController);
+router.get(
+  '/reports/leaders-invitations-granted/:eventId',
+  getLeadersInvitationsGrantedByEventController
+);
 
 // Support
 router.get('/support/tickets', getSupportTicketsController);
