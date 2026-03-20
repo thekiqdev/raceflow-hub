@@ -13,6 +13,11 @@ const bodySchema = z.object({
   event_id: z.string().uuid('event_id inválido'),
   leader_id: z.string().uuid('leader_id inválido').optional().nullable(),
   mode: z.enum(['dry_run', 'apply']),
+  /**
+   * Safety gate: required only for `mode=apply`.
+   * The frontend must ask the user for explicit confirmation.
+   */
+  apply_confirmed: z.boolean().optional(),
   audit_snapshot_hash: z.string().min(10).optional().nullable(),
   dry_run_hash: z.string().min(10).optional().nullable(),
 });
@@ -30,12 +35,24 @@ export const runInvitationBonusReconciliationController = asyncHandler(
     }
 
     const p = parsed.data;
+
+    if (p.mode === 'apply' && !p.apply_confirmed) {
+      res.status(400).json({
+        success: false,
+        error: 'apply_confirmed é obrigatório para mode=apply.',
+        message: 'Confirme explicitamente a execução do apply antes de prosseguir.',
+      });
+      return;
+    }
+
     const result = await runInvitationBonusReconciliation({
       event_id: p.event_id,
       leader_id: p.leader_id ?? undefined,
       mode: p.mode,
+      apply_confirmed: p.apply_confirmed ?? undefined,
       audit_snapshot_hash: p.audit_snapshot_hash ?? undefined,
       dry_run_hash: p.dry_run_hash ?? undefined,
+      executed_by: req.user?.id ?? undefined,
     });
 
     res.json({

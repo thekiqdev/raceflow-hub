@@ -192,6 +192,40 @@ export interface InvitationBonusReconciliationBlocoBIgnored {
   reason: string;
 }
 
+export type PhysicalDeleteDecision = 'elegível_para_delete_fisico' | 'bloqueada_por_seguranca';
+
+export interface FreeBonusPhysicalDeleteItem {
+  registration_id: string;
+  leader_id: string | null;
+  commission_id: string | null;
+  leader_invitation_id: string | null;
+  status: string | null;
+  payment_status: string | null;
+  classification: string[];
+  motivo_operacional: string;
+  decision: PhysicalDeleteDecision;
+}
+
+export interface FreeBonusPhysicalDeletePlan {
+  recorte: {
+    must_include_classification: 'sem_convite_correspondente';
+    must_have_leader_invitation_id_null: true;
+    must_have_leader_id_null: true;
+    must_have_commission_id_null: true;
+    must_have_payment_method_free_bonus: true;
+    must_not_be_classified_as_valida: true;
+    must_not_be_classified_as_acima_do_esperado: true;
+  };
+  totals: {
+    total_free_bonus_analisadas: number;
+    total_candidatas_exclusao_fisica: number;
+    total_elegiveis_para_delete_fisico: number;
+    total_excluidas_do_escopo_por_seguranca: number;
+  };
+  elegiveis_para_delete_fisico: FreeBonusPhysicalDeleteItem[];
+  bloqueadas_por_seguranca: FreeBonusPhysicalDeleteItem[];
+}
+
 export interface InvitationBonusReconciliationPayload {
   mode: 'dry_run' | 'apply';
   event_id: string;
@@ -271,6 +305,7 @@ export interface InvitationBonusReconciliationPayload {
         items: InvitationBonusReconciliationItemB[];
         excluded_by_leader_scope: InvitationBonusReconciliationBlocoBExcluded[];
         ignored_not_in_plan: InvitationBonusReconciliationBlocoBIgnored[];
+        physical_delete_plan: FreeBonusPhysicalDeletePlan;
       };
       summary: {
         invitations_to_change: number;
@@ -287,6 +322,12 @@ export interface InvitationBonusReconciliationPayload {
       invitations_changed: number;
       invitations_changed_ids: string[];
       free_bonus_changed: number;
+      physical_delete?: {
+        deleted_count: number;
+        deleted_ids: string[];
+        backup_saved_ids: string[];
+        remaining_free_bonus_registrations_in_event: number;
+      };
       note: string;
     };
   };
@@ -358,6 +399,7 @@ export async function runInvitationBonusReconciliation(params: {
   mode: 'dry_run' | 'apply';
   audit_snapshot_hash?: string;
   dry_run_hash?: string;
+  apply_confirmed?: boolean;
 }): Promise<ApiResponse<InvitationBonusReconciliationPayload>> {
   return apiClient.post<InvitationBonusReconciliationPayload>(
     '/admin/reconcile/invitation-bonus-controlled',
@@ -367,6 +409,7 @@ export async function runInvitationBonusReconciliation(params: {
       mode: params.mode,
       audit_snapshot_hash: params.audit_snapshot_hash,
       dry_run_hash: params.dry_run_hash,
+      apply_confirmed: params.apply_confirmed,
     }
   );
 }

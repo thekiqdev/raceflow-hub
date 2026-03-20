@@ -117,6 +117,14 @@ function linkTypeBadge(t: AuditContextLinkType) {
 
 const LEADER_ALL = "__all__";
 
+function leaderNameFromContext(
+  leaderId: string,
+  context: InvitationBonusAuditContextResult | null
+): string {
+  const leader = context?.leaders?.find((l) => l.leader_id === leaderId);
+  return leader?.leader_name || leader?.referral_code || leaderId;
+}
+
 export function InvitationBonusAuditPanel() {
   const [eventOpen, setEventOpen] = useState(false);
   const [eventSearch, setEventSearch] = useState("");
@@ -278,11 +286,20 @@ export function InvitationBonusAuditPanel() {
       return;
     }
 
+    const confirm = window.confirm(
+      "Confirma o apply (DELETE físico controlado) no contexto validado pelo dry_run? Essa ação remove registrations free_bonus elegíveis e cria backup obrigatório."
+    );
+    if (!confirm) {
+      toast.error("Apply cancelado pelo usuário.");
+      return;
+    }
+
     setIsReconciliationRunning(true);
     const res = await runInvitationBonusReconciliation({
       event_id: selectedEvent.id,
       leader_id: reconcileLeaderScope === LEADER_ALL ? undefined : reconcileLeaderScope,
       mode: "apply",
+      apply_confirmed: true,
       audit_snapshot_hash: reconciliationResult.audit_snapshot_hash,
       dry_run_hash: reconciliationResult.dry_run_hash,
     });
@@ -786,6 +803,18 @@ export function InvitationBonusAuditPanel() {
                       </AlertDescription>
                     </Alert>
 
+                    <Alert>
+                      <AlertDescription className="text-sm space-y-1">
+                        <p className="font-medium">
+                          Exclusão física habilitada apenas para registrations free_bonus órfãs sem_convite_correspondente
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          O deficit/faltantes (Seção A) é apenas diagnóstico. A exclusão física (DELETE) acontece somente no
+                          recorte elegível mostrado na Seção C.
+                        </p>
+                      </AlertDescription>
+                    </Alert>
+
                     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
                       <div className="rounded-md border bg-background p-3">
                         <p className="text-xs text-muted-foreground">Convites available (antes)</p>
@@ -858,6 +887,44 @@ export function InvitationBonusAuditPanel() {
                       </AlertDescription>
                     </Alert>
 
+                    {reconciliationResult.mode === 'apply' &&
+                      reconciliationResult.reports.after_apply?.physical_delete && (
+                        <Alert>
+                          <AlertDescription className="text-sm space-y-1">
+                            <p className="font-medium">Resultado do apply — DELETE físico (Bloco B / free_bonus)</p>
+                            <p>
+                              deletados: <span className="font-mono">{reconciliationResult.reports.after_apply.physical_delete.deleted_count}</span> ·
+                              remaining no evento:{" "}
+                              <span className="font-mono">
+                                {reconciliationResult.reports.after_apply.physical_delete.remaining_free_bonus_registrations_in_event}
+                              </span>
+                            </p>
+                            {reconciliationResult.reports.after_apply.physical_delete.backup_saved_ids.length > 0 && (
+                              <p className="text-xs text-muted-foreground">
+                                IDs no backup:{" "}
+                                {reconciliationResult.reports.after_apply.physical_delete.backup_saved_ids
+                                  .slice(0, 20)
+                                  .join(", ")}
+                                {reconciliationResult.reports.after_apply.physical_delete.backup_saved_ids.length > 20
+                                  ? " ..."
+                                  : ""}
+                              </p>
+                            )}
+                            {reconciliationResult.reports.after_apply.physical_delete.deleted_ids.length > 0 && (
+                              <p className="text-xs text-muted-foreground">
+                                IDs deletados:{" "}
+                                {reconciliationResult.reports.after_apply.physical_delete.deleted_ids
+                                  .slice(0, 20)
+                                  .join(", ")}
+                                {reconciliationResult.reports.after_apply.physical_delete.deleted_ids.length > 20
+                                  ? " ..."
+                                  : ""}
+                              </p>
+                            )}
+                          </AlertDescription>
+                        </Alert>
+                      )}
+
                     <Card>
                       <CardHeader className="py-3">
                         <CardTitle className="text-sm">
@@ -919,7 +986,9 @@ export function InvitationBonusAuditPanel() {
                                 ) : (
                                   reconciliationResult.diagnostics_missing_excess.rows.map((d) => (
                                     <TableRow key={`${d.leader_id}:${d.commission_id}`}>
-                                      <TableCell className="font-mono text-xs">{d.leader_id}</TableCell>
+                                      <TableCell className="text-xs">
+                                        {leaderNameFromContext(d.leader_id, context)}
+                                      </TableCell>
                                       <TableCell className="font-mono text-xs">{d.commission_id}</TableCell>
                                       <TableCell className="text-center tabular-nums">{d.required_purchases}</TableCell>
                                       <TableCell className="text-center tabular-nums">{d.paidCount_correto}</TableCell>
@@ -939,150 +1008,144 @@ export function InvitationBonusAuditPanel() {
                       </CardContent>
                     </Card>
 
-                    {/* Seção B + Seção C — Diagnóstico operacional do Bloco B */}
+                    {/* Exclusao fisica controlada (Bloco B / free_bonus) */}
                     <Card>
                       <CardHeader className="py-3">
                         <CardTitle className="text-sm">
-                          Seção B — Resumo operacional do Bloco B (registrations free_bonus)
+                          Seção B — Exclusão física controlada (dry_run)
                         </CardTitle>
                         <CardDescription>
-                          Esses números são do diagnóstico operacional de registrations free_bonus do Bloco B.
-                          <strong> Não</strong> representam criação automática de convites nesta fase.
+                          <strong>Exclusão física habilitada apenas para registrations free_bonus órfãs sem_convite_correspondente</strong>.
+                          Aqui, “candidatas” e “bloqueadas” são separadas: saldo de convites (déficit/faltantes) é apenas diagnóstico na Seção A.
                         </CardDescription>
                       </CardHeader>
                       <CardContent>
-                        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                           <div className="rounded-md border bg-background p-3">
                             <p className="text-xs text-muted-foreground">total_free_bonus_analisadas</p>
                             <p className="text-lg font-semibold tabular-nums">
-                              {reconciliationResult.diagnostics_bloco_b_operacional.totals
-                                .total_free_bonus_detectadas}
+                              {
+                                reconciliationResult.reports.change_plan.bloco_b_registrations_free_bonus
+                                  .physical_delete_plan.totals.total_free_bonus_analisadas
+                              }
                             </p>
                           </div>
                           <div className="rounded-md border bg-background p-3">
-                            <p className="text-xs text-muted-foreground">total_invalidas_para_exclusao</p>
+                            <p className="text-xs text-muted-foreground">total_candidatas_exclusao_fisica</p>
                             <p className="text-lg font-semibold tabular-nums">
-                              {reconciliationResult.diagnostics_bloco_b_operacional.totals
-                                .total_free_bonus_planejadas_para_exclusao}
+                              {
+                                reconciliationResult.reports.change_plan.bloco_b_registrations_free_bonus
+                                  .physical_delete_plan.totals.total_candidatas_exclusao_fisica
+                              }
                             </p>
                           </div>
                           <div className="rounded-md border bg-background p-3">
-                            <p className="text-xs text-muted-foreground">total_orfas_sem_convite</p>
+                            <p className="text-xs text-muted-foreground">total_elegiveis_para_delete_fisico</p>
                             <p className="text-lg font-semibold tabular-nums">
-                              {reconciliationResult.diagnostics_bloco_b_operacional.totals
-                                .total_free_bonus_orfas_sem_convite}
-                            </p>
-                            <p className="mt-2 text-[11px] text-muted-foreground">
-                              classification=<strong>sem_convite_correspondente</strong>; leader_invitation_id ausente;{" "}
-                              leader_id=null; commission_id=null.
+                              {
+                                reconciliationResult.reports.change_plan.bloco_b_registrations_free_bonus
+                                  .physical_delete_plan.totals.total_elegiveis_para_delete_fisico
+                              }
                             </p>
                           </div>
                           <div className="rounded-md border bg-background p-3">
-                            <p className="text-xs text-muted-foreground">total_acima_do_esperado</p>
+                            <p className="text-xs text-muted-foreground">total_excluidas_do_escopo_por_seguranca</p>
                             <p className="text-lg font-semibold tabular-nums">
-                              {reconciliationResult.diagnostics_bloco_b_operacional.totals
-                                .total_free_bonus_acima_do_esperado}
-                            </p>
-                          </div>
-                          <div className="rounded-md border bg-background p-3">
-                            <p className="text-xs text-muted-foreground">total_validas</p>
-                            <p className="text-lg font-semibold tabular-nums">
-                              {reconciliationResult.diagnostics_bloco_b_operacional.totals
-                                .total_free_bonus_validas}
-                            </p>
-                          </div>
-                          <div className="rounded-md border bg-background p-3">
-                            <p className="text-xs text-muted-foreground">
-                              total_bloqueadas_por_seguranca_dry_run_only
-                            </p>
-                            <p className="text-lg font-semibold tabular-nums">
-                              {reconciliationResult.diagnostics_bloco_b_operacional.totals
-                                .total_free_bonus_bloqueadas_por_seguranca}
+                              {
+                                reconciliationResult.reports.change_plan.bloco_b_registrations_free_bonus
+                                  .physical_delete_plan.totals.total_excluidas_do_escopo_por_seguranca
+                              }
                             </p>
                           </div>
                         </div>
+
+                        <p className="mt-3 text-xs text-muted-foreground">
+                          Recorte do dry_run (para elegibilidade de DELETE físico): classification=<strong>sem_convite_correspondente</strong> + leader_invitation_id ausente (null) + leader_id=null + commission_id=null.
+                        </p>
                       </CardContent>
                     </Card>
 
                     <Card>
                       <CardHeader className="py-3">
                         <CardTitle className="text-sm">
-                          Seção C — Candidatas à exclusão (Bloco B, dry_run-only)
+                          Seção C — IDs do DELETE físico (elegíveis vs bloqueadas)
                         </CardTitle>
                         <CardDescription>
-                          Esses itens são candidatas à exclusão, mas permanecem em <strong>dry_run-only</strong> enquanto não
-                          existir estratégia segura de <strong>apply</strong> para free_bonus.
+                          No dry_run, a lista abaixo mostra quais `registration_id` seriam deletados <strong>apenas</strong> se o apply confirmasse o mesmo contexto (hash do dry_run).
                         </CardDescription>
                       </CardHeader>
                       <CardContent className="space-y-6">
-                        {(
-                          [
-                            {
-                              key: "ORFA_SEM_CONVITE",
-                              title: "Órfãs sem convite (principais candidatas à exclusão)",
-                              items:
-                                reconciliationResult.diagnostics_bloco_b_operacional.lists.ORFA_SEM_CONVITE,
-                            },
-                            {
-                              key: "EXCESSO_ACIMA_DO_ESPERADO",
-                              title: "Excesso acima do esperado",
-                              items:
-                                reconciliationResult.diagnostics_bloco_b_operacional.lists.EXCESSO_ACIMA_DO_ESPERADO,
-                            },
-                            {
-                              key: "VALIDA_NAO_MEXER",
-                              title: "Válidas (não mexer)",
-                              items:
-                                reconciliationResult.diagnostics_bloco_b_operacional.lists.VALIDA_NAO_MEXER,
-                            },
-                          ] as const
-                        ).map((group) => (
-                          <div key={group.key} className="space-y-2">
-                            <p className="text-sm font-semibold">{group.title}</p>
-                            <div className="overflow-x-auto rounded-md border">
-                              <ScrollArea className="h-48">
-                                <Table className="min-w-[860px]">
-                                  <TableHeader>
+                        <div className="space-y-2">
+                          <p className="text-sm font-semibold">
+                            Elegíveis para delete físico ({reconciliationResult.reports.change_plan.bloco_b_registrations_free_bonus.physical_delete_plan.elegiveis_para_delete_fisico.length})
+                          </p>
+                          <div className="overflow-x-auto rounded-md border">
+                            <ScrollArea className="h-48">
+                              <Table className="min-w-[760px]">
+                                <TableHeader>
+                                  <TableRow>
+                                    <TableHead>registration_id</TableHead>
+                                    <TableHead>motivo operacional</TableHead>
+                                    <TableHead>classification</TableHead>
+                                  </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                  {reconciliationResult.reports.change_plan.bloco_b_registrations_free_bonus.physical_delete_plan.elegiveis_para_delete_fisico.length === 0 ? (
                                     <TableRow>
-                                      <TableHead>registration_id</TableHead>
-                                      <TableHead>leader_id</TableHead>
-                                      <TableHead>commission_id</TableHead>
-                                      <TableHead>leader_invitation_id</TableHead>
-                                      <TableHead>Status</TableHead>
-                                      <TableHead>Payment</TableHead>
-                                      <TableHead>classification</TableHead>
-                                      <TableHead>planejada_para_exclusao</TableHead>
+                                      <TableCell colSpan={3} className="text-center text-muted-foreground">
+                                        Nenhum registro elegível.
+                                      </TableCell>
                                     </TableRow>
-                                  </TableHeader>
-                                  <TableBody>
-                                    {group.items.length === 0 ? (
-                                      <TableRow>
-                                        <TableCell colSpan={8} className="text-center text-muted-foreground">
-                                          Nenhum item.
-                                        </TableCell>
+                                  ) : (
+                                    reconciliationResult.reports.change_plan.bloco_b_registrations_free_bonus.physical_delete_plan.elegiveis_para_delete_fisico.map((it) => (
+                                      <TableRow key={it.registration_id}>
+                                        <TableCell className="font-mono text-xs">{it.registration_id}</TableCell>
+                                        <TableCell className="text-xs">{it.motivo_operacional}</TableCell>
+                                        <TableCell className="text-xs">{it.classification.join(", ")}</TableCell>
                                       </TableRow>
-                                    ) : (
-                                      group.items.map((it) => (
-                                        <TableRow key={it.registration_id}>
-                                          <TableCell className="font-mono text-xs">{it.registration_id}</TableCell>
-                                          <TableCell className="font-mono text-xs">{it.leader_id ?? "—"}</TableCell>
-                                          <TableCell className="font-mono text-xs">{it.commission_id ?? "—"}</TableCell>
-                                          <TableCell className="font-mono text-xs">
-                                            {it.leader_invitation_id ?? "—"}
-                                          </TableCell>
-                                          <TableCell className="text-xs">{it.status ?? "—"}</TableCell>
-                                          <TableCell className="text-xs">{it.payment_status ?? "—"}</TableCell>
-                                          <TableCell className="text-xs">{it.classification.join(", ")}</TableCell>
-                                          <TableCell className="text-xs">{it.planejada_para_exclusao}</TableCell>
-                                        </TableRow>
-                                      ))
-                                    )}
-                                  </TableBody>
-                                </Table>
-                              </ScrollArea>
-                            </div>
+                                    ))
+                                  )}
+                                </TableBody>
+                              </Table>
+                            </ScrollArea>
                           </div>
-                        ))}
+                        </div>
+
+                        <div className="space-y-2">
+                          <p className="text-sm font-semibold">
+                            Bloqueadas por segurança ({reconciliationResult.reports.change_plan.bloco_b_registrations_free_bonus.physical_delete_plan.bloqueadas_por_seguranca.length})
+                          </p>
+                          <div className="overflow-x-auto rounded-md border">
+                            <ScrollArea className="h-48">
+                              <Table className="min-w-[760px]">
+                                <TableHeader>
+                                  <TableRow>
+                                    <TableHead>registration_id</TableHead>
+                                    <TableHead>motivo operacional</TableHead>
+                                    <TableHead>classification</TableHead>
+                                  </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                  {reconciliationResult.reports.change_plan.bloco_b_registrations_free_bonus.physical_delete_plan.bloqueadas_por_seguranca.length === 0 ? (
+                                    <TableRow>
+                                      <TableCell colSpan={3} className="text-center text-muted-foreground">
+                                        Nenhum registro bloqueado.
+                                      </TableCell>
+                                    </TableRow>
+                                  ) : (
+                                    reconciliationResult.reports.change_plan.bloco_b_registrations_free_bonus.physical_delete_plan.bloqueadas_por_seguranca.map((it) => (
+                                      <TableRow key={it.registration_id}>
+                                        <TableCell className="font-mono text-xs">{it.registration_id}</TableCell>
+                                        <TableCell className="text-xs">{it.motivo_operacional}</TableCell>
+                                        <TableCell className="text-xs">{it.classification.join(", ")}</TableCell>
+                                      </TableRow>
+                                    ))
+                                  )}
+                                </TableBody>
+                              </Table>
+                            </ScrollArea>
+                          </div>
+                        </div>
                       </CardContent>
                     </Card>
 
