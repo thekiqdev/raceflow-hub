@@ -413,3 +413,81 @@ export async function runInvitationBonusReconciliation(params: {
     }
   );
 }
+
+/** Fluxo separado: corrigir convites não entregues (somente geração de faltantes). */
+export type MissingInvitationDeliveryStatus = 'apto' | 'bloqueado';
+
+export interface MissingInvitationPlanItem {
+  leader_id: string;
+  commission_id: string;
+  event_id: string;
+  required_purchases: number;
+  paidCount_correto: number;
+  expectedBonuses_correto: number;
+  timesGranted_db: number;
+  faltantes: number;
+  acao_proposta: string;
+  observacao_seguranca: string;
+  status: MissingInvitationDeliveryStatus;
+  bloqueio_motivos: string[];
+  observacao_reversibilidade: string;
+}
+
+export interface MissingInvitationDeliveryPayload {
+  mode: 'dry_run' | 'apply';
+  flow: 'missing_invitation_delivery_v1';
+  event_id: string;
+  leader_id: string | null;
+  scope_type: 'single_leader' | 'all_event_leaders';
+  audit_snapshot_hash: string;
+  dry_run_hash: string;
+  consistency_guard: {
+    can_apply: boolean;
+    reason: string;
+    expected_event_id: string;
+    expected_leader_scope: string;
+    expected_audit_snapshot_hash: string;
+    expected_dry_run_hash: string;
+  };
+  relatorio_antes: {
+    total_linhas_comissao_escopo: number;
+    total_faltantes_somado: number;
+    total_aptos_gerar: number;
+    total_bloqueados: number;
+    calculation_source: 'fase1_audit_canonical';
+  };
+  plano_geracao: {
+    bloco_a_aptos: MissingInvitationPlanItem[];
+    bloco_b_bloqueados: MissingInvitationPlanItem[];
+  };
+  relatorio_depois?: {
+    convites_criados_total: number;
+    leader_invitation_ids_criados: string[];
+    registration_ids_bonus_criados: string[];
+    por_comissao: Array<{
+      leader_id: string;
+      commission_id: string;
+      criados_neste_apply: number;
+      leader_invitation_ids: string[];
+    }>;
+    nota: string;
+  };
+}
+
+export async function runMissingInvitationDeliveryApi(params: {
+  event_id: string;
+  leader_id?: string | null;
+  mode: 'dry_run' | 'apply';
+  audit_snapshot_hash?: string;
+  dry_run_hash?: string;
+  apply_confirmed?: boolean;
+}): Promise<ApiResponse<MissingInvitationDeliveryPayload>> {
+  return apiClient.post<MissingInvitationDeliveryPayload>('/admin/reconcile/missing-invitation-delivery', {
+    event_id: params.event_id,
+    leader_id: params.leader_id || undefined,
+    mode: params.mode,
+    audit_snapshot_hash: params.audit_snapshot_hash,
+    dry_run_hash: params.dry_run_hash,
+    apply_confirmed: params.apply_confirmed,
+  });
+}

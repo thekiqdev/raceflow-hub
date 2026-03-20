@@ -14,6 +14,7 @@ import {
   Gift,
   Mail,
   ChevronDown,
+  Send,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -62,8 +63,10 @@ import {
   getInvitationBonusAuditContext,
   runInvitationBonusSimulator,
   runInvitationBonusReconciliation,
+  runMissingInvitationDeliveryApi,
   type InvitationBonusAuditPayload,
   type InvitationBonusReconciliationPayload,
+  type MissingInvitationDeliveryPayload,
   type InvitationBonusAuditContextResult,
   type AuditContextLinkType,
 } from "@/lib/api/invitationBonusAudit";
@@ -144,6 +147,11 @@ export function InvitationBonusAuditPanel() {
   const [isReconciliationRunning, setIsReconciliationRunning] = useState(false);
   const [reconciliationResult, setReconciliationResult] = useState<InvitationBonusReconciliationPayload | null>(null);
 
+  const [showMissingDelivery, setShowMissingDelivery] = useState(false);
+  const [missingDeliveryLeaderScope, setMissingDeliveryLeaderScope] = useState<string>(LEADER_ALL);
+  const [missingDeliveryResult, setMissingDeliveryResult] = useState<MissingInvitationDeliveryPayload | null>(null);
+  const [isMissingDeliveryRunning, setIsMissingDeliveryRunning] = useState(false);
+
   const loadEvents = useCallback(async (search: string) => {
     setEventsLoading(true);
     const res = await getEvents({
@@ -187,6 +195,9 @@ export function InvitationBonusAuditPanel() {
     setShowReconciliation(false);
     setReconcileLeaderScope(LEADER_ALL);
     setReconciliationResult(null);
+    setShowMissingDelivery(false);
+    setMissingDeliveryLeaderScope(LEADER_ALL);
+    setMissingDeliveryResult(null);
     void loadContext(ev.id);
   };
 
@@ -198,6 +209,9 @@ export function InvitationBonusAuditPanel() {
     setShowReconciliation(false);
     setReconcileLeaderScope(LEADER_ALL);
     setReconciliationResult(null);
+    setShowMissingDelivery(false);
+    setMissingDeliveryLeaderScope(LEADER_ALL);
+    setMissingDeliveryResult(null);
   };
 
   const handleRunAudit = async () => {
@@ -217,6 +231,8 @@ export function InvitationBonusAuditPanel() {
       setShowReconciliation(false);
       setReconcileLeaderScope(leaderScope);
       setReconciliationResult(null);
+      setMissingDeliveryLeaderScope(leaderScope);
+      setMissingDeliveryResult(null);
       toast.success("Auditoria concluída (somente leitura).");
     } else {
       toast.error(res.error || res.message || "Falha ao executar auditoria.");
@@ -309,6 +325,62 @@ export function InvitationBonusAuditPanel() {
       toast.success("Apply executado com segurança no contexto validado.");
     } else {
       toast.error(res.error || res.message || "Apply bloqueado/falhou.");
+    }
+  };
+
+  const handleMissingDeliveryDryRun = async () => {
+    if (!selectedEvent || !auditPayload) {
+      toast.error("Execute a auditoria antes deste fluxo (evento + escopo auditado).");
+      return;
+    }
+    setIsMissingDeliveryRunning(true);
+    setMissingDeliveryResult(null);
+    const res = await runMissingInvitationDeliveryApi({
+      event_id: selectedEvent.id,
+      leader_id: missingDeliveryLeaderScope === LEADER_ALL ? undefined : missingDeliveryLeaderScope,
+      mode: "dry_run",
+    });
+    setIsMissingDeliveryRunning(false);
+    if (res.success && res.data) {
+      setMissingDeliveryResult(res.data);
+      toast.success("Dry run — convites não entregues concluído.");
+    } else {
+      toast.error(res.error || res.message || "Falha no dry run.");
+    }
+  };
+
+  const handleMissingDeliveryApply = async () => {
+    if (!selectedEvent || !missingDeliveryResult) {
+      toast.error("Execute e revise o dry run antes do apply.");
+      return;
+    }
+    if (!missingDeliveryResult.consistency_guard.can_apply) {
+      toast.error("Apply bloqueado: nenhuma comissão apta ou guard de consistência.");
+      return;
+    }
+    const confirm = window.confirm(
+      "Confirma o APPLY para gerar apenas os convites FALTANTES listados no bloco apto? " +
+        "Serão criadas inscrições free_bonus e leader_invitations até o expected canônico (sem usar a rotina automática antiga)."
+    );
+    if (!confirm) {
+      toast.error("Apply cancelado.");
+      return;
+    }
+    setIsMissingDeliveryRunning(true);
+    const res = await runMissingInvitationDeliveryApi({
+      event_id: selectedEvent.id,
+      leader_id: missingDeliveryLeaderScope === LEADER_ALL ? undefined : missingDeliveryLeaderScope,
+      mode: "apply",
+      apply_confirmed: true,
+      audit_snapshot_hash: missingDeliveryResult.audit_snapshot_hash,
+      dry_run_hash: missingDeliveryResult.dry_run_hash,
+    });
+    setIsMissingDeliveryRunning(false);
+    if (res.success && res.data) {
+      setMissingDeliveryResult(res.data);
+      toast.success("Apply executado: convites faltantes gerados conforme plano.");
+    } else {
+      toast.error(res.error || res.message || "Apply falhou.");
     }
   };
 
@@ -1288,6 +1360,296 @@ export function InvitationBonusAuditPanel() {
                         )}
                       </CardContent>
                     </Card>
+                  </div>
+                )}
+              </div>
+            )}
+          </section>
+        )}
+
+        {/* 7 — Corrigir convites não entregues (fluxo separado da Frente 2 / exclusão) */}
+        {auditPayload && selectedEvent && (
+          <section className="space-y-3 rounded-lg border border-emerald-500/25 bg-emerald-500/5 p-4 shadow-sm">
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div>
+                <p className="text-sm font-semibold flex items-center gap-2">
+                  <Send className="h-4 w-4 text-emerald-600" />
+                  Corrigir convites não entregues
+                </p>
+                <p className="text-xs text-muted-foreground mt-1 max-w-[52rem]">
+                  Fluxo <strong>separado</strong> da correção de excesso/DELETE acima. Usa apenas o resultado{" "}
+                  <strong>canônico</strong> da auditoria (Fase 1), gera somente <code className="text-[10px]">faltantes</code>{" "}
+                  (expectedBonuses_correto − timesGranted) com inscrição <code className="text-[10px]">free_bonus</code> +{" "}
+                  <code className="text-[10px]">leader_invitations</code>. Não altera cupons.{" "}
+                  <strong>Modo padrão: dry_run</strong>; apply só com confirmação explícita.
+                </p>
+              </div>
+              {!showMissingDelivery ? (
+                <Button type="button" variant="secondary" onClick={() => setShowMissingDelivery(true)}>
+                  Abrir fluxo
+                </Button>
+              ) : (
+                <Button type="button" variant="ghost" onClick={() => setShowMissingDelivery(false)}>
+                  Ocultar
+                </Button>
+              )}
+            </div>
+
+            {showMissingDelivery && (
+              <div className="space-y-4 rounded-md border bg-background p-4">
+                <Alert>
+                  <AlertDescription className="text-sm">
+                    <strong>event_id</strong> fixo:{" "}
+                    <span className="font-mono text-xs">{selectedEvent.id}</span> (herdado da auditoria). Escopo opcional
+                    de líder abaixo — mesmo padrão da correção de excesso, mas <strong>sem</strong> multi-evento e{" "}
+                    <strong>sem</strong> mistura com exclusão de free_bonus.
+                  </AlertDescription>
+                </Alert>
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label>Escopo (leader_id opcional)</Label>
+                    <Select
+                      value={missingDeliveryLeaderScope}
+                      onValueChange={(v) => {
+                        setMissingDeliveryLeaderScope(v);
+                        setMissingDeliveryResult(null);
+                      }}
+                      disabled={isMissingDeliveryRunning}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={LEADER_ALL}>Todos os líderes do evento</SelectItem>
+                        {context?.leaders.map((l) => (
+                          <SelectItem key={l.leader_id} value={l.leader_id}>
+                            {l.leader_name || l.referral_code || l.leader_id}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    onClick={handleMissingDeliveryDryRun}
+                    disabled={isMissingDeliveryRunning}
+                    className="gap-2"
+                  >
+                    {isMissingDeliveryRunning ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Executando dry_run…
+                      </>
+                    ) : (
+                      <>
+                        <Send className="h-4 w-4" />
+                        Executar dry_run (padrão)
+                      </>
+                    )}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="default"
+                    className="bg-emerald-700 hover:bg-emerald-800 text-white"
+                    onClick={handleMissingDeliveryApply}
+                    disabled={
+                      isMissingDeliveryRunning ||
+                      !missingDeliveryResult ||
+                      !missingDeliveryResult.consistency_guard.can_apply
+                    }
+                  >
+                    Aplicar geração (apply)
+                  </Button>
+                </div>
+
+                {missingDeliveryResult && (
+                  <div className="space-y-4">
+                    <Alert>
+                      <AlertDescription className="space-y-1 text-sm">
+                        <p>
+                          <strong>Guard:</strong>{" "}
+                          {missingDeliveryResult.consistency_guard.can_apply ? "pode aplicar" : "bloqueado"} ·{" "}
+                          {missingDeliveryResult.consistency_guard.reason}
+                        </p>
+                        <p className="font-mono text-[11px] break-all">
+                          audit_snapshot_hash: {missingDeliveryResult.audit_snapshot_hash}
+                        </p>
+                        <p className="font-mono text-[11px] break-all">
+                          dry_run_hash: {missingDeliveryResult.dry_run_hash}
+                        </p>
+                      </AlertDescription>
+                    </Alert>
+
+                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                      <div className="rounded-md border p-3">
+                        <p className="text-xs text-muted-foreground">1 — Relatório antes (resumo)</p>
+                        <p className="text-sm">
+                          Linhas comissão:{" "}
+                          <span className="font-semibold tabular-nums">
+                            {missingDeliveryResult.relatorio_antes.total_linhas_comissao_escopo}
+                          </span>
+                        </p>
+                        <p className="text-sm">
+                          Faltantes (soma):{" "}
+                          <span className="font-semibold tabular-nums">
+                            {missingDeliveryResult.relatorio_antes.total_faltantes_somado}
+                          </span>
+                        </p>
+                        <p className="text-sm">
+                          Aptos / bloqueados:{" "}
+                          <span className="font-semibold tabular-nums">
+                            {missingDeliveryResult.relatorio_antes.total_aptos_gerar}
+                          </span>{" "}
+                          /{" "}
+                          <span className="font-semibold tabular-nums">
+                            {missingDeliveryResult.relatorio_antes.total_bloqueados}
+                          </span>
+                        </p>
+                      </div>
+                      <div className="rounded-md border p-3 sm:col-span-3">
+                        <p className="text-xs text-muted-foreground">2 — Plano de geração</p>
+                        <p className="text-sm text-muted-foreground">
+                          Bloco A = aptos; Bloco B = bloqueados (segurança). Cada item inclui ação proposta e observação
+                          de reversibilidade.
+                        </p>
+                      </div>
+                    </div>
+
+                    <Card>
+                      <CardHeader className="py-3">
+                        <CardTitle className="text-sm text-emerald-800 dark:text-emerald-200">
+                          Bloco A — Aptos para geração
+                        </CardTitle>
+                        <CardDescription>
+                          {missingDeliveryResult.plano_geracao.bloco_a_aptos.length} comissão(ões) com faltantes e
+                          segurança OK.
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="overflow-x-auto rounded-md border">
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead>Líder</TableHead>
+                                <TableHead>Comissão</TableHead>
+                                <TableHead className="text-center tabular-nums">req</TableHead>
+                                <TableHead className="text-center tabular-nums">paid ✓</TableHead>
+                                <TableHead className="text-center tabular-nums">expected</TableHead>
+                                <TableHead className="text-center tabular-nums">granted</TableHead>
+                                <TableHead className="text-center tabular-nums">faltantes</TableHead>
+                                <TableHead>Segurança / ação</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {missingDeliveryResult.plano_geracao.bloco_a_aptos.length === 0 ? (
+                                <TableRow>
+                                  <TableCell colSpan={8} className="text-center text-muted-foreground">
+                                    Nenhuma linha apta no escopo.
+                                  </TableCell>
+                                </TableRow>
+                              ) : (
+                                missingDeliveryResult.plano_geracao.bloco_a_aptos.map((row) => (
+                                  <TableRow key={`${row.leader_id}:${row.commission_id}`}>
+                                    <TableCell className="text-xs">
+                                      {leaderNameFromContext(row.leader_id, context)}
+                                    </TableCell>
+                                    <TableCell className="font-mono text-xs">{row.commission_id}</TableCell>
+                                    <TableCell className="text-center tabular-nums">{row.required_purchases}</TableCell>
+                                    <TableCell className="text-center tabular-nums">{row.paidCount_correto}</TableCell>
+                                    <TableCell className="text-center tabular-nums">{row.expectedBonuses_correto}</TableCell>
+                                    <TableCell className="text-center tabular-nums">{row.timesGranted_db}</TableCell>
+                                    <TableCell className="text-center tabular-nums font-medium">{row.faltantes}</TableCell>
+                                    <TableCell className="text-xs max-w-[280px]">
+                                      <div>{row.observacao_seguranca}</div>
+                                      <div className="text-muted-foreground mt-1">{row.acao_proposta}</div>
+                                    </TableCell>
+                                  </TableRow>
+                                ))
+                              )}
+                            </TableBody>
+                          </Table>
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    <Card>
+                      <CardHeader className="py-3">
+                        <CardTitle className="text-sm text-amber-900 dark:text-amber-100">
+                          Bloco B — Bloqueados
+                        </CardTitle>
+                        <CardDescription>
+                          Comissões com faltantes mas bloqueadas por segurança (cupom, divergência, duplicidade, etc.).
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="overflow-x-auto rounded-md border">
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead>Líder</TableHead>
+                                <TableHead>Comissão</TableHead>
+                                <TableHead className="text-center tabular-nums">faltantes</TableHead>
+                                <TableHead>Motivos</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {missingDeliveryResult.plano_geracao.bloco_b_bloqueados.length === 0 ? (
+                                <TableRow>
+                                  <TableCell colSpan={4} className="text-center text-muted-foreground">
+                                    Nenhuma linha bloqueada com faltantes.
+                                  </TableCell>
+                                </TableRow>
+                              ) : (
+                                missingDeliveryResult.plano_geracao.bloco_b_bloqueados.map((row) => (
+                                  <TableRow key={`b-${row.leader_id}:${row.commission_id}`}>
+                                    <TableCell className="text-xs">
+                                      {leaderNameFromContext(row.leader_id, context)}
+                                    </TableCell>
+                                    <TableCell className="font-mono text-xs">{row.commission_id}</TableCell>
+                                    <TableCell className="text-center tabular-nums">{row.faltantes}</TableCell>
+                                    <TableCell className="text-xs">
+                                      <ul className="list-disc pl-4 space-y-1">
+                                        {row.bloqueio_motivos.map((m, i) => (
+                                          <li key={i}>{m}</li>
+                                        ))}
+                                      </ul>
+                                    </TableCell>
+                                  </TableRow>
+                                ))
+                              )}
+                            </TableBody>
+                          </Table>
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    {missingDeliveryResult.mode === "apply" && missingDeliveryResult.relatorio_depois && (
+                      <Card>
+                        <CardHeader className="py-3">
+                          <CardTitle className="text-sm">3 — Relatório depois (apply)</CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-2 text-sm">
+                          <p>
+                            Convites criados:{" "}
+                            <span className="font-semibold tabular-nums">
+                              {missingDeliveryResult.relatorio_depois.convites_criados_total}
+                            </span>
+                          </p>
+                          <p className="text-xs text-muted-foreground">{missingDeliveryResult.relatorio_depois.nota}</p>
+                          <p className="text-xs font-mono break-all">
+                            leader_invitation_ids:{" "}
+                            {missingDeliveryResult.relatorio_depois.leader_invitation_ids_criados.slice(0, 15).join(", ")}
+                            {missingDeliveryResult.relatorio_depois.leader_invitation_ids_criados.length > 15
+                              ? " …"
+                              : ""}
+                          </p>
+                        </CardContent>
+                      </Card>
+                    )}
                   </div>
                 )}
               </div>

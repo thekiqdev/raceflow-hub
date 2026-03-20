@@ -141,6 +141,7 @@ import {
 import { runInvitationBonusAuditController } from '../controllers/invitationBonusAuditController.js';
 import { getInvitationBonusAuditContextController } from '../controllers/invitationBonusAuditContextController.js';
 import { runInvitationBonusReconciliationController } from '../controllers/invitationBonusReconciliationController.js';
+import { runMissingInvitationDeliveryController } from '../controllers/missingInvitationDeliveryController.js';
 
 const router = Router();
 
@@ -283,6 +284,7 @@ router.get('/audit/invitation-bonus-context/:eventId', getInvitationBonusAuditCo
 router.post('/audit/invitation-bonus-simulator', runInvitationBonusAuditController);
 // Frente 2 — Correção controlada (integrada ao contexto da Frente 1)
 router.post('/reconcile/invitation-bonus-controlled', runInvitationBonusReconciliationController);
+router.post('/reconcile/missing-invitation-delivery', runMissingInvitationDeliveryController);
 
 // Event organizer migration (change event owner)
 router.post('/events/:eventId/change-organizer', changeEventOrganizerController);
