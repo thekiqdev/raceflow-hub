@@ -786,7 +786,7 @@ export function InvitationBonusAuditPanel() {
                       </AlertDescription>
                     </Alert>
 
-                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
                       <div className="rounded-md border bg-background p-3">
                         <p className="text-xs text-muted-foreground">Convites available (antes)</p>
                         <p className="text-lg font-semibold tabular-nums">
@@ -800,16 +800,63 @@ export function InvitationBonusAuditPanel() {
                         </p>
                       </div>
                       <div className="rounded-md border bg-background p-3">
-                        <p className="text-xs text-muted-foreground">free_bonus planejadas (Bloco B)</p>
+                        <p className="text-xs text-muted-foreground">Bloco B detectados (escopo)</p>
                         <p className="text-lg font-semibold tabular-nums">
-                          {reconciliationResult.reports.change_plan.summary.registrations_free_bonus_planned}
+                          {
+                            reconciliationResult.reports.change_plan.bloco_b_registrations_free_bonus.summary
+                              .detected_in_scope
+                          }
                         </p>
                       </div>
                       <div className="rounded-md border bg-background p-3">
-                        <p className="text-xs text-muted-foreground">Status Bloco B</p>
+                        <p className="text-xs text-muted-foreground">Bloco B executável / dry_run-only</p>
+                        <p className="text-sm font-medium tabular-nums">
+                          {reconciliationResult.reports.change_plan.bloco_b_registrations_free_bonus.summary
+                            .executable_count}{" "}
+                          /{" "}
+                          {
+                            reconciliationResult.reports.change_plan.bloco_b_registrations_free_bonus.summary
+                              .dry_run_only_count
+                          }
+                        </p>
+                      </div>
+                      <div className="rounded-md border bg-background p-3">
+                        <p className="text-xs text-muted-foreground">Fora escopo líder / ignorados</p>
+                        <p className="text-sm font-medium tabular-nums">
+                          {reconciliationResult.reports.change_plan.bloco_b_registrations_free_bonus.summary
+                            .excluded_by_leader_scope_count}{" "}
+                          /{" "}
+                          {
+                            reconciliationResult.reports.change_plan.bloco_b_registrations_free_bonus.summary
+                              .ignored_valid_or_neutral_count
+                          }
+                        </p>
+                      </div>
+                      <div className="rounded-md border bg-background p-3">
+                        <p className="text-xs text-muted-foreground">Status bloco B (política)</p>
                         <p className="text-sm font-medium">{reconciliationResult.free_bonus_block_status}</p>
                       </div>
                     </div>
+
+                    <Alert>
+                      <AlertDescription className="text-sm">
+                        <p className="font-medium">Escopo Bloco B (alinhado à Fase 1)</p>
+                        <p>{reconciliationResult.bloco_b_scope.note}</p>
+                        {reconciliationResult.bloco_b_scope.leader_filter_applied && (
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            Excluídos por escopo — sem leader_id:{" "}
+                            <span className="font-mono tabular-nums">
+                              {reconciliationResult.bloco_b_scope.excluded_count_orphan_no_leader}
+                            </span>
+                            {" · "}
+                            outro(s) líder(es):{" "}
+                            <span className="font-mono tabular-nums">
+                              {reconciliationResult.bloco_b_scope.excluded_count_other_leader}
+                            </span>
+                          </p>
+                        )}
+                      </AlertDescription>
+                    </Alert>
 
                     <Card>
                       <CardHeader className="py-3">
@@ -845,24 +892,109 @@ export function InvitationBonusAuditPanel() {
                         </CardTitle>
                         <CardDescription>{reconciliationResult.free_bonus_block_reason}</CardDescription>
                       </CardHeader>
-                      <CardContent>
-                        <ScrollArea className="h-44 rounded-md border p-2">
+                      <CardContent className="space-y-4">
+                        <ScrollArea className="h-[min(50vh,420px)] rounded-md border p-2">
                           <div className="space-y-2 text-xs">
-                            {reconciliationResult.reports.change_plan.bloco_b_registrations_free_bonus.items.length === 0 ? (
-                              <p className="text-muted-foreground">Nenhuma registration free_bonus planejada.</p>
+                            {reconciliationResult.reports.change_plan.bloco_b_registrations_free_bonus.items
+                              .length === 0 ? (
+                              <p className="text-muted-foreground">
+                                Nenhum registration free_bonus com flags de plano no escopo (veja excluídos/ignorados
+                                abaixo).
+                              </p>
                             ) : (
-                              reconciliationResult.reports.change_plan.bloco_b_registrations_free_bonus.items.map((x) => (
-                                <div key={x.registration_id} className="rounded border p-2">
-                                  <p className="font-mono">{x.registration_id}</p>
-                                  <p>{x.justification}</p>
-                                  <p className="text-muted-foreground">
-                                    classificação: {x.classification.join(", ")} · reversibilidade: {x.reversibility_note}
-                                  </p>
-                                </div>
-                              ))
+                              reconciliationResult.reports.change_plan.bloco_b_registrations_free_bonus.items.map(
+                                (x) => (
+                                  <div key={x.registration_id} className="rounded border p-2 space-y-1">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <Badge
+                                        variant={x.item_executability === "executável" ? "default" : "secondary"}
+                                      >
+                                        {x.item_executability}
+                                      </Badge>
+                                      <span className="font-mono text-[11px]">{x.registration_id}</span>
+                                    </div>
+                                    <p className="text-muted-foreground">
+                                      leader_id:{" "}
+                                      <span className="font-mono">{x.leader_id ?? "—"}</span>
+                                      {" · "}commission_id:{" "}
+                                      <span className="font-mono">{x.commission_id ?? "—"}</span>
+                                      {" · "}event_id: <span className="font-mono">{x.event_id}</span>
+                                    </p>
+                                    <p>
+                                      <span className="font-medium">Flags (plano):</span>{" "}
+                                      {x.classification.join(", ")}
+                                    </p>
+                                    <p className="text-muted-foreground">
+                                      <span className="font-medium text-foreground">Fase 1 (completo):</span>{" "}
+                                      {x.classification_full.join(", ")}
+                                    </p>
+                                    <p>{x.justification}</p>
+                                    <p className="text-muted-foreground">
+                                      <span className="font-medium text-foreground">Ação:</span>{" "}
+                                      {x.action_proposed_human} ({x.action_proposed})
+                                    </p>
+                                    <p className="text-muted-foreground">
+                                      <span className="font-medium text-foreground">Reversibilidade:</span>{" "}
+                                      {x.reversibility_note}
+                                    </p>
+                                    <p className="text-muted-foreground">
+                                      leader_invitation_id:{" "}
+                                      <span className="font-mono">{x.leader_invitation_id ?? "—"}</span>
+                                      {" · "}status / pagamento: {x.current_status ?? "—"} /{" "}
+                                      {x.payment_status ?? "—"}
+                                    </p>
+                                  </div>
+                                )
+                              )
                             )}
                           </div>
                         </ScrollArea>
+
+                        {reconciliationResult.reports.change_plan.bloco_b_registrations_free_bonus
+                          .excluded_by_leader_scope.length > 0 && (
+                          <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-xs">
+                            <p className="font-semibold text-amber-900 dark:text-amber-100">
+                              Fora do escopo (filtro de líder) — {reconciliationResult.reports.change_plan.bloco_b_registrations_free_bonus.excluded_by_leader_scope.length}
+                            </p>
+                            <ul className="mt-2 max-h-40 list-disc space-y-1 overflow-y-auto pl-4 text-muted-foreground">
+                              {reconciliationResult.reports.change_plan.bloco_b_registrations_free_bonus.excluded_by_leader_scope.map(
+                                (ex) => (
+                                  <li key={ex.registration_id}>
+                                    <span className="font-mono">{ex.registration_id}</span> — {ex.reason}
+                                  </li>
+                                )
+                              )}
+                            </ul>
+                          </div>
+                        )}
+
+                        {reconciliationResult.reports.change_plan.bloco_b_registrations_free_bonus.ignored_not_in_plan
+                          .length > 0 && (
+                          <div className="rounded-md border bg-muted/30 p-3 text-xs">
+                            <p className="font-semibold">
+                              Ignorados (sem flags de plano / apenas válidos) —{" "}
+                              {
+                                reconciliationResult.reports.change_plan.bloco_b_registrations_free_bonus
+                                  .ignored_not_in_plan.length
+                              }
+                            </p>
+                            <ul className="mt-2 max-h-32 list-disc space-y-1 overflow-y-auto pl-4 text-muted-foreground">
+                              {reconciliationResult.reports.change_plan.bloco_b_registrations_free_bonus.ignored_not_in_plan
+                                .slice(0, 80)
+                                .map((ig) => (
+                                  <li key={ig.registration_id}>
+                                    <span className="font-mono">{ig.registration_id}</span> — {ig.reason}
+                                  </li>
+                                ))}
+                            </ul>
+                            {reconciliationResult.reports.change_plan.bloco_b_registrations_free_bonus.ignored_not_in_plan
+                              .length > 80 && (
+                              <p className="mt-1 text-muted-foreground">
+                                Lista truncada na UI (primeiros 80); use o payload JSON completo se necessário.
+                              </p>
+                            )}
+                          </div>
+                        )}
                       </CardContent>
                     </Card>
                   </div>

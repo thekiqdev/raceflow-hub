@@ -134,12 +134,32 @@ export interface InvitationBonusReconciliationItemB {
   leader_id: string | null;
   commission_id: string | null;
   event_id: string;
+  leader_invitation_id: string | null;
   current_status: string | null;
   payment_status: string | null;
+  /** Flags que disparam o plano Bloco B */
   classification: string[];
+  classification_full: string[];
   justification: string;
-  action_proposed: 'none_in_v1_dry_run_only';
+  action_proposed: 'none_in_v1_apply_blocked';
+  action_proposed_human: string;
   reversibility_note: string;
+  item_executability: 'executável' | 'dry_run-only';
+}
+
+export interface InvitationBonusReconciliationBlocoBExcluded {
+  registration_id: string;
+  leader_id: string | null;
+  commission_id: string | null;
+  event_id: string;
+  classification_full: string[];
+  reason: string;
+}
+
+export interface InvitationBonusReconciliationBlocoBIgnored {
+  registration_id: string;
+  leader_id: string | null;
+  reason: string;
 }
 
 export interface InvitationBonusReconciliationPayload {
@@ -158,6 +178,13 @@ export interface InvitationBonusReconciliationPayload {
     expected_leader_scope: string;
     expected_audit_snapshot_hash: string;
     expected_dry_run_hash: string;
+  };
+  bloco_b_scope: {
+    leader_filter_applied: boolean;
+    leader_id_filter: string | null;
+    note: string;
+    excluded_count_orphan_no_leader: number;
+    excluded_count_other_leader: number;
   };
   reports: {
     before: {
@@ -178,7 +205,17 @@ export interface InvitationBonusReconciliationPayload {
       };
       bloco_b_registrations_free_bonus: {
         status: 'executável' | 'dry_run-only';
+        summary: {
+          detected_in_scope: number;
+          executable_count: number;
+          dry_run_only_count: number;
+          ignored_valid_or_neutral_count: number;
+          excluded_by_leader_scope_count: number;
+          registrations_free_bonus_planned: number;
+        };
         items: InvitationBonusReconciliationItemB[];
+        excluded_by_leader_scope: InvitationBonusReconciliationBlocoBExcluded[];
+        ignored_not_in_plan: InvitationBonusReconciliationBlocoBIgnored[];
       };
       summary: {
         invitations_to_change: number;
