@@ -943,67 +943,61 @@ export function InvitationBonusAuditPanel() {
                     <Card>
                       <CardHeader className="py-3">
                         <CardTitle className="text-sm">
-                          Seção B — Diagnóstico operacional do Bloco B (registrations free_bonus)
+                          Seção B — Resumo operacional do Bloco B (registrations free_bonus)
                         </CardTitle>
                         <CardDescription>
-                          Separação explícita: convites faltantes (Seção A) vs registros free_bonus candidatos à exclusão
-                          (Seção B/C). Nesta fase, não há criação automática.
+                          Esses números são do diagnóstico operacional de registrations free_bonus do Bloco B.
+                          <strong> Não</strong> representam criação automática de convites nesta fase.
                         </CardDescription>
                       </CardHeader>
                       <CardContent>
                         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                           <div className="rounded-md border bg-background p-3">
-                            <p className="text-xs text-muted-foreground">Detectadas (Bloco B)</p>
+                            <p className="text-xs text-muted-foreground">total_free_bonus_analisadas</p>
                             <p className="text-lg font-semibold tabular-nums">
-                              {
-                                reconciliationResult.diagnostics_bloco_b_operacional.totals
-                                  .total_free_bonus_detectadas
-                              }
+                              {reconciliationResult.diagnostics_bloco_b_operacional.totals
+                                .total_free_bonus_detectadas}
                             </p>
                           </div>
                           <div className="rounded-md border bg-background p-3">
-                            <p className="text-xs text-muted-foreground">Órfãs sem convite</p>
+                            <p className="text-xs text-muted-foreground">total_invalidas_para_exclusao</p>
                             <p className="text-lg font-semibold tabular-nums">
-                              {
-                                reconciliationResult.diagnostics_bloco_b_operacional.totals
-                                  .total_free_bonus_orfas_sem_convite
-                              }
+                              {reconciliationResult.diagnostics_bloco_b_operacional.totals
+                                .total_free_bonus_planejadas_para_exclusao}
                             </p>
                           </div>
                           <div className="rounded-md border bg-background p-3">
-                            <p className="text-xs text-muted-foreground">Acima do esperado</p>
+                            <p className="text-xs text-muted-foreground">total_orfas_sem_convite</p>
                             <p className="text-lg font-semibold tabular-nums">
-                              {
-                                reconciliationResult.diagnostics_bloco_b_operacional.totals
-                                  .total_free_bonus_acima_do_esperado
-                              }
+                              {reconciliationResult.diagnostics_bloco_b_operacional.totals
+                                .total_free_bonus_orfas_sem_convite}
+                            </p>
+                            <p className="mt-2 text-[11px] text-muted-foreground">
+                              classification=<strong>sem_convite_correspondente</strong>; leader_invitation_id ausente;{" "}
+                              leader_id=null; commission_id=null.
                             </p>
                           </div>
                           <div className="rounded-md border bg-background p-3">
-                            <p className="text-xs text-muted-foreground">Válidas (não mexer)</p>
+                            <p className="text-xs text-muted-foreground">total_acima_do_esperado</p>
                             <p className="text-lg font-semibold tabular-nums">
-                              {
-                                reconciliationResult.diagnostics_bloco_b_operacional.totals
-                                  .total_free_bonus_validas
-                              }
+                              {reconciliationResult.diagnostics_bloco_b_operacional.totals
+                                .total_free_bonus_acima_do_esperado}
                             </p>
                           </div>
                           <div className="rounded-md border bg-background p-3">
-                            <p className="text-xs text-muted-foreground">Planejadas p/ exclusão</p>
+                            <p className="text-xs text-muted-foreground">total_validas</p>
                             <p className="text-lg font-semibold tabular-nums">
-                              {
-                                reconciliationResult.diagnostics_bloco_b_operacional.totals
-                                  .total_free_bonus_planejadas_para_exclusao
-                              }
+                              {reconciliationResult.diagnostics_bloco_b_operacional.totals
+                                .total_free_bonus_validas}
                             </p>
                           </div>
                           <div className="rounded-md border bg-background p-3">
-                            <p className="text-xs text-muted-foreground">Bloqueadas por segurança</p>
+                            <p className="text-xs text-muted-foreground">
+                              total_bloqueadas_por_seguranca_dry_run_only
+                            </p>
                             <p className="text-lg font-semibold tabular-nums">
-                              {
-                                reconciliationResult.diagnostics_bloco_b_operacional.totals
-                                  .total_free_bonus_bloqueadas_por_seguranca
-                              }
+                              {reconciliationResult.diagnostics_bloco_b_operacional.totals
+                                .total_free_bonus_bloqueadas_por_seguranca}
                             </p>
                           </div>
                         </div>
@@ -1013,10 +1007,11 @@ export function InvitationBonusAuditPanel() {
                     <Card>
                       <CardHeader className="py-3">
                         <CardTitle className="text-sm">
-                          Seção C — Listas separadas por categoria (Bloco B)
+                          Seção C — Candidatas à exclusão (Bloco B, dry_run-only)
                         </CardTitle>
                         <CardDescription>
-                          Cada `registration_id` aparece com motivo/grupo_operacional e se estaria planejada para exclusão.
+                          Esses itens são candidatas à exclusão, mas permanecem em <strong>dry_run-only</strong> enquanto não
+                          existir estratégia segura de <strong>apply</strong> para free_bonus.
                         </CardDescription>
                       </CardHeader>
                       <CardContent className="space-y-6">
@@ -1024,19 +1019,19 @@ export function InvitationBonusAuditPanel() {
                           [
                             {
                               key: "ORFA_SEM_CONVITE",
-                              title: "ORFA_SEM_CONVITE",
+                              title: "Órfãs sem convite (principais candidatas à exclusão)",
                               items:
                                 reconciliationResult.diagnostics_bloco_b_operacional.lists.ORFA_SEM_CONVITE,
                             },
                             {
                               key: "EXCESSO_ACIMA_DO_ESPERADO",
-                              title: "EXCESSO_ACIMA_DO_ESPERADO",
+                              title: "Excesso acima do esperado",
                               items:
                                 reconciliationResult.diagnostics_bloco_b_operacional.lists.EXCESSO_ACIMA_DO_ESPERADO,
                             },
                             {
                               key: "VALIDA_NAO_MEXER",
-                              title: "VALIDA_NAO_MEXER",
+                              title: "Válidas (não mexer)",
                               items:
                                 reconciliationResult.diagnostics_bloco_b_operacional.lists.VALIDA_NAO_MEXER,
                             },
@@ -1046,26 +1041,23 @@ export function InvitationBonusAuditPanel() {
                             <p className="text-sm font-semibold">{group.title}</p>
                             <div className="overflow-x-auto rounded-md border">
                               <ScrollArea className="h-48">
-                                <Table className="min-w-[980px]">
+                                <Table className="min-w-[860px]">
                                   <TableHeader>
                                     <TableRow>
                                       <TableHead>registration_id</TableHead>
                                       <TableHead>leader_id</TableHead>
                                       <TableHead>commission_id</TableHead>
-                                      <TableHead>event_id</TableHead>
                                       <TableHead>leader_invitation_id</TableHead>
                                       <TableHead>Status</TableHead>
                                       <TableHead>Payment</TableHead>
                                       <TableHead>classification</TableHead>
-                                      <TableHead>motivo_operacional</TableHead>
-                                      <TableHead>grupo_operacional</TableHead>
                                       <TableHead>planejada_para_exclusao</TableHead>
                                     </TableRow>
                                   </TableHeader>
                                   <TableBody>
                                     {group.items.length === 0 ? (
                                       <TableRow>
-                                        <TableCell colSpan={11} className="text-center text-muted-foreground">
+                                        <TableCell colSpan={8} className="text-center text-muted-foreground">
                                           Nenhum item.
                                         </TableCell>
                                       </TableRow>
@@ -1075,17 +1067,12 @@ export function InvitationBonusAuditPanel() {
                                           <TableCell className="font-mono text-xs">{it.registration_id}</TableCell>
                                           <TableCell className="font-mono text-xs">{it.leader_id ?? "—"}</TableCell>
                                           <TableCell className="font-mono text-xs">{it.commission_id ?? "—"}</TableCell>
-                                          <TableCell className="font-mono text-xs">{it.event_id}</TableCell>
                                           <TableCell className="font-mono text-xs">
                                             {it.leader_invitation_id ?? "—"}
                                           </TableCell>
                                           <TableCell className="text-xs">{it.status ?? "—"}</TableCell>
                                           <TableCell className="text-xs">{it.payment_status ?? "—"}</TableCell>
                                           <TableCell className="text-xs">{it.classification.join(", ")}</TableCell>
-                                          <TableCell className="text-xs text-muted-foreground">
-                                            {it.motivo_operacional}
-                                          </TableCell>
-                                          <TableCell className="text-xs">{it.grupo_operacional}</TableCell>
                                           <TableCell className="text-xs">{it.planejada_para_exclusao}</TableCell>
                                         </TableRow>
                                       ))
