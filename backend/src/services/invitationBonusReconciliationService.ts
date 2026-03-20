@@ -43,11 +43,11 @@ interface BlockAItem {
 
 /** Classes da Fase 1 que entram no plano Bloco B (dry_run), mesmo sem leader_invitation_id */
 const BLOCO_B_TRIGGER_CLASSES: readonly BonusRegistrationClassification[] = [
+  // Plano de exclusão: somente candidatos operacionais às remoções.
+  // "orfa" e outros rótulos podem existir em classification_full, mas não são candidatos
+  // a exclusão no modelo atual de Bloco B desta Frente 2.
   'sem_convite_correspondente',
-  'orfa',
   'acima_do_esperado',
-  'duplicada',
-  'criada_fora_da_regra_da_comissao',
 ] as const;
 
 export interface BlockBScopeExcludedItem {
@@ -99,6 +99,41 @@ export interface InvitationBonusReconciliationDiagnosticRow {
   calculation_source: 'fase1_audit_canonical';
 }
 
+export type BlocoBOperationalGroup =
+  | 'ORFA_SEM_CONVITE'
+  | 'EXCESSO_ACIMA_DO_ESPERADO'
+  | 'VALIDA_NAO_MEXER';
+
+export interface BlocoBOperationalItem {
+  registration_id: string;
+  leader_id: string | null;
+  commission_id: string | null;
+  event_id: string;
+  leader_invitation_id: string | null;
+  status: string | null;
+  payment_status: string | null;
+  classification: string[];
+  motivo_operacional: string;
+  grupo_operacional: BlocoBOperationalGroup;
+  planejada_para_exclusao: 'sim' | 'não';
+}
+
+export interface InvitationBonusReconciliationDiagnosticsBlocoBOperational {
+  totals: {
+    total_free_bonus_detectadas: number;
+    total_free_bonus_orfas_sem_convite: number;
+    total_free_bonus_acima_do_esperado: number;
+    total_free_bonus_validas: number;
+    total_free_bonus_planejadas_para_exclusao: number;
+    total_free_bonus_bloqueadas_por_seguranca: number;
+  };
+  lists: {
+    ORFA_SEM_CONVITE: BlocoBOperationalItem[];
+    EXCESSO_ACIMA_DO_ESPERADO: BlocoBOperationalItem[];
+    VALIDA_NAO_MEXER: BlocoBOperationalItem[];
+  };
+}
+
 export interface InvitationBonusReconciliationResult {
   mode: ReconciliationMode;
   event_id: string;
@@ -126,6 +161,8 @@ export interface InvitationBonusReconciliationResult {
     };
     rows: InvitationBonusReconciliationDiagnosticRow[];
   };
+
+  diagnostics_bloco_b_operacional: InvitationBonusReconciliationDiagnosticsBlocoBOperational;
 
   /** Transparência do filtro de líder no Bloco B */
   bloco_b_scope: {
@@ -519,6 +556,81 @@ async function buildDryRun(params: {
     { missing_invitations: 0, correct_invitations: 0, excess_invitations: 0 }
   );
 
+  // Diagnóstico operacional Bloco B: separa convites (saldo) de registros free_bonus candidatos à exclusão.
+  const mergedBonusRegs = dedupeBonusRegistrationsEvent(audit.technical_log.bonus_registrations_event);
+  const inLeaderScope = (x: EventBonusRegistrationAuditItem) =>
+    !leaderScopeFilter || (x.leader_id !== null && x.leader_id === leaderScopeFilter);
+
+  const getGrupoOperacional = (x: EventBonusRegistrationAuditItem): BlocoBOperationalGroup | null => {
+    if (x.classification.includes('sem_convite_correspondente')) return 'ORFA_SEM_CONVITE';
+    if (x.classification.includes('acima_do_esperado')) return 'EXCESSO_ACIMA_DO_ESPERADO';
+    if (x.classification.length === 1 && x.classification[0] === 'valida') return 'VALIDA_NAO_MEXER';
+    return null;
+  };
+
+  const diagnostics_bloco_b_operacional: InvitationBonusReconciliationDiagnosticsBlocoBOperational = {
+    totals: {
+      total_free_bonus_detectadas: 0,
+      total_free_bonus_orfas_sem_convite: 0,
+      total_free_bonus_acima_do_esperado: 0,
+      total_free_bonus_validas: 0,
+      total_free_bonus_planejadas_para_exclusao: 0,
+      total_free_bonus_bloqueadas_por_seguranca: 0,
+    },
+    lists: {
+      ORFA_SEM_CONVITE: [],
+      EXCESSO_ACIMA_DO_ESPERADO: [],
+      VALIDA_NAO_MEXER: [],
+    },
+  };
+
+  for (const x of mergedBonusRegs) {
+    if (!inLeaderScope(x)) continue;
+    const group = getGrupoOperacional(x);
+    if (!group) continue;
+
+    const planejada = group === 'ORFA_SEM_CONVITE' || group === 'EXCESSO_ACIMA_DO_ESPERADO';
+
+    const motivo_operacional =
+      group === 'ORFA_SEM_CONVITE'
+        ? `Classificação inclui sem_convite_correspondente (flags: ${x.classification.join(', ') || '—'}).`
+        : group === 'EXCESSO_ACIMA_DO_ESPERADO'
+          ? `Classificação inclui acima_do_esperado (flags: ${x.classification.join(', ') || '—'}).`
+          : 'Classificação valida — não candidata a exclusão.';
+
+    const item: BlocoBOperationalItem = {
+      registration_id: x.registration_id,
+      leader_id: x.leader_id,
+      commission_id: x.commission_id,
+      event_id: x.event_id,
+      leader_invitation_id: x.leader_invitation_id,
+      status: x.status,
+      payment_status: x.payment_status,
+      classification: x.classification,
+      motivo_operacional,
+      grupo_operacional: group,
+      planejada_para_exclusao: planejada ? 'sim' : 'não',
+    };
+
+    if (group === 'ORFA_SEM_CONVITE') diagnostics_bloco_b_operacional.lists.ORFA_SEM_CONVITE.push(item);
+    if (group === 'EXCESSO_ACIMA_DO_ESPERADO') diagnostics_bloco_b_operacional.lists.EXCESSO_ACIMA_DO_ESPERADO.push(item);
+    if (group === 'VALIDA_NAO_MEXER') diagnostics_bloco_b_operacional.lists.VALIDA_NAO_MEXER.push(item);
+  }
+
+  const orfaCount = diagnostics_bloco_b_operacional.lists.ORFA_SEM_CONVITE.length;
+  const excessoCount = diagnostics_bloco_b_operacional.lists.EXCESSO_ACIMA_DO_ESPERADO.length;
+  const validaCount = diagnostics_bloco_b_operacional.lists.VALIDA_NAO_MEXER.length;
+  const plannedCount = orfaCount + excessoCount;
+
+  diagnostics_bloco_b_operacional.totals = {
+    total_free_bonus_detectadas: orfaCount + excessoCount + validaCount,
+    total_free_bonus_orfas_sem_convite: orfaCount,
+    total_free_bonus_acima_do_esperado: excessoCount,
+    total_free_bonus_validas: validaCount,
+    total_free_bonus_planejadas_para_exclusao: plannedCount,
+    total_free_bonus_bloqueadas_por_seguranca: FREE_BONUS_REVERSAL_SAFE_IN_V1 ? 0 : plannedCount,
+  };
+
   const before = {
     invitations_available: audit.technical_log.rows.reduce((a, r) => a + r.times_available_db, 0),
     invitations_sent: audit.technical_log.rows.reduce((a, r) => a + r.times_sent_db, 0),
@@ -567,6 +679,7 @@ async function buildDryRun(params: {
     audit_snapshot_hash,
     dry_run_hash,
     diagnostics_missing_excess,
+    diagnostics_bloco_b_operacional,
     bloco_b_scope,
     consistency_guard: {
       can_apply: true,

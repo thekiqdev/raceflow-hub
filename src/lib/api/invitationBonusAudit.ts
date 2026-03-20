@@ -161,6 +161,22 @@ export interface InvitationBonusReconciliationDiagnosticRow {
   calculation_source: 'fase1_audit_canonical';
 }
 
+export type BlocoBOperationalGroup = 'ORFA_SEM_CONVITE' | 'EXCESSO_ACIMA_DO_ESPERADO' | 'VALIDA_NAO_MEXER';
+
+export interface BlocoBOperationalItem {
+  registration_id: string;
+  leader_id: string | null;
+  commission_id: string | null;
+  event_id: string;
+  leader_invitation_id: string | null;
+  status: string | null;
+  payment_status: string | null;
+  classification: string[];
+  motivo_operacional: string;
+  grupo_operacional: BlocoBOperationalGroup;
+  planejada_para_exclusao: 'sim' | 'não';
+}
+
 export interface InvitationBonusReconciliationBlocoBExcluded {
   registration_id: string;
   leader_id: string | null;
@@ -208,6 +224,22 @@ export interface InvitationBonusReconciliationPayload {
     note: string;
     excluded_count_orphan_no_leader: number;
     excluded_count_other_leader: number;
+  };
+
+  diagnostics_bloco_b_operacional: {
+    totals: {
+      total_free_bonus_detectadas: number;
+      total_free_bonus_orfas_sem_convite: number;
+      total_free_bonus_acima_do_esperado: number;
+      total_free_bonus_validas: number;
+      total_free_bonus_planejadas_para_exclusao: number;
+      total_free_bonus_bloqueadas_por_seguranca: number;
+    };
+    lists: {
+      ORFA_SEM_CONVITE: BlocoBOperationalItem[];
+      EXCESSO_ACIMA_DO_ESPERADO: BlocoBOperationalItem[];
+      VALIDA_NAO_MEXER: BlocoBOperationalItem[];
+    };
   };
   reports: {
     before: {

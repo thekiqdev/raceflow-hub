@@ -861,11 +861,13 @@ export function InvitationBonusAuditPanel() {
                     <Card>
                       <CardHeader className="py-3">
                         <CardTitle className="text-sm">
-                          Diagnóstico — convites faltantes / corretos / excedentes por líder + comissão
+                          Seção A — Saldo de convites por líder/comissão (déficit de convites)
                         </CardTitle>
                         <CardDescription>
                           Reutiliza required_purchases/paidCount_canonical/expectedBonuses_canonical/times_granted_db da auditoria
-                          da Fase 1 (cálculo canônico). missing/excess são apenas derivados (sem nova regra).
+                          da Fase 1 (cálculo canônico). Aqui, <strong>faltantes/excesso</strong> representam somente saldo de
+                          convites (déficit/sobra) e <strong>não</strong> indicam quais `registrations free_bonus` seriam
+                          excluídos.
                         </CardDescription>
                       </CardHeader>
                       <CardContent className="space-y-4">
@@ -934,6 +936,166 @@ export function InvitationBonusAuditPanel() {
                             </Table>
                           </ScrollArea>
                         </div>
+                      </CardContent>
+                    </Card>
+
+                    {/* Seção B + Seção C — Diagnóstico operacional do Bloco B */}
+                    <Card>
+                      <CardHeader className="py-3">
+                        <CardTitle className="text-sm">
+                          Seção B — Diagnóstico operacional do Bloco B (registrations free_bonus)
+                        </CardTitle>
+                        <CardDescription>
+                          Separação explícita: convites faltantes (Seção A) vs registros free_bonus candidatos à exclusão
+                          (Seção B/C). Nesta fase, não há criação automática.
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                          <div className="rounded-md border bg-background p-3">
+                            <p className="text-xs text-muted-foreground">Detectadas (Bloco B)</p>
+                            <p className="text-lg font-semibold tabular-nums">
+                              {
+                                reconciliationResult.diagnostics_bloco_b_operacional.totals
+                                  .total_free_bonus_detectadas
+                              }
+                            </p>
+                          </div>
+                          <div className="rounded-md border bg-background p-3">
+                            <p className="text-xs text-muted-foreground">Órfãs sem convite</p>
+                            <p className="text-lg font-semibold tabular-nums">
+                              {
+                                reconciliationResult.diagnostics_bloco_b_operacional.totals
+                                  .total_free_bonus_orfas_sem_convite
+                              }
+                            </p>
+                          </div>
+                          <div className="rounded-md border bg-background p-3">
+                            <p className="text-xs text-muted-foreground">Acima do esperado</p>
+                            <p className="text-lg font-semibold tabular-nums">
+                              {
+                                reconciliationResult.diagnostics_bloco_b_operacional.totals
+                                  .total_free_bonus_acima_do_esperado
+                              }
+                            </p>
+                          </div>
+                          <div className="rounded-md border bg-background p-3">
+                            <p className="text-xs text-muted-foreground">Válidas (não mexer)</p>
+                            <p className="text-lg font-semibold tabular-nums">
+                              {
+                                reconciliationResult.diagnostics_bloco_b_operacional.totals
+                                  .total_free_bonus_validas
+                              }
+                            </p>
+                          </div>
+                          <div className="rounded-md border bg-background p-3">
+                            <p className="text-xs text-muted-foreground">Planejadas p/ exclusão</p>
+                            <p className="text-lg font-semibold tabular-nums">
+                              {
+                                reconciliationResult.diagnostics_bloco_b_operacional.totals
+                                  .total_free_bonus_planejadas_para_exclusao
+                              }
+                            </p>
+                          </div>
+                          <div className="rounded-md border bg-background p-3">
+                            <p className="text-xs text-muted-foreground">Bloqueadas por segurança</p>
+                            <p className="text-lg font-semibold tabular-nums">
+                              {
+                                reconciliationResult.diagnostics_bloco_b_operacional.totals
+                                  .total_free_bonus_bloqueadas_por_seguranca
+                              }
+                            </p>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    <Card>
+                      <CardHeader className="py-3">
+                        <CardTitle className="text-sm">
+                          Seção C — Listas separadas por categoria (Bloco B)
+                        </CardTitle>
+                        <CardDescription>
+                          Cada `registration_id` aparece com motivo/grupo_operacional e se estaria planejada para exclusão.
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent className="space-y-6">
+                        {(
+                          [
+                            {
+                              key: "ORFA_SEM_CONVITE",
+                              title: "ORFA_SEM_CONVITE",
+                              items:
+                                reconciliationResult.diagnostics_bloco_b_operacional.lists.ORFA_SEM_CONVITE,
+                            },
+                            {
+                              key: "EXCESSO_ACIMA_DO_ESPERADO",
+                              title: "EXCESSO_ACIMA_DO_ESPERADO",
+                              items:
+                                reconciliationResult.diagnostics_bloco_b_operacional.lists.EXCESSO_ACIMA_DO_ESPERADO,
+                            },
+                            {
+                              key: "VALIDA_NAO_MEXER",
+                              title: "VALIDA_NAO_MEXER",
+                              items:
+                                reconciliationResult.diagnostics_bloco_b_operacional.lists.VALIDA_NAO_MEXER,
+                            },
+                          ] as const
+                        ).map((group) => (
+                          <div key={group.key} className="space-y-2">
+                            <p className="text-sm font-semibold">{group.title}</p>
+                            <div className="overflow-x-auto rounded-md border">
+                              <ScrollArea className="h-48">
+                                <Table className="min-w-[980px]">
+                                  <TableHeader>
+                                    <TableRow>
+                                      <TableHead>registration_id</TableHead>
+                                      <TableHead>leader_id</TableHead>
+                                      <TableHead>commission_id</TableHead>
+                                      <TableHead>event_id</TableHead>
+                                      <TableHead>leader_invitation_id</TableHead>
+                                      <TableHead>Status</TableHead>
+                                      <TableHead>Payment</TableHead>
+                                      <TableHead>classification</TableHead>
+                                      <TableHead>motivo_operacional</TableHead>
+                                      <TableHead>grupo_operacional</TableHead>
+                                      <TableHead>planejada_para_exclusao</TableHead>
+                                    </TableRow>
+                                  </TableHeader>
+                                  <TableBody>
+                                    {group.items.length === 0 ? (
+                                      <TableRow>
+                                        <TableCell colSpan={11} className="text-center text-muted-foreground">
+                                          Nenhum item.
+                                        </TableCell>
+                                      </TableRow>
+                                    ) : (
+                                      group.items.map((it) => (
+                                        <TableRow key={it.registration_id}>
+                                          <TableCell className="font-mono text-xs">{it.registration_id}</TableCell>
+                                          <TableCell className="font-mono text-xs">{it.leader_id ?? "—"}</TableCell>
+                                          <TableCell className="font-mono text-xs">{it.commission_id ?? "—"}</TableCell>
+                                          <TableCell className="font-mono text-xs">{it.event_id}</TableCell>
+                                          <TableCell className="font-mono text-xs">
+                                            {it.leader_invitation_id ?? "—"}
+                                          </TableCell>
+                                          <TableCell className="text-xs">{it.status ?? "—"}</TableCell>
+                                          <TableCell className="text-xs">{it.payment_status ?? "—"}</TableCell>
+                                          <TableCell className="text-xs">{it.classification.join(", ")}</TableCell>
+                                          <TableCell className="text-xs text-muted-foreground">
+                                            {it.motivo_operacional}
+                                          </TableCell>
+                                          <TableCell className="text-xs">{it.grupo_operacional}</TableCell>
+                                          <TableCell className="text-xs">{it.planejada_para_exclusao}</TableCell>
+                                        </TableRow>
+                                      ))
+                                    )}
+                                  </TableBody>
+                                </Table>
+                              </ScrollArea>
+                            </div>
+                          </div>
+                        ))}
                       </CardContent>
                     </Card>
 
