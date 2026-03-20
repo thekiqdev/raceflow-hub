@@ -1543,13 +1543,15 @@ export function InvitationBonusAuditPanel() {
                                 <TableHead className="text-center tabular-nums">vál.</TableHead>
                                 <TableHead className="text-center tabular-nums">inc.</TableHead>
                                 <TableHead className="text-center tabular-nums">faltantes</TableHead>
+                                <TableHead className="text-[10px]">warnings</TableHead>
+                                <TableHead className="text-center tabular-nums">gerar</TableHead>
                                 <TableHead>Segurança / ação</TableHead>
                               </TableRow>
                             </TableHeader>
                             <TableBody>
                               {missingDeliveryResult.plano_geracao.bloco_a_aptos.length === 0 ? (
                                 <TableRow>
-                                  <TableCell colSpan={10} className="text-center text-muted-foreground">
+                                  <TableCell colSpan={12} className="text-center text-muted-foreground">
                                     Nenhuma linha apta no escopo.
                                   </TableCell>
                                 </TableRow>
@@ -1571,6 +1573,12 @@ export function InvitationBonusAuditPanel() {
                                       {row.prova_expandida?.timesGranted_inconsistentes ?? "—"}
                                     </TableCell>
                                     <TableCell className="text-center tabular-nums font-medium">{row.faltantes}</TableCell>
+                                    <TableCell className="text-[10px] font-mono text-sky-800 dark:text-sky-200 max-w-[120px]">
+                                      {(row.warning_codes ?? []).join(", ") || "—"}
+                                    </TableCell>
+                                    <TableCell className="text-center tabular-nums font-semibold">
+                                      {row.eligible_to_generate_missing_invitations ?? row.faltantes}
+                                    </TableCell>
                                     <TableCell className="text-xs max-w-[280px]">
                                       <div>{row.observacao_seguranca}</div>
                                       <div className="text-muted-foreground mt-1">{row.acao_proposta}</div>
@@ -1605,14 +1613,16 @@ export function InvitationBonusAuditPanel() {
                                 <TableHead className="text-center tabular-nums">faltantes</TableHead>
                                 <TableHead className="text-center tabular-nums">válidos</TableHead>
                                 <TableHead className="text-center tabular-nums">inc.</TableHead>
-                                <TableHead className="text-xs">códigos bloqueio</TableHead>
-                                <TableHead>Motivos</TableHead>
+                                <TableHead className="text-center tabular-nums text-[10px]">evid.</TableHead>
+                                <TableHead className="text-xs">blockers</TableHead>
+                                <TableHead className="text-xs">warnings</TableHead>
+                                <TableHead>Motivos bloqueio</TableHead>
                               </TableRow>
                             </TableHeader>
                             <TableBody>
                               {missingDeliveryResult.plano_geracao.bloco_b_bloqueados.length === 0 ? (
                                 <TableRow>
-                                  <TableCell colSpan={7} className="text-center text-muted-foreground">
+                                  <TableCell colSpan={9} className="text-center text-muted-foreground">
                                     Nenhuma linha bloqueada com faltantes.
                                   </TableCell>
                                 </TableRow>
@@ -1630,8 +1640,14 @@ export function InvitationBonusAuditPanel() {
                                     <TableCell className="text-center tabular-nums">
                                       {row.prova_expandida?.timesGranted_inconsistentes ?? "—"}
                                     </TableCell>
+                                    <TableCell className="text-center tabular-nums text-[10px]">
+                                      {row.blocking_evidence_count ?? "—"}
+                                    </TableCell>
                                     <TableCell className="text-[10px] font-mono">
                                       {(row.block_reason_codes ?? []).join(", ") || "—"}
+                                    </TableCell>
+                                    <TableCell className="text-[10px] font-mono text-sky-800 dark:text-sky-200">
+                                      {(row.warning_codes ?? []).join(", ") || "—"}
                                     </TableCell>
                                     <TableCell className="text-xs">
                                       <ul className="list-disc pl-4 space-y-1">
@@ -1693,25 +1709,60 @@ export function InvitationBonusAuditPanel() {
                                         </span>
                                       </p>
                                     </div>
-                                    <div className="rounded border bg-background p-2 sm:col-span-3">
+                                    <div className="rounded border bg-background p-2 sm:col-span-3 space-y-2">
                                       <p className="text-[10px] text-muted-foreground uppercase tracking-tight">
                                         Bloco D — Decisão operacional
+                                      </p>
+                                      <p className="text-xs">
+                                        <span className="text-muted-foreground">blocking_evidence_count:</span>{" "}
+                                        <span className="font-mono tabular-nums">{p.blocking_evidence_count}</span>
+                                        {" · "}
+                                        <span className="text-muted-foreground">eligible_to_generate:</span>{" "}
+                                        <span className="font-mono tabular-nums">
+                                          {p.eligible_to_generate_missing_invitations}
+                                        </span>
                                       </p>
                                       <p>
                                         apto_para_apply:{" "}
                                         <strong>{p.bloco_d_decisao.apto_para_apply ? "sim" : "não"}</strong>
                                       </p>
                                       <p>
-                                        quantos seriam gerados se apto:{" "}
+                                        quantos seriam gerados (se apto):{" "}
                                         {p.bloco_d_decisao.quantos_convites_seriam_gerados_se_apto}
                                       </p>
-                                      {p.bloco_d_decisao.motivos_bloqueio.length > 0 && (
-                                        <ul className="mt-1 list-disc pl-4 text-xs">
-                                          {p.bloco_d_decisao.motivos_bloqueio.map((m, i) => (
-                                            <li key={i}>{m}</li>
-                                          ))}
-                                        </ul>
+                                      {p.warning_codes.length > 0 && (
+                                        <div className="rounded-md border border-sky-500/30 bg-sky-500/5 p-2 text-xs">
+                                          <p className="font-semibold text-sky-900 dark:text-sky-100">
+                                            Avisos (não bloqueantes)
+                                          </p>
+                                          <p className="font-mono text-[10px]">{p.warning_codes.join(", ")}</p>
+                                          <ul className="mt-1 list-disc pl-4">
+                                            {p.warning_human_readable.map((m, i) => (
+                                              <li key={i}>{m}</li>
+                                            ))}
+                                          </ul>
+                                        </div>
                                       )}
+                                      {p.bloco_d_decisao.motivos_bloqueio.length > 0 && (
+                                        <div className="rounded-md border border-destructive/30 bg-destructive/5 p-2">
+                                          <p className="text-xs font-semibold text-destructive">Bloqueios (reais)</p>
+                                          <ul className="mt-1 list-disc pl-4 text-xs">
+                                            {p.bloco_d_decisao.motivos_bloqueio.map((m, i) => (
+                                              <li key={i}>{m}</li>
+                                            ))}
+                                          </ul>
+                                        </div>
+                                      )}
+                                      {p.bloco_d_decisao.blocking_ids_snapshot &&
+                                        p.bloco_d_decisao.blocking_ids_snapshot.leader_invitation_ids.length > 0 && (
+                                          <div className="text-[10px] font-mono break-all">
+                                            <span className="text-muted-foreground">IDs que sustentam bloqueio:</span>{" "}
+                                            li: {p.bloco_d_decisao.blocking_ids_snapshot.leader_invitation_ids.join(", ")}
+                                            {p.bloco_d_decisao.blocking_ids_snapshot.bonus_registration_ids.length > 0 && (
+                                              <> · bonus_reg: {p.bloco_d_decisao.blocking_ids_snapshot.bonus_registration_ids.join(", ")}</>
+                                            )}
+                                          </div>
+                                        )}
                                       {p.bloco_d_decisao.saneamento_sugerido.length > 0 && (
                                         <div className="mt-2">
                                           <p className="text-xs font-medium text-amber-900 dark:text-amber-100">

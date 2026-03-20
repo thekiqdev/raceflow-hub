@@ -427,6 +427,11 @@ export type MissingDeliveryBlockReasonCode =
   | 'WRONGFUL_CUPOM_REFERRAL'
   | 'BONUS_TYPE_INELIGIVEL';
 
+export type MissingDeliveryWarningCode =
+  | 'BONUS_REGISTRATION_FORA_CANONICO_AGREGADO_SEM_EVIDENCIA_EM_GRANTED'
+  | 'BONUS_REPROCESSING_AGREGADO_SEM_EVIDENCIA_EM_GRANTED'
+  | 'COUNT_DIVERGENTE_AUDITORIA_VS_DB';
+
 export interface MissingInvitationProvaBlocoAItem {
   leader_invitation_id: string;
   bonus_registration_id: string | null;
@@ -459,8 +464,15 @@ export interface MissingInvitationProvaBlocoC {
 export interface MissingInvitationProvaBlocoD {
   apto_para_apply: boolean;
   motivos_bloqueio: string[];
+  motivos_warning_nao_bloqueantes: string[];
   quantos_convites_seriam_gerados_se_apto: number;
+  eligible_to_generate_missing_invitations: number;
   saneamento_sugerido: string[];
+  blocking_ids_snapshot?: {
+    leader_invitation_ids: string[];
+    bonus_registration_ids: string[];
+    registration_ids: string[];
+  };
 }
 
 export interface MissingInvitationProvaExpandida {
@@ -474,6 +486,13 @@ export interface MissingInvitationProvaExpandida {
   faltantes_liberados_para_apply: number;
   block_reason_codes: MissingDeliveryBlockReasonCode[];
   block_reason_human_readable: string[];
+  warning_codes: MissingDeliveryWarningCode[];
+  warning_human_readable: string[];
+  inconsistent_leader_invitation_ids: string[];
+  inconsistent_bonus_registration_ids: string[];
+  inconsistent_registration_ids: string[];
+  blocking_evidence_count: number;
+  eligible_to_generate_missing_invitations: number;
   bloco_a_convites_validos: MissingInvitationProvaBlocoAItem[];
   bloco_b_inconsistentes: MissingInvitationProvaBlocoBItem[];
   bloco_c_resumo: MissingInvitationProvaBlocoC;
@@ -501,6 +520,13 @@ export interface MissingInvitationPlanItem {
   faltantes_liberados_para_apply: number;
   block_reason_codes: MissingDeliveryBlockReasonCode[];
   block_reason_human_readable: string[];
+  warning_codes: MissingDeliveryWarningCode[];
+  warning_human_readable: string[];
+  inconsistent_leader_invitation_ids: string[];
+  inconsistent_bonus_registration_ids: string[];
+  inconsistent_registration_ids: string[];
+  blocking_evidence_count: number;
+  eligible_to_generate_missing_invitations: number;
   prova_expandida: MissingInvitationProvaExpandida;
 }
 

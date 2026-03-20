@@ -48,13 +48,20 @@ Por `leader_id` + `commission_id`, cada item inclui (espelhados também no níve
 
 **Não altera regra de negócio** — apenas enriquece o payload do dry_run; não gera convites nem altera cupons.
 
+### Bloqueio real vs aviso (heurística agregada)
+
+- **Evidência material:** `inconsistent_leader_invitation_ids[]` / `blocking_evidence_count` derivados de convites **granted** (available|sent|used) classificados como inconsistentes no dry_run expandido.
+- **Regra:** se `granted_inconsistentes === 0` **e** `blocking_evidence_count === 0`, então as flags agregadas da Fase 1 `BONUS_REGISTRATION_FORA_CANONICO` e `BONUS_REPROCESSING` **não bloqueiam apply** — viram **warnings** (`warning_codes`), com texto explicando os IDs agregados da auditoria quando existirem.
+- **Bloqueadores “duros”** (sem rebaixamento por esta regra): líder inválido, timesGranted > expected, divergência expected prod vs canônico, cupom/referral, bonus_type inelegível.
+- **COUNT divergente** (soma válidos+inconsistentes ≠ times_granted_db): **aviso**, não bloqueia apply neste fluxo.
+
 ### Caso “Carol Martins” / comissão `ade7cdf8-ecbe-419c-aa0c-50cf908956d9`
 
 1. Selecionar o **evento** correto na auditoria.
 2. (Opcional) Escopo **só líder** = Carol Martins para reduzir ruído.
 3. Rodar **auditoria** (Fase 1), depois **Corrigir convites não entregues** → **dry_run**.
-4. Na tabela **Bloco B — Bloqueados**, localizar a linha pela **comissão** (ou pelo nome do líder).
-5. Abaixo, o card **Dry-run expandido de prova** mostra Blocos A–D: convites válidos vs inconsistentes, códigos de bloqueio, faltantes teóricos vs liberados para apply (0 enquanto bloqueado) e saneamento sugerido.
+4. Se **apto** após a regra de evidência: a comissão aparece em **Bloco A — Aptos**; `eligible_to_generate_missing_invitations` = faltantes teóricos; **warnings** podem aparecer sem impedir apply.
+5. Se ainda **bloqueado**: tabela Bloco B + prova expandida com **blockers** vs **warnings**, `blocking_evidence_count` e IDs que sustentam bloqueio quando houver evidência.
 
 ## Proteção do apply
 
