@@ -1540,6 +1540,8 @@ export function InvitationBonusAuditPanel() {
                                 <TableHead className="text-center tabular-nums">paid ✓</TableHead>
                                 <TableHead className="text-center tabular-nums">expected</TableHead>
                                 <TableHead className="text-center tabular-nums">granted</TableHead>
+                                <TableHead className="text-center tabular-nums">vál.</TableHead>
+                                <TableHead className="text-center tabular-nums">inc.</TableHead>
                                 <TableHead className="text-center tabular-nums">faltantes</TableHead>
                                 <TableHead>Segurança / ação</TableHead>
                               </TableRow>
@@ -1547,7 +1549,7 @@ export function InvitationBonusAuditPanel() {
                             <TableBody>
                               {missingDeliveryResult.plano_geracao.bloco_a_aptos.length === 0 ? (
                                 <TableRow>
-                                  <TableCell colSpan={8} className="text-center text-muted-foreground">
+                                  <TableCell colSpan={10} className="text-center text-muted-foreground">
                                     Nenhuma linha apta no escopo.
                                   </TableCell>
                                 </TableRow>
@@ -1562,6 +1564,12 @@ export function InvitationBonusAuditPanel() {
                                     <TableCell className="text-center tabular-nums">{row.paidCount_correto}</TableCell>
                                     <TableCell className="text-center tabular-nums">{row.expectedBonuses_correto}</TableCell>
                                     <TableCell className="text-center tabular-nums">{row.timesGranted_db}</TableCell>
+                                    <TableCell className="text-center tabular-nums">
+                                      {row.prova_expandida?.timesGranted_validos ?? "—"}
+                                    </TableCell>
+                                    <TableCell className="text-center tabular-nums">
+                                      {row.prova_expandida?.timesGranted_inconsistentes ?? "—"}
+                                    </TableCell>
                                     <TableCell className="text-center tabular-nums font-medium">{row.faltantes}</TableCell>
                                     <TableCell className="text-xs max-w-[280px]">
                                       <div>{row.observacao_seguranca}</div>
@@ -1583,6 +1591,8 @@ export function InvitationBonusAuditPanel() {
                         </CardTitle>
                         <CardDescription>
                           Comissões com faltantes mas bloqueadas por segurança (cupom, divergência, duplicidade, etc.).
+                          Abaixo, o <strong>dry_run expandido de prova</strong> (somente leitura) detalha convites válidos
+                          vs inconsistentes e a decisão operacional antes de qualquer apply.
                         </CardDescription>
                       </CardHeader>
                       <CardContent>
@@ -1593,13 +1603,16 @@ export function InvitationBonusAuditPanel() {
                                 <TableHead>Líder</TableHead>
                                 <TableHead>Comissão</TableHead>
                                 <TableHead className="text-center tabular-nums">faltantes</TableHead>
+                                <TableHead className="text-center tabular-nums">válidos</TableHead>
+                                <TableHead className="text-center tabular-nums">inc.</TableHead>
+                                <TableHead className="text-xs">códigos bloqueio</TableHead>
                                 <TableHead>Motivos</TableHead>
                               </TableRow>
                             </TableHeader>
                             <TableBody>
                               {missingDeliveryResult.plano_geracao.bloco_b_bloqueados.length === 0 ? (
                                 <TableRow>
-                                  <TableCell colSpan={4} className="text-center text-muted-foreground">
+                                  <TableCell colSpan={7} className="text-center text-muted-foreground">
                                     Nenhuma linha bloqueada com faltantes.
                                   </TableCell>
                                 </TableRow>
@@ -1611,6 +1624,15 @@ export function InvitationBonusAuditPanel() {
                                     </TableCell>
                                     <TableCell className="font-mono text-xs">{row.commission_id}</TableCell>
                                     <TableCell className="text-center tabular-nums">{row.faltantes}</TableCell>
+                                    <TableCell className="text-center tabular-nums">
+                                      {row.prova_expandida?.timesGranted_validos ?? "—"}
+                                    </TableCell>
+                                    <TableCell className="text-center tabular-nums">
+                                      {row.prova_expandida?.timesGranted_inconsistentes ?? "—"}
+                                    </TableCell>
+                                    <TableCell className="text-[10px] font-mono">
+                                      {(row.block_reason_codes ?? []).join(", ") || "—"}
+                                    </TableCell>
                                     <TableCell className="text-xs">
                                       <ul className="list-disc pl-4 space-y-1">
                                         {row.bloqueio_motivos.map((m, i) => (
@@ -1624,6 +1646,169 @@ export function InvitationBonusAuditPanel() {
                             </TableBody>
                           </Table>
                         </div>
+
+                        {missingDeliveryResult.plano_geracao.bloco_b_bloqueados.length > 0 && (
+                          <div className="mt-6 space-y-4">
+                            <p className="text-sm font-semibold">
+                              Dry-run expandido de prova — Blocos A a D (auditável, sem apply)
+                            </p>
+                            {missingDeliveryResult.plano_geracao.bloco_b_bloqueados.map((comm) => {
+                              const p = comm.prova_expandida;
+                              if (!p) return null;
+                              return (
+                                <div
+                                  key={`proof-${comm.leader_id}-${comm.commission_id}`}
+                                  className="rounded-lg border bg-muted/20 p-4 space-y-4"
+                                >
+                                  <div className="flex flex-wrap items-baseline justify-between gap-2">
+                                    <p className="font-medium text-sm">
+                                      {leaderNameFromContext(comm.leader_id, context)}{" "}
+                                      <span className="text-muted-foreground font-normal">·</span>{" "}
+                                      <span className="font-mono text-xs">{comm.commission_id}</span>
+                                    </p>
+                                    <Badge variant="outline" className="text-amber-800 border-amber-500/40">
+                                      BLOQUEADO
+                                    </Badge>
+                                  </div>
+
+                                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 text-sm">
+                                    <div className="rounded border bg-background p-2">
+                                      <p className="text-[10px] text-muted-foreground uppercase tracking-tight">
+                                        Bloco C — Resumo matemático
+                                      </p>
+                                      <p>paid ✓: {p.bloco_c_resumo.paidCount_correto}</p>
+                                      <p>expected: {p.bloco_c_resumo.expectedBonuses_correto}</p>
+                                      <p>granted válidos: {p.bloco_c_resumo.timesGranted_validos}</p>
+                                      <p>granted inconsistentes: {p.bloco_c_resumo.timesGranted_inconsistentes}</p>
+                                      <p className="mt-1 font-medium">
+                                        faltantes teóricos: {p.bloco_c_resumo.faltantes_teoricos}
+                                      </p>
+                                      <p>
+                                        gap só válidos vs expected: {p.bloco_c_resumo.faltantes_vs_apenas_validos}
+                                      </p>
+                                      <p>
+                                        liberados p/ apply (regra atual):{" "}
+                                        <span className="tabular-nums font-semibold">
+                                          {p.bloco_c_resumo.faltantes_liberados_para_apply}
+                                        </span>
+                                      </p>
+                                    </div>
+                                    <div className="rounded border bg-background p-2 sm:col-span-3">
+                                      <p className="text-[10px] text-muted-foreground uppercase tracking-tight">
+                                        Bloco D — Decisão operacional
+                                      </p>
+                                      <p>
+                                        apto_para_apply:{" "}
+                                        <strong>{p.bloco_d_decisao.apto_para_apply ? "sim" : "não"}</strong>
+                                      </p>
+                                      <p>
+                                        quantos seriam gerados se apto:{" "}
+                                        {p.bloco_d_decisao.quantos_convites_seriam_gerados_se_apto}
+                                      </p>
+                                      {p.bloco_d_decisao.motivos_bloqueio.length > 0 && (
+                                        <ul className="mt-1 list-disc pl-4 text-xs">
+                                          {p.bloco_d_decisao.motivos_bloqueio.map((m, i) => (
+                                            <li key={i}>{m}</li>
+                                          ))}
+                                        </ul>
+                                      )}
+                                      {p.bloco_d_decisao.saneamento_sugerido.length > 0 && (
+                                        <div className="mt-2">
+                                          <p className="text-xs font-medium text-amber-900 dark:text-amber-100">
+                                            Saneamento sugerido
+                                          </p>
+                                          <ul className="list-decimal pl-4 text-xs text-muted-foreground">
+                                            {p.bloco_d_decisao.saneamento_sugerido.map((s, i) => (
+                                              <li key={i}>{s}</li>
+                                            ))}
+                                          </ul>
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  <div>
+                                    <p className="text-xs font-semibold mb-2">
+                                      Bloco A — Convites válidos já concedidos (available | sent | used)
+                                    </p>
+                                    <div className="overflow-x-auto rounded border max-h-48">
+                                      <Table className="text-xs">
+                                        <TableHeader>
+                                          <TableRow>
+                                            <TableHead>leader_invitation_id</TableHead>
+                                            <TableHead>bonus_registration_id</TableHead>
+                                            <TableHead>status</TableHead>
+                                            <TableHead>created_at</TableHead>
+                                            <TableHead>motivo</TableHead>
+                                          </TableRow>
+                                        </TableHeader>
+                                        <TableBody>
+                                          {p.bloco_a_convites_validos.length === 0 ? (
+                                            <TableRow>
+                                              <TableCell colSpan={5} className="text-muted-foreground">
+                                                Nenhum convite classificado como válido nesta comissão.
+                                              </TableCell>
+                                            </TableRow>
+                                          ) : (
+                                            p.bloco_a_convites_validos.map((a) => (
+                                              <TableRow key={a.leader_invitation_id}>
+                                                <TableCell className="font-mono">{a.leader_invitation_id}</TableCell>
+                                                <TableCell className="font-mono">{a.bonus_registration_id ?? "—"}</TableCell>
+                                                <TableCell>{a.status}</TableCell>
+                                                <TableCell className="whitespace-nowrap">
+                                                  {a.created_at?.slice(0, 19) ?? "—"}
+                                                </TableCell>
+                                                <TableCell className="max-w-[200px]">{a.motivo_validade}</TableCell>
+                                              </TableRow>
+                                            ))
+                                          )}
+                                        </TableBody>
+                                      </Table>
+                                    </div>
+                                  </div>
+
+                                  <div>
+                                    <p className="text-xs font-semibold mb-2">
+                                      Bloco B — Registros inconsistentes / fora do canônico
+                                    </p>
+                                    <div className="overflow-x-auto rounded border max-h-56">
+                                      <Table className="text-xs">
+                                        <TableHeader>
+                                          <TableRow>
+                                            <TableHead>leader_invitation_id</TableHead>
+                                            <TableHead>bonus_registration_id</TableHead>
+                                            <TableHead>tipo</TableHead>
+                                            <TableHead>impacta bloqueio</TableHead>
+                                            <TableHead>detalhe</TableHead>
+                                          </TableRow>
+                                        </TableHeader>
+                                        <TableBody>
+                                          {p.bloco_b_inconsistentes.length === 0 ? (
+                                            <TableRow>
+                                              <TableCell colSpan={5} className="text-muted-foreground">
+                                                Nenhum item inconsistente listado.
+                                              </TableCell>
+                                            </TableRow>
+                                          ) : (
+                                            p.bloco_b_inconsistentes.map((b, idx) => (
+                                              <TableRow key={`${b.leader_invitation_id ?? "x"}-${idx}`}>
+                                                <TableCell className="font-mono">{b.leader_invitation_id ?? "—"}</TableCell>
+                                                <TableCell className="font-mono">{b.bonus_registration_id ?? "—"}</TableCell>
+                                                <TableCell>{b.tipo_inconsistencia}</TableCell>
+                                                <TableCell>{b.impacta_bloqueio_geracao_futura ? "sim" : "não"}</TableCell>
+                                                <TableCell className="max-w-[280px]">{b.motivo_detalhado}</TableCell>
+                                              </TableRow>
+                                            ))
+                                          )}
+                                        </TableBody>
+                                      </Table>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
                       </CardContent>
                     </Card>
 

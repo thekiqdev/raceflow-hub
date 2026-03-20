@@ -21,7 +21,40 @@ Gerar **apenas** os convites faltantes (`faltantes = expectedBonuses_correto −
   - **`relatorio_antes`:** totais (linhas de comissão, soma de faltantes, aptos vs bloqueados).
   - **`plano_geracao.bloco_a_aptos`:** comissões com `faltantes > 0` e **sem** bloqueios de segurança.
   - **`plano_geracao.bloco_b_bloqueados`:** comissões com `faltantes > 0` mas **bloqueadas** (motivos em `bloqueio_motivos`).
-- Por linha (A e B): `leader_id`, `commission_id`, `event_id`, `required_purchases`, `paidCount_correto`, `expectedBonuses_correto`, `timesGranted_db`, `faltantes`, `acao_proposta`, `observacao_seguranca`, `observacao_reversibilidade`, `status`.
+- Por linha (A e B): campos resumidos + **`prova_expandida`** (dry_run expandido de prova, somente leitura).
+
+### Dry_run expandido de prova (comissões com faltantes)
+
+Por `leader_id` + `commission_id`, cada item inclui (espelhados também no nível do plano):
+
+| Campo | Significado |
+|--------|-------------|
+| `expectedBonuses_correto` | Igual à Fase 1 (canônico) |
+| `timesGranted_validos` | Convites `available\|sent\|used` cujo `leader_invitation_id` ∈ `leader_invitation_ids_validos` |
+| `timesGranted_inconsistentes` | Demais convites nesses status (classificação vs canônico) |
+| `faltantes_teoricos` | `max(0, expected − timesGranted_db)` |
+| `faltantes_vs_apenas_validos` | `max(0, expected − timesGranted_validos)` |
+| `faltantes_liberados_para_apply` | `0` se bloqueado; se apto, igual a `faltantes_teoricos` (mesma regra do apply) |
+| `block_reason_codes[]` | Códigos estáveis (`BONUS_REGISTRATION_FORA_CANONICO`, `BONUS_REPROCESSING`, …) |
+| `block_reason_human_readable[]` | Texto auditável |
+
+**Bloco A (prova):** convites válidos — `leader_invitation_id`, `bonus_registration_id`, `registration_id`, `status`, `created_at`, `motivo_validade`.
+
+**Bloco B (prova):** inconsistentes — `tipo_inconsistencia`, `motivo_detalhado`, `impacta_bloqueio_geracao_futura`, convites `expired` só para rastreo (não entram no COUNT).
+
+**Bloco C:** resumo matemático.
+
+**Bloco D:** `apto_para_apply`, motivos, quantos seriam gerados se apto, `saneamento_sugerido[]`.
+
+**Não altera regra de negócio** — apenas enriquece o payload do dry_run; não gera convites nem altera cupons.
+
+### Caso “Carol Martins” / comissão `ade7cdf8-ecbe-419c-aa0c-50cf908956d9`
+
+1. Selecionar o **evento** correto na auditoria.
+2. (Opcional) Escopo **só líder** = Carol Martins para reduzir ruído.
+3. Rodar **auditoria** (Fase 1), depois **Corrigir convites não entregues** → **dry_run**.
+4. Na tabela **Bloco B — Bloqueados**, localizar a linha pela **comissão** (ou pelo nome do líder).
+5. Abaixo, o card **Dry-run expandido de prova** mostra Blocos A–D: convites válidos vs inconsistentes, códigos de bloqueio, faltantes teóricos vs liberados para apply (0 enquanto bloqueado) e saneamento sugerido.
 
 ## Proteção do apply
 

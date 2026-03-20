@@ -27,6 +27,80 @@ export interface MissingInvitationDeliveryRequest {
 
 export type MissingDeliveryStatus = 'apto' | 'bloqueado';
 
+/** Códigos estáveis para auditoria (não alteram regra de bloqueio — apenas documentam). */
+export type MissingDeliveryBlockReasonCode =
+  | 'LEADER_INVALIDO'
+  | 'TIMES_GRANTED_MAIOR_QUE_EXPECTED'
+  | 'BONUS_REGISTRATION_FORA_CANONICO'
+  | 'DIVERGENCIA_EXPECTED_BONUSES_PROD_VS_CANONICO'
+  | 'BONUS_REPROCESSING'
+  | 'COMMISSION_COUPON_MATCHING'
+  | 'WRONGFUL_CUPOM_REFERRAL'
+  | 'BONUS_TYPE_INELIGIVEL';
+
+export interface MissingInvitationProvaBlocoAItem {
+  leader_invitation_id: string;
+  bonus_registration_id: string | null;
+  registration_id: string | null;
+  status: string;
+  created_at: string | null;
+  motivo_validade: string;
+}
+
+export interface MissingInvitationProvaBlocoBItem {
+  leader_invitation_id: string | null;
+  bonus_registration_id: string | null;
+  registration_id: string | null;
+  tipo_inconsistencia: string;
+  motivo_detalhado: string;
+  created_at: string | null;
+  impacta_bloqueio_geracao_futura: boolean;
+}
+
+export interface MissingInvitationProvaBlocoC {
+  paidCount_correto: number;
+  expectedBonuses_correto: number;
+  timesGranted_validos: number;
+  timesGranted_inconsistentes: number;
+  /** max(0, expected − timesGranted_db) — mesmo critério do COUNT agregado da auditoria */
+  faltantes_teoricos: number;
+  /**
+   * max(0, expected − timesGranted_validos) — gap se apenas convites “válidos” contassem para o teto.
+   * Pode ser &gt; faltantes_teoricos quando há convites inconsistentes ainda dentro do COUNT.
+   */
+  faltantes_vs_apenas_validos: number;
+  /**
+   * Quantos convites o apply poderia criar com as regras atuais: 0 se bloqueado;
+   * se apto, max(0, expected − timesGranted_db) (mesmo critério do serviço de apply).
+   */
+  faltantes_liberados_para_apply: number;
+}
+
+export interface MissingInvitationProvaBlocoD {
+  apto_para_apply: boolean;
+  motivos_bloqueio: string[];
+  quantos_convites_seriam_gerados_se_apto: number;
+  saneamento_sugerido: string[];
+}
+
+export interface MissingInvitationProvaExpandida {
+  leader_id: string;
+  commission_id: string;
+  expectedBonuses_correto: number;
+  timesGranted_validos: number;
+  timesGranted_inconsistentes: number;
+  faltantes_teoricos: number;
+  /** max(0, expected − timesGranted_validos) */
+  faltantes_vs_apenas_validos: number;
+  faltantes_liberados_para_apply: number;
+  block_reason_codes: MissingDeliveryBlockReasonCode[];
+  block_reason_human_readable: string[];
+  bloco_a_convites_validos: MissingInvitationProvaBlocoAItem[];
+  bloco_b_inconsistentes: MissingInvitationProvaBlocoBItem[];
+  bloco_c_resumo: MissingInvitationProvaBlocoC;
+  bloco_d_decisao: MissingInvitationProvaBlocoD;
+}
+
 export interface MissingInvitationPlanItem {
   leader_id: string;
   commission_id: string;
@@ -42,6 +116,16 @@ export interface MissingInvitationPlanItem {
   bloqueio_motivos: string[];
   /** Reversibilidade / rastreabilidade (apply cria registrations + leader_invitations) */
   observacao_reversibilidade: string;
+  /** Campos resumidos (espelho do topo da prova expandida) */
+  timesGranted_validos: number;
+  timesGranted_inconsistentes: number;
+  faltantes_teoricos: number;
+  faltantes_vs_apenas_validos: number;
+  faltantes_liberados_para_apply: number;
+  block_reason_codes: MissingDeliveryBlockReasonCode[];
+  block_reason_human_readable: string[];
+  /** Dry-run expandido de prova (Blocos A–D) — somente leitura, sem apply */
+  prova_expandida: MissingInvitationProvaExpandida;
 }
 
 export interface MissingInvitationDeliveryResult {
@@ -107,6 +191,77 @@ function buildAuditSnapshotHash(audit: InvitationBonusAuditResult): string {
   });
 }
 
+function collectBlockReasonCodes(
+  row: InvitationBonusAuditCommissionRow,
+  leaderExists: boolean
+): { codes: MissingDeliveryBlockReasonCode[]; human: string[] } {
+  const codes: MissingDeliveryBlockReasonCode[] = [];
+  const human: string[] = [];
+
+  if (!leaderExists) {
+    codes.push('LEADER_INVALIDO');
+    human.push('Líder não encontrado em group_leaders (inválido ou inexistente).');
+  }
+
+  if (row.times_granted_db > row.expectedBonuses_canonical) {
+    codes.push('TIMES_GRANTED_MAIOR_QUE_EXPECTED');
+    human.push(
+      'Inconsistência: timesGranted_db maior que expectedBonuses_correto (excesso no DB vs auditoria).'
+    );
+  }
+
+  if (row.bonus_registration_ids_in_db_not_in_canonical.length > 0) {
+    codes.push('BONUS_REGISTRATION_FORA_CANONICO');
+    human.push(
+      'Risco de duplicidade/lastro: existem convites (bonus_registration_id) fora do conjunto canônico de inscrições pagas.'
+    );
+  }
+
+  if (row.divergencia_expected_bonuses !== 0) {
+    codes.push('DIVERGENCIA_EXPECTED_BONUSES_PROD_VS_CANONICO');
+    human.push(
+      'Divergência entre expectedBonuses (produção) e canônico — corrigir dados/cupom antes de gerar convites.'
+    );
+  }
+
+  for (const code of row.error_classification_row) {
+    if (code === 'bonus_reprocessing') {
+      codes.push('BONUS_REPROCESSING');
+      human.push('Classificação bonus_reprocessing: possível reprocessamento — bloqueado até saneamento.');
+    }
+    if (code === 'commission_coupon_matching') {
+      codes.push('COMMISSION_COUPON_MATCHING');
+      human.push('Cupom da comissão não resolvido de forma segura (commission_coupon_matching).');
+    }
+    if (code === 'wrongful_count_cupom_referral') {
+      codes.push('WRONGFUL_CUPOM_REFERRAL');
+      human.push('Inconsistência cupom/referral nas vendas (wrongful_count_cupom_referral).');
+    }
+  }
+
+  if (!['invitation', 'both'].includes(String(row.bonus_type))) {
+    codes.push('BONUS_TYPE_INELIGIVEL');
+    human.push(`bonus_type "${row.bonus_type}" não elegível para convite (esperado invitation ou both).`);
+  }
+
+  const uniq = <T,>(arr: T[], key: (x: T) => string) => {
+    const seen = new Set<string>();
+    const out: T[] = [];
+    for (const x of arr) {
+      const k = key(x);
+      if (seen.has(k)) continue;
+      seen.add(k);
+      out.push(x);
+    }
+    return out;
+  };
+
+  return {
+    codes: uniq(codes, (c) => c),
+    human: uniq(human, (h) => h),
+  };
+}
+
 /**
  * Avalia se a linha pode receber geração controlada de convites faltantes.
  * Não usa a rotina automática antiga (checkAndGrantInvitationBonus).
@@ -115,55 +270,221 @@ function evaluateCommissionForMissingDelivery(
   row: InvitationBonusAuditCommissionRow,
   leaderExists: boolean
 ): { apto: boolean; motivos: string[] } {
-  const motivos: string[] = [];
+  const { human } = collectBlockReasonCodes(row, leaderExists);
+  const apto = human.length === 0 && leaderExists;
+  return { apto, motivos: apto ? [] : human };
+}
 
-  if (!leaderExists) {
-    motivos.push('Líder não encontrado em group_leaders (inválido ou inexistente).');
+interface LiDbRow {
+  leader_invitation_id: string;
+  bonus_registration_id: string | null;
+  status: string;
+  created_at: Date | string | null;
+}
+
+async function fetchInvitationsForCommission(
+  leaderId: string,
+  eventId: string,
+  commissionId: string
+): Promise<LiDbRow[]> {
+  const res = await query(
+    `SELECT
+       li.id::text AS leader_invitation_id,
+       li.bonus_registration_id::text AS bonus_registration_id,
+       li.status::text AS status,
+       li.created_at
+     FROM leader_invitations li
+     WHERE li.leader_id = $1 AND li.event_id = $2 AND li.commission_id = $3
+     ORDER BY li.created_at ASC NULLS LAST, li.id ASC`,
+    [leaderId, eventId, commissionId]
+  );
+  return res.rows as LiDbRow[];
+}
+
+function buildExpandedProof(params: {
+  row: InvitationBonusAuditCommissionRow;
+  invites: LiDbRow[];
+  apto: boolean;
+  leaderExists: boolean;
+}): MissingInvitationProvaExpandida {
+  const { row, invites, apto, leaderExists } = params;
+
+  const expected = row.expectedBonuses_canonical;
+  const validLiIds = new Set(row.leader_invitation_ids_validos);
+  const excessLiIds = new Set(row.leader_invitation_ids_excesso);
+  const semRegLiIds = new Set(row.leader_invitation_ids_sem_registration);
+  const bonusNotInCanon = new Set(row.bonus_registration_ids_in_db_not_in_canonical);
+
+  const GRANTED = new Set(['available', 'sent', 'used']);
+
+  const bloco_a: MissingInvitationProvaBlocoAItem[] = [];
+  const bloco_b: MissingInvitationProvaBlocoBItem[] = [];
+
+  let timesGranted_validos = 0;
+  let timesGranted_inconsistentes = 0;
+
+  for (const li of invites) {
+    const st = String(li.status || '').toLowerCase();
+    const regId = li.bonus_registration_id;
+    const created =
+      li.created_at instanceof Date
+        ? li.created_at.toISOString()
+        : li.created_at
+          ? String(li.created_at)
+          : null;
+
+    if (!GRANTED.has(st)) {
+      if (st === 'expired') {
+        bloco_b.push({
+          leader_invitation_id: li.leader_invitation_id,
+          bonus_registration_id: regId,
+          registration_id: regId,
+          tipo_inconsistencia: 'CONVITE_EXPIRADO_NAO_CONTA_NO_GRANTED',
+          motivo_detalhado:
+            'Status expired — não entra em times_granted_db (available|sent|used). Listado apenas para rastreabilidade.',
+          created_at: created,
+          impacta_bloqueio_geracao_futura: false,
+        });
+      }
+      continue;
+    }
+
+    const isValidLi = validLiIds.has(li.leader_invitation_id);
+
+    if (isValidLi) {
+      timesGranted_validos += 1;
+      bloco_a.push({
+        leader_invitation_id: li.leader_invitation_id,
+        bonus_registration_id: regId,
+        registration_id: regId,
+        status: st,
+        created_at: created,
+        motivo_validade:
+          'leader_invitation_id consta em leader_invitation_ids_validos (classificação Fase 1 / inscrição bônus “valida”).',
+      });
+    } else {
+      timesGranted_inconsistentes += 1;
+
+      let tipo = 'OUTRO_DIVERGENCIA_AUDITORIA';
+      let motivo =
+        'Convite concedido (available|sent|used) mas não está em leader_invitation_ids_validos — exige revisão da Fase 1.';
+      let impacta = true;
+
+      if (regId && bonusNotInCanon.has(regId)) {
+        tipo = 'BONUS_REGISTRATION_FORA_DO_CONJUNTO_CANONICO';
+        motivo =
+          'bonus_registration_id aponta para inscrição que não fecha com o conjunto canônico esperado para esta comissão (lista bonus_registration_ids_in_db_not_in_canonical).';
+      } else if (excessLiIds.has(li.leader_invitation_id)) {
+        tipo = 'CLASSIFICADO_EXCESSO_AUDITORIA';
+        motivo = 'leader_invitation_id em leader_invitation_ids_excesso (classificação Fase 1).';
+      } else if (semRegLiIds.has(li.leader_invitation_id)) {
+        tipo = 'CONVITE_SEM_LASTRO_REGISTRATION';
+        motivo = 'Convite sem lastro de registration coerente (leader_invitation_ids_sem_registration).';
+      }
+
+      if (row.error_classification_row.includes('bonus_reprocessing') && tipo === 'OUTRO_DIVERGENCIA_AUDITORIA') {
+        tipo = 'CONTEXTO_BONUS_REPROCESSING';
+        motivo +=
+          ' Comissão com flag bonus_reprocessing na auditoria — não liberar geração até saneamento.';
+      }
+
+      bloco_b.push({
+        leader_invitation_id: li.leader_invitation_id,
+        bonus_registration_id: regId,
+        registration_id: regId,
+        tipo_inconsistencia: tipo,
+        motivo_detalhado: motivo,
+        created_at: created,
+        impacta_bloqueio_geracao_futura: impacta,
+      });
+    }
   }
 
-  if (row.times_granted_db > row.expectedBonuses_canonical) {
-    motivos.push(
-      'Inconsistência: timesGranted_db maior que expectedBonuses_correto (excesso no DB vs auditoria).'
+  const timesGranted_db = row.times_granted_db;
+  const sumSplit = timesGranted_validos + timesGranted_inconsistentes;
+  if (sumSplit !== timesGranted_db) {
+    bloco_b.push({
+      leader_invitation_id: null,
+      bonus_registration_id: null,
+      registration_id: null,
+      tipo_inconsistencia: 'RECONCILIACAO_COUNT',
+      motivo_detalhado: `Soma validos+inconsistentes (${sumSplit}) difere de times_granted_db (${timesGranted_db}) — verificar convites no DB vs agregado da auditoria.`,
+      created_at: null,
+      impacta_bloqueio_geracao_futura: true,
+    });
+  }
+
+  const faltantes_teoricos = Math.max(0, expected - timesGranted_db);
+  const faltantes_vs_apenas_validos = Math.max(0, expected - timesGranted_validos);
+  const faltantes_liberados_para_apply = apto ? faltantes_teoricos : 0;
+
+  const { codes, human } = collectBlockReasonCodes(row, leaderExists);
+
+  const saneamento_sugerido: string[] = [];
+  if (codes.includes('BONUS_REGISTRATION_FORA_CANONICO')) {
+    saneamento_sugerido.push(
+      'Reconciliar ou expirar convites cujo bonus_registration_id não pertence ao conjunto canônico; depois novo dry_run.'
     );
   }
-
-  if (row.bonus_registration_ids_in_db_not_in_canonical.length > 0) {
-    motivos.push(
-      'Risco de duplicidade/lastro: existem convites (bonus_registration_id) fora do conjunto canônico de inscrições pagas.'
+  if (codes.includes('BONUS_REPROCESSING')) {
+    saneamento_sugerido.push(
+      'Investigar reprocessamento de bônus (pagamentos/cupom) até a classificação bonus_reprocessing sumir na Fase 1.'
     );
   }
-
-  if (row.divergencia_expected_bonuses !== 0) {
-    motivos.push(
-      'Divergência entre expectedBonuses (produção) e canônico — corrigir dados/cupom antes de gerar convites.'
-    );
+  if (codes.includes('COMMISSION_COUPON_MATCHING')) {
+    saneamento_sugerido.push('Resolver vínculo cupom ↔ comissão conforme regras de negócio; não alterado por este fluxo.');
+  }
+  if (codes.includes('WRONGFUL_CUPOM_REFERRAL')) {
+    saneamento_sugerido.push('Rever origens cupom vs referral nas vendas atribuídas ao líder.');
+  }
+  if (codes.includes('DIVERGENCIA_EXPECTED_BONUSES_PROD_VS_CANONICO')) {
+    saneamento_sugerido.push('Alinhar contagem produção vs canônica (cupom / filtros) antes de gerar novos convites.');
+  }
+  if (codes.includes('TIMES_GRANTED_MAIOR_QUE_EXPECTED')) {
+    saneamento_sugerido.push('Reduzir excesso de convites concedidos (ex.: expirar disponíveis excedentes) até bater o expected.');
   }
 
-  for (const code of row.error_classification_row) {
-    if (code === 'bonus_reprocessing') {
-      motivos.push('Classificação bonus_reprocessing: possível reprocessamento — bloqueado até saneamento.');
-    }
-    if (code === 'commission_coupon_matching') {
-      motivos.push('Cupom da comissão não resolvido de forma segura (commission_coupon_matching).');
-    }
-    if (code === 'wrongful_count_cupom_referral') {
-      motivos.push('Inconsistência cupom/referral nas vendas (wrongful_count_cupom_referral).');
-    }
-  }
+  const bloco_c: MissingInvitationProvaBlocoC = {
+    paidCount_correto: row.paidCount_canonical,
+    expectedBonuses_correto: expected,
+    timesGranted_validos,
+    timesGranted_inconsistentes,
+    faltantes_teoricos,
+    faltantes_vs_apenas_validos,
+    faltantes_liberados_para_apply,
+  };
 
-  if (!['invitation', 'both'].includes(String(row.bonus_type))) {
-    motivos.push(`bonus_type "${row.bonus_type}" não elegível para convite (esperado invitation ou both).`);
-  }
+  const bloco_d: MissingInvitationProvaBlocoD = {
+    apto_para_apply: apto,
+    motivos_bloqueio: apto ? [] : human,
+    quantos_convites_seriam_gerados_se_apto: apto ? faltantes_liberados_para_apply : 0,
+    saneamento_sugerido,
+  };
 
-  const apto = motivos.length === 0 && leaderExists;
-  return { apto, motivos };
+  return {
+    leader_id: row.leader_id,
+    commission_id: row.commission_id,
+    expectedBonuses_correto: expected,
+    timesGranted_validos,
+    timesGranted_inconsistentes,
+    faltantes_teoricos,
+    faltantes_vs_apenas_validos,
+    faltantes_liberados_para_apply,
+    block_reason_codes: codes,
+    block_reason_human_readable: human,
+    bloco_a_convites_validos: bloco_a,
+    bloco_b_inconsistentes: bloco_b,
+    bloco_c_resumo: bloco_c,
+    bloco_d_decisao: bloco_d,
+  };
 }
 
 function rowToPlanItem(
   row: InvitationBonusAuditCommissionRow,
   apto: boolean,
   motivos: string[],
-  eventId: string
+  eventId: string,
+  prova: MissingInvitationProvaExpandida
 ): MissingInvitationPlanItem {
   const expected = row.expectedBonuses_canonical;
   const granted = row.times_granted_db;
@@ -192,6 +513,14 @@ function rowToPlanItem(
     bloqueio_motivos: apto ? [] : motivos,
     observacao_reversibilidade:
       'Convites criados ficam em leader_invitations; inscrições free_bonus podem ser expiradas/canceladas por fluxos existentes (não automático neste serviço).',
+    timesGranted_validos: prova.timesGranted_validos,
+    timesGranted_inconsistentes: prova.timesGranted_inconsistentes,
+    faltantes_teoricos: prova.faltantes_teoricos,
+    faltantes_vs_apenas_validos: prova.faltantes_vs_apenas_validos,
+    faltantes_liberados_para_apply: prova.faltantes_liberados_para_apply,
+    block_reason_codes: prova.block_reason_codes,
+    block_reason_human_readable: prova.block_reason_human_readable,
+    prova_expandida: prova,
   };
 }
 
@@ -232,7 +561,9 @@ async function buildDryRunCore(params: {
     const leaderExists = leaderRes.rows.length > 0;
 
     const { apto, motivos } = evaluateCommissionForMissingDelivery(row, leaderExists);
-    const item = rowToPlanItem(row, apto, motivos, params.event_id);
+    const invites = await fetchInvitationsForCommission(row.leader_id, params.event_id, row.commission_id);
+    const prova = buildExpandedProof({ row, invites, apto, leaderExists });
+    const item = rowToPlanItem(row, apto, motivos, params.event_id, prova);
 
     if (apto) {
       bloco_a.push(item);
@@ -251,12 +582,24 @@ async function buildDryRunCore(params: {
       leader_id: x.leader_id,
       commission_id: x.commission_id,
       faltantes: x.faltantes,
+      prova_resumo: {
+        timesGranted_validos: x.timesGranted_validos,
+        timesGranted_inconsistentes: x.timesGranted_inconsistentes,
+        block_codes: x.block_reason_codes,
+      },
     })),
     bloco_b: bloco_b.map((x) => ({
       leader_id: x.leader_id,
       commission_id: x.commission_id,
       faltantes: x.faltantes,
       motivos: x.bloqueio_motivos,
+      prova_resumo: {
+        timesGranted_validos: x.timesGranted_validos,
+        timesGranted_inconsistentes: x.timesGranted_inconsistentes,
+        block_codes: x.block_reason_codes,
+        bloco_a_count: x.prova_expandida.bloco_a_convites_validos.length,
+        bloco_b_count: x.prova_expandida.bloco_b_inconsistentes.length,
+      },
     })),
   });
 

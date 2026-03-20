@@ -417,6 +417,69 @@ export async function runInvitationBonusReconciliation(params: {
 /** Fluxo separado: corrigir convites não entregues (somente geração de faltantes). */
 export type MissingInvitationDeliveryStatus = 'apto' | 'bloqueado';
 
+export type MissingDeliveryBlockReasonCode =
+  | 'LEADER_INVALIDO'
+  | 'TIMES_GRANTED_MAIOR_QUE_EXPECTED'
+  | 'BONUS_REGISTRATION_FORA_CANONICO'
+  | 'DIVERGENCIA_EXPECTED_BONUSES_PROD_VS_CANONICO'
+  | 'BONUS_REPROCESSING'
+  | 'COMMISSION_COUPON_MATCHING'
+  | 'WRONGFUL_CUPOM_REFERRAL'
+  | 'BONUS_TYPE_INELIGIVEL';
+
+export interface MissingInvitationProvaBlocoAItem {
+  leader_invitation_id: string;
+  bonus_registration_id: string | null;
+  registration_id: string | null;
+  status: string;
+  created_at: string | null;
+  motivo_validade: string;
+}
+
+export interface MissingInvitationProvaBlocoBItem {
+  leader_invitation_id: string | null;
+  bonus_registration_id: string | null;
+  registration_id: string | null;
+  tipo_inconsistencia: string;
+  motivo_detalhado: string;
+  created_at: string | null;
+  impacta_bloqueio_geracao_futura: boolean;
+}
+
+export interface MissingInvitationProvaBlocoC {
+  paidCount_correto: number;
+  expectedBonuses_correto: number;
+  timesGranted_validos: number;
+  timesGranted_inconsistentes: number;
+  faltantes_teoricos: number;
+  faltantes_vs_apenas_validos: number;
+  faltantes_liberados_para_apply: number;
+}
+
+export interface MissingInvitationProvaBlocoD {
+  apto_para_apply: boolean;
+  motivos_bloqueio: string[];
+  quantos_convites_seriam_gerados_se_apto: number;
+  saneamento_sugerido: string[];
+}
+
+export interface MissingInvitationProvaExpandida {
+  leader_id: string;
+  commission_id: string;
+  expectedBonuses_correto: number;
+  timesGranted_validos: number;
+  timesGranted_inconsistentes: number;
+  faltantes_teoricos: number;
+  faltantes_vs_apenas_validos: number;
+  faltantes_liberados_para_apply: number;
+  block_reason_codes: MissingDeliveryBlockReasonCode[];
+  block_reason_human_readable: string[];
+  bloco_a_convites_validos: MissingInvitationProvaBlocoAItem[];
+  bloco_b_inconsistentes: MissingInvitationProvaBlocoBItem[];
+  bloco_c_resumo: MissingInvitationProvaBlocoC;
+  bloco_d_decisao: MissingInvitationProvaBlocoD;
+}
+
 export interface MissingInvitationPlanItem {
   leader_id: string;
   commission_id: string;
@@ -431,6 +494,14 @@ export interface MissingInvitationPlanItem {
   status: MissingInvitationDeliveryStatus;
   bloqueio_motivos: string[];
   observacao_reversibilidade: string;
+  timesGranted_validos: number;
+  timesGranted_inconsistentes: number;
+  faltantes_teoricos: number;
+  faltantes_vs_apenas_validos: number;
+  faltantes_liberados_para_apply: number;
+  block_reason_codes: MissingDeliveryBlockReasonCode[];
+  block_reason_human_readable: string[];
+  prova_expandida: MissingInvitationProvaExpandida;
 }
 
 export interface MissingInvitationDeliveryPayload {
