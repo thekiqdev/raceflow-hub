@@ -85,6 +85,20 @@ export interface BlockBItem {
   item_executability: PlanBlockStatus;
 }
 
+export interface InvitationBonusReconciliationDiagnosticRow {
+  leader_id: string;
+  commission_id: string;
+  required_purchases: number;
+  paidCount_correto: number;
+  expectedBonuses_correto: number;
+  timesGranted_db: number;
+  missing_invitations_count: number;
+  correct_invitations_count: number;
+  excess_invitations_count: number;
+  bonus_rule_legible: string;
+  calculation_source: 'fase1_audit_canonical';
+}
+
 export interface InvitationBonusReconciliationResult {
   mode: ReconciliationMode;
   event_id: string;
@@ -102,6 +116,17 @@ export interface InvitationBonusReconciliationResult {
     expected_audit_snapshot_hash: string;
     expected_dry_run_hash: string;
   };
+
+  diagnostics_missing_excess: {
+    calculation_source: 'fase1_audit_canonical';
+    totals: {
+      missing_invitations: number;
+      correct_invitations: number;
+      excess_invitations: number;
+    };
+    rows: InvitationBonusReconciliationDiagnosticRow[];
+  };
+
   /** Transparência do filtro de líder no Bloco B */
   bloco_b_scope: {
     leader_filter_applied: boolean;
@@ -453,6 +478,47 @@ async function buildDryRun(params: {
   const blockBItems = blocoB.items;
   const executableBlockB = blockBItems.filter((i) => i.item_executability === 'executável').length;
 
+  // Diagnóstico (visibilidade): reutiliza required/paid/expected/timesGranted canônicos da Fase 1.
+  // missing/excess são apenas derivados desses valores (sem recalcular regra nova).
+  const diagnostics_missing_excess: InvitationBonusReconciliationResult['diagnostics_missing_excess'] = {
+    calculation_source: 'fase1_audit_canonical',
+    rows: audit.technical_log.rows.map((r) => {
+      const expectedBonuses = r.expectedBonuses_canonical;
+      const timesGranted = r.times_granted_db;
+      const missing = Math.max(expectedBonuses - timesGranted, 0);
+      const excess = Math.max(timesGranted - expectedBonuses, 0);
+      const correct = Math.min(expectedBonuses, timesGranted);
+      const required = r.required_purchases;
+
+      const bonus_rule_legible = `1 convite a cada ${required} venda${required === 1 ? '' : 's'}`;
+
+      return {
+        leader_id: r.leader_id,
+        commission_id: r.commission_id,
+        required_purchases: required,
+        paidCount_correto: r.paidCount_canonical,
+        expectedBonuses_correto: expectedBonuses,
+        timesGranted_db: timesGranted,
+        missing_invitations_count: missing,
+        correct_invitations_count: correct,
+        excess_invitations_count: excess,
+        bonus_rule_legible,
+        calculation_source: 'fase1_audit_canonical',
+      };
+    }),
+    totals: { missing_invitations: 0, correct_invitations: 0, excess_invitations: 0 },
+  };
+
+  diagnostics_missing_excess.totals = diagnostics_missing_excess.rows.reduce(
+    (acc, x) => {
+      acc.missing_invitations += x.missing_invitations_count;
+      acc.correct_invitations += x.correct_invitations_count;
+      acc.excess_invitations += x.excess_invitations_count;
+      return acc;
+    },
+    { missing_invitations: 0, correct_invitations: 0, excess_invitations: 0 }
+  );
+
   const before = {
     invitations_available: audit.technical_log.rows.reduce((a, r) => a + r.times_available_db, 0),
     invitations_sent: audit.technical_log.rows.reduce((a, r) => a + r.times_sent_db, 0),
@@ -500,6 +566,7 @@ async function buildDryRun(params: {
       : 'Sem mecanismo seguro de reversão lógica para free_bonus na v1.',
     audit_snapshot_hash,
     dry_run_hash,
+    diagnostics_missing_excess,
     bloco_b_scope,
     consistency_guard: {
       can_apply: true,

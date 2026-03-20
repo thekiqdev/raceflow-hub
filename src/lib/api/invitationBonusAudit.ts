@@ -147,6 +147,20 @@ export interface InvitationBonusReconciliationItemB {
   item_executability: 'executável' | 'dry_run-only';
 }
 
+export interface InvitationBonusReconciliationDiagnosticRow {
+  leader_id: string;
+  commission_id: string;
+  required_purchases: number;
+  paidCount_correto: number;
+  expectedBonuses_correto: number;
+  timesGranted_db: number;
+  missing_invitations_count: number;
+  correct_invitations_count: number;
+  excess_invitations_count: number;
+  bonus_rule_legible: string;
+  calculation_source: 'fase1_audit_canonical';
+}
+
 export interface InvitationBonusReconciliationBlocoBExcluded {
   registration_id: string;
   leader_id: string | null;
@@ -178,6 +192,15 @@ export interface InvitationBonusReconciliationPayload {
     expected_leader_scope: string;
     expected_audit_snapshot_hash: string;
     expected_dry_run_hash: string;
+  };
+  diagnostics_missing_excess: {
+    calculation_source: 'fase1_audit_canonical';
+    totals: {
+      missing_invitations: number;
+      correct_invitations: number;
+      excess_invitations: number;
+    };
+    rows: InvitationBonusReconciliationDiagnosticRow[];
   };
   bloco_b_scope: {
     leader_filter_applied: boolean;

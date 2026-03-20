@@ -861,6 +861,85 @@ export function InvitationBonusAuditPanel() {
                     <Card>
                       <CardHeader className="py-3">
                         <CardTitle className="text-sm">
+                          Diagnóstico — convites faltantes / corretos / excedentes por líder + comissão
+                        </CardTitle>
+                        <CardDescription>
+                          Reutiliza required_purchases/paidCount_canonical/expectedBonuses_canonical/times_granted_db da auditoria
+                          da Fase 1 (cálculo canônico). missing/excess são apenas derivados (sem nova regra).
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent className="space-y-4">
+                        <div className="grid gap-3 sm:grid-cols-3">
+                          <div className="rounded-md border bg-background p-3">
+                            <p className="text-xs text-muted-foreground">Convites faltantes</p>
+                            <p className="text-lg font-semibold tabular-nums">
+                              {reconciliationResult.diagnostics_missing_excess.totals.missing_invitations}
+                            </p>
+                          </div>
+                          <div className="rounded-md border bg-background p-3">
+                            <p className="text-xs text-muted-foreground">Convites corretos</p>
+                            <p className="text-lg font-semibold tabular-nums">
+                              {reconciliationResult.diagnostics_missing_excess.totals.correct_invitations}
+                            </p>
+                          </div>
+                          <div className="rounded-md border bg-background p-3">
+                            <p className="text-xs text-muted-foreground">Convites em excesso</p>
+                            <p className="text-lg font-semibold tabular-nums">
+                              {reconciliationResult.diagnostics_missing_excess.totals.excess_invitations}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="overflow-x-auto rounded-md border">
+                          <ScrollArea className="h-60">
+                            <Table>
+                              <TableHeader>
+                                <TableRow>
+                                  <TableHead>Líder</TableHead>
+                                  <TableHead>Comissão</TableHead>
+                                  <TableHead className="text-center tabular-nums">req</TableHead>
+                                  <TableHead className="text-center tabular-nums">paid (correto)</TableHead>
+                                  <TableHead className="text-center tabular-nums">expected</TableHead>
+                                  <TableHead className="text-center tabular-nums">timesGranted</TableHead>
+                                  <TableHead className="text-center tabular-nums">faltantes</TableHead>
+                                  <TableHead className="text-center tabular-nums">corretos</TableHead>
+                                  <TableHead className="text-center tabular-nums">excesso</TableHead>
+                                  <TableHead>Regra</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {reconciliationResult.diagnostics_missing_excess.rows.length === 0 ? (
+                                  <TableRow>
+                                    <TableCell colSpan={10} className="text-center text-muted-foreground">
+                                      Nenhuma linha de comissão disponível no escopo.
+                                    </TableCell>
+                                  </TableRow>
+                                ) : (
+                                  reconciliationResult.diagnostics_missing_excess.rows.map((d) => (
+                                    <TableRow key={`${d.leader_id}:${d.commission_id}`}>
+                                      <TableCell className="font-mono text-xs">{d.leader_id}</TableCell>
+                                      <TableCell className="font-mono text-xs">{d.commission_id}</TableCell>
+                                      <TableCell className="text-center tabular-nums">{d.required_purchases}</TableCell>
+                                      <TableCell className="text-center tabular-nums">{d.paidCount_correto}</TableCell>
+                                      <TableCell className="text-center tabular-nums">{d.expectedBonuses_correto}</TableCell>
+                                      <TableCell className="text-center tabular-nums">{d.timesGranted_db}</TableCell>
+                                      <TableCell className="text-center tabular-nums">{d.missing_invitations_count}</TableCell>
+                                      <TableCell className="text-center tabular-nums">{d.correct_invitations_count}</TableCell>
+                                      <TableCell className="text-center tabular-nums">{d.excess_invitations_count}</TableCell>
+                                      <TableCell className="text-xs">{d.bonus_rule_legible}</TableCell>
+                                    </TableRow>
+                                  ))
+                                )}
+                              </TableBody>
+                            </Table>
+                          </ScrollArea>
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    <Card>
+                      <CardHeader className="py-3">
+                        <CardTitle className="text-sm">
                           Plano de alteração — Bloco A (leader_invitations)
                         </CardTitle>
                       </CardHeader>
