@@ -1868,7 +1868,7 @@ export function InvitationBonusAuditPanel() {
                         <CardHeader className="py-3">
                           <CardTitle className="text-sm">3 — Relatório depois (apply)</CardTitle>
                         </CardHeader>
-                        <CardContent className="space-y-2 text-sm">
+                        <CardContent className="space-y-3 text-sm">
                           <p>
                             Convites criados:{" "}
                             <span className="font-semibold tabular-nums">
@@ -1876,6 +1876,65 @@ export function InvitationBonusAuditPanel() {
                             </span>
                           </p>
                           <p className="text-xs text-muted-foreground">{missingDeliveryResult.relatorio_depois.nota}</p>
+                          {missingDeliveryResult.relatorio_depois.equivalencia_logica && (
+                            <div className="rounded border bg-muted/30 p-2 text-xs space-y-1">
+                              <p className="font-medium text-foreground">Equivalência (chaves lógicas)</p>
+                              <p className="text-muted-foreground">
+                                leader_invitations:{" "}
+                                {missingDeliveryResult.relatorio_depois.equivalencia_logica.leader_invitations}
+                              </p>
+                              <p className="text-muted-foreground">
+                                registrations:{" "}
+                                {missingDeliveryResult.relatorio_depois.equivalencia_logica.registrations_free_bonus}
+                              </p>
+                            </div>
+                          )}
+                          <div className="grid gap-2 sm:grid-cols-2 text-xs">
+                            <div>
+                              <span className="font-medium">created</span>:{" "}
+                              {missingDeliveryResult.relatorio_depois.created?.length ?? 0}
+                            </div>
+                            <div>
+                              <span className="font-medium">skipped_existing</span>:{" "}
+                              {missingDeliveryResult.relatorio_depois.skipped_existing?.length ?? 0}
+                            </div>
+                            <div>
+                              <span className="font-medium">blocked</span>:{" "}
+                              {missingDeliveryResult.relatorio_depois.blocked?.length ?? 0}
+                            </div>
+                            <div>
+                              <span className="font-medium">failed</span>:{" "}
+                              {missingDeliveryResult.relatorio_depois.failed?.length ?? 0}
+                            </div>
+                          </div>
+                          {(missingDeliveryResult.relatorio_depois.skipped_existing?.length ?? 0) > 0 && (
+                            <div className="max-h-40 overflow-auto rounded border p-2 text-xs font-mono">
+                              {missingDeliveryResult.relatorio_depois.skipped_existing?.map((s, i) => (
+                                <div key={i} className="mb-1 border-b border-dotted pb-1 last:border-0">
+                                  {s.skip_reason_code} | commission {s.commission_id.slice(0, 8)}… | matched{" "}
+                                  {s.matched_existing_id ?? "—"} | {s.constraint_name ?? "—"}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          {(missingDeliveryResult.relatorio_depois.blocked?.length ?? 0) > 0 && (
+                            <div className="max-h-32 overflow-auto rounded border border-amber-500/30 p-2 text-xs">
+                              {missingDeliveryResult.relatorio_depois.blocked?.map((b, i) => (
+                                <div key={i} className="mb-1">
+                                  {b.motivo_code}: {b.motivo}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          {(missingDeliveryResult.relatorio_depois.failed?.length ?? 0) > 0 && (
+                            <div className="max-h-32 overflow-auto rounded border border-destructive/40 p-2 text-xs text-destructive">
+                              {missingDeliveryResult.relatorio_depois.failed?.map((f, i) => (
+                                <div key={i} className="mb-1">
+                                  {f.error_message} {f.pg_code ? `(${f.pg_code})` : ""}
+                                </div>
+                              ))}
+                            </div>
+                          )}
                           <p className="text-xs font-mono break-all">
                             leader_invitation_ids:{" "}
                             {missingDeliveryResult.relatorio_depois.leader_invitation_ids_criados.slice(0, 15).join(", ")}

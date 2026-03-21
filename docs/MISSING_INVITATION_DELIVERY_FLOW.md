@@ -86,9 +86,11 @@ Por `leader_id` + `commission_id`, cada item inclui (espelhados também no níve
 - **Limite superior:** nunca ultrapassa `expectedBonuses_correto` (checagem de COUNT após cada par criado).
 - **Bloqueios** quando a auditoria sinaliza risco: classificações `bonus_reprocessing`, `commission_coupon_matching`, `wrongful_count_cupom_referral`; convites com `bonus_registration_id` fora do canônico; `divergencia_expected_bonuses ≠ 0`; `bonus_type` não é `invitation`/`both`.
 - **Idempotência operacional:** reexecutar o apply com o mesmo estado já satisfeito resultará em **0** criações adicionais (COUNT já igual a expected).
+- **Colisões UNIQUE (23505):** tratadas no serviço com SAVEPOINT (não propagam 409 genérico “Duplicate entry”). Log estruturado com tabela/constraint/IDs; itens vão para `skipped_existing` ou `blocked` (ex.: índice legado `uq_leader_invitation_unique` — ver migração **102**).
+- **Migration 102:** remove `uq_leader_invitation_unique` (mig. 100), incompatível com múltiplos convites `available` por líder/evento quando há várias comissões/slots.
 
 ## Saídas obrigatórias
 
 1. **Relatório antes** — `relatorio_antes`
 2. **Plano de geração** — `plano_geracao` (blocos A e B)
-3. **Relatório depois** — `relatorio_depois` (somente após `apply`): IDs criados, totais, nota
+3. **Relatório depois** — `relatorio_depois` (somente após `apply`): IDs criados, totais, nota, blocos `created` / `skipped_existing` / `blocked` / `failed`, `equivalencia_logica`

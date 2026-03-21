@@ -1,8 +1,8 @@
 import { query } from '../config/database.js';
-import { createRegistration } from './registrationsService.js';
 import { getEventById } from './eventsService.js';
 import { getGroupLeaderById } from './groupLeadersService.js';
 import { getRegistrationsByLeaderCoupons } from './leaderRegistrationsService.js';
+import { grantInvitationBonusSlotAtomic } from './invitationBonusGrantService.js';
 
 /**
  * Check if leader has reached the required purchases for invitation bonus
@@ -131,32 +131,22 @@ export const checkAndGrantInvitationBonus = async (
       while (timesGranted < expectedBonuses && attempts < maxAttempts) {
         attempts++;
         try {
-          // Create free registration for the leader
-          const freeRegistration = await createRegistration({
-            event_id: eventId,
-            runner_id: leader.user_id,
-            registered_by: leader.user_id,
-            category_id: defaultCategory.id,
-            payment_method: 'free_bonus' as any,
-            total_amount: 0,
+          const { registrationId } = await grantInvitationBonusSlotAtomic({
+            eventId,
+            leaderId,
+            commissionId: bonus.id,
+            leaderUserId: leader.user_id,
+            categoryId: defaultCategory.id,
           });
-
-          // Create invitation record so leader can send it to a runner
-          try {
-            const { createInvitationFromBonus } = await import('./leaderInvitationsService.js');
-            await createInvitationFromBonus(leaderId, freeRegistration.id, eventId, bonus.id);
-            console.log(`✅ Convite criado para líder ${leaderId} no evento ${eventId} (comissão ${bonus.id}, ${timesGranted + 1}º bônus)`);
-          } catch (invitationError: any) {
-            // Log error but don't fail bonus grant if invitation creation fails
-            console.error('Erro ao criar convite:', invitationError.message);
-          }
+          console.log(
+            `✅ Convite + inscrição bônus criados atomicamente para líder ${leaderId} (comissão ${bonus.id}) registration=${registrationId}`
+          );
 
           bonusesGranted++;
-          lastRegistrationId = freeRegistration.id;
+          lastRegistrationId = registrationId;
 
           console.log(`✅ Bônus de inscrição grátis concedido para líder ${leaderId} no evento ${eventId} (${bonusesGranted} bônus(es) concedido(s) nesta iteração)`);
-          
-          // Re-fetch count (só convites válidos: available, sent, used)
+
           const updatedGrantedCount = await query(
             `SELECT COUNT(*) as count FROM leader_invitations 
              WHERE leader_id = $1 AND event_id = $2 AND commission_id = $3 
@@ -166,13 +156,8 @@ export const checkAndGrantInvitationBonus = async (
           timesGranted = parseInt(updatedGrantedCount.rows[0].count) || 0;
           console.log(`🔄 [checkAndGrantInvitationBonus] Atualizado: timesGranted=${timesGranted} para comissão ${bonus.id}`);
         } catch (error: any) {
-          console.error(`❌ Erro ao conceder bônus ${timesGranted + 1}:`, error.message);
-          // Continue trying to grant remaining bonuses even if one fails
-          // But break if we've tried too many times
-          if (attempts >= maxAttempts) {
-            console.error(`❌ Limite de tentativas atingido ao conceder bônus`);
-            break;
-          }
+          console.error(`❌ [checkAndGrantInvitationBonus] Erro na concessão atômica (já com rollback se aplicável):`, error.message);
+          break;
         }
       }
 
@@ -336,16 +321,13 @@ export const checkInvitationBonusForCommission = async (
     while (timesGranted < expectedBonuses && attempts < maxAttempts) {
       attempts++;
       try {
-        const freeRegistration = await createRegistration({
-          event_id: eventId,
-          runner_id: leader.user_id,
-          registered_by: leader.user_id,
-          category_id: defaultCategory.id,
-          payment_method: 'free_bonus' as any,
-          total_amount: 0,
+        await grantInvitationBonusSlotAtomic({
+          eventId,
+          leaderId,
+          commissionId: bonus.id,
+          leaderUserId: leader.user_id,
+          categoryId: defaultCategory.id,
         });
-        const { createInvitationFromBonus } = await import('./leaderInvitationsService.js');
-        await createInvitationFromBonus(leaderId, freeRegistration.id, eventId, bonus.id);
         granted++;
         const updated = await query(
           `SELECT COUNT(*) as count FROM leader_invitations 
@@ -355,7 +337,10 @@ export const checkInvitationBonusForCommission = async (
         );
         timesGranted = parseInt(updated.rows[0].count) || 0;
       } catch (err: any) {
-        console.error(`❌ [checkInvitationBonusForCommission] Erro ao conceder convite:`, err.message);
+        console.error(
+          `❌ [checkInvitationBonusForCommission] Erro na concessão atômica (rollback se aplicável):`,
+          err.message
+        );
         break;
       }
     }
@@ -471,6 +456,7 @@ export interface LeaderInvitationProgressItem {
 /**
  * Get invitation progress for a leader: for each event commission with bonus_type invitation or both,
  * returns paid count, invitations granted, and progress toward next convite.
+ * Somente leitura — não dispara concessão de bônus (evita efeitos colaterais ao abrir tela).
  */
 export const getLeaderInvitationProgress = async (
   leaderId: string,
@@ -488,16 +474,6 @@ export const getLeaderInvitationProgress = async (
   }
   queryText += ` ORDER BY e.title, lec.name`;
   const bonuses = await query(queryText, params);
-
-  // Acionador: ao carregar o progresso, tentar conceder convites pendentes (ex.: meta batida mas convite não gerado)
-  const uniqueEventIds = [...new Set(bonuses.rows.map((r: any) => r.event_id))] as string[];
-  for (const eventId of uniqueEventIds) {
-    try {
-      await checkAndGrantInvitationBonus(leaderId, eventId);
-    } catch (syncErr: any) {
-      console.error(`❌ [getLeaderInvitationProgress] Erro ao sincronizar convites para evento ${eventId}:`, syncErr.message);
-    }
-  }
 
   const result: LeaderInvitationProgressItem[] = [];
 

@@ -4,7 +4,7 @@
  * - Gera apenas leader_invitations faltantes (com registrations free_bonus lastro), até expectedBonuses_canonical.
  */
 
-import { createHash } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import { getClient, query } from '../config/database.js';
 import {
   runInvitationBonusAudit,
@@ -203,7 +203,69 @@ export interface MissingInvitationDeliveryResult {
       leader_invitation_ids: string[];
     }>;
     nota: string;
+    /** Chaves lógicas de equivalência (para auditoria / idempotência) */
+    equivalencia_logica?: {
+      leader_invitations:
+        | 'unique_bonus_registration: um leader_invitation por bonus_registration_id (inscrição free_bonus lastreada).';
+      registrations_free_bonus:
+        | 'confirmation_code UNIQUE em registrations; apply usa REG-{uuid} para evitar colisão.';
+    };
+    /** Blocos de resultado (apply idempotente) */
+    created: MissingApplyReportCreatedItem[];
+    skipped_existing: MissingApplyReportSkippedItem[];
+    blocked: MissingApplyReportBlockedItem[];
+    failed: MissingApplyReportFailedItem[];
   };
+}
+
+/** Item criado no apply (auditoria) */
+export interface MissingApplyReportCreatedItem {
+  event_id: string;
+  leader_id: string;
+  commission_id: string;
+  registration_id: string;
+  bonus_registration_id: string;
+  leader_invitation_id: string;
+}
+
+export type MissingApplySkipReasonCode =
+  | 'COUNT_ALREADY_AT_EXPECTED'
+  | 'DUPLICATE_UNIQUE_VIOLATION'
+  | 'EXISTING_MATCHED_AFTER_VIOLATION';
+
+export interface MissingApplyReportSkippedItem {
+  skipped_due_to_existing_record: true;
+  already_exists: true;
+  matched_existing_id: string | null;
+  motivo_skip: string;
+  skip_reason_code: MissingApplySkipReasonCode;
+  event_id: string;
+  leader_id: string;
+  commission_id: string;
+  /** Preenchido quando skip veio de 23505 */
+  constraint_name?: string | null;
+  table_name?: string | null;
+  pg_detail?: string | null;
+  leader_invitation_id?: string | null;
+  bonus_registration_id?: string | null;
+  registration_id?: string | null;
+}
+
+export interface MissingApplyReportBlockedItem {
+  event_id: string;
+  leader_id: string;
+  commission_id: string;
+  motivo: string;
+  motivo_code: 'MAX_LOOPS_WITHOUT_REACHING_EXPECTED' | 'LEADER_INVALIDO_NO_APPLY' | 'OUTRO';
+}
+
+export interface MissingApplyReportFailedItem {
+  event_id: string;
+  leader_id: string;
+  commission_id: string;
+  error_message: string;
+  pg_code?: string;
+  constraint_name?: string | null;
 }
 
 function hashStable(obj: unknown): string {
@@ -837,10 +899,104 @@ async function countTimesGrantedDb(
   return ((r.rows[0] as { c: number }).c ?? 0) as number;
 }
 
+type PgLikeError = Error & {
+  code?: string;
+  constraint?: string;
+  table?: string;
+  detail?: string;
+  schema?: string;
+};
+
+function logDuplicateViolationStructured(payload: {
+  table?: string | null;
+  constraint?: string | null;
+  detail?: string | null;
+  event_id: string;
+  leader_id: string;
+  commission_id: string;
+  attempted_insert?: Record<string, unknown>;
+  leader_invitation_id?: string | null;
+  bonus_registration_id?: string | null;
+  registration_id?: string | null;
+}): void {
+  console.error('[missing_invitation_delivery] duplicate_unique_violation', {
+    tabela: payload.table ?? null,
+    constraint_ou_indice: payload.constraint ?? null,
+    pg_detail: payload.detail ?? null,
+    event_id: payload.event_id,
+    leader_id: payload.leader_id,
+    commission_id: payload.commission_id,
+    leader_invitation_id: payload.leader_invitation_id ?? null,
+    bonus_registration_id: payload.bonus_registration_id ?? null,
+    registration_id: payload.registration_id ?? null,
+    valores_insercao: payload.attempted_insert ?? null,
+  });
+}
+
 /**
- * Insere registration free_bonus + leader_invitation na mesma conexão (transação externa).
+ * Após 23505, tenta localizar o registro conflitante (idempotência / relatório).
+ * - unique_bonus_registration: um convite por bonus_registration_id.
+ * - uq_leader_invitation_unique (se ainda existir em DB legado): no máx. 1 available por (event, leader).
  */
-async function insertOneMissingInviteSlot(
+async function resolveMatchedExistingIdFromViolation(
+  client: { query: (t: string, p?: unknown[]) => Promise<{ rows: unknown[] }> },
+  params: {
+    err: PgLikeError;
+    eventId: string;
+    leaderId: string;
+    commissionId: string;
+    attemptedBonusRegistrationId: string | null;
+  }
+): Promise<string | null> {
+  const c = params.err.constraint || '';
+  const detail = params.err.detail || '';
+
+  if (c === 'unique_bonus_registration' || c.includes('unique_bonus_registration')) {
+    if (params.attemptedBonusRegistrationId) {
+      const r = await client.query(
+        `SELECT id::text AS id FROM leader_invitations WHERE bonus_registration_id = $1 LIMIT 1`,
+        [params.attemptedBonusRegistrationId]
+      );
+      return r.rows.length ? (r.rows[0] as { id: string }).id : null;
+    }
+  }
+
+  if (c === 'uq_leader_invitation_unique' || c.includes('uq_leader_invitation_unique')) {
+    const r = await client.query(
+      `SELECT id::text AS id FROM leader_invitations
+       WHERE event_id = $1 AND leader_id = $2 AND status = 'available'
+       ORDER BY created_at ASC NULLS LAST
+       LIMIT 1`,
+      [params.eventId, params.leaderId]
+    );
+    return r.rows.length ? (r.rows[0] as { id: string }).id : null;
+  }
+
+  const m = detail.match(/\(([^)]+)\)=\(([^)]*)\)/);
+  if (m && detail.includes('confirmation_code')) {
+    const r = await client.query(
+      `SELECT id::text AS id FROM registrations WHERE confirmation_code = $1 LIMIT 1`,
+      [m[2]?.replace(/'/g, '')]
+    );
+    return r.rows.length ? (r.rows[0] as { id: string }).id : null;
+  }
+
+  return null;
+}
+
+export type InsertMissingSlotResult =
+  | { status: 'created'; registrationId: string; invitationId: string }
+  | {
+      status: 'duplicate';
+      err: PgLikeError;
+      matched_existing_id: string | null;
+    };
+
+/**
+ * Insere registration free_bonus + leader_invitation na mesma conexão (SAVEPOINT interno).
+ * Colisão 23505 → ROLLBACK TO SAVEPOINT (sem abortar transação externa).
+ */
+async function tryInsertOneMissingInviteSlot(
   client: { query: (t: string, p?: unknown[]) => Promise<{ rows: unknown[] }> },
   params: {
     eventId: string;
@@ -848,30 +1004,128 @@ async function insertOneMissingInviteSlot(
     leaderUserId: string;
     categoryId: string;
     commissionId: string;
+    savepointName: string;
   }
-): Promise<{ registrationId: string; invitationId: string }> {
-  const confirmationCode = `REG-${Date.now()}-${Math.random().toString(36).substring(2, 11).toUpperCase()}`;
-  const reg = await client.query(
-    `INSERT INTO registrations (
+): Promise<InsertMissingSlotResult> {
+  if (!/^sp_[a-z0-9_]+$/i.test(params.savepointName)) {
+    throw new Error('savepointName inválido (use apenas sp_* alfanumérico)');
+  }
+
+  const attempted: Record<string, unknown> = {
+    registrations: {
+      event_id: params.eventId,
+      runner_id: params.leaderUserId,
+      category_id: params.categoryId,
+      payment_method: 'free_bonus',
+    },
+    leader_invitations: {
+      leader_id: params.groupLeaderId,
+      event_id: params.eventId,
+      commission_id: params.commissionId,
+      status: 'available',
+    },
+  };
+
+  await client.query(`SAVEPOINT ${params.savepointName}`);
+
+  let registrationId: string | null = null;
+  let confirmationCode = `REG-${randomUUID().replace(/-/g, '')}`;
+
+  for (let regAttempt = 0; regAttempt < 5; regAttempt++) {
+    try {
+      (attempted.registrations as Record<string, unknown>).confirmation_code = confirmationCode;
+      const reg = await client.query(
+        `INSERT INTO registrations (
       event_id, runner_id, registered_by, category_id, kit_id, modality_id,
       payment_method, total_amount, platform_fee_amount, registration_edit_fee_amount,
       confirmation_code, status, payment_status, coupon_code
     )
     VALUES ($1, $2, $3, $4, NULL, NULL, 'free_bonus', 0, 0, 0, $5, 'confirmed', 'convidado', NULL)
     RETURNING id::text AS id`,
-    [params.eventId, params.leaderUserId, params.leaderUserId, params.categoryId, confirmationCode]
-  );
-  const registrationId = (reg.rows[0] as { id: string }).id;
+        [params.eventId, params.leaderUserId, params.leaderUserId, params.categoryId, confirmationCode]
+      );
+      registrationId = (reg.rows[0] as { id: string }).id;
+      break;
+    } catch (e) {
+      const err = e as PgLikeError;
+      const isConfirmationDup =
+        err.code === '23505' &&
+        (String(err.constraint || '').includes('confirmation') ||
+          String(err.detail || '').includes('confirmation_code'));
+      if (isConfirmationDup) {
+        confirmationCode = `REG-${randomUUID().replace(/-/g, '')}`;
+        continue;
+      }
+      await client.query(`ROLLBACK TO SAVEPOINT ${params.savepointName}`);
+      if (err.code === '23505') {
+        logDuplicateViolationStructured({
+          table: err.table ?? null,
+          constraint: err.constraint ?? null,
+          detail: err.detail ?? null,
+          event_id: params.eventId,
+          leader_id: params.groupLeaderId,
+          commission_id: params.commissionId,
+          attempted_insert: { ...attempted, registrations: attempted.registrations },
+          registration_id: registrationId,
+        });
+        const matched = await resolveMatchedExistingIdFromViolation(client, {
+          err,
+          eventId: params.eventId,
+          leaderId: params.groupLeaderId,
+          commissionId: params.commissionId,
+          attemptedBonusRegistrationId: registrationId,
+        });
+        return { status: 'duplicate', err, matched_existing_id: matched };
+      }
+      throw e;
+    }
+  }
 
-  const inv = await client.query(
-    `INSERT INTO leader_invitations (
+  if (!registrationId) {
+    await client.query(`ROLLBACK TO SAVEPOINT ${params.savepointName}`);
+    throw new Error('Falha ao inserir registration free_bonus após retries de confirmation_code');
+  }
+
+  (attempted.leader_invitations as Record<string, unknown>).bonus_registration_id = registrationId;
+
+  try {
+    const inv = await client.query(
+      `INSERT INTO leader_invitations (
       leader_id, bonus_registration_id, event_id, status, commission_id
     ) VALUES ($1, $2, $3, 'available', $4)
     RETURNING id::text AS id`,
-    [params.groupLeaderId, registrationId, params.eventId, params.commissionId]
-  );
-  const invitationId = (inv.rows[0] as { id: string }).id;
-  return { registrationId, invitationId };
+      [params.groupLeaderId, registrationId, params.eventId, params.commissionId]
+    );
+    const invitationId = (inv.rows[0] as { id: string }).id;
+
+    await client.query(`RELEASE SAVEPOINT ${params.savepointName}`);
+    return { status: 'created', registrationId, invitationId };
+  } catch (e) {
+    await client.query(`ROLLBACK TO SAVEPOINT ${params.savepointName}`);
+    const err = e as PgLikeError;
+    if (err.code === '23505') {
+      logDuplicateViolationStructured({
+        table: err.table ?? null,
+        constraint: err.constraint ?? null,
+        detail: err.detail ?? null,
+        event_id: params.eventId,
+        leader_id: params.groupLeaderId,
+        commission_id: params.commissionId,
+        attempted_insert: attempted,
+        bonus_registration_id: registrationId,
+        registration_id: registrationId,
+      });
+      const matched = await resolveMatchedExistingIdFromViolation(client, {
+        err,
+        eventId: params.eventId,
+        leaderId: params.groupLeaderId,
+        commissionId: params.commissionId,
+        attemptedBonusRegistrationId: registrationId,
+      });
+      return { status: 'duplicate', err, matched_existing_id: matched };
+    }
+    throw e;
+  }
 }
 
 export async function runMissingInvitationDelivery(
@@ -956,58 +1210,186 @@ export async function runMissingInvitationDelivery(
   };
   const porComissaoList: PorComissaoRow[] = [];
 
+  const created: MissingApplyReportCreatedItem[] = [];
+  const skipped_existing: MissingApplyReportSkippedItem[] = [];
+  const blocked: MissingApplyReportBlockedItem[] = [];
+  const failed: MissingApplyReportFailedItem[] = [];
+
   const client = await getClient();
   try {
     await client.query('BEGIN');
 
-    for (const item of core.plano.bloco_a_aptos) {
-      const leader = await getGroupLeaderById(item.leader_id);
-      if (!leader?.user_id) {
-        throw appError(`Líder ${item.leader_id} inválido no momento do apply.`, 400);
-      }
+    for (let commIdx = 0; commIdx < core.plano.bloco_a_aptos.length; commIdx++) {
+      const item = core.plano.bloco_a_aptos[commIdx];
+      const spComm = `sp_comm_${commIdx}`;
+      await client.query(`SAVEPOINT ${spComm}`);
 
-      const expected = item.expectedBonuses_correto;
-      let createdHere = 0;
-      const idsHere: string[] = [];
-      const regsHere: string[] = [];
-
-      // Limite: nunca ultrapassar expected; rechecagem a cada passo evita duplicidade
-      let safety = 0;
-      const maxLoops = item.faltantes + 5;
-
-      while (safety < maxLoops) {
-        safety++;
-        const current = await countTimesGrantedDb(client, item.leader_id, params.event_id, item.commission_id);
-        if (current >= expected) break;
-
-        const { registrationId, invitationId } = await insertOneMissingInviteSlot(client, {
-          eventId: params.event_id,
-          groupLeaderId: item.leader_id,
-          leaderUserId: leader.user_id,
-          categoryId: defaultCategoryId,
-          commissionId: item.commission_id,
-        });
-        createdHere++;
-        idsHere.push(invitationId);
-        regsHere.push(registrationId);
-        allInvitationIds.push(invitationId);
-        allRegistrationIds.push(registrationId);
-
-        const after = await countTimesGrantedDb(client, item.leader_id, params.event_id, item.commission_id);
-        if (after > expected) {
-          throw appError(
-            `Segurança: após inserção, timesGranted (${after}) > expected (${expected}) para comissão ${item.commission_id}.`,
-            500
-          );
+      try {
+        const leader = await getGroupLeaderById(item.leader_id);
+        if (!leader?.user_id) {
+          await client.query(`ROLLBACK TO SAVEPOINT ${spComm}`);
+          blocked.push({
+            event_id: params.event_id,
+            leader_id: item.leader_id,
+            commission_id: item.commission_id,
+            motivo: `Líder ${item.leader_id} inválido no momento do apply.`,
+            motivo_code: 'LEADER_INVALIDO_NO_APPLY',
+          });
+          continue;
         }
-      }
 
-      if (createdHere > 0) {
-        porComissaoList.push({
+        const expected = item.expectedBonuses_correto;
+        let createdHere = 0;
+        const idsHere: string[] = [];
+        const regsHere: string[] = [];
+
+        let safety = 0;
+        const maxLoops = item.faltantes + 5;
+        let stoppedByStructuralDuplicate = false;
+
+        while (safety < maxLoops) {
+          safety++;
+          const current = await countTimesGrantedDb(
+            client,
+            item.leader_id,
+            params.event_id,
+            item.commission_id
+          );
+
+          if (current >= expected) {
+            if (safety === 1) {
+              skipped_existing.push({
+                skipped_due_to_existing_record: true,
+                already_exists: true,
+                matched_existing_id: null,
+                motivo_skip:
+                  'Precheck: COUNT (available|sent|used) por comissão já >= expectedBonuses_correto; nenhum insert necessário nesta comissão.',
+                skip_reason_code: 'COUNT_ALREADY_AT_EXPECTED',
+                event_id: params.event_id,
+                leader_id: item.leader_id,
+                commission_id: item.commission_id,
+              });
+            }
+            break;
+          }
+
+          const slotRes = await tryInsertOneMissingInviteSlot(client, {
+            eventId: params.event_id,
+            groupLeaderId: item.leader_id,
+            leaderUserId: leader.user_id,
+            categoryId: defaultCategoryId,
+            commissionId: item.commission_id,
+            savepointName: `sp_slot_${commIdx}_${safety}`,
+          });
+
+          if (slotRes.status === 'created') {
+            created.push({
+              event_id: params.event_id,
+              leader_id: item.leader_id,
+              commission_id: item.commission_id,
+              registration_id: slotRes.registrationId,
+              bonus_registration_id: slotRes.registrationId,
+              leader_invitation_id: slotRes.invitationId,
+            });
+            createdHere++;
+            idsHere.push(slotRes.invitationId);
+            regsHere.push(slotRes.registrationId);
+            allInvitationIds.push(slotRes.invitationId);
+            allRegistrationIds.push(slotRes.registrationId);
+
+            const after = await countTimesGrantedDb(
+              client,
+              item.leader_id,
+              params.event_id,
+              item.commission_id
+            );
+            if (after > expected) {
+              throw appError(
+                `Segurança: após inserção, timesGranted (${after}) > expected (${expected}) para comissão ${item.commission_id}.`,
+                500
+              );
+            }
+            continue;
+          }
+
+          const dupErr = slotRes.err;
+          const cname = dupErr.constraint ?? '';
+          const motivoHuman =
+            cname.includes('uq_leader_invitation_unique') || cname === 'uq_leader_invitation_unique'
+              ? 'Violação de unicidade parcial (event_id, leader_id, status) para available|sent — em DBs sem migration 102, só é permitido um convite available por líder/evento. Aplique migration 102 ou trate o conflito.'
+              : cname.includes('unique_bonus_registration')
+                ? 'Já existe leader_invitation para este bonus_registration_id (equivale a inscrição free_bonus lastreada).'
+                : 'Violação de unicidade (23505) ao inserir registration ou leader_invitations.';
+
+          skipped_existing.push({
+            skipped_due_to_existing_record: true,
+            already_exists: true,
+            matched_existing_id: slotRes.matched_existing_id,
+            motivo_skip: motivoHuman,
+            skip_reason_code: 'DUPLICATE_UNIQUE_VIOLATION',
+            event_id: params.event_id,
+            leader_id: item.leader_id,
+            commission_id: item.commission_id,
+            constraint_name: cname || null,
+            table_name: dupErr.table ?? null,
+            pg_detail: dupErr.detail ?? null,
+            leader_invitation_id: slotRes.matched_existing_id,
+            bonus_registration_id: null,
+            registration_id: null,
+          });
+
+          if (cname.includes('uq_leader_invitation_unique')) {
+            blocked.push({
+              event_id: params.event_id,
+              leader_id: item.leader_id,
+              commission_id: item.commission_id,
+              motivo:
+                'Índice uq_leader_invitation_unique (legado) impede múltiplos convites available — execute backend/migrations/102_drop_uq_leader_invitation_unique.sql',
+              motivo_code: 'OUTRO',
+            });
+            stoppedByStructuralDuplicate = true;
+            break;
+          }
+
+          // Demais duplicatas: não aborta o apply; tenta próximo slot (ex.: corrida)
+          continue;
+        }
+
+        if (
+          !stoppedByStructuralDuplicate &&
+          (await countTimesGrantedDb(client, item.leader_id, params.event_id, item.commission_id)) <
+            expected &&
+          safety >= maxLoops
+        ) {
+          blocked.push({
+            event_id: params.event_id,
+            leader_id: item.leader_id,
+            commission_id: item.commission_id,
+            motivo: `Limite de iterações (${maxLoops}) atingido sem atingir expected=${expected}.`,
+            motivo_code: 'MAX_LOOPS_WITHOUT_REACHING_EXPECTED',
+          });
+        }
+
+        if (createdHere > 0) {
+          porComissaoList.push({
+            leader_id: item.leader_id,
+            commission_id: item.commission_id,
+            criados_neste_apply: createdHere,
+            leader_invitation_ids: idsHere,
+          });
+        }
+
+        await client.query(`RELEASE SAVEPOINT ${spComm}`);
+      } catch (e) {
+        await client.query(`ROLLBACK TO SAVEPOINT ${spComm}`);
+        const err = e as PgLikeError;
+        failed.push({
+          event_id: params.event_id,
           leader_id: item.leader_id,
           commission_id: item.commission_id,
-          criados_neste_apply: createdHere,
-          leader_invitation_ids: idsHere,
+          error_message: e instanceof Error ? e.message : String(e),
+          pg_code: err.code,
+          constraint_name: err.constraint ?? null,
         });
       }
     }
@@ -1028,7 +1410,20 @@ export async function runMissingInvitationDelivery(
       leader_invitation_ids_criados: allInvitationIds,
       registration_ids_bonus_criados: allRegistrationIds,
       por_comissao: porComissaoList,
-      nota: `Apply executado por usuário ${params.executed_by}; geração idempotente por COUNT leader_invitations (available|sent|used) vs expectedBonuses_correto.`,
+      nota:
+        `Apply executado por usuário ${params.executed_by}; idempotente: COUNT leader_invitations (available|sent|used) por comissão vs expected; ` +
+        `duplicatas 23505 viram skipped_existing (não 409). Equivalência: leader_invitations.unique_bonus_registration(bonus_registration_id); ` +
+        `registrations.confirmation_code UNIQUE (apply usa REG+UUID).`,
+      equivalencia_logica: {
+        leader_invitations:
+          'unique_bonus_registration: um leader_invitation por bonus_registration_id (inscrição free_bonus lastreada).',
+        registrations_free_bonus:
+          'confirmation_code UNIQUE em registrations; apply usa REG-{uuid} para evitar colisão.',
+      },
+      created,
+      skipped_existing,
+      blocked,
+      failed,
     },
   };
 }

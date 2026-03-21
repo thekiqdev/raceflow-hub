@@ -119,18 +119,7 @@ export const getLeaderEventCommissions = async (
   const { getGroupLeaderById } = await import('./groupLeadersService.js');
   const { getRegistrationsByLeaderCoupons } = await import('./leaderRegistrationsService.js');
 
-  // Acionador: ao carregar as comissões do líder, tentar conceder convites pendentes (meta batida mas convite não gerado)
-  const eventIdsWithInviteBonus = [...new Set(
-    commissions.filter((c: any) => c.bonus_type === 'invitation' || c.bonus_type === 'both').map((c: any) => c.event_id)
-  )] as string[];
-  const { checkAndGrantInvitationBonus } = await import('./leaderBonusService.js');
-  for (const eventId of eventIdsWithInviteBonus) {
-    try {
-      await checkAndGrantInvitationBonus(leaderId, eventId);
-    } catch (syncErr: any) {
-      console.error(`❌ [getLeaderEventCommissions] Erro ao sincronizar convites para evento ${eventId}:`, syncErr.message);
-    }
-  }
+  // Somente leitura — não dispara checkAndGrantInvitationBonus ao listar (evita concessão indevida ao abrir tela).
   
   // Filter coupons by organizer if organizerId was provided
   // This ensures that only coupons from the specific organizer are shown

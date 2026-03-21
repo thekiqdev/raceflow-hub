@@ -568,6 +568,46 @@ export interface MissingInvitationDeliveryPayload {
       leader_invitation_ids: string[];
     }>;
     nota: string;
+    equivalencia_logica?: {
+      leader_invitations: string;
+      registrations_free_bonus: string;
+    };
+    created?: Array<{
+      event_id: string;
+      leader_id: string;
+      commission_id: string;
+      registration_id: string;
+      bonus_registration_id: string;
+      leader_invitation_id: string;
+    }>;
+    skipped_existing?: Array<{
+      skipped_due_to_existing_record: true;
+      already_exists: true;
+      matched_existing_id: string | null;
+      motivo_skip: string;
+      skip_reason_code: string;
+      event_id: string;
+      leader_id: string;
+      commission_id: string;
+      constraint_name?: string | null;
+      table_name?: string | null;
+      pg_detail?: string | null;
+    }>;
+    blocked?: Array<{
+      event_id: string;
+      leader_id: string;
+      commission_id: string;
+      motivo: string;
+      motivo_code: string;
+    }>;
+    failed?: Array<{
+      event_id: string;
+      leader_id: string;
+      commission_id: string;
+      error_message: string;
+      pg_code?: string;
+      constraint_name?: string | null;
+    }>;
   };
 }
 
