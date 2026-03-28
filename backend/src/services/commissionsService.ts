@@ -2,6 +2,7 @@ import { query } from '../config/database.js';
 import { LeaderCommission } from '../types/index.js';
 import { getGroupLeaderById } from './groupLeadersService.js';
 import { addToTotalEarnings } from './groupLeadersService.js';
+import { executeInvitationBonusDomainCommand } from './invitationBonusDomainOrchestrator.js';
 
 export interface CreateCommissionData {
   leader_id: string;
@@ -137,13 +138,21 @@ export const createCommission = async (
   if (commissionConfig && commissionConfig.bonus_type === 'invitation') {
     console.log(`ℹ️ [createCommission] Cupom pertence a comissão do tipo 'invitation', pulando criação de comissão`);
     try {
-      const { triggerInvitationBonusAfterPaidWithCoupon } = await import('./leaderBonusService.js');
       const registration = await query(
         'SELECT payment_status FROM registrations WHERE id = $1',
         [data.registration_id]
       );
       if (registration.rows.length > 0 && registration.rows[0].payment_status === 'paid') {
-        await triggerInvitationBonusAfterPaidWithCoupon(data.leader_id, data.event_id, couponCode);
+        await executeInvitationBonusDomainCommand({
+          type: 'payment_confirmed_with_coupon',
+          mode: 'automatico',
+          source: 'commissions_service_invitation_only',
+          correlation_id: data.registration_id,
+          leader_id: data.leader_id,
+          event_id: data.event_id,
+          coupon_code: couponCode,
+          detail: 'create_commission_invitation_only',
+        });
       }
     } catch (bonusError: any) {
       console.error('❌ [createCommission] Erro ao verificar bônus:', bonusError.message);
@@ -155,13 +164,21 @@ export const createCommission = async (
   if (!commissionConfig) {
     console.log(`ℹ️ [createCommission] Nenhuma configuração de comissão encontrada (apenas tipo 'invitation'), pulando criação de comissão`);
     try {
-      const { triggerInvitationBonusAfterPaidWithCoupon } = await import('./leaderBonusService.js');
       const registration = await query(
         'SELECT payment_status FROM registrations WHERE id = $1',
         [data.registration_id]
       );
       if (registration.rows.length > 0 && registration.rows[0].payment_status === 'paid') {
-        await triggerInvitationBonusAfterPaidWithCoupon(data.leader_id, data.event_id, couponCode);
+        await executeInvitationBonusDomainCommand({
+          type: 'payment_confirmed_with_coupon',
+          mode: 'automatico',
+          source: 'commissions_service_invitation_only',
+          correlation_id: data.registration_id,
+          leader_id: data.leader_id,
+          event_id: data.event_id,
+          coupon_code: couponCode,
+          detail: 'create_commission_no_config',
+        });
       }
     } catch (bonusError: any) {
       console.error('❌ [createCommission] Erro ao verificar bônus:', bonusError.message);
@@ -232,7 +249,6 @@ export const createCommission = async (
   if (commissionConfig && (commissionConfig.bonus_type === 'both' || commissionConfig.bonus_type === 'invitation')) {
     try {
       console.log(`🎁 [createCommission] Verificando bônus de convite após criar comissão para líder ${data.leader_id} no evento ${data.event_id} (tipo: ${commissionConfig.bonus_type})`);
-      const { checkAllInvitationBonuses } = await import('./leaderBonusService.js');
       // Only check if registration is paid (we'll check payment status from registration)
       const registration = await query(
         'SELECT payment_status FROM registrations WHERE id = $1',
@@ -241,7 +257,15 @@ export const createCommission = async (
       
       if (registration.rows.length > 0 && registration.rows[0].payment_status === 'paid') {
         console.log(`✅ [createCommission] Pagamento está pago, verificando bônus...`);
-        await checkAllInvitationBonuses(data.leader_id, data.event_id);
+        await executeInvitationBonusDomainCommand({
+          type: 'recheck_leader_event',
+          mode: 'automatico',
+          source: 'commissions_service_create_commission',
+          correlation_id: data.registration_id,
+          leader_id: data.leader_id,
+          event_id: data.event_id,
+          detail: 'create_commission_paid',
+        });
       } else {
         console.log(`ℹ️ [createCommission] Pagamento não está pago ainda (status: ${registration.rows[0]?.payment_status}), bônus será verificado quando o pagamento for confirmado`);
       }

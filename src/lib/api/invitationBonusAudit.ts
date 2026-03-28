@@ -393,6 +393,35 @@ export async function getInvitationBonusAuditContext(
   );
 }
 
+/** Resumo do comando assistido (orquestrador), sem o payload pesado do serviço. */
+export interface AssistedInvitationBonusCommandResultSummary {
+  operation: string;
+  mode: string;
+  leader_id: string | null;
+  event_id: string;
+  commission_id?: string | null;
+  executed: boolean;
+  detail?: string;
+}
+
+export type InvitationBonusReconciliationApiData = {
+  command_result: AssistedInvitationBonusCommandResultSummary;
+  payload: InvitationBonusReconciliationPayload | null;
+};
+
+export type MissingInvitationDeliveryApiData = {
+  command_result: AssistedInvitationBonusCommandResultSummary;
+  payload: MissingInvitationDeliveryPayload | null;
+};
+
+/** Idempotência por disparo (painel / cliente). */
+export function newAssistedIdempotencyKey(prefix: string): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return `${prefix}-${crypto.randomUUID()}`;
+  }
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
+}
+
 export async function runInvitationBonusReconciliation(params: {
   event_id: string;
   leader_id?: string | null;
@@ -400,8 +429,10 @@ export async function runInvitationBonusReconciliation(params: {
   audit_snapshot_hash?: string;
   dry_run_hash?: string;
   apply_confirmed?: boolean;
-}): Promise<ApiResponse<InvitationBonusReconciliationPayload>> {
-  return apiClient.post<InvitationBonusReconciliationPayload>(
+  reason: string;
+  idempotency_key: string;
+}): Promise<ApiResponse<InvitationBonusReconciliationApiData>> {
+  return apiClient.post<InvitationBonusReconciliationApiData>(
     '/admin/reconcile/invitation-bonus-controlled',
     {
       event_id: params.event_id,
@@ -410,6 +441,8 @@ export async function runInvitationBonusReconciliation(params: {
       audit_snapshot_hash: params.audit_snapshot_hash,
       dry_run_hash: params.dry_run_hash,
       apply_confirmed: params.apply_confirmed,
+      reason: params.reason,
+      idempotency_key: params.idempotency_key,
     }
   );
 }
@@ -618,13 +651,17 @@ export async function runMissingInvitationDeliveryApi(params: {
   audit_snapshot_hash?: string;
   dry_run_hash?: string;
   apply_confirmed?: boolean;
-}): Promise<ApiResponse<MissingInvitationDeliveryPayload>> {
-  return apiClient.post<MissingInvitationDeliveryPayload>('/admin/reconcile/missing-invitation-delivery', {
+  reason: string;
+  idempotency_key: string;
+}): Promise<ApiResponse<MissingInvitationDeliveryApiData>> {
+  return apiClient.post<MissingInvitationDeliveryApiData>('/admin/reconcile/missing-invitation-delivery', {
     event_id: params.event_id,
     leader_id: params.leader_id || undefined,
     mode: params.mode,
     audit_snapshot_hash: params.audit_snapshot_hash,
     dry_run_hash: params.dry_run_hash,
     apply_confirmed: params.apply_confirmed,
+    reason: params.reason,
+    idempotency_key: params.idempotency_key,
   });
 }

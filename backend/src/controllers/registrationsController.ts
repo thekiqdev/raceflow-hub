@@ -28,7 +28,8 @@ import { sendNotificationSafely, getUserEmail, getUserName, getOrganizerEmail } 
 import { getLeaderEventCommissionById } from '../services/leaderEventCommissionsService.js';
 import { getCouponByEventCommission, getCouponByCodeOnly } from '../services/couponsService.js';
 import { createCommission, getCommissionByRegistrationId, adminCancelCommission } from '../services/commissionsService.js';
-import { checkAllInvitationBonuses, checkInvitationBonusForCommission, recalculateAndRevokeExcessInvitations } from '../services/leaderBonusService.js';
+import { recalculateAndRevokeExcessInvitations } from '../services/leaderBonusService.js';
+import { executeInvitationBonusDomainCommand } from '../services/invitationBonusDomainOrchestrator.js';
 import { z } from 'zod';
 import { EventRegistrationStatus, Event } from '../types/index.js';
 import { calculateRegistrationStatus } from '../services/eventsService.js';
@@ -1898,12 +1899,26 @@ export const getPaymentStatusController = asyncHandler(async (req: AuthRequest, 
                   if (commissionError.message.includes('No commission configured') || 
                       commissionError.message.includes('invitation type only')) {
                     console.log(`ℹ️ Tipo de bônus é apenas 'invitation', verificando bônus de convite...`);
-                    const { checkAllInvitationBonuses } = await import('../services/leaderBonusService.js');
-                    await checkAllInvitationBonuses(leaderId, reg.event_id);
+                    await executeInvitationBonusDomainCommand({
+                      type: 'recheck_leader_event',
+                      mode: 'operacional',
+                      source: 'registrations_controller',
+                      correlation_id: id,
+                      leader_id: leaderId,
+                      event_id: reg.event_id,
+                      detail: 'manual_confirm_invitation_only',
+                    });
                   } else if (commissionError.message.includes('must be greater than 0')) {
                     console.log(`ℹ️ Valor da comissão é 0, verificando apenas bônus de convite...`);
-                    const { checkAllInvitationBonuses } = await import('../services/leaderBonusService.js');
-                    await checkAllInvitationBonuses(leaderId, reg.event_id);
+                    await executeInvitationBonusDomainCommand({
+                      type: 'recheck_leader_event',
+                      mode: 'operacional',
+                      source: 'registrations_controller',
+                      correlation_id: id,
+                      leader_id: leaderId,
+                      event_id: reg.event_id,
+                      detail: 'manual_confirm_zero_amount',
+                    });
                   } else {
                     console.error('❌ Erro ao criar comissão:', commissionError.message);
                   }
@@ -1920,8 +1935,15 @@ export const getPaymentStatusController = asyncHandler(async (req: AuthRequest, 
                 );
                 
                 if (commissionTypeCheck.rows.length > 0) {
-                  const { checkAllInvitationBonuses } = await import('../services/leaderBonusService.js');
-                  await checkAllInvitationBonuses(leaderId, reg.event_id);
+                  await executeInvitationBonusDomainCommand({
+                    type: 'recheck_leader_event',
+                    mode: 'operacional',
+                    source: 'registrations_controller',
+                    correlation_id: id,
+                    leader_id: leaderId,
+                    event_id: reg.event_id,
+                    detail: 'manual_confirm_existing_commission',
+                  });
                   console.log(`✅ Verificação de bônus executada para líder ${leaderId}`);
                 } else {
                   console.log(`ℹ️ Tipo de comissão é apenas 'commission', não verificando bônus de convite`);
@@ -2533,12 +2555,26 @@ export const updateRegistrationController = asyncHandler(async (req: AuthRequest
               if (commissionError.message.includes('No commission configured') ||
                   commissionError.message.includes('invitation type only')) {
                 console.log(`ℹ️ [updateRegistrationController] Tipo 'invitation' only - verificando bônus de convite`);
-                const { checkAllInvitationBonuses } = await import('../services/leaderBonusService.js');
-                await checkAllInvitationBonuses(leaderId, reg.event_id);
+                await executeInvitationBonusDomainCommand({
+                  type: 'recheck_leader_event',
+                  mode: 'operacional',
+                  source: 'registrations_controller',
+                  correlation_id: id,
+                  leader_id: leaderId,
+                  event_id: reg.event_id,
+                  detail: 'update_registration_invitation_only',
+                });
               } else if (commissionError.message.includes('must be greater than 0')) {
                 console.log(`ℹ️ [updateRegistrationController] Valor 0 - verificando bônus de convite`);
-                const { checkAllInvitationBonuses } = await import('../services/leaderBonusService.js');
-                await checkAllInvitationBonuses(leaderId, reg.event_id);
+                await executeInvitationBonusDomainCommand({
+                  type: 'recheck_leader_event',
+                  mode: 'operacional',
+                  source: 'registrations_controller',
+                  correlation_id: id,
+                  leader_id: leaderId,
+                  event_id: reg.event_id,
+                  detail: 'update_registration_zero_amount',
+                });
               } else {
                 console.error('❌ [updateRegistrationController] Erro ao criar comissão:', commissionError.message);
               }
@@ -2547,8 +2583,15 @@ export const updateRegistrationController = asyncHandler(async (req: AuthRequest
 
           // Sempre rechecar bônus de convite quando pagamento é confirmado e há líder (meta pode ter sido batida)
           try {
-            const { checkAllInvitationBonuses } = await import('../services/leaderBonusService.js');
-            await checkAllInvitationBonuses(leaderId, reg.event_id);
+            await executeInvitationBonusDomainCommand({
+              type: 'recheck_leader_event',
+              mode: 'operacional',
+              source: 'registrations_controller',
+              correlation_id: id,
+              leader_id: leaderId,
+              event_id: reg.event_id,
+              detail: 'update_registration_always_recheck',
+            });
             console.log(`🎁 [updateRegistrationController] Verificação de convites executada para líder ${leaderId}`);
           } catch (bonusErr: any) {
             console.error('❌ [updateRegistrationController] Erro ao verificar convites:', bonusErr.message);
@@ -2754,7 +2797,15 @@ export const attachRegistrationToCommissionController = asyncHandler(async (req:
 
   if (currentCouponCode && currentCouponCode === newCouponCode) {
     if (commission.bonus_type === 'invitation' || commission.bonus_type === 'both') {
-      await checkAllInvitationBonuses(commission.leader_id, registration.event_id);
+      await executeInvitationBonusDomainCommand({
+        type: 'recheck_leader_event',
+        mode: 'operacional',
+        source: 'registrations_controller',
+        correlation_id: registrationId,
+        leader_id: commission.leader_id,
+        event_id: registration.event_id,
+        detail: 'attach_commission_same_coupon',
+      });
     }
     const updatedRegistration = await getRegistrationById(registrationId);
     res.status(200).json({
@@ -2790,7 +2841,16 @@ export const attachRegistrationToCommissionController = asyncHandler(async (req:
   // Verificação explícita da comissão específica: gera ou revoga convites conforme a meta
   if (commission.bonus_type === 'invitation' || commission.bonus_type === 'both') {
     try {
-      await checkInvitationBonusForCommission(commission.leader_id, registration.event_id, commission.id);
+      await executeInvitationBonusDomainCommand({
+        type: 'recheck_commission',
+        mode: 'operacional',
+        source: 'registrations_controller',
+        correlation_id: registrationId,
+        leader_id: commission.leader_id,
+        event_id: registration.event_id,
+        commission_id: commission.id,
+        detail: 'attach_commission',
+      });
     } catch (bonusErr: any) {
       console.error('❌ [attach-commission] Erro ao verificar bônus de convite:', bonusErr.message);
     }
@@ -2846,7 +2906,16 @@ export const attachRegistrationToCommissionController = asyncHandler(async (req:
   // Garantir que bônus de convite seja verificado quando a comissão é "both" (comissão em dinheiro criada)
   if (commission.bonus_type === 'both') {
     try {
-      await checkInvitationBonusForCommission(commission.leader_id, registration.event_id, commission.id);
+      await executeInvitationBonusDomainCommand({
+        type: 'recheck_commission',
+        mode: 'operacional',
+        source: 'registrations_controller',
+        correlation_id: registrationId,
+        leader_id: commission.leader_id,
+        event_id: registration.event_id,
+        commission_id: commission.id,
+        detail: 'attach_commission_both',
+      });
     } catch (bonusErr: any) {
       console.error('❌ [attach] Erro ao verificar bônus de convite após atrelar:', bonusErr.message);
     }
@@ -3137,7 +3206,16 @@ export const changeRegistrationCommissionController = asyncHandler(async (req: A
   // Verificação explícita da comissão específica após troca: gera ou revoga convites conforme a meta
   if (commission.bonus_type === 'invitation' || commission.bonus_type === 'both') {
     try {
-      await checkInvitationBonusForCommission(commission.leader_id, registration.event_id, commission.id);
+      await executeInvitationBonusDomainCommand({
+        type: 'recheck_commission',
+        mode: 'operacional',
+        source: 'registrations_controller',
+        correlation_id: registrationId,
+        leader_id: commission.leader_id,
+        event_id: registration.event_id,
+        commission_id: commission.id,
+        detail: 'change_commission',
+      });
     } catch (bonusErr: any) {
       console.error('❌ [change-commission] Erro ao verificar bônus de convite:', bonusErr.message);
     }
@@ -3193,7 +3271,16 @@ export const changeRegistrationCommissionController = asyncHandler(async (req: A
   // Garantir que bônus de convite seja verificado quando a comissão é "both" (comissão em dinheiro criada)
   if (commission.bonus_type === 'both') {
     try {
-      await checkInvitationBonusForCommission(commission.leader_id, registration.event_id, commission.id);
+      await executeInvitationBonusDomainCommand({
+        type: 'recheck_commission',
+        mode: 'operacional',
+        source: 'registrations_controller',
+        correlation_id: registrationId,
+        leader_id: commission.leader_id,
+        event_id: registration.event_id,
+        commission_id: commission.id,
+        detail: 'change_commission_both',
+      });
     } catch (bonusErr: any) {
       console.error('❌ [change-commission] Erro ao verificar bônus de convite após trocar cupom:', bonusErr.message);
     }

@@ -4,7 +4,7 @@
  */
 
 import { query } from '../src/config/database.js';
-import { checkAllInvitationBonuses } from '../src/services/leaderBonusService.js';
+import { executeInvitationBonusDomainCommand } from '../src/services/invitationBonusDomainOrchestrator.js';
 import { createInvitationFromBonus } from '../src/services/leaderInvitationsService.js';
 
 async function processPastInvitations() {
@@ -76,7 +76,15 @@ async function processPastInvitations() {
 
       try {
         console.log(`🔄 Verificando líder ${commission.leader_id} no evento ${commission.event_id}...`);
-        const result = await checkAllInvitationBonuses(commission.leader_id, commission.event_id);
+        const result = await executeInvitationBonusDomainCommand({
+          type: 'recheck_leader_event',
+          mode: 'operacional',
+          source: 'script_process_past_invitations',
+          correlation_id: commission.id,
+          leader_id: commission.leader_id,
+          event_id: commission.event_id,
+          detail: 'process_past_invitations_loop',
+        });
         processed.add(key);
         totalProcessed++;
         

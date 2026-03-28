@@ -64,6 +64,7 @@ import {
   runInvitationBonusSimulator,
   runInvitationBonusReconciliation,
   runMissingInvitationDeliveryApi,
+  newAssistedIdempotencyKey,
   type InvitationBonusAuditPayload,
   type InvitationBonusReconciliationPayload,
   type MissingInvitationDeliveryPayload,
@@ -282,11 +283,17 @@ export function InvitationBonusAuditPanel() {
       event_id: selectedEvent.id,
       leader_id: reconcileLeaderScope === LEADER_ALL ? undefined : reconcileLeaderScope,
       mode: "dry_run",
+      reason: "Reconciliação assistida dry_run — painel auditoria convites (Frente 2)",
+      idempotency_key: newAssistedIdempotencyKey("reconcile-dry"),
     });
     setIsReconciliationRunning(false);
-    if (res.success && res.data) {
-      setReconciliationResult(res.data);
+    if (res.success && res.data?.payload) {
+      setReconciliationResult(res.data.payload);
       toast.success("Dry run da Frente 2 concluído.");
+    } else if (res.success && res.data) {
+      toast.error(
+        res.data.command_result?.detail || "Resposta sem payload de reconciliação (ver logs / idempotência)."
+      );
     } else {
       toast.error(res.error || res.message || "Falha no dry run da correção controlada.");
     }
@@ -318,11 +325,17 @@ export function InvitationBonusAuditPanel() {
       apply_confirmed: true,
       audit_snapshot_hash: reconciliationResult.audit_snapshot_hash,
       dry_run_hash: reconciliationResult.dry_run_hash,
+      reason: "Reconciliação assistida apply — painel auditoria convites (Frente 2)",
+      idempotency_key: newAssistedIdempotencyKey("reconcile-apply"),
     });
     setIsReconciliationRunning(false);
-    if (res.success && res.data) {
-      setReconciliationResult(res.data);
+    if (res.success && res.data?.payload) {
+      setReconciliationResult(res.data.payload);
       toast.success("Apply executado com segurança no contexto validado.");
+    } else if (res.success && res.data) {
+      toast.error(
+        res.data.command_result?.detail || "Resposta sem payload de reconciliação após apply."
+      );
     } else {
       toast.error(res.error || res.message || "Apply bloqueado/falhou.");
     }
@@ -339,11 +352,17 @@ export function InvitationBonusAuditPanel() {
       event_id: selectedEvent.id,
       leader_id: missingDeliveryLeaderScope === LEADER_ALL ? undefined : missingDeliveryLeaderScope,
       mode: "dry_run",
+      reason: "Missing invitation delivery dry_run — painel auditoria (faltantes canônicos)",
+      idempotency_key: newAssistedIdempotencyKey("missing-dry"),
     });
     setIsMissingDeliveryRunning(false);
-    if (res.success && res.data) {
-      setMissingDeliveryResult(res.data);
+    if (res.success && res.data?.payload) {
+      setMissingDeliveryResult(res.data.payload);
       toast.success("Dry run — convites não entregues concluído.");
+    } else if (res.success && res.data) {
+      toast.error(
+        res.data.command_result?.detail || "Resposta sem payload de missing delivery (idempotência ou guard)."
+      );
     } else {
       toast.error(res.error || res.message || "Falha no dry run.");
     }
@@ -374,11 +393,17 @@ export function InvitationBonusAuditPanel() {
       apply_confirmed: true,
       audit_snapshot_hash: missingDeliveryResult.audit_snapshot_hash,
       dry_run_hash: missingDeliveryResult.dry_run_hash,
+      reason: "Missing invitation delivery apply — painel auditoria (faltantes canônicos)",
+      idempotency_key: newAssistedIdempotencyKey("missing-apply"),
     });
     setIsMissingDeliveryRunning(false);
-    if (res.success && res.data) {
-      setMissingDeliveryResult(res.data);
+    if (res.success && res.data?.payload) {
+      setMissingDeliveryResult(res.data.payload);
       toast.success("Apply executado: convites faltantes gerados conforme plano.");
+    } else if (res.success && res.data) {
+      toast.error(
+        res.data.command_result?.detail || "Resposta sem payload após apply de missing delivery."
+      );
     } else {
       toast.error(res.error || res.message || "Apply falhou.");
     }

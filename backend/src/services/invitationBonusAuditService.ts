@@ -7,6 +7,7 @@
 import { query } from '../config/database.js';
 import { getRegistrationsByLeaderCoupons } from './leaderRegistrationsService.js';
 import { getCouponByEventCommission } from './couponsService.js';
+import { getCanonicalPaidRegistrationIds } from './invitationBonusCanonicalCore.js';
 
 export const AUDIT_SCHEMA_VERSION = '1.1';
 
@@ -172,33 +173,6 @@ export interface InvitationBonusAuditResult {
 function requiredPurchasesSafe(v: unknown): number {
   const n = typeof v === 'number' ? v : parseInt(String(v), 10);
   return n >= 1 ? n : 1;
-}
-
-/** Canônico: apenas inscrições pagas no evento com o cupom da comissão pertencente ao líder (sem OR referral). */
-async function getCanonicalPaidRegistrationIds(
-  leaderId: string,
-  eventId: string,
-  couponCode: string | null
-): Promise<string[]> {
-  if (!couponCode || !String(couponCode).trim()) {
-    return [];
-  }
-  const result = await query(
-    `SELECT DISTINCT r.id::text AS id
-     FROM registrations r
-     WHERE r.event_id = $1
-       AND r.payment_status = 'paid'
-       AND (r.status IS NULL OR r.status != 'cancelled')
-       AND r.coupon_code IS NOT NULL
-       AND UPPER(TRIM(r.coupon_code)) = UPPER(TRIM($3))
-       AND EXISTS (
-         SELECT 1 FROM coupons cp
-         WHERE UPPER(TRIM(cp.code)) = UPPER(TRIM(r.coupon_code))
-           AND cp.leader_id = $2
-       )`,
-    [eventId, leaderId, couponCode.trim()]
-  );
-  return (result.rows as { id: string }[]).map((r) => r.id);
 }
 
 async function classifyOrigins(

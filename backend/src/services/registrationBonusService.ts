@@ -1,5 +1,5 @@
 import { query } from '../config/database.js';
-import { checkAllInvitationBonuses } from './leaderBonusService.js';
+import { executeInvitationBonusDomainCommand } from './invitationBonusDomainOrchestrator.js';
 
 /**
  * Check and grant invitation bonuses when a registration payment is confirmed
@@ -74,7 +74,15 @@ export const checkInvitationBonusesOnPaymentConfirmation = async (
     console.log(`🔄 Verificando bônus de convite para líder ${leaderId} no evento ${registration.event_id}`);
 
     // Check and grant invitation bonuses
-    await checkAllInvitationBonuses(leaderId, registration.event_id);
+    await executeInvitationBonusDomainCommand({
+      type: 'recheck_leader_event',
+      mode: 'automatico',
+      source: 'registration_bonus_payment_confirmation',
+      correlation_id: registrationId,
+      leader_id: leaderId,
+      event_id: registration.event_id,
+      detail: 'payment_confirmation',
+    });
 
     console.log(`✅ Verificação de bônus de convite concluída para inscrição ${registrationId}`);
   } catch (error: any) {

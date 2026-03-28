@@ -84,7 +84,7 @@ export async function cancelExpiredRegistrations(expirationMinutes: number = 20)
                 const { getUserReferral } = await import('./referralsService.js');
                 const { getCouponByCodeOnly } = await import('./couponsService.js');
                 const { createCommission } = await import('./commissionsService.js');
-                const { checkAllInvitationBonuses } = await import('./leaderBonusService.js');
+                const { executeInvitationBonusDomainCommand } = await import('./invitationBonusDomainOrchestrator.js');
                 
                 const registrationData = await query(
                   'SELECT runner_id, event_id, total_amount, coupon_code FROM registrations WHERE id = $1',
@@ -143,10 +143,26 @@ export async function cancelExpiredRegistrations(expirationMinutes: number = 20)
                         if (commissionError.message.includes('No commission configured') || 
                             commissionError.message.includes('invitation type only')) {
                           console.log(`ℹ️ Tipo de bônus é apenas 'invitation', verificando bônus de convite...`);
-                          await checkAllInvitationBonuses(leaderId, eventId);
+                          await executeInvitationBonusDomainCommand({
+                            type: 'recheck_leader_event',
+                            mode: 'automatico',
+                            source: 'expired_registrations_job',
+                            correlation_id: registration.id,
+                            leader_id: leaderId,
+                            event_id: eventId,
+                            detail: 'expired_job_invitation_only',
+                          });
                         } else if (commissionError.message.includes('must be greater than 0')) {
                           console.log(`ℹ️ Valor da comissão é 0, verificando apenas bônus de convite...`);
-                          await checkAllInvitationBonuses(leaderId, eventId);
+                          await executeInvitationBonusDomainCommand({
+                            type: 'recheck_leader_event',
+                            mode: 'automatico',
+                            source: 'expired_registrations_job',
+                            correlation_id: registration.id,
+                            leader_id: leaderId,
+                            event_id: eventId,
+                            detail: 'expired_job_zero_amount',
+                          });
                         } else {
                           console.error('❌ Erro ao criar comissão:', commissionError.message);
                         }
@@ -162,7 +178,15 @@ export async function cancelExpiredRegistrations(expirationMinutes: number = 20)
                       );
                       
                       if (commissionTypeCheck.rows.length > 0) {
-                        await checkAllInvitationBonuses(leaderId, eventId);
+                        await executeInvitationBonusDomainCommand({
+                          type: 'recheck_leader_event',
+                          mode: 'automatico',
+                          source: 'expired_registrations_job',
+                          correlation_id: registration.id,
+                          leader_id: leaderId,
+                          event_id: eventId,
+                          detail: 'expired_job_existing_commission',
+                        });
                         console.log(`✅ Verificação de bônus executada para líder ${leaderId}`);
                       }
                     }

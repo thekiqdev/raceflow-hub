@@ -115,9 +115,9 @@ export const getLeaderEventCommissions = async (
 
   // Get coupons for each commission
   const commissions = result.rows as LeaderEventCommission[];
-  const { getCouponsByLeader } = await import('./couponsService.js');
+  const { getCouponsByLeader, getCouponByEventCommission } = await import('./couponsService.js');
   const { getGroupLeaderById } = await import('./groupLeadersService.js');
-  const { getRegistrationsByLeaderCoupons } = await import('./leaderRegistrationsService.js');
+  const { getCanonicalPaidRegistrationIds } = await import('./invitationBonusCanonicalCore.js');
 
   // Somente leitura — não dispara checkAndGrantInvitationBonus ao listar (evita concessão indevida ao abrir tela).
   
@@ -166,57 +166,43 @@ export const getLeaderEventCommissions = async (
         ) || eventCoupons[0];
       }
     }
-    
-    let paidCount = 0;
+
+    /** Cupom resolvido como em concessão/auditoria — base do cálculo canônico */
+    let couponCodeCanonical: string | null = null;
+    try {
+      const cc = await getCouponByEventCommission(leaderId, commission.event_id, commission.id);
+      if (cc?.code) couponCodeCanonical = cc.code;
+    } catch (_) {}
+
+    if (!coupon && couponCodeCanonical) {
+      const norm = couponCodeCanonical.trim().toUpperCase();
+      coupon = coupons.find((c) => c.code && c.code.trim().toUpperCase() === norm) ?? coupon;
+    }
+
+    const canonicalIds = await getCanonicalPaidRegistrationIds(
+      leaderId,
+      commission.event_id,
+      couponCodeCanonical
+    );
+    const paidCount = canonicalIds.length;
+
     let invitationsCount = 0;
     let totalCommissionEarned = 0;
-    
-    // If this commission has a coupon, count only registrations using this specific coupon
-    if (coupon) {
-      // Get paid registrations count using this specific coupon
-      const paidRegistrations = await getRegistrationsByLeaderCoupons(leaderId, {
-        event_id: commission.event_id,
-        payment_status: 'paid',
-        coupon_code: coupon.code,
-      });
-      paidCount = paidRegistrations.length;
-      
-      // Calculate total commission earned for this specific commission
-      // Only count commissions that were generated from registrations using this coupon
-      if (commission.bonus_type === 'commission' || commission.bonus_type === 'both') {
+
+    if (commission.bonus_type === 'commission' || commission.bonus_type === 'both') {
+      if (couponCodeCanonical) {
         const commissionResult = await query(
           `SELECT COALESCE(SUM(lc.commission_amount), 0) as total_commission
            FROM leader_commissions lc
            JOIN registrations r ON lc.registration_id = r.id
            WHERE lc.leader_id = $1 
              AND lc.event_id = $2
-             AND r.coupon_code = $3
+             AND r.coupon_code IS NOT NULL AND UPPER(TRIM(r.coupon_code)) = UPPER(TRIM($3))
              AND lc.status IN ('paid', 'pending')`,
-          [leaderId, commission.event_id, coupon.code]
+          [leaderId, commission.event_id, couponCodeCanonical]
         );
         totalCommissionEarned = parseFloat(commissionResult.rows[0]?.total_commission || '0') || 0;
-      }
-      
-      // Calculate invitations earned based on this commission's configuration
-      // Count only available invitations (not sent or used) for this specific commission
-      if (commission.bonus_type === 'invitation' || commission.bonus_type === 'both') {
-        const availableInvitationsResult = await query(
-          `SELECT COUNT(*) as count FROM leader_invitations 
-           WHERE leader_id = $1 AND event_id = $2 AND commission_id = $3 AND status = 'available'`,
-          [leaderId, commission.event_id, commission.id]
-        );
-        invitationsCount = parseInt(availableInvitationsResult.rows[0]?.count || '0') || 0;
-      }
-    } else {
-      // If no coupon, count all registrations for the event (fallback)
-      const paidRegistrations = await getRegistrationsByLeaderCoupons(leaderId, {
-        event_id: commission.event_id,
-        payment_status: 'paid',
-      });
-      paidCount = paidRegistrations.length;
-      
-      // Calculate total commission earned for this event (without coupon filter)
-      if (commission.bonus_type === 'commission' || commission.bonus_type === 'both') {
+      } else {
         const commissionResult = await query(
           `SELECT COALESCE(SUM(lc.commission_amount), 0) as total_commission
            FROM leader_commissions lc
@@ -227,16 +213,16 @@ export const getLeaderEventCommissions = async (
         );
         totalCommissionEarned = parseFloat(commissionResult.rows[0]?.total_commission || '0') || 0;
       }
-      
-      // For invitations, count only available invitations (not sent or used) for this specific commission
-      if (commission.bonus_type === 'invitation' || commission.bonus_type === 'both') {
-        const availableInvitationsResult = await query(
-          `SELECT COUNT(*) as count FROM leader_invitations 
-           WHERE leader_id = $1 AND event_id = $2 AND commission_id = $3 AND status = 'available'`,
-          [leaderId, commission.event_id, commission.id]
-        );
-        invitationsCount = parseInt(availableInvitationsResult.rows[0]?.count || '0') || 0;
-      }
+    }
+
+    if (commission.bonus_type === 'invitation' || commission.bonus_type === 'both') {
+      const invCountResult = await query(
+        `SELECT COUNT(*) as count FROM leader_invitations 
+         WHERE leader_id = $1 AND event_id = $2 AND commission_id = $3 
+         AND status IN ('available', 'sent', 'used')`,
+        [leaderId, commission.event_id, commission.id]
+      );
+      invitationsCount = parseInt(invCountResult.rows[0]?.count || '0') || 0;
     }
     
     const enriched: any = {

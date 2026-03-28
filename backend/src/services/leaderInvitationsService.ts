@@ -26,7 +26,13 @@ export interface LeaderInvitation {
 }
 
 /**
- * Create invitation record when bonus is granted
+ * EXCEÇÃO CONTROLADA — não é o fluxo canônico de concessão.
+ *
+ * Cria apenas `leader_invitations` quando já existe `registrations` (free_bonus) com o id informado.
+ * Uso previsto: scripts de backfill / correção pontual, com idempotência por `bonus_registration_id`.
+ * Para nova concessão de meta, usar sempre `grantInvitationBonusSlotAtomic` (par atômico).
+ *
+ * @see docs/DOMINIO_CONVITES_CONTRATO_CANONICO.md
  */
 export const createInvitationFromBonus = async (
   leaderId: string,

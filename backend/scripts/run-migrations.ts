@@ -129,6 +129,11 @@ const migrations = [
   '100_event_organizer_migration_prep.sql',
   '101_event_organizer_migration_rollback_status.sql',
   '102_registration_reconciliation_backup.sql',
+  '102_drop_uq_leader_invitation_unique.sql',
+  '103_create_invitation_bonus_assisted_command_audit.sql',
+  '104_add_idempotency_to_invitation_bonus_assisted_audit.sql',
+  '105_assisted_audit_distributed_lock_key.sql',
+  '106_invitation_bonus_assisted_audit_resolution.sql',
 ];
 
 // Create migrations tracking table
@@ -157,6 +162,33 @@ async function markMigrationExecuted(client: pg.PoolClient, migrationName: strin
     'INSERT INTO schema_migrations (migration_name) VALUES ($1) ON CONFLICT (migration_name) DO NOTHING',
     [migrationName]
   );
+}
+
+/**
+ * Bancos legados: `schema_migrations` pode estar atrás do estado real (migrações aplicadas
+ * manualmente ou por outro processo). Reexecutar falha com "already exists".
+ * Só marcamos como aplicada quando o erro é inequívoco de objeto já existente — nunca para
+ * RAISE EXCEPTION de negócio (ex.: 079 sem slug).
+ */
+function isDriftRepairableError(err: unknown): boolean {
+  const e = err as { code?: string; message?: string };
+  const msg = (e.message || '').toLowerCase();
+
+  if (msg.includes('existem ') && msg.includes('eventos sem slug')) return false;
+  if (msg.includes('execute o script generate-slugs')) return false;
+
+  const driftCodes = new Set([
+    '42710', // duplicate_object
+    '42P07', // duplicate_table
+    '42P06', // duplicate_schema
+    '42701', // duplicate_column
+  ]);
+  if (e.code && driftCodes.has(e.code)) return true;
+  if (msg.includes('already exists')) return true;
+  if (msg.includes('duplicate key value violates unique constraint')) return true;
+  if (msg.includes('cannot drop columns from view')) return true;
+
+  return false;
 }
 
 // Execute a single migration
@@ -220,6 +252,7 @@ async function runMigrations() {
     let executed = 0;
     let skipped = 0;
     let failed = 0;
+    let driftRepaired = 0;
 
     for (const migration of migrations) {
       const isExecuted = await isMigrationExecuted(client, migration);
@@ -238,10 +271,16 @@ async function runMigrations() {
           failed++;
         }
       } catch (error: any) {
-        console.error(`❌ Erro ao executar migração ${migration}:`, error.message);
-        failed++;
-        // Continue with next migration even if one fails
-        // You can change this behavior if needed
+        if (isDriftRepairableError(error)) {
+          await markMigrationExecuted(client, migration);
+          driftRepaired++;
+          console.warn(
+            `🔧 Drift: ${migration} — estado já refletia esta migração; registrada em schema_migrations. (${error.message})`
+          );
+        } else {
+          console.error(`❌ Erro ao executar migração ${migration}:`, error.message);
+          failed++;
+        }
       }
 
       console.log(''); // Empty line for readability
@@ -251,6 +290,7 @@ async function runMigrations() {
     console.log('📊 Resumo:');
     console.log(`   ✅ Executadas: ${executed}`);
     console.log(`   ⏭️  Puladas: ${skipped}`);
+    console.log(`   🔧 Drift corrigido (só registro): ${driftRepaired}`);
     console.log(`   ❌ Falhas: ${failed}`);
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 

@@ -3,7 +3,7 @@
  */
 
 import { query } from '../src/config/database.js';
-import { checkAndGrantInvitationBonus } from '../src/services/leaderBonusService.js';
+import { executeInvitationBonusDomainCommand } from '../src/services/invitationBonusDomainOrchestrator.js';
 import { getRegistrationsByLeaderCoupons } from '../src/services/leaderRegistrationsService.js';
 
 async function grantMissingBonuses() {
@@ -54,11 +54,18 @@ async function grantMissingBonuses() {
         console.log(`   🎯 Líder atingiu a meta! Concedendo bônus...`);
         
         try {
-          const result = await checkAndGrantInvitationBonus(bonus.leader_id, bonus.event_id);
+          const result = await executeInvitationBonusDomainCommand({
+            type: 'recheck_leader_event',
+            mode: 'operacional',
+            source: 'script_grant_missing_bonuses',
+            correlation_id: bonus.id,
+            leader_id: bonus.leader_id,
+            event_id: bonus.event_id,
+            detail: 'grant_missing_bonuses_script',
+          });
           
-          if (result.granted) {
+          if (result.executed) {
             console.log(`   ✅ Bônus concedido com sucesso!`);
-            console.log(`   📝 ID da inscrição bônus: ${result.registrationId}`);
             granted++;
           } else {
             console.log(`   ℹ️ Bônus não foi concedido (pode já ter sido concedido ou não há configuração válida)`);

@@ -796,8 +796,17 @@ export const createRegistration = async (data: CreateRegistrationData) => {
               commissionError.message.includes('must be greater than 0')) {
             console.log(`ℹ️ Disparando verificação de bônus de convite (cupom/referência)...`);
             try {
-              const { triggerInvitationBonusAfterPaidWithCoupon } = await import('./leaderBonusService.js');
-              await triggerInvitationBonusAfterPaidWithCoupon(leaderId, data.event_id, data.coupon_code || null);
+              const { executeInvitationBonusDomainCommand } = await import('./invitationBonusDomainOrchestrator.js');
+              await executeInvitationBonusDomainCommand({
+                type: 'payment_confirmed_with_coupon',
+                mode: 'automatico',
+                source: 'registrations_service',
+                correlation_id: registration.id,
+                leader_id: leaderId,
+                event_id: data.event_id,
+                coupon_code: data.coupon_code || null,
+                detail: 'registrations_service_commission_fallback',
+              });
             } catch (bonusError: any) {
               console.error('❌ Erro ao verificar bônus de convite:', bonusError.message);
             }

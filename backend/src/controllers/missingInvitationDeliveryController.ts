@@ -7,7 +7,8 @@ import { Response } from 'express';
 import { z } from 'zod';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { AuthRequest } from '../middleware/auth.js';
-import { runMissingInvitationDelivery } from '../services/missingInvitationDeliveryService.js';
+import { executeInvitationBonusDomainCommand } from '../services/invitationBonusDomainOrchestrator.js';
+import { hasRole } from '../services/userRolesService.js';
 
 const bodySchema = z.object({
   event_id: z.string().uuid('event_id inválido'),
@@ -16,6 +17,8 @@ const bodySchema = z.object({
   apply_confirmed: z.boolean().optional(),
   audit_snapshot_hash: z.string().min(10).optional().nullable(),
   dry_run_hash: z.string().min(10).optional().nullable(),
+  reason: z.string().min(8, 'reason deve ter ao menos 8 caracteres'),
+  idempotency_key: z.string().min(8, 'idempotency_key deve ter ao menos 8 caracteres'),
 });
 
 export const runMissingInvitationDeliveryController = asyncHandler(
@@ -31,6 +34,19 @@ export const runMissingInvitationDeliveryController = asyncHandler(
     }
 
     const p = parsed.data;
+    if (!req.user) {
+      res.status(401).json({ success: false, error: 'Not authenticated' });
+      return;
+    }
+    const isAdmin = await hasRole(req.user.id, 'admin');
+    if (!isAdmin) {
+      res.status(403).json({
+        success: false,
+        error: 'Forbidden',
+        message: 'Somente administradores podem executar comandos assistidos.',
+      });
+      return;
+    }
 
     if (p.mode === 'apply' && !p.apply_confirmed) {
       res.status(400).json({
@@ -41,19 +57,38 @@ export const runMissingInvitationDeliveryController = asyncHandler(
       return;
     }
 
-    const result = await runMissingInvitationDelivery({
+    const result = await executeInvitationBonusDomainCommand({
+      type: 'deliver_missing_assisted',
+      mode: 'assistido',
+      source: 'domain_assisted',
+      correlation_id: req.user?.id,
       event_id: p.event_id,
       leader_id: p.leader_id ?? undefined,
-      mode: p.mode,
-      apply_confirmed: p.apply_confirmed ?? undefined,
-      audit_snapshot_hash: p.audit_snapshot_hash ?? undefined,
-      dry_run_hash: p.dry_run_hash ?? undefined,
-      executed_by: req.user?.id ?? undefined,
+      detail: 'missing_invitation_delivery_controller',
+      operational_context: {
+        actor_id: req.user.id,
+        actor_email: req.user.email,
+        reason: p.reason,
+        idempotency_key: p.idempotency_key,
+      },
+      params: {
+        event_id: p.event_id,
+        leader_id: p.leader_id ?? undefined,
+        mode: p.mode,
+        apply_confirmed: p.apply_confirmed ?? undefined,
+        audit_snapshot_hash: p.audit_snapshot_hash ?? undefined,
+        dry_run_hash: p.dry_run_hash ?? undefined,
+        executed_by: req.user?.id ?? undefined,
+      },
     });
 
+    const { domain_payload = null, ...command_result } = result;
     res.json({
       success: true,
-      data: result,
+      data: {
+        command_result,
+        payload: domain_payload,
+      },
     });
   }
 );

@@ -1,4 +1,13 @@
 /**
+ * CONTRATO ÚNICO DE ESCRITA — concessão de slot de convite (Etapa 1 / CORE)
+ *
+ * Única porta oficial para criar par canônico: registration (`payment_method=free_bonus`)
+ * + `leader_invitations` com `bonus_registration_id` na mesma transação.
+ *
+ * Não usar para: inscrições administrativas do organizador, saneamento em massa, ou backfill
+ * sem lastro — ver `createInvitationFromBonus` (exceção documentada) e
+ * docs/DOMINIO_CONVITES_CONTRATO_CANONICO.md
+ *
  * Concessão atômica de slot de bônus (registration free_bonus + leader_invitations).
  * Garante que não persista registration sem linha correspondente em leader_invitations.
  */
