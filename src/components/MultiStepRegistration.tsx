@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { getDashboardRoute } from "@/lib/utils/navigation";
 import { Button } from "@/components/ui/button";
@@ -11,7 +11,14 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Loader2, ChevronLeft, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
 import { maskCpf, maskPhone, maskCep, unmask } from "@/lib/utils/masks";
-import { validateCpf, validateCep, validatePhone, validateEmail, validatePassword } from "@/lib/utils/validators";
+import {
+  validateCpf,
+  validateCep,
+  validatePhone,
+  validateEmail,
+  validatePassword,
+  normalizeBirthDateForCompare,
+} from "@/lib/utils/validators";
 import { fetchAddressByCep } from "@/lib/api/viacep";
 import { useCpfBrasilLookup } from "@/hooks/useCpfBrasilLookup";
 import type { LookupCpfData } from "@/lib/api/auth";
@@ -101,11 +108,38 @@ export function MultiStepRegistration({ open, onOpenChange }: MultiStepRegistrat
     cpfLookupProof: "",
   });
 
+  const birthDateRef = useRef(formData.birthDate);
+  useEffect(() => {
+    birthDateRef.current = formData.birthDate;
+  }, [formData.birthDate]);
+
+  const clearLookupCompletedRef = useRef(() => {});
+
   const onCpfLookupSuccess = useCallback((data: LookupCpfData, proof: string) => {
+    const userBd = normalizeBirthDateForCompare(birthDateRef.current);
+    const apiBd = normalizeBirthDateForCompare(data.birth_date);
+    if (!userBd) {
+      toast.error("Informe sua data de nascimento antes de consultar.");
+      clearLookupCompletedRef.current();
+      return;
+    }
+    if (userBd !== apiBd) {
+      toast.error(
+        "A data de nascimento não confere com o CPF consultado. Verifique e tente novamente."
+      );
+      clearLookupCompletedRef.current();
+      setFormData((prev) => ({
+        ...prev,
+        fullName: "",
+        gender: "",
+        cpfLookupProof: "",
+      }));
+      return;
+    }
     setFormData((prev) => ({
       ...prev,
       fullName: data.full_name,
-      birthDate: data.birth_date,
+      birthDate: apiBd,
       gender: data.gender === "M" || data.gender === "F" ? data.gender : "",
       cpfLookupProof: proof,
     }));
@@ -121,11 +155,17 @@ export function MultiStepRegistration({ open, onOpenChange }: MultiStepRegistrat
     }));
   }, []);
 
-  const { lookupLoading, lookupError, manualLookup } = useCpfBrasilLookup({
-    cpfMasked: formData.cpf,
-    onSuccess: onCpfLookupSuccess,
-    onInvalidate: onCpfLookupInvalidate,
-  });
+  const { lookupLoading, lookupError, manualLookup, cpfAlreadyRegistered, clearLookupCompleted } =
+    useCpfBrasilLookup({
+      cpfMasked: formData.cpf,
+      onSuccess: onCpfLookupSuccess,
+      onInvalidate: onCpfLookupInvalidate,
+      canAutoLookup: () => Boolean(formData.birthDate?.trim()),
+    });
+
+  useEffect(() => {
+    clearLookupCompletedRef.current = clearLookupCompleted;
+  }, [clearLookupCompleted]);
 
   const lockedFromCpfLookup = Boolean(formData.cpfLookupProof);
 
@@ -464,30 +504,69 @@ export function MultiStepRegistration({ open, onOpenChange }: MultiStepRegistrat
               disabled={loading}
               className={`flex-1 ${errors.cpf ? "border-destructive" : ""}`}
             />
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => manualLookup()}
-              disabled={loading || lookupLoading || formData.cpf.replace(/\D/g, "").length !== 11}
-            >
-              {lookupLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Consultar"}
-            </Button>
           </div>
           {lookupLoading && (
             <p className="text-xs text-muted-foreground">Consultando dados…</p>
           )}
-          {lookupError && <p className="text-sm text-destructive">{lookupError}</p>}
+          {lookupError && (
+            <div className="space-y-2">
+              <p className="text-sm text-destructive">{lookupError}</p>
+              {cpfAlreadyRegistered && (
+                <Link
+                  to="/forgot-password"
+                  className="text-sm font-medium text-primary hover:underline"
+                  onClick={() => onOpenChange(false)}
+                >
+                  Recuperar senha
+                </Link>
+              )}
+            </div>
+          )}
           {errors.cpf && <p className="text-sm text-destructive">{errors.cpf}</p>}
           {!lockedFromCpfLookup && !lookupLoading && (
             <p className="text-xs text-muted-foreground">
-              Digite um CPF válido. Os dados aparecerão aqui após a consulta bem-sucedida.
+              Informe o CPF e a data de nascimento (como no documento) e clique em Consultar. A data será
+              conferida com a consulta.
             </p>
           )}
         </div>
 
+        <div className="space-y-2">
+          <Label htmlFor="birthDate">Data de nascimento *</Label>
+          <Input
+            id="birthDate"
+            type="date"
+            value={formData.birthDate}
+            onChange={(e) => !lockedFromCpfLookup && updateField("birthDate", e.target.value)}
+            readOnly={lockedFromCpfLookup}
+            disabled={loading}
+            className={`${lockedFromCpfLookup ? "bg-muted" : ""} ${errors.birthDate ? "border-destructive" : ""}`}
+          />
+          {errors.birthDate && <p className="text-sm text-destructive">{errors.birthDate}</p>}
+          {!lockedFromCpfLookup && (
+            <p className="text-xs text-muted-foreground">
+              Deve ser exatamente a mesma data que consta no seu documento de identificação.
+            </p>
+          )}
+          <Button
+            type="button"
+            variant="secondary"
+            className="w-full"
+            onClick={() => manualLookup()}
+            disabled={
+              loading ||
+              lookupLoading ||
+              formData.cpf.replace(/\D/g, "").length !== 11 ||
+              !formData.birthDate?.trim()
+            }
+          >
+            {lookupLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Consultar"}
+          </Button>
+        </div>
+
         {lockedFromCpfLookup && (
           <div className="space-y-4 rounded-lg border border-border bg-muted/30 p-4">
-            <p className="text-sm font-medium text-foreground">Dados encontrados</p>
+            <p className="text-sm font-medium text-foreground">Dados confirmados</p>
 
             <div className="space-y-2">
               <Label htmlFor="fullName">Nome completo *</Label>
@@ -500,35 +579,22 @@ export function MultiStepRegistration({ open, onOpenChange }: MultiStepRegistrat
               {errors.fullName && <p className="text-sm text-destructive">{errors.fullName}</p>}
             </div>
 
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="birthDate">Data de nascimento *</Label>
-                <Input
-                  id="birthDate"
-                  type="date"
-                  value={formData.birthDate}
-                  readOnly
-                  className={`bg-muted ${errors.birthDate ? "border-destructive" : ""}`}
-                />
-                {errors.birthDate && <p className="text-sm text-destructive">{errors.birthDate}</p>}
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="gender-display">Sexo *</Label>
-                <Input
-                  id="gender-display"
-                  value={
-                    formData.gender === "M"
-                      ? "Masculino"
-                      : formData.gender === "F"
-                        ? "Feminino"
-                        : formData.gender || ""
-                  }
-                  readOnly
-                  placeholder="—"
-                  className={`bg-muted ${errors.gender ? "border-destructive" : ""}`}
-                />
-                {errors.gender && <p className="text-sm text-destructive">{errors.gender}</p>}
-              </div>
+            <div className="space-y-2">
+              <Label htmlFor="gender-display">Sexo *</Label>
+              <Input
+                id="gender-display"
+                value={
+                  formData.gender === "M"
+                    ? "Masculino"
+                    : formData.gender === "F"
+                      ? "Feminino"
+                      : formData.gender || ""
+                }
+                readOnly
+                placeholder="—"
+                className={`bg-muted ${errors.gender ? "border-destructive" : ""}`}
+              />
+              {errors.gender && <p className="text-sm text-destructive">{errors.gender}</p>}
             </div>
 
             <div className="space-y-2">

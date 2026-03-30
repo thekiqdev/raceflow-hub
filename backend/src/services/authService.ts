@@ -87,6 +87,17 @@ export const generateToken = (userId: string, email: string): string => {
   );
 };
 
+/** Indica se já existe perfil com esse CPF na Cronoteam (evita novo cadastro duplicado). */
+export const isCpfRegisteredInPlatform = async (cpfDigits: string): Promise<boolean> => {
+  const clean = normalizeCpfDigits(cpfDigits);
+  if (clean.length !== 11) return false;
+  const r = await query(
+    `SELECT 1 FROM profiles WHERE regexp_replace(COALESCE(cpf::text, ''), '[^0-9]', '', 'g') = $1 LIMIT 1`,
+    [clean]
+  );
+  return r.rows.length > 0;
+};
+
 // Register new user
 export const register = async (data: RegisterData): Promise<AuthResponse> => {
   const client = await getClient();

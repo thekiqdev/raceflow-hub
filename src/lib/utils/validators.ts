@@ -49,6 +49,16 @@ export const validateCpf = (cpf: string): boolean => {
 };
 
 /**
+ * Normaliza data para YYYY-MM-DD (comparar input do usuário com birth_date da API).
+ */
+export const normalizeBirthDateForCompare = (value: string): string => {
+  if (!value || typeof value !== 'string') return '';
+  const s = value.trim();
+  const dayPart = s.includes('T') ? (s.split('T')[0] ?? '') : (s.split(' ')[0] ?? '');
+  return dayPart.slice(0, 10);
+};
+
+/**
  * Validate credit card number using Luhn algorithm
  * @param cardNumber - Card number with or without spaces
  * @returns true if valid, false otherwise

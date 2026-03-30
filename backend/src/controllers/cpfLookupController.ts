@@ -10,6 +10,8 @@ import {
 import { issueCpfLookupProof, registerRequiresCpfLookupProof } from '../services/cpfLookupProof.js';
 import { recordCpfLookupOutcome } from '../services/cpfLookupMetricsService.js';
 import { notifyCpfLookupFailureWebhook } from '../services/cpfLookupAlerts.js';
+import { isCpfRegisteredInPlatform } from '../services/authService.js';
+import { isValidCpfDigits, normalizeCpfDigits } from '../utils/cpf.js';
 
 const bodySchema = z.object({
   cpf: z.string().min(1, 'cpf é obrigatório'),
@@ -84,6 +86,36 @@ export const cpfRegistrationConfigController = asyncHandler(async (_req: Request
       cpf_brasil_integration_configured: isCpfBrasilIntegrationConfigured(),
       cpf_brasil_enabled: isCpfBrasilFeatureEnabled(),
     },
+  });
+});
+
+/**
+ * POST /api/auth/check-cpf-registered
+ * Body: { cpf }. Resposta: { registered: boolean } — sem expor e-mail ou outros dados.
+ */
+export const checkCpfRegisteredController = asyncHandler(async (req: Request, res: Response) => {
+  const parsed = bodySchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({
+      success: false,
+      message: 'CPF inválido',
+      code: 'LOCAL_INVALID_FORMAT',
+    });
+    return;
+  }
+  const digits = normalizeCpfDigits(parsed.data.cpf);
+  if (digits.length !== 11 || !isValidCpfDigits(digits)) {
+    res.status(400).json({
+      success: false,
+      message: 'CPF inválido',
+      code: 'LOCAL_INVALID_FORMAT',
+    });
+    return;
+  }
+  const registered = await isCpfRegisteredInPlatform(digits);
+  res.json({
+    success: true,
+    data: { registered },
   });
 });
 

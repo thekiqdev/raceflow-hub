@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -31,7 +31,7 @@ import { getEffectiveRegistrationStatus, getRegistrationStatusMessage, isRegistr
 import type { Event } from "@/lib/api/events";
 import { getReferralCoupon, saveReferralCoupon, clearReferralCoupon } from "@/lib/referralCouponCache";
 import { maskCpf, maskEmailOrCpf, maskPhone } from "@/lib/utils/masks";
-import { validateCpf, validatePhone } from "@/lib/utils/validators";
+import { validateCpf, validatePhone, normalizeBirthDateForCompare } from "@/lib/utils/validators";
 import { useCpfBrasilLookup } from "@/hooks/useCpfBrasilLookup";
 import type { LookupCpfData } from "@/lib/api/auth";
 
@@ -164,11 +164,38 @@ export function RegistrationFlow({
     cpfLookupProof: "",
   });
 
+  const registerBirthDateRef = useRef(registerData.birthDate);
+  useEffect(() => {
+    registerBirthDateRef.current = registerData.birthDate;
+  }, [registerData.birthDate]);
+
+  const clearLookupCompletedRef = useRef(() => {});
+
   const onRegisterCpfLookupSuccess = useCallback((data: LookupCpfData, proof: string) => {
+    const userBd = normalizeBirthDateForCompare(registerBirthDateRef.current);
+    const apiBd = normalizeBirthDateForCompare(data.birth_date);
+    if (!userBd) {
+      toast.error("Informe sua data de nascimento antes de consultar.");
+      clearLookupCompletedRef.current();
+      return;
+    }
+    if (userBd !== apiBd) {
+      toast.error(
+        "A data de nascimento não confere com o CPF consultado. Verifique e tente novamente."
+      );
+      clearLookupCompletedRef.current();
+      setRegisterData((prev) => ({
+        ...prev,
+        fullName: "",
+        gender: "",
+        cpfLookupProof: "",
+      }));
+      return;
+    }
     setRegisterData((prev) => ({
       ...prev,
       fullName: data.full_name,
-      birthDate: data.birth_date,
+      birthDate: apiBd,
       gender: data.gender === "M" || data.gender === "F" ? data.gender : "",
       cpfLookupProof: proof,
     }));
@@ -184,11 +211,17 @@ export function RegistrationFlow({
     }));
   }, []);
 
-  const { lookupLoading, lookupError, manualLookup } = useCpfBrasilLookup({
-    cpfMasked: registerData.cpf,
-    onSuccess: onRegisterCpfLookupSuccess,
-    onInvalidate: onRegisterCpfLookupInvalidate,
-  });
+  const { lookupLoading, lookupError, manualLookup, cpfAlreadyRegistered, clearLookupCompleted } =
+    useCpfBrasilLookup({
+      cpfMasked: registerData.cpf,
+      onSuccess: onRegisterCpfLookupSuccess,
+      onInvalidate: onRegisterCpfLookupInvalidate,
+      canAutoLookup: () => Boolean(registerData.birthDate?.trim()),
+    });
+
+  useEffect(() => {
+    clearLookupCompletedRef.current = clearLookupCompleted;
+  }, [clearLookupCompleted]);
 
   const lockedFromRegisterCpfLookup = Boolean(registerData.cpfLookupProof);
 
@@ -1770,74 +1803,94 @@ export function RegistrationFlow({
                             disabled={isRegisteringAccount}
                             className="flex-1"
                           />
-                          <Button
-                            type="button"
-                            variant="secondary"
-                            onClick={() => manualLookup()}
-                            disabled={
-                              isRegisteringAccount ||
-                              lookupLoading ||
-                              registerData.cpf.replace(/\D/g, "").length !== 11
-                            }
-                          >
-                            {lookupLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Consultar"}
-                          </Button>
                         </div>
                         {lookupLoading && (
                           <p className="mt-1 text-xs text-muted-foreground">Consultando dados…</p>
                         )}
-                        {lookupError && <p className="mt-1 text-sm text-destructive">{lookupError}</p>}
+                        {lookupError && (
+                          <div className="mt-1 space-y-2">
+                            <p className="text-sm text-destructive">{lookupError}</p>
+                            {cpfAlreadyRegistered && (
+                              <Link to="/forgot-password" className="text-sm font-medium text-primary hover:underline">
+                                Recuperar senha
+                              </Link>
+                            )}
+                          </div>
+                        )}
+                        {!lockedFromRegisterCpfLookup && (
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            Informe o CPF e a data de nascimento e clique em Consultar. A data será conferida com
+                            a consulta.
+                          </p>
+                        )}
                       </div>
                       <div>
-                        <Label htmlFor="registerFullName">Nome Completo *</Label>
+                        <Label htmlFor="registerBirthDate">Data de nascimento *</Label>
                         <Input
-                          id="registerFullName"
-                          value={registerData.fullName}
+                          id="registerBirthDate"
+                          type="date"
+                          value={registerData.birthDate}
                           readOnly={lockedFromRegisterCpfLookup}
                           onChange={(e) => {
                             if (lockedFromRegisterCpfLookup) return;
-                            setRegisterData((prev) => ({ ...prev, fullName: e.target.value }));
+                            setRegisterData((prev) => ({ ...prev, birthDate: e.target.value }));
                           }}
-                          placeholder="Preenchido após consultar o CPF"
+                          max={new Date().toISOString().split("T")[0]}
                           className={`mt-1 ${lockedFromRegisterCpfLookup ? "bg-muted" : ""}`}
                           disabled={isRegisteringAccount}
                         />
+                        {!lockedFromRegisterCpfLookup && (
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            Deve ser a mesma data que consta no seu documento de identificação.
+                          </p>
+                        )}
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          className="mt-2 w-full"
+                          onClick={() => manualLookup()}
+                          disabled={
+                            isRegisteringAccount ||
+                            lookupLoading ||
+                            registerData.cpf.replace(/\D/g, "").length !== 11 ||
+                            !registerData.birthDate?.trim()
+                          }
+                        >
+                          {lookupLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Consultar"}
+                        </Button>
                       </div>
-                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                        <div>
-                          <Label htmlFor="registerBirthDate">Data de Nascimento *</Label>
-                          <Input
-                            id="registerBirthDate"
-                            type="date"
-                            value={registerData.birthDate}
-                            readOnly={lockedFromRegisterCpfLookup}
-                            onChange={(e) => {
-                              if (lockedFromRegisterCpfLookup) return;
-                              setRegisterData((prev) => ({ ...prev, birthDate: e.target.value }));
-                            }}
-                            max={new Date().toISOString().split("T")[0]}
-                            className={`mt-1 ${lockedFromRegisterCpfLookup ? "bg-muted" : ""}`}
-                            disabled={isRegisteringAccount}
-                          />
-                        </div>
-                        <div>
-                          <Label htmlFor="registerGenderDisplay">Gênero *</Label>
-                          <Input
-                            id="registerGenderDisplay"
-                            value={
-                              registerData.gender === "M"
-                                ? "Masculino"
-                                : registerData.gender === "F"
-                                  ? "Feminino"
-                                  : registerData.gender
-                            }
-                            readOnly={lockedFromRegisterCpfLookup}
-                            placeholder="—"
-                            className={`mt-1 ${lockedFromRegisterCpfLookup ? "bg-muted" : ""}`}
-                            disabled={isRegisteringAccount}
-                          />
-                        </div>
-                      </div>
+                      {lockedFromRegisterCpfLookup && (
+                        <>
+                          <div>
+                            <Label htmlFor="registerFullName">Nome completo *</Label>
+                            <Input
+                              id="registerFullName"
+                              value={registerData.fullName}
+                              readOnly
+                              placeholder="Confirmado após consulta"
+                              className="mt-1 bg-muted"
+                              disabled={isRegisteringAccount}
+                            />
+                          </div>
+                          <div>
+                            <Label htmlFor="registerGenderDisplay">Gênero *</Label>
+                            <Input
+                              id="registerGenderDisplay"
+                              value={
+                                registerData.gender === "M"
+                                  ? "Masculino"
+                                  : registerData.gender === "F"
+                                    ? "Feminino"
+                                    : registerData.gender
+                              }
+                              readOnly
+                              placeholder="—"
+                              className="mt-1 bg-muted"
+                              disabled={isRegisteringAccount}
+                            />
+                          </div>
+                        </>
+                      )}
                       <div>
                         <Label htmlFor="registerPhone">Telefone *</Label>
                         <Input

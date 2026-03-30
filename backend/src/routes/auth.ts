@@ -15,6 +15,7 @@ import {
 } from '../controllers/passwordResetController.js';
 import {
   lookupCpfController,
+  checkCpfRegisteredController,
   cpfBrasilHealthController,
   cpfRegistrationConfigController,
 } from '../controllers/cpfLookupController.js';
@@ -24,6 +25,9 @@ const router = Router();
 // Public routes
 router.post('/register', registerUser);
 router.post('/login', loginUser);
+
+// CPF já cadastrado na plataforma (cadastro / consulta — sem PII na resposta)
+router.post('/check-cpf-registered', cpfLookupRateLimiter, checkCpfRegisteredController);
 
 // Fase 2 — lookup CPF Brasil (chave só no servidor)
 router.post('/lookup-cpf', cpfLookupRateLimiter, lookupCpfController);

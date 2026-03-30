@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { getDashboardRoute } from "@/lib/utils/navigation";
@@ -11,7 +11,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Loader2 } from "lucide-react";
 import { maskCpf, maskEmailOrCpf, maskPhone } from "@/lib/utils/masks";
 import { getPublicBranding } from "@/lib/api/systemSettings";
-import { validatePhone } from "@/lib/utils/validators";
+import { validatePhone, normalizeBirthDateForCompare } from "@/lib/utils/validators";
 import { useCpfBrasilLookup } from "@/hooks/useCpfBrasilLookup";
 import { toast } from "sonner";
 
@@ -35,10 +35,34 @@ const Auth = () => {
   const [lgpdConsent, setLgpdConsent] = useState(false);
   const [cpfLookupProof, setCpfLookupProof] = useState<string | null>(null);
 
+  const birthDateRef = useRef(birthDate);
+  useEffect(() => {
+    birthDateRef.current = birthDate;
+  }, [birthDate]);
+
+  const clearLookupCompletedRef = useRef(() => {});
+
   const onLookupSuccess = useCallback(
     (data: { full_name: string; birth_date: string; gender: string }, proof: string) => {
+      const userBd = normalizeBirthDateForCompare(birthDateRef.current);
+      const apiBd = normalizeBirthDateForCompare(data.birth_date);
+      if (!userBd) {
+        toast.error("Informe sua data de nascimento antes de consultar.");
+        clearLookupCompletedRef.current();
+        return;
+      }
+      if (userBd !== apiBd) {
+        toast.error(
+          "A data de nascimento não confere com o CPF consultado. Verifique e tente novamente."
+        );
+        clearLookupCompletedRef.current();
+        setFullName("");
+        setGender("");
+        setCpfLookupProof(null);
+        return;
+      }
       setFullName(data.full_name);
-      setBirthDate(data.birth_date);
+      setBirthDate(apiBd);
       setGender(data.gender);
       setCpfLookupProof(proof);
     },
@@ -52,11 +76,17 @@ const Auth = () => {
     setCpfLookupProof(null);
   }, []);
 
-  const { lookupLoading, lookupError, manualLookup } = useCpfBrasilLookup({
-    cpfMasked: cpf,
-    onSuccess: onLookupSuccess,
-    onInvalidate: onLookupInvalidate,
-  });
+  const { lookupLoading, lookupError, manualLookup, cpfAlreadyRegistered, clearLookupCompleted } =
+    useCpfBrasilLookup({
+      cpfMasked: cpf,
+      onSuccess: onLookupSuccess,
+      onInvalidate: onLookupInvalidate,
+      canAutoLookup: () => Boolean(birthDate.trim()),
+    });
+
+  useEffect(() => {
+    clearLookupCompletedRef.current = clearLookupCompleted;
+  }, [clearLookupCompleted]);
 
   const lockedFromLookup = Boolean(cpfLookupProof);
 
@@ -212,59 +242,87 @@ const Auth = () => {
                       disabled={loading}
                       className="flex-1"
                     />
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      onClick={() => manualLookup()}
-                      disabled={loading || lookupLoading || cpf.replace(/\D/g, "").length !== 11}
-                    >
-                      {lookupLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Consultar"}
-                    </Button>
                   </div>
                   {lookupLoading && (
                     <p className="text-xs text-muted-foreground">Consultando dados…</p>
                   )}
-                  {lookupError && <p className="text-sm text-destructive">{lookupError}</p>}
+                  {lookupError && (
+                    <div className="space-y-2">
+                      <p className="text-sm text-destructive">{lookupError}</p>
+                      {cpfAlreadyRegistered && (
+                        <Link to="/forgot-password" className="text-sm font-medium text-primary hover:underline">
+                          Recuperar senha
+                        </Link>
+                      )}
+                    </div>
+                  )}
+                  {!lockedFromLookup && (
+                    <p className="text-xs text-muted-foreground">
+                      Informe o CPF e a data de nascimento e clique em Consultar. A data será conferida com a
+                      consulta.
+                    </p>
+                  )}
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="signup-name">Nome completo *</Label>
+                  <Label htmlFor="signup-birthdate">Data de nascimento *</Label>
                   <Input
-                    id="signup-name"
-                    placeholder="Preenchido após consultar o CPF"
-                    value={fullName}
+                    id="signup-birthdate"
+                    type="date"
+                    value={birthDate}
                     readOnly={lockedFromLookup}
-                    onChange={(e) => !lockedFromLookup && setFullName(e.target.value)}
+                    onChange={(e) => !lockedFromLookup && setBirthDate(e.target.value)}
                     required
                     className={lockedFromLookup ? "bg-muted" : ""}
                   />
+                  {!lockedFromLookup && (
+                    <p className="text-xs text-muted-foreground">
+                      Deve ser a mesma data que consta no seu documento de identificação.
+                    </p>
+                  )}
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    className="w-full"
+                    onClick={() => manualLookup()}
+                    disabled={
+                      loading ||
+                      lookupLoading ||
+                      cpf.replace(/\D/g, "").length !== 11 ||
+                      !birthDate.trim()
+                    }
+                  >
+                    {lookupLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Consultar"}
+                  </Button>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="signup-birthdate">Data de nascimento *</Label>
-                    <Input
-                      id="signup-birthdate"
-                      type="date"
-                      value={birthDate}
-                      readOnly={lockedFromLookup}
-                      onChange={(e) => !lockedFromLookup && setBirthDate(e.target.value)}
-                      required
-                      className={lockedFromLookup ? "bg-muted" : ""}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="signup-gender">Gênero *</Label>
-                    <Input
-                      id="signup-gender"
-                      value={gender === "M" ? "Masculino" : gender === "F" ? "Feminino" : gender}
-                      readOnly={lockedFromLookup}
-                      placeholder="—"
-                      required
-                      className={lockedFromLookup ? "bg-muted" : ""}
-                    />
-                  </div>
-                </div>
+                {lockedFromLookup && (
+                  <>
+                    <div className="space-y-2">
+                      <Label htmlFor="signup-name">Nome completo *</Label>
+                      <Input
+                        id="signup-name"
+                        placeholder="Preenchido após confirmar CPF e data"
+                        value={fullName}
+                        readOnly
+                        required
+                        className="bg-muted"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="signup-gender">Gênero *</Label>
+                      <Input
+                        id="signup-gender"
+                        value={gender === "M" ? "Masculino" : gender === "F" ? "Feminino" : gender}
+                        readOnly
+                        placeholder="—"
+                        required
+                        className="bg-muted"
+                      />
+                    </div>
+                  </>
+                )}
 
                 <div className="space-y-2">
                   <Label htmlFor="signup-phone">Telefone *</Label>

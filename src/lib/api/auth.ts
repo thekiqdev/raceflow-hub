@@ -88,6 +88,15 @@ export const lookupCpfRequest = async (cpf: string, signal?: AbortSignal) => {
   return apiClient.post<LookupCpfResponseBody>('/auth/lookup-cpf', { cpf }, { signal });
 };
 
+/** Verifica se o CPF já tem cadastro na Cronoteam (mesmo rate limit que lookup-cpf). */
+export const checkCpfRegisteredRequest = async (cpf: string, signal?: AbortSignal) => {
+  return apiClient.post<{ registered: boolean }>(
+    '/auth/check-cpf-registered',
+    { cpf },
+    { signal }
+  );
+};
+
 /** Fase 6: flags públicas (sem segredos) para alinhar UX de cadastro. */
 export interface CpfRegistrationConfig {
   registration_requires_lookup_proof: boolean;

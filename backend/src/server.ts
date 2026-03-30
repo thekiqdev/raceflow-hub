@@ -286,6 +286,7 @@ app.get('/', (_req: Request, res: Response) => {
       auth: {
         register: '/api/auth/register',
         login: '/api/auth/login',
+        checkCpfRegistered: 'POST /api/auth/check-cpf-registered',
         lookupCpf: 'POST /api/auth/lookup-cpf',
         cpfBrasilHealth: 'GET /api/auth/cpf-brasil-health',
         cpfRegistrationConfig: 'GET /api/auth/cpf-registration-config',
