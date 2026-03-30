@@ -64,6 +64,8 @@ import {
   getAthleteBehaviorController,
   getMonthlyEvolutionController,
   getEventPerformanceController,
+  getCpfValidationOverviewController,
+  getCpfLookupMetricsController,
 } from '../controllers/reportsController.js';
 import { getLeadersInvitationsGrantedByEventController } from '../controllers/leadersInvitationsReportController.js';
 import {
@@ -223,6 +225,8 @@ router.get('/reports/top-organizers', getTopOrganizersController);
 router.get('/reports/athlete-behavior', getAthleteBehaviorController);
 router.get('/reports/monthly-evolution', getMonthlyEvolutionController);
 router.get('/reports/event-performance', getEventPerformanceController);
+router.get('/reports/cpf-validation-overview', getCpfValidationOverviewController);
+router.get('/reports/cpf-lookup-metrics', getCpfLookupMetricsController);
 router.get(
   '/reports/leaders-invitations-granted/:eventId',
   getLeadersInvitationsGrantedByEventController

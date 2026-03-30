@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { getDashboardRoute } from "@/lib/utils/navigation";
@@ -10,6 +10,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Loader2 } from "lucide-react";
 import { MultiStepRegistration } from "@/components/MultiStepRegistration";
+import { maskCpf, maskEmailOrCpf } from "@/lib/utils/masks";
+import { getPublicBranding } from "@/lib/api/systemSettings";
 
 interface LoginDialogProps {
   open: boolean;
@@ -21,10 +23,20 @@ export function LoginDialog({ open, onOpenChange }: LoginDialogProps) {
   const { login } = useAuth();
   const [loading, setLoading] = useState(false);
   const [isMultiStepOpen, setIsMultiStepOpen] = useState(false);
-  
+  const [loginCpfOnly, setLoginCpfOnly] = useState(false);
+
   // Login state
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
+
+  useEffect(() => {
+    if (!open) return;
+    getPublicBranding().then((res) => {
+      if (res.success && res.data) {
+        setLoginCpfOnly(res.data.login_cpf_only === true);
+      }
+    });
+  }, [open]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -70,13 +82,17 @@ export function LoginDialog({ open, onOpenChange }: LoginDialogProps) {
         <div className="space-y-4">
           <form onSubmit={handleLogin} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="login-email">Email</Label>
+              <Label htmlFor="login-email">{loginCpfOnly ? "CPF" : "E-mail ou CPF"}</Label>
               <Input
                 id="login-email"
-                type="email"
-                placeholder="seu@email.com"
+                type="text"
+                inputMode={loginCpfOnly ? "numeric" : "email"}
+                autoComplete="username"
+                placeholder={loginCpfOnly ? "000.000.000-00" : "seu@email.com ou 000.000.000-00"}
                 value={loginEmail}
-                onChange={(e) => setLoginEmail(e.target.value)}
+                onChange={(e) =>
+                  setLoginEmail(loginCpfOnly ? maskCpf(e.target.value) : maskEmailOrCpf(e.target.value))
+                }
                 required
               />
             </div>
@@ -85,6 +101,7 @@ export function LoginDialog({ open, onOpenChange }: LoginDialogProps) {
                   <Input
                     id="login-password"
                     type="password"
+                    autoComplete="current-password"
                     placeholder="••••••••"
                     value={loginPassword}
                     onChange={(e) => setLoginPassword(e.target.value)}

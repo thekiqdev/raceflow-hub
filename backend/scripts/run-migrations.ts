@@ -134,6 +134,8 @@ const migrations = [
   '104_add_idempotency_to_invitation_bonus_assisted_audit.sql',
   '105_assisted_audit_distributed_lock_key.sql',
   '106_invitation_bonus_assisted_audit_resolution.sql',
+  '107_profiles_cpf_lookup_metadata.sql',
+  '108_cpf_lookup_metrics_daily.sql',
 ];
 
 // Create migrations tracking table

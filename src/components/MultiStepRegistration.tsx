@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { getDashboardRoute } from "@/lib/utils/navigation";
@@ -7,13 +7,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Loader2, ChevronLeft, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
 import { maskCpf, maskPhone, maskCep, unmask } from "@/lib/utils/masks";
 import { validateCpf, validateCep, validatePhone, validateEmail, validatePassword } from "@/lib/utils/validators";
 import { fetchAddressByCep } from "@/lib/api/viacep";
+import { useCpfBrasilLookup } from "@/hooks/useCpfBrasilLookup";
+import type { LookupCpfData } from "@/lib/api/auth";
 
 interface MultiStepRegistrationProps {
   open: boolean;
@@ -49,6 +50,8 @@ interface RegistrationData {
   
   // Etapa 4: Termos
   lgpdConsent: boolean;
+  /** Preenchido após POST /auth/lookup-cpf com sucesso */
+  cpfLookupProof: string;
 }
 
 interface StepErrors {
@@ -95,7 +98,36 @@ export function MultiStepRegistration({ open, onOpenChange }: MultiStepRegistrat
     
     // Etapa 4
     lgpdConsent: false,
+    cpfLookupProof: "",
   });
+
+  const onCpfLookupSuccess = useCallback((data: LookupCpfData, proof: string) => {
+    setFormData((prev) => ({
+      ...prev,
+      fullName: data.full_name,
+      birthDate: data.birth_date,
+      gender: data.gender === "M" || data.gender === "F" ? data.gender : "",
+      cpfLookupProof: proof,
+    }));
+  }, []);
+
+  const onCpfLookupInvalidate = useCallback(() => {
+    setFormData((prev) => ({
+      ...prev,
+      fullName: "",
+      birthDate: "",
+      gender: "",
+      cpfLookupProof: "",
+    }));
+  }, []);
+
+  const { lookupLoading, lookupError, manualLookup } = useCpfBrasilLookup({
+    cpfMasked: formData.cpf,
+    onSuccess: onCpfLookupSuccess,
+    onInvalidate: onCpfLookupInvalidate,
+  });
+
+  const lockedFromCpfLookup = Boolean(formData.cpfLookupProof);
 
   // Carregar código de referência da URL
   useEffect(() => {
@@ -149,6 +181,9 @@ export function MultiStepRegistration({ open, onOpenChange }: MultiStepRegistrat
           fullName: '',
           preferredName: '',
           gender: '',
+          profession: '',
+          cbat: '',
+          team: '',
           postalCode: '',
           street: '',
           addressNumber: '',
@@ -161,6 +196,7 @@ export function MultiStepRegistration({ open, onOpenChange }: MultiStepRegistrat
           password: '',
           confirmPassword: '',
           lgpdConsent: false,
+          cpfLookupProof: "",
         });
         setCurrentStep(1);
         setErrors({});
@@ -228,6 +264,9 @@ export function MultiStepRegistration({ open, onOpenChange }: MultiStepRegistrat
         // Validar Etapa 1: Dados Pessoais
         if (!formData.cpf || !validateCpf(formData.cpf)) {
           newErrors.cpf = 'CPF inválido';
+        }
+        if (!formData.cpfLookupProof) {
+          newErrors.cpf = newErrors.cpf || 'Consulte o CPF para continuar';
         }
         if (!formData.birthDate) {
           newErrors.birthDate = 'Data de nascimento é obrigatória';
@@ -343,6 +382,7 @@ export function MultiStepRegistration({ open, onOpenChange }: MultiStepRegistrat
         state: formData.state || undefined,
         lgpd_consent: formData.lgpdConsent,
         referral_code: referralCode || undefined,
+        cpf_lookup_proof: formData.cpfLookupProof || undefined,
       });
 
       if (success) {
@@ -408,119 +448,143 @@ export function MultiStepRegistration({ open, onOpenChange }: MultiStepRegistrat
     );
   };
 
-  // Renderizar etapa 1: Dados Pessoais
+  // Renderizar etapa 1: só CPF até consulta OK; demais campos aparecem abaixo após sucesso
   const renderStep1 = () => {
     return (
       <div className="space-y-4">
         <div className="space-y-2">
           <Label htmlFor="cpf">CPF *</Label>
-          <Input
-            id="cpf"
-            placeholder="000.000.000-00"
-            value={formData.cpf}
-            onChange={(e) => updateField('cpf', maskCpf(e.target.value))}
-            maxLength={14}
-            className={errors.cpf ? "border-destructive" : ""}
-          />
+          <div className="flex gap-2">
+            <Input
+              id="cpf"
+              placeholder="000.000.000-00"
+              value={formData.cpf}
+              onChange={(e) => updateField('cpf', maskCpf(e.target.value))}
+              maxLength={14}
+              disabled={loading}
+              className={`flex-1 ${errors.cpf ? "border-destructive" : ""}`}
+            />
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => manualLookup()}
+              disabled={loading || lookupLoading || formData.cpf.replace(/\D/g, "").length !== 11}
+            >
+              {lookupLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Consultar"}
+            </Button>
+          </div>
+          {lookupLoading && (
+            <p className="text-xs text-muted-foreground">Consultando dados…</p>
+          )}
+          {lookupError && <p className="text-sm text-destructive">{lookupError}</p>}
           {errors.cpf && <p className="text-sm text-destructive">{errors.cpf}</p>}
+          {!lockedFromCpfLookup && !lookupLoading && (
+            <p className="text-xs text-muted-foreground">
+              Digite um CPF válido. Os dados aparecerão aqui após a consulta bem-sucedida.
+            </p>
+          )}
         </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="birthDate">Data de Nascimento *</Label>
-          <Input
-            id="birthDate"
-            type="date"
-            value={formData.birthDate}
-            onChange={(e) => updateField('birthDate', e.target.value)}
-            max={new Date().toISOString().split('T')[0]}
-            className={errors.birthDate ? "border-destructive" : ""}
-          />
-          {errors.birthDate && <p className="text-sm text-destructive">{errors.birthDate}</p>}
-        </div>
+        {lockedFromCpfLookup && (
+          <div className="space-y-4 rounded-lg border border-border bg-muted/30 p-4">
+            <p className="text-sm font-medium text-foreground">Dados encontrados</p>
 
-        <div className="space-y-2">
-          <Label htmlFor="phone">Contato/Telefone *</Label>
-          <Input
-            id="phone"
-            placeholder="(00) 00000-0000"
-            value={formData.phone}
-            onChange={(e) => updateField('phone', maskPhone(e.target.value))}
-            maxLength={15}
-            className={errors.phone ? "border-destructive" : ""}
-          />
-          {errors.phone && <p className="text-sm text-destructive">{errors.phone}</p>}
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="fullName">Nome Completo *</Label>
-          <Input
-            id="fullName"
-            placeholder="João da Silva"
-            value={formData.fullName}
-            onChange={(e) => updateField('fullName', e.target.value)}
-            className={errors.fullName ? "border-destructive" : ""}
-          />
-          {errors.fullName && <p className="text-sm text-destructive">{errors.fullName}</p>}
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="preferredName">Como você quer ser chamado(a)?</Label>
-          <Input
-            id="preferredName"
-            placeholder="João"
-            value={formData.preferredName}
-            onChange={(e) => updateField('preferredName', e.target.value)}
-          />
-        </div>
-
-        <div className="space-y-2">
-          <Label>Sexo *</Label>
-          <RadioGroup
-            value={formData.gender}
-            onValueChange={(value) => updateField('gender', value as 'M' | 'F')}
-            className="flex gap-6"
-          >
-            <div className="flex items-center space-x-2">
-              <RadioGroupItem value="M" id="gender-m" />
-              <Label htmlFor="gender-m" className="cursor-pointer">Masculino</Label>
+            <div className="space-y-2">
+              <Label htmlFor="fullName">Nome completo *</Label>
+              <Input
+                id="fullName"
+                value={formData.fullName}
+                readOnly
+                className={`bg-muted ${errors.fullName ? "border-destructive" : ""}`}
+              />
+              {errors.fullName && <p className="text-sm text-destructive">{errors.fullName}</p>}
             </div>
-            <div className="flex items-center space-x-2">
-              <RadioGroupItem value="F" id="gender-f" />
-              <Label htmlFor="gender-f" className="cursor-pointer">Feminino</Label>
+
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="birthDate">Data de nascimento *</Label>
+                <Input
+                  id="birthDate"
+                  type="date"
+                  value={formData.birthDate}
+                  readOnly
+                  className={`bg-muted ${errors.birthDate ? "border-destructive" : ""}`}
+                />
+                {errors.birthDate && <p className="text-sm text-destructive">{errors.birthDate}</p>}
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="gender-display">Sexo *</Label>
+                <Input
+                  id="gender-display"
+                  value={
+                    formData.gender === "M"
+                      ? "Masculino"
+                      : formData.gender === "F"
+                        ? "Feminino"
+                        : formData.gender || ""
+                  }
+                  readOnly
+                  placeholder="—"
+                  className={`bg-muted ${errors.gender ? "border-destructive" : ""}`}
+                />
+                {errors.gender && <p className="text-sm text-destructive">{errors.gender}</p>}
+              </div>
             </div>
-          </RadioGroup>
-          {errors.gender && <p className="text-sm text-destructive">{errors.gender}</p>}
-        </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="profession">Profissão</Label>
-          <Input
-            id="profession"
-            placeholder="Ex: Médico, Engenheiro, Professor..."
-            value={formData.profession}
-            onChange={(e) => updateField('profession', e.target.value)}
-          />
-        </div>
+            <div className="space-y-2">
+              <Label htmlFor="phone">Contato / telefone *</Label>
+              <Input
+                id="phone"
+                placeholder="(00) 00000-0000"
+                value={formData.phone}
+                onChange={(e) => updateField('phone', maskPhone(e.target.value))}
+                maxLength={15}
+                className={errors.phone ? "border-destructive" : ""}
+              />
+              {errors.phone && <p className="text-sm text-destructive">{errors.phone}</p>}
+            </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="cbat">CBAT</Label>
-          <Input
-            id="cbat"
-            placeholder="Número do CBAT"
-            value={formData.cbat}
-            onChange={(e) => updateField('cbat', e.target.value)}
-          />
-        </div>
+            <div className="space-y-2">
+              <Label htmlFor="preferredName">Como você quer ser chamado(a)?</Label>
+              <Input
+                id="preferredName"
+                placeholder="João"
+                value={formData.preferredName}
+                onChange={(e) => updateField('preferredName', e.target.value)}
+              />
+            </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="team">Equipe</Label>
-          <Input
-            id="team"
-            placeholder="Nome da equipe"
-            value={formData.team}
-            onChange={(e) => updateField('team', e.target.value)}
-          />
-        </div>
+            <div className="space-y-2">
+              <Label htmlFor="profession">Profissão</Label>
+              <Input
+                id="profession"
+                placeholder="Ex: Médico, Engenheiro, Professor..."
+                value={formData.profession}
+                onChange={(e) => updateField('profession', e.target.value)}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="cbat">CBAT</Label>
+              <Input
+                id="cbat"
+                placeholder="Número do CBAT"
+                value={formData.cbat}
+                onChange={(e) => updateField('cbat', e.target.value)}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="team">Equipe</Label>
+              <Input
+                id="team"
+                placeholder="Nome da equipe"
+                value={formData.team}
+                onChange={(e) => updateField('team', e.target.value)}
+              />
+            </div>
+          </div>
+        )}
       </div>
     );
   };
@@ -970,14 +1034,14 @@ export function MultiStepRegistration({ open, onOpenChange }: MultiStepRegistrat
 
   // Títulos das etapas
   const stepTitles = [
-    'Dados Pessoais',
+    'CPF e contato',
     'Endereço',
     'Credenciais de Acesso',
     'Confirmação e Termos',
   ];
 
   const stepDescriptions = [
-    'Preencha suas informações pessoais',
+    'Informe seu CPF e complete telefone e dados opcionais após a consulta',
     'Informe seu endereço completo',
     'Crie suas credenciais de acesso',
     'Revise seus dados e aceite os termos',
@@ -1023,7 +1087,7 @@ export function MultiStepRegistration({ open, onOpenChange }: MultiStepRegistrat
             <Button
               type="button"
               onClick={handleNext}
-              disabled={loading}
+              disabled={loading || (currentStep === 1 && !formData.cpfLookupProof)}
               className="flex items-center gap-2"
             >
               Próximo

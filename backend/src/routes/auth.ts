@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { authenticate } from '../middleware/auth.js';
+import { cpfLookupRateLimiter } from '../middleware/rateLimiter.js';
 import {
   registerUser,
   loginUser,
@@ -12,12 +13,23 @@ import {
   resetPasswordController,
   validateTokenController,
 } from '../controllers/passwordResetController.js';
+import {
+  lookupCpfController,
+  cpfBrasilHealthController,
+  cpfRegistrationConfigController,
+} from '../controllers/cpfLookupController.js';
 
 const router = Router();
 
 // Public routes
 router.post('/register', registerUser);
 router.post('/login', loginUser);
+
+// Fase 2 — lookup CPF Brasil (chave só no servidor)
+router.post('/lookup-cpf', cpfLookupRateLimiter, lookupCpfController);
+router.get('/cpf-brasil-health', cpfBrasilHealthController);
+// Fase 6 — flags públicas (sem segredos)
+router.get('/cpf-registration-config', cpfRegistrationConfigController);
 
 // Password reset routes (public)
 router.post('/password-reset/request', requestPasswordResetController);

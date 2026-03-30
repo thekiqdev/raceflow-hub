@@ -90,15 +90,19 @@ export interface UpdateSystemSettingsData {
   old_platform_url?: string | null;
 }
 
-/** Dados públicos de branding (nome e logo da plataforma) */
+/** Dados públicos de branding (nome, logo e links opcionais da home) */
 export interface PublicBranding {
   platform_name: string;
   platform_logo_url: string | null;
+  old_results_url?: string | null;
+  old_platform_url?: string | null;
+  /** Quando true, login público aceita apenas CPF (não e-mail). */
+  login_cpf_only?: boolean;
 }
 
 /**
- * Get public branding (logo + platform name). Endpoint público, usado no header e no footer.
- * Configurado em Admin > Configurações > Geral > Logo da Plataforma.
+ * Get public branding (logo, nome e links opcionais old_results_url / old_platform_url).
+ * Endpoint público — header, footer e home (sem chamar /admin/settings).
  */
 export const getPublicBranding = async (): Promise<{
   success: boolean;

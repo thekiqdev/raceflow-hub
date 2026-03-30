@@ -19,6 +19,14 @@ export const maskCpf = (value: string): string => {
   }
 };
 
+/** Campo único de login: e-mail (letras / @) ou apenas CPF com máscara. */
+export const maskEmailOrCpf = (value: string): string => {
+  if (value.includes('@') || /[a-zA-ZÀ-ÿ]/.test(value)) {
+    return value;
+  }
+  return maskCpf(value);
+};
+
 /**
  * Apply phone mask ((00) 00000-0000 or (00) 0000-0000)
  */

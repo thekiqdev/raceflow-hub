@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Separator } from "@/components/ui/separator";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { CheckCircle2, Calendar, MapPin, Ticket, Download, ChevronDown, ChevronUp, List, Eye } from "lucide-react";
+import { CheckCircle2, Calendar, MapPin, Ticket, Download, ChevronDown, ChevronUp, List, Eye, Loader2 } from "lucide-react";
 import jsPDF from "jspdf";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -24,12 +24,16 @@ import { getEventCategories, EventCategory } from "@/lib/api/eventCategories";
 import { type CategoryBatch } from "@/lib/api/categories";
 import { EventKit, KitProduct, ProductVariant, getEventKits } from "@/lib/api/eventKits";
 import { validateCoupon } from "@/lib/api/coupons";
-import { getEnabledModules } from "@/lib/api/systemSettings";
+import { getEnabledModules, getPublicBranding } from "@/lib/api/systemSettings";
 import { getModalities, type Modality } from "@/lib/api/modalities";
 import { getCategoriesByModality, type Category as CategoryType, type CategoryGender, type CategoryType as CategoryTypeEnum } from "@/lib/api/categories";
 import { getEffectiveRegistrationStatus, getRegistrationStatusMessage, isRegistrationOpen, isRegistrationNotOpen, isRegistrationClosed } from "@/lib/utils/eventRegistration";
 import type { Event } from "@/lib/api/events";
 import { getReferralCoupon, saveReferralCoupon, clearReferralCoupon } from "@/lib/referralCouponCache";
+import { maskCpf, maskEmailOrCpf, maskPhone } from "@/lib/utils/masks";
+import { validateCpf, validatePhone } from "@/lib/utils/validators";
+import { useCpfBrasilLookup } from "@/hooks/useCpfBrasilLookup";
+import type { LookupCpfData } from "@/lib/api/auth";
 
 // Re-export ProductVariant type for use in component
 type ProductVariantType = ProductVariant;
@@ -157,7 +161,37 @@ export function RegistrationFlow({
     phone: "",
     birthDate: "",
     gender: "",
+    cpfLookupProof: "",
   });
+
+  const onRegisterCpfLookupSuccess = useCallback((data: LookupCpfData, proof: string) => {
+    setRegisterData((prev) => ({
+      ...prev,
+      fullName: data.full_name,
+      birthDate: data.birth_date,
+      gender: data.gender === "M" || data.gender === "F" ? data.gender : "",
+      cpfLookupProof: proof,
+    }));
+  }, []);
+
+  const onRegisterCpfLookupInvalidate = useCallback(() => {
+    setRegisterData((prev) => ({
+      ...prev,
+      fullName: "",
+      birthDate: "",
+      gender: "",
+      cpfLookupProof: "",
+    }));
+  }, []);
+
+  const { lookupLoading, lookupError, manualLookup } = useCpfBrasilLookup({
+    cpfMasked: registerData.cpf,
+    onSuccess: onRegisterCpfLookupSuccess,
+    onInvalidate: onRegisterCpfLookupInvalidate,
+  });
+
+  const lockedFromRegisterCpfLookup = Boolean(registerData.cpfLookupProof);
+
   const [lgpdConsent, setLgpdConsent] = useState(false);
   const [isRegisteringAccount, setIsRegisteringAccount] = useState(false);
   const [isRegisteringOther, setIsRegisteringOther] = useState(false);
@@ -180,6 +214,8 @@ export function RegistrationFlow({
 
   // Senior discount state
   const [seniorDiscountEnabled, setSeniorDiscountEnabled] = useState(false);
+  /** Alinhado a Configurações → Módulos → Login apenas com CPF */
+  const [loginCpfOnly, setLoginCpfOnly] = useState(false);
   const [userProfile, setUserProfile] = useState<{ birth_date?: string } | null>(null);
   const [otherPersonProfile, setOtherPersonProfile] = useState<{ birth_date?: string } | null>(null);
 
@@ -311,6 +347,10 @@ export function RegistrationFlow({
       // Load enabled modules to check if senior discount and platform fees are enabled
       const loadSettings = async () => {
         try {
+          const brandingRes = await getPublicBranding();
+          if (brandingRes.success && brandingRes.data) {
+            setLoginCpfOnly(brandingRes.data.login_cpf_only === true);
+          }
           const response = await getEnabledModules();
           if (response.success && response.data) {
             setSeniorDiscountEnabled(response.data.enabled_modules?.senior_discount_60_plus || false);
@@ -876,8 +916,20 @@ export function RegistrationFlow({
   };
 
   const handleRegister = async () => {
-    if (!registerData.fullName || !registerData.email || !registerData.password || !registerData.cpf || !registerData.phone) {
+    if (!registerData.cpf || !validateCpf(registerData.cpf)) {
+      toast.error("CPF inválido");
+      return;
+    }
+    if (!registerData.cpfLookupProof) {
+      toast.error("CPF inválido");
+      return;
+    }
+    if (!registerData.fullName || !registerData.email || !registerData.password || !registerData.phone) {
       toast.error("Por favor, preencha todos os campos obrigatórios");
+      return;
+    }
+    if (!validatePhone(registerData.phone)) {
+      toast.error("Telefone inválido");
       return;
     }
 
@@ -903,9 +955,10 @@ export function RegistrationFlow({
         cpf: registerData.cpf.replace(/\D/g, ""),
         phone: registerData.phone.replace(/\D/g, ""),
         birth_date: registerData.birthDate || undefined,
-        gender: registerData.gender || undefined,
+        gender: (registerData.gender === "M" || registerData.gender === "F" ? registerData.gender : undefined) as "M" | "F" | undefined,
         lgpd_consent: lgpdConsent,
         referral_code: referralCodeFromUrl ? referralCodeFromUrl.toUpperCase().trim() : undefined,
+        cpf_lookup_proof: registerData.cpfLookupProof,
       });
 
       if (success) {
@@ -926,6 +979,7 @@ export function RegistrationFlow({
           phone: "",
           birthDate: "",
           gender: "",
+          cpfLookupProof: "",
         });
         setLgpdConsent(false);
         setIsRegistering(false); // Switch back to login view
@@ -1658,13 +1712,20 @@ export function RegistrationFlow({
                     // Login Form
                     <div className="grid gap-4">
                   <div>
-                    <Label htmlFor="loginEmail">Email *</Label>
+                    <Label htmlFor="loginEmail">{loginCpfOnly ? "CPF *" : "E-mail ou CPF *"}</Label>
                     <Input
                       id="loginEmail"
-                      type="email"
+                      type="text"
+                      inputMode={loginCpfOnly ? "numeric" : "email"}
+                      autoComplete="username"
                       value={loginData.email}
-                      onChange={(e) => setLoginData(prev => ({ ...prev, email: e.target.value }))}
-                      placeholder="seu@email.com"
+                      onChange={(e) =>
+                        setLoginData((prev) => ({
+                          ...prev,
+                          email: loginCpfOnly ? maskCpf(e.target.value) : maskEmailOrCpf(e.target.value),
+                        }))
+                      }
+                      placeholder={loginCpfOnly ? "000.000.000-00" : "seu@email.com ou 000.000.000-00"}
                       className="mt-1"
                       disabled={isLoggingIn}
                     />
@@ -1695,15 +1756,96 @@ export function RegistrationFlow({
                   </Button>
                     </div>
                   ) : (
-                    // Register Form
+                    // Register Form (CPF primeiro + consulta; nome/data/gênero após lookup)
                     <div className="grid gap-4">
+                      <div>
+                        <Label htmlFor="registerCpf">CPF *</Label>
+                        <div className="mt-1 flex gap-2">
+                          <Input
+                            id="registerCpf"
+                            value={registerData.cpf}
+                            onChange={(e) => setRegisterData((prev) => ({ ...prev, cpf: maskCpf(e.target.value) }))}
+                            placeholder="000.000.000-00"
+                            maxLength={14}
+                            disabled={isRegisteringAccount}
+                            className="flex-1"
+                          />
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            onClick={() => manualLookup()}
+                            disabled={
+                              isRegisteringAccount ||
+                              lookupLoading ||
+                              registerData.cpf.replace(/\D/g, "").length !== 11
+                            }
+                          >
+                            {lookupLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Consultar"}
+                          </Button>
+                        </div>
+                        {lookupLoading && (
+                          <p className="mt-1 text-xs text-muted-foreground">Consultando dados…</p>
+                        )}
+                        {lookupError && <p className="mt-1 text-sm text-destructive">{lookupError}</p>}
+                      </div>
                       <div>
                         <Label htmlFor="registerFullName">Nome Completo *</Label>
                         <Input
                           id="registerFullName"
                           value={registerData.fullName}
-                          onChange={(e) => setRegisterData(prev => ({ ...prev, fullName: e.target.value }))}
-                          placeholder="Seu nome completo"
+                          readOnly={lockedFromRegisterCpfLookup}
+                          onChange={(e) => {
+                            if (lockedFromRegisterCpfLookup) return;
+                            setRegisterData((prev) => ({ ...prev, fullName: e.target.value }));
+                          }}
+                          placeholder="Preenchido após consultar o CPF"
+                          className={`mt-1 ${lockedFromRegisterCpfLookup ? "bg-muted" : ""}`}
+                          disabled={isRegisteringAccount}
+                        />
+                      </div>
+                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                        <div>
+                          <Label htmlFor="registerBirthDate">Data de Nascimento *</Label>
+                          <Input
+                            id="registerBirthDate"
+                            type="date"
+                            value={registerData.birthDate}
+                            readOnly={lockedFromRegisterCpfLookup}
+                            onChange={(e) => {
+                              if (lockedFromRegisterCpfLookup) return;
+                              setRegisterData((prev) => ({ ...prev, birthDate: e.target.value }));
+                            }}
+                            max={new Date().toISOString().split("T")[0]}
+                            className={`mt-1 ${lockedFromRegisterCpfLookup ? "bg-muted" : ""}`}
+                            disabled={isRegisteringAccount}
+                          />
+                        </div>
+                        <div>
+                          <Label htmlFor="registerGenderDisplay">Gênero *</Label>
+                          <Input
+                            id="registerGenderDisplay"
+                            value={
+                              registerData.gender === "M"
+                                ? "Masculino"
+                                : registerData.gender === "F"
+                                  ? "Feminino"
+                                  : registerData.gender
+                            }
+                            readOnly={lockedFromRegisterCpfLookup}
+                            placeholder="—"
+                            className={`mt-1 ${lockedFromRegisterCpfLookup ? "bg-muted" : ""}`}
+                            disabled={isRegisteringAccount}
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <Label htmlFor="registerPhone">Telefone *</Label>
+                        <Input
+                          id="registerPhone"
+                          value={registerData.phone}
+                          onChange={(e) => setRegisterData((prev) => ({ ...prev, phone: maskPhone(e.target.value) }))}
+                          placeholder="(00) 00000-0000"
+                          maxLength={15}
                           className="mt-1"
                           disabled={isRegisteringAccount}
                         />
@@ -1714,7 +1856,7 @@ export function RegistrationFlow({
                           id="registerEmail"
                           type="email"
                           value={registerData.email}
-                          onChange={(e) => setRegisterData(prev => ({ ...prev, email: e.target.value }))}
+                          onChange={(e) => setRegisterData((prev) => ({ ...prev, email: e.target.value }))}
                           placeholder="seu@email.com"
                           className="mt-1"
                           disabled={isRegisteringAccount}
@@ -1727,7 +1869,7 @@ export function RegistrationFlow({
                             id="registerPassword"
                             type="password"
                             value={registerData.password}
-                            onChange={(e) => setRegisterData(prev => ({ ...prev, password: e.target.value }))}
+                            onChange={(e) => setRegisterData((prev) => ({ ...prev, password: e.target.value }))}
                             placeholder="Mínimo 6 caracteres"
                             className="mt-1"
                             disabled={isRegisteringAccount}
@@ -1739,63 +1881,11 @@ export function RegistrationFlow({
                             id="registerConfirmPassword"
                             type="password"
                             value={registerData.confirmPassword}
-                            onChange={(e) => setRegisterData(prev => ({ ...prev, confirmPassword: e.target.value }))}
+                            onChange={(e) => setRegisterData((prev) => ({ ...prev, confirmPassword: e.target.value }))}
                             placeholder="Confirme sua senha"
                             className="mt-1"
                             disabled={isRegisteringAccount}
                           />
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <Label htmlFor="registerCpf">CPF *</Label>
-                          <Input
-                            id="registerCpf"
-                            value={registerData.cpf}
-                            onChange={(e) => setRegisterData(prev => ({ ...prev, cpf: e.target.value }))}
-                            placeholder="000.000.000-00"
-                            className="mt-1"
-                            disabled={isRegisteringAccount}
-                          />
-                        </div>
-                        <div>
-                          <Label htmlFor="registerPhone">Telefone *</Label>
-                          <Input
-                            id="registerPhone"
-                            value={registerData.phone}
-                            onChange={(e) => setRegisterData(prev => ({ ...prev, phone: e.target.value }))}
-                            placeholder="(00) 00000-0000"
-                            className="mt-1"
-                            disabled={isRegisteringAccount}
-                          />
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <Label htmlFor="registerBirthDate">Data de Nascimento</Label>
-                          <Input
-                            id="registerBirthDate"
-                            type="date"
-                            value={registerData.birthDate}
-                            onChange={(e) => setRegisterData(prev => ({ ...prev, birthDate: e.target.value }))}
-                            className="mt-1"
-                            disabled={isRegisteringAccount}
-                          />
-                        </div>
-                        <div>
-                          <Label htmlFor="registerGender">Gênero</Label>
-                          <select
-                            id="registerGender"
-                            value={registerData.gender}
-                            onChange={(e) => setRegisterData(prev => ({ ...prev, gender: e.target.value }))}
-                            className="mt-1 flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                            disabled={isRegisteringAccount}
-                          >
-                            <option value="">Selecione</option>
-                            <option value="M">Masculino</option>
-                            <option value="F">Feminino</option>
-                            <option value="O">Outro</option>
-                          </select>
                         </div>
                       </div>
                       <div className="flex items-start gap-2">
@@ -1815,12 +1905,14 @@ export function RegistrationFlow({
                         type="button"
                         onClick={handleRegister}
                         disabled={
+                          !registerData.cpfLookupProof ||
                           !registerData.fullName ||
+                          !registerData.birthDate ||
+                          !registerData.gender ||
+                          !validatePhone(registerData.phone) ||
                           !registerData.email ||
                           !registerData.password ||
                           !registerData.confirmPassword ||
-                          !registerData.cpf ||
-                          !registerData.phone ||
                           !lgpdConsent ||
                           isRegisteringAccount
                         }
@@ -2685,13 +2777,20 @@ export function RegistrationFlow({
                 // User not logged in - show login form
                 <div className="grid gap-4">
                   <div>
-                    <Label htmlFor="loginEmail">Email *</Label>
+                    <Label htmlFor="loginEmailResumo">{loginCpfOnly ? "CPF *" : "E-mail ou CPF *"}</Label>
                     <Input
-                      id="loginEmail"
-                      type="email"
+                      id="loginEmailResumo"
+                      type="text"
+                      inputMode={loginCpfOnly ? "numeric" : "email"}
+                      autoComplete="username"
                       value={loginData.email}
-                      onChange={(e) => setLoginData(prev => ({ ...prev, email: e.target.value }))}
-                      placeholder="seu@email.com"
+                      onChange={(e) =>
+                        setLoginData((prev) => ({
+                          ...prev,
+                          email: loginCpfOnly ? maskCpf(e.target.value) : maskEmailOrCpf(e.target.value),
+                        }))
+                      }
+                      placeholder={loginCpfOnly ? "000.000.000-00" : "seu@email.com ou 000.000.000-00"}
                       className="mt-1"
                       disabled={isLoggingIn}
                     />

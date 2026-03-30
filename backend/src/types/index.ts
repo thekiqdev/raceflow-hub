@@ -20,6 +20,10 @@ export interface Profile {
   id: string;
   full_name: string;
   cpf: string;
+  /** Preenchido quando a integração de validação de CPF gravar metadados (Fase 2+). */
+  cpf_validated_at?: Date | string | null;
+  /** Ex.: cpf_brasil_api. NULL para cadastros legados ou pré-integração. */
+  cpf_lookup_source?: string | null;
   phone: string;
   gender: string | null;
   birth_date: Date;

@@ -26,6 +26,12 @@ export interface ApiResponse<T = any> {
   data?: T;
   error?: string;
   message?: string;
+  /** Presente em algumas respostas de erro (ex.: lookup CPF). */
+  code?: string;
+  details?: unknown;
+  /** JWT de lookup CPF (sucesso). */
+  proof?: string;
+  meta?: { request_id?: string; code?: string };
 }
 
 class ApiClient {
@@ -94,8 +100,9 @@ class ApiClient {
         return {
           success: false,
           error: errorMessage,
-          message: errorDetails?.message || `Request failed with status ${response.status}`,
+          message: (errorDetails as { message?: string })?.message || errorMessage || `Request failed with status ${response.status}`,
           details: errorDetails,
+          code: (errorDetails as { code?: string })?.code,
         };
       }
 
@@ -144,7 +151,7 @@ class ApiClient {
     return this.request<T>(endpoint, { method: 'GET' });
   }
 
-  async post<T>(endpoint: string, data?: any): Promise<ApiResponse<T>> {
+  async post<T>(endpoint: string, data?: any, init?: RequestInit): Promise<ApiResponse<T>> {
     if (data) {
       console.log('📤 [apiClient.post] Enviando dados:', JSON.stringify(data, null, 2));
       console.log('📤 [apiClient.post] Endpoint:', endpoint);
@@ -152,6 +159,7 @@ class ApiClient {
     return this.request<T>(endpoint, {
       method: 'POST',
       body: data ? JSON.stringify(data) : undefined,
+      ...init,
     });
   }
 

@@ -66,6 +66,8 @@ const SystemSettings = () => {
     senior_discount_60_plus: false,
     platform_fees: false,
     organizer_edit_attributes: false,
+    /** true = apenas CPF na tela de login; false = e-mail ou CPF */
+    login_cpf_only: false,
   });
 
   const [feesForm, setFeesForm] = useState({
@@ -131,7 +133,7 @@ const SystemSettings = () => {
           payment_secret_key: data.payment_secret_key || "",
         });
         
-        setModulesForm(data.enabled_modules || {
+        setModulesForm({
           coupons: false,
           refunds: false,
           support: false,
@@ -141,6 +143,8 @@ const SystemSettings = () => {
           senior_discount_60_plus: false,
           platform_fees: false,
           organizer_edit_attributes: false,
+          login_cpf_only: false,
+          ...(data.enabled_modules || {}),
         });
 
         setFeesForm({
@@ -826,6 +830,20 @@ const SystemSettings = () => {
               <CardDescription>Ativar ou desativar funcionalidades</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="font-medium">Login apenas com CPF</p>
+                  <p className="text-sm text-muted-foreground">
+                    Quando ativo, a tela de entrada aceita somente CPF e senha. Desligado: e-mail ou CPF.
+                  </p>
+                </div>
+                <Switch
+                  checked={modulesForm.login_cpf_only || false}
+                  onCheckedChange={(checked) =>
+                    setModulesForm({ ...modulesForm, login_cpf_only: checked })
+                  }
+                />
+              </div>
               <div className="flex items-center justify-between">
                 <div>
                   <p className="font-medium">Sistema de Cupons</p>

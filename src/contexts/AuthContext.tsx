@@ -7,7 +7,7 @@ interface AuthContextType {
   loading: boolean;
   isAuthenticated: boolean;
   register: (data: any) => Promise<boolean>;
-  login: (email: string, password: string) => Promise<boolean>;
+  login: (emailOrCpf: string, password: string) => Promise<boolean>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
 }
@@ -121,9 +121,9 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     }
   };
 
-  const login = async (email: string, password: string): Promise<boolean> => {
+  const login = async (emailOrCpf: string, password: string): Promise<boolean> => {
     try {
-      const response = await apiLogin({ email, password });
+      const response = await apiLogin({ email: emailOrCpf.trim(), password });
       
       if (response.success && response.data) {
         const { user: loggedUser, token } = response.data;
@@ -149,7 +149,9 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
         toast.success('Login realizado com sucesso!');
         return true;
       } else {
-        toast.error(response.error || response.message || 'Email ou senha inválidos');
+        toast.error(
+          response.message || response.error || 'E-mail, CPF ou senha inválidos'
+        );
         return false;
       }
     } catch (error) {

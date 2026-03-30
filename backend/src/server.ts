@@ -35,16 +35,31 @@ import settingsPublicRouter from './routes/settingsPublic.js';
 import { updateRegistrationStatuses } from './services/registrationStatusService.js';
 import { cancelExpiredRegistrations } from './services/expiredRegistrationsService.js';
 
-// Load environment variables
-// Try to load from backend/.env explicitly
-dotenv.config({ path: '.env' });
-dotenv.config({ path: '../.env' }); // Fallback to root .env
+// Load environment variables — caminho absoluto para funcionar com qualquer cwd (ex.: monorepo na raiz)
+const _serverFileForEnv = fileURLToPath(import.meta.url);
+const _serverDirForEnv = path.dirname(_serverFileForEnv);
+const _backendRootEnv = path.join(_serverDirForEnv, '../.env');
+const _repoRootEnv = path.join(_serverDirForEnv, '../../.env');
+dotenv.config({ path: _backendRootEnv });
+dotenv.config({ path: _repoRootEnv });
 
 // Debug: Log if Asaas key is loaded
 if (process.env.ASAAS_API_KEY) {
   console.log('✅ ASAAS_API_KEY carregada (tamanho:', process.env.ASAAS_API_KEY.length, ')');
 } else {
   console.warn('⚠️ ASAAS_API_KEY não encontrada nas variáveis de ambiente');
+}
+
+if (process.env.CPF_BRASIL_API_KEY?.trim() && process.env.CPF_BRASIL_API_BASE_URL?.trim()) {
+  console.log(
+    '✅ CPF Brasil: CPF_BRASIL_API_BASE_URL=',
+    process.env.CPF_BRASIL_API_BASE_URL.trim(),
+    '(chave definida)'
+  );
+} else {
+  console.warn(
+    '⚠️ CPF Brasil: CPF_BRASIL_API_BASE_URL ou CPF_BRASIL_API_KEY ausentes — /api/auth/cpf-brasil-health retorna CONFIG_MISSING'
+  );
 }
 
 const app: Express = express();
@@ -271,6 +286,9 @@ app.get('/', (_req: Request, res: Response) => {
       auth: {
         register: '/api/auth/register',
         login: '/api/auth/login',
+        lookupCpf: 'POST /api/auth/lookup-cpf',
+        cpfBrasilHealth: 'GET /api/auth/cpf-brasil-health',
+        cpfRegistrationConfig: 'GET /api/auth/cpf-registration-config',
         me: '/api/auth/me',
         logout: '/api/auth/logout',
       },

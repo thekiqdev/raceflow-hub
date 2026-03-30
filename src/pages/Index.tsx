@@ -15,7 +15,7 @@ import { getHomePageSettings, updateHomePageSettings } from "@/lib/api/homePageS
 import { getActiveBanners } from "@/lib/api/homeBanners";
 import { getEvents } from "@/lib/api/events";
 import { getEffectiveRegistrationStatus, getRegistrationStatusLabel, getRegistrationStatusVariant, isRegistrationClosed } from "@/lib/utils/eventRegistration";
-import { getSystemSettings } from "@/lib/api/systemSettings";
+import { getPublicBranding } from "@/lib/api/systemSettings";
 import { VisualEditorProvider } from "@/contexts/VisualEditorContext";
 import { EditableText } from "@/components/visual-editor/EditableText";
 import { EditableImage } from "@/components/visual-editor/EditableImage";
@@ -72,7 +72,7 @@ const Index = () => {
   });
   useEffect(() => {
     loadPageSettings();
-    loadSystemSettings();
+    loadPublicHomeLinks();
     loadActiveBanners();
   }, []);
 
@@ -91,14 +91,15 @@ const Index = () => {
     loadUpcomingEvents(); // Load events from API when order filter changes
   }, [filters.order_by_date]);
 
-  const loadSystemSettings = async () => {
+  /** Evita GET /admin/settings na home (401 para visitantes); usa rota pública. */
+  const loadPublicHomeLinks = async () => {
     try {
-      const response = await getSystemSettings();
+      const response = await getPublicBranding();
       if (response.success && response.data?.old_results_url) {
         setOldResultsUrl(response.data.old_results_url);
       }
     } catch (error) {
-      console.error("Erro ao carregar configurações do sistema:", error);
+      console.error("Erro ao carregar links públicos da home:", error);
     }
   };
 

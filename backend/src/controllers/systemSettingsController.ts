@@ -59,11 +59,17 @@ export const getPublicBrandingController = async (
 ): Promise<void> => {
   try {
     const settings = await getSystemSettings();
+    const modules = settings.enabled_modules || {};
     res.json({
       success: true,
       data: {
         platform_name: settings.platform_name ?? 'Cronoteam',
         platform_logo_url: settings.platform_logo_url ?? null,
+        /** Links públicos da home (sem autenticação). */
+        old_results_url: settings.old_results_url ?? null,
+        old_platform_url: settings.old_platform_url ?? null,
+        /** Quando true, tela de login aceita apenas CPF (não e-mail). */
+        login_cpf_only: modules.login_cpf_only === true,
       },
     });
   } catch (error: any) {

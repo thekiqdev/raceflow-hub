@@ -3,6 +3,13 @@ import jwt, { SignOptions } from 'jsonwebtoken';
 import { query, getClient } from '../config/database.js';
 import { AppRole } from '../types/index.js';
 import { validateCompletionRegistration } from './leaderInvitationsService.js';
+import {
+  proofMatchesRegisterBody,
+  registerRequiresCpfLookupProof,
+  verifyCpfLookupProof,
+} from './cpfLookupProof.js';
+import { isValidCpfDigits, normalizeCpfDigits } from '../utils/cpf.js';
+import { getSystemSettings } from './systemSettingsService.js';
 
 export interface RegisterData {
   email: string;
@@ -12,6 +19,8 @@ export interface RegisterData {
   phone: string;
   gender?: 'M' | 'F';
   birth_date: string;
+  /** JWT emitido por POST /auth/lookup-cpf após sucesso (obrigatório quando integração CPF Brasil ativa). */
+  cpf_lookup_proof?: string;
   preferred_name?: string;
   profession?: string;
   cbat?: string;
@@ -28,6 +37,7 @@ export interface RegisterData {
 }
 
 export interface LoginData {
+  /** E-mail **ou** CPF (campo JSON continua `email` por compatibilidade). */
   email: string;
   password: string;
 }
@@ -84,6 +94,32 @@ export const register = async (data: RegisterData): Promise<AuthResponse> => {
   try {
     await client.query('BEGIN');
 
+    const cleanCpf = String(data.cpf).replace(/\D/g, '');
+
+    let cpfValidatedAt: string | null = null;
+    let cpfLookupSource: string | null = null;
+
+    if (registerRequiresCpfLookupProof()) {
+      const token = data.cpf_lookup_proof?.trim();
+      if (!token) {
+        throw new Error('CPF_LOOKUP_PROOF_REQUIRED');
+      }
+      const payload = verifyCpfLookupProof(token);
+      if (
+        !payload ||
+        !proofMatchesRegisterBody(payload, {
+          cpf: cleanCpf,
+          full_name: data.full_name,
+          birth_date: data.birth_date,
+          gender: data.gender,
+        })
+      ) {
+        throw new Error('CPF_LOOKUP_PROOF_INVALID');
+      }
+      cpfValidatedAt = new Date().toISOString();
+      cpfLookupSource = 'cpf_brasil_api';
+    }
+
     // Check if email already exists
     const emailCheck = await client.query(
       'SELECT id FROM users WHERE email = $1',
@@ -97,7 +133,7 @@ export const register = async (data: RegisterData): Promise<AuthResponse> => {
     // Check if CPF already exists
     const cpfCheck = await client.query(
       'SELECT id FROM profiles WHERE cpf = $1',
-      [data.cpf]
+      [cleanCpf]
     );
 
     if (cpfCheck.rows.length > 0) {
@@ -122,14 +158,15 @@ export const register = async (data: RegisterData): Promise<AuthResponse> => {
       `INSERT INTO profiles (
         id, full_name, cpf, phone, gender, birth_date, lgpd_consent,
         preferred_name, profession, cbat, team, postal_code, street, address_number, address_complement,
-        neighborhood, city, state
+        neighborhood, city, state,
+        cpf_validated_at, cpf_lookup_source
       )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19::timestamptz, $20)
        RETURNING id, full_name, cpf, phone`,
       [
         user.id,
         data.full_name,
-        data.cpf,
+        cleanCpf,
         data.phone,
         data.gender || null,
         data.birth_date,
@@ -145,6 +182,8 @@ export const register = async (data: RegisterData): Promise<AuthResponse> => {
         data.neighborhood || null,
         data.city || null,
         data.state || null,
+        cpfValidatedAt,
+        cpfLookupSource,
       ]
     );
 
@@ -224,13 +263,46 @@ export const register = async (data: RegisterData): Promise<AuthResponse> => {
   }
 };
 
-// Login user
+function resolveLoginIdentifier(raw: string): { kind: 'cpf'; cpfDigits: string } | { kind: 'email'; email: string } {
+  const trimmed = String(raw || '').trim();
+  if (!trimmed) {
+    return { kind: 'email', email: '' };
+  }
+  if (trimmed.includes('@')) {
+    return { kind: 'email', email: trimmed };
+  }
+  const digits = normalizeCpfDigits(trimmed);
+  if (digits.length === 11 && isValidCpfDigits(digits)) {
+    return { kind: 'cpf', cpfDigits: digits };
+  }
+  return { kind: 'email', email: trimmed };
+}
+
+// Login user (e-mail **ou** CPF válido de 11 dígitos)
 export const login = async (data: LoginData): Promise<AuthResponse> => {
-  // Get user by email
-  const userResult = await query(
-    'SELECT id, email, password_hash FROM users WHERE email = $1',
-    [data.email]
-  );
+  const resolved = resolveLoginIdentifier(data.email);
+
+  const settings = await getSystemSettings();
+  const loginCpfOnly = settings.enabled_modules?.login_cpf_only === true;
+  if (loginCpfOnly && resolved.kind !== 'cpf') {
+    throw new Error('LOGIN_CPF_ONLY');
+  }
+
+  let userResult;
+  if (resolved.kind === 'cpf') {
+    userResult = await query(
+      `SELECT u.id, u.email, u.password_hash
+       FROM users u
+       INNER JOIN profiles p ON p.id = u.id
+       WHERE regexp_replace(COALESCE(p.cpf::text, ''), '[^0-9]', '', 'g') = $1`,
+      [resolved.cpfDigits]
+    );
+  } else {
+    userResult = await query(
+      'SELECT id, email, password_hash FROM users WHERE lower(trim(email)) = lower(trim($1))',
+      [resolved.email]
+    );
+  }
 
   if (userResult.rows.length === 0) {
     throw new Error('Invalid email or password');

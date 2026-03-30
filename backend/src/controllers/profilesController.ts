@@ -41,13 +41,20 @@ export const updateOwnProfile = asyncHandler(async (req: AuthRequest, res: Respo
 
   const { password, ...profileData } = req.body;
 
-  // Check if user is trying to update CPF
+  /** Atleta (não admin) não pode alterar identidade validada na fonte — só admin. */
+  const isAdmin = await hasRole(req.user.id, 'admin');
+  if (!isAdmin) {
+    delete profileData.full_name;
+    delete profileData.birth_date;
+    delete profileData.gender;
+    delete profileData.cpf;
+  }
+
+  // Check if user is trying to update CPF (apenas admin chega aqui com cpf no body)
   if (profileData.cpf !== undefined) {
-    // Check if user is runner
     const isRunner = await hasRole(req.user.id, 'runner');
-    
+
     if (isRunner) {
-      // Runner needs to provide password to update CPF
       if (!password) {
         return res.status(400).json({
           success: false,
@@ -56,7 +63,6 @@ export const updateOwnProfile = asyncHandler(async (req: AuthRequest, res: Respo
         });
       }
 
-      // Verify password
       const isValidPassword = await verifyUserPassword(req.user.id, password);
       if (!isValidPassword) {
         return res.status(401).json({
@@ -66,7 +72,6 @@ export const updateOwnProfile = asyncHandler(async (req: AuthRequest, res: Respo
         });
       }
     }
-    // Admin can update CPF without password verification
   }
 
   // Check if CPF already exists (excluding current user)

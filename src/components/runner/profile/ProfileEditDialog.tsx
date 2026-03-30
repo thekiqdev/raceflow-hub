@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
-import { updateOwnProfile, type Profile } from "@/lib/api/profiles";
+import { updateOwnProfile, type Profile, type UpdateProfileData } from "@/lib/api/profiles";
 import { maskPhone, maskCep, maskCpf, unmask } from "@/lib/utils/masks";
 import { fetchAddressByCep } from "@/lib/api/viacep";
 import { useAuth } from "@/contexts/AuthContext";
@@ -19,7 +19,10 @@ interface ProfileEditDialogProps {
 
 export function ProfileEditDialog({ open, onOpenChange, profile }: ProfileEditDialogProps) {
   const { user } = useAuth();
-  const isRunner = user?.roles?.includes('runner');
+  const isAdmin = user?.roles?.includes("admin") ?? false;
+  /** Nome, CPF, nascimento e sexo só alteram pelo admin; atleta vê bloqueado. */
+  const identityLocked = !isAdmin;
+  const isRunner = user?.roles?.includes("runner");
   const [formData, setFormData] = useState({
     full_name: profile.full_name || "",
     preferred_name: profile.preferred_name || "",
@@ -49,7 +52,8 @@ export function ProfileEditDialog({ open, onOpenChange, profile }: ProfileEditDi
     }
   }, [open, profile]);
   
-  const cpfChanged = unmask(formData.cpf) !== unmask(originalCpf);
+  const cpfChanged =
+    !identityLocked && unmask(formData.cpf) !== unmask(originalCpf);
 
   useEffect(() => {
     if (open && profile) {
@@ -114,8 +118,7 @@ export function ProfileEditDialog({ open, onOpenChange, profile }: ProfileEditDi
 
   const handleSave = async () => {
     try {
-      // Validate CPF change for runners
-      if (isRunner && cpfChanged) {
+      if (!identityLocked && isRunner && cpfChanged) {
         if (!password) {
           toast.error("É necessário confirmar sua senha para alterar o CPF");
           return;
@@ -123,12 +126,9 @@ export function ProfileEditDialog({ open, onOpenChange, profile }: ProfileEditDi
       }
 
       setSaving(true);
-      const updateData: any = {
-        full_name: formData.full_name,
+      const updateData: Record<string, unknown> = {
         preferred_name: formData.preferred_name || undefined,
         phone: unmask(formData.phone),
-        birth_date: formData.birth_date,
-        gender: formData.gender || undefined,
         profession: formData.profession || undefined,
         cbat: formData.cbat || undefined,
         team: formData.team || undefined,
@@ -141,17 +141,19 @@ export function ProfileEditDialog({ open, onOpenChange, profile }: ProfileEditDi
         state: formData.state || undefined,
       };
 
-      // Include CPF if changed
-      if (cpfChanged) {
-        updateData.cpf = unmask(formData.cpf);
+      if (!identityLocked) {
+        updateData.full_name = formData.full_name;
+        updateData.birth_date = formData.birth_date;
+        updateData.gender = formData.gender || undefined;
+        if (cpfChanged) {
+          updateData.cpf = unmask(formData.cpf);
+        }
+        if (isRunner && cpfChanged && password) {
+          updateData.password = password;
+        }
       }
 
-      // Include password if CPF changed and user is runner
-      if (isRunner && cpfChanged && password) {
-        updateData.password = password;
-      }
-
-      const response = await updateOwnProfile(updateData);
+      const response = await updateOwnProfile(updateData as UpdateProfileData);
 
       if (response.success) {
         toast.success("Dados atualizados com sucesso!");
@@ -211,12 +213,20 @@ export function ProfileEditDialog({ open, onOpenChange, profile }: ProfileEditDi
           {/* Dados Pessoais */}
           <div className="space-y-4">
             <h3 className="text-sm font-semibold text-muted-foreground uppercase">Dados Pessoais</h3>
-            
+            {identityLocked && (
+              <p className="text-xs text-muted-foreground rounded-md border border-border bg-muted/40 px-3 py-2">
+                Nome completo, CPF, data de nascimento e sexo só podem ser alterados pela equipe administrativa.
+                Para correções, entre em contato com o suporte.
+              </p>
+            )}
+
             <div className="space-y-2">
               <Label htmlFor="full_name">Nome Completo *</Label>
               <Input
                 id="full_name"
                 value={formData.full_name}
+                readOnly={identityLocked}
+                className={identityLocked ? "bg-muted cursor-not-allowed" : undefined}
                 onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
               />
             </div>
@@ -236,6 +246,8 @@ export function ProfileEditDialog({ open, onOpenChange, profile }: ProfileEditDi
               <Input
                 id="cpf"
                 value={formData.cpf}
+                readOnly={identityLocked}
+                className={identityLocked ? "bg-muted cursor-not-allowed" : undefined}
                 onChange={(e) => {
                   const masked = maskCpf(e.target.value);
                   setFormData({ ...formData, cpf: masked });
@@ -243,7 +255,7 @@ export function ProfileEditDialog({ open, onOpenChange, profile }: ProfileEditDi
                 maxLength={14}
                 placeholder="000.000.000-00"
               />
-              {isRunner && cpfChanged && (
+              {!identityLocked && isRunner && cpfChanged && (
                 <div className="space-y-2 mt-2">
                   <Label htmlFor="password">Confirmar Senha *</Label>
                   <Input
@@ -277,6 +289,8 @@ export function ProfileEditDialog({ open, onOpenChange, profile }: ProfileEditDi
                   id="birth_date"
                   type="date"
                   value={formData.birth_date}
+                  readOnly={identityLocked}
+                  className={identityLocked ? "bg-muted cursor-not-allowed" : undefined}
                   onChange={(e) => setFormData({ ...formData, birth_date: e.target.value })}
                 />
               </div>
@@ -284,15 +298,30 @@ export function ProfileEditDialog({ open, onOpenChange, profile }: ProfileEditDi
 
             <div className="space-y-2">
               <Label htmlFor="gender">Gênero</Label>
-              <Select value={formData.gender} onValueChange={(value) => setFormData({ ...formData, gender: value })}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecione" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="M">Masculino</SelectItem>
-                  <SelectItem value="F">Feminino</SelectItem>
-                </SelectContent>
-              </Select>
+              {identityLocked ? (
+                <Input
+                  id="gender"
+                  readOnly
+                  className="bg-muted cursor-not-allowed"
+                  value={
+                    formData.gender === "M"
+                      ? "Masculino"
+                      : formData.gender === "F"
+                        ? "Feminino"
+                        : ""
+                  }
+                />
+              ) : (
+                <Select value={formData.gender} onValueChange={(value) => setFormData({ ...formData, gender: value })}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="M">Masculino</SelectItem>
+                    <SelectItem value="F">Feminino</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
             </div>
 
             <div className="space-y-2">
