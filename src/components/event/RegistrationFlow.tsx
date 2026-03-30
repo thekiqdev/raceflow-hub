@@ -1846,7 +1846,6 @@ export function RegistrationFlow({
                         )}
                         <Button
                           type="button"
-                          variant="secondary"
                           className="mt-2 w-full"
                           onClick={() => manualLookup()}
                           disabled={

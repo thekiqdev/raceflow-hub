@@ -550,7 +550,6 @@ export function MultiStepRegistration({ open, onOpenChange }: MultiStepRegistrat
           )}
           <Button
             type="button"
-            variant="secondary"
             className="w-full"
             onClick={() => manualLookup()}
             disabled={

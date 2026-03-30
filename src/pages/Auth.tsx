@@ -282,7 +282,6 @@ const Auth = () => {
                   )}
                   <Button
                     type="button"
-                    variant="secondary"
                     className="w-full"
                     onClick={() => manualLookup()}
                     disabled={
