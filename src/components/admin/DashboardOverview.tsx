@@ -1,17 +1,32 @@
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Users, Calendar, DollarSign, TrendingUp, CheckCircle, Clock, FileText, MessageSquare, Loader2 } from "lucide-react";
+import { Users, Calendar, DollarSign, TrendingUp, CheckCircle, MessageSquare, Loader2, Receipt, IdCard, AlertTriangle } from "lucide-react";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
-import { getDashboardStats, getDashboardCharts, type DashboardStats } from "@/lib/api/admin";
+import {
+  getDashboardStats,
+  getDashboardCharts,
+  getCpfValidationOverview,
+  getCpfLookupMetrics,
+  type DashboardStats,
+  type CpfValidationOverview,
+  type CpfLookupMetricsSummary,
+} from "@/lib/api/admin";
+import { getSupportTickets } from "@/lib/api/support";
+import { getAdminPath } from "@/lib/utils/navigation";
 import { toast } from "sonner";
 
 const DashboardOverview = () => {
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [registrationsByMonth, setRegistrationsByMonth] = useState<Array<{ month: string; inscrições: number }>>([]);
   const [revenueByMonth, setRevenueByMonth] = useState<Array<{ month: string; faturamento: number }>>([]);
+  const [newTicketsCount, setNewTicketsCount] = useState<number>(0);
+  const [cpfOverview, setCpfOverview] = useState<CpfValidationOverview | null>(null);
+  const [cpfLookupMetrics, setCpfLookupMetrics] = useState<CpfLookupMetricsSummary | null>(null);
 
   useEffect(() => {
     loadDashboardData();
@@ -20,9 +35,13 @@ const DashboardOverview = () => {
   const loadDashboardData = async () => {
     setLoading(true);
     try {
-      const [statsResponse, chartsResponse] = await Promise.all([
+      const [statsResponse, chartsResponse, ticketsResponse, cpfOverviewResponse, cpfLookupMetricsResponse] =
+        await Promise.all([
         getDashboardStats(),
         getDashboardCharts(6),
+        getSupportTickets({ status: 'aberto' }).catch(() => ({ success: false, data: [] })),
+        getCpfValidationOverview().catch(() => ({ success: false as const })),
+        getCpfLookupMetrics(14).catch(() => ({ success: false as const })),
       ]);
 
       if (statsResponse.success && statsResponse.data) {
@@ -47,6 +66,23 @@ const DashboardOverview = () => {
         );
       } else {
         toast.error("Erro ao carregar dados dos gráficos");
+      }
+
+      // Contar tickets abertos
+      if (ticketsResponse.success && ticketsResponse.data) {
+        setNewTicketsCount(ticketsResponse.data.length);
+      }
+
+      if (cpfOverviewResponse.success && cpfOverviewResponse.data) {
+        setCpfOverview(cpfOverviewResponse.data);
+      } else {
+        setCpfOverview(null);
+      }
+
+      if (cpfLookupMetricsResponse.success && cpfLookupMetricsResponse.data) {
+        setCpfLookupMetrics(cpfLookupMetricsResponse.data);
+      } else {
+        setCpfLookupMetrics(null);
       }
     } catch (error) {
       console.error("Erro ao carregar dados do dashboard:", error);
@@ -183,7 +219,7 @@ const DashboardOverview = () => {
       </div>
 
       {/* Métricas secundárias */}
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Inscrições Totais</CardTitle>
@@ -213,7 +249,107 @@ const DashboardOverview = () => {
             <div className="text-2xl font-bold">{formatNumber(stats.finished_events)}</div>
           </CardContent>
         </Card>
+
+        {cpfOverview && (
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Validação CPF (fonte oficial)</CardTitle>
+              <IdCard className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{formatNumber(cpfOverview.legacy_without_validation)}</div>
+              <p className="text-xs text-muted-foreground">
+                sem confirmação na fonte oficial ({cpfOverview.legacy_pct}% dos perfis)
+              </p>
+              <p className="text-xs text-muted-foreground mt-1">
+                Com validação: {formatNumber(cpfOverview.validated_count)} · via API CPF Brasil:{" "}
+                {formatNumber(cpfOverview.validated_via_cpf_brasil)}
+              </p>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* OK Etapa 4: Taxas da plataforma (inscrição + atualização) */}
+        {(stats.total_platform_fees != null || stats.platform_fee_revenue != null || stats.registration_edit_fee_revenue != null) && (
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Taxas da Plataforma</CardTitle>
+              <Receipt className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {formatCurrency(stats.total_platform_fees ?? (stats.platform_fee_revenue ?? 0) + (stats.registration_edit_fee_revenue ?? 0))}
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                Inscrição: {formatCurrency(stats.platform_fee_revenue ?? 0)}
+                {(stats.registration_edit_fee_revenue ?? 0) > 0 && (
+                  <> · Atualização: {formatCurrency(stats.registration_edit_fee_revenue ?? 0)}</>
+                )}
+              </p>
+            </CardContent>
+          </Card>
+        )}
       </div>
+
+      {cpfLookupMetrics && (
+        <Card>
+          <CardHeader>
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <CardTitle>Consultas CPF (cadastro)</CardTitle>
+                <CardDescription>
+                  Últimos 14 dias — sucesso e falha em cada tentativa de consulta (integração CPF Brasil).
+                </CardDescription>
+              </div>
+              {cpfLookupMetrics.period_total > 5 && cpfLookupMetrics.period_failure_rate_pct >= 30 && (
+                <AlertTriangle className="h-5 w-5 shrink-0 text-amber-500" aria-hidden />
+              )}
+            </div>
+          </CardHeader>
+          <CardContent>
+            {cpfLookupMetrics.period_total === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                Ainda não há consultas registradas neste período (a tabela é preenchida após a migração 108 e novas tentativas de lookup).
+              </p>
+            ) : (
+              <div className="space-y-2">
+                <div className="flex flex-wrap gap-4 text-sm">
+                  <span>
+                    <span className="text-muted-foreground">Taxa de falha: </span>
+                    <span
+                      className={
+                        cpfLookupMetrics.period_failure_rate_pct >= 30 && cpfLookupMetrics.period_total > 5
+                          ? "font-semibold text-amber-600"
+                          : "font-semibold"
+                      }
+                    >
+                      {cpfLookupMetrics.period_failure_rate_pct}%
+                    </span>
+                  </span>
+                  <span>
+                    <span className="text-muted-foreground">Total de consultas: </span>
+                    <span className="font-medium">{formatNumber(cpfLookupMetrics.period_total)}</span>
+                  </span>
+                  <span>
+                    <span className="text-muted-foreground">Sucesso: </span>
+                    <span className="font-medium text-green-600">{formatNumber(cpfLookupMetrics.period_success)}</span>
+                  </span>
+                  <span>
+                    <span className="text-muted-foreground">Falha: </span>
+                    <span className="font-medium text-destructive">{formatNumber(cpfLookupMetrics.period_failure)}</span>
+                  </span>
+                </div>
+                {cpfLookupMetrics.period_total > 5 && cpfLookupMetrics.period_failure_rate_pct >= 30 && (
+                  <p className="text-xs text-amber-700 dark:text-amber-500">
+                    Taxa de falha elevada: verifique o provedor, credenciais e o endpoint de health. Opcional: webhook
+                    em CPF_BRASIL_FAILURE_WEBHOOK_URL.
+                  </p>
+                )}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Ações rápidas */}
       <Card>
@@ -222,17 +358,23 @@ const DashboardOverview = () => {
           <CardDescription>Acesse rapidamente as principais funcionalidades</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-wrap gap-2">
-          <Button variant="outline">
-            <Clock className="mr-2 h-4 w-4" />
-            Aprovar Organizadores ({stats.pending_organizers > 0 ? stats.pending_organizers : 0})
+          <Button 
+            variant="outline"
+            onClick={() => navigate(getAdminPath('events'))}
+          >
+            <Calendar className="mr-2 h-4 w-4" />
+            Eventos {stats.pending_events > 0 && `(${stats.pending_events})`}
           </Button>
-          <Button variant="outline">
-            <FileText className="mr-2 h-4 w-4" />
-            Ver Relatórios
+          <Button 
+            variant="outline"
+            onClick={() => navigate(getAdminPath('support'))}
+          >
+            <MessageSquare className="mr-2 h-4 w-4" />
+            Suporte {newTicketsCount > 0 && `(${newTicketsCount})`}
           </Button>
           <Button variant="outline">
             <MessageSquare className="mr-2 h-4 w-4" />
-            Enviar Comunicado Global
+            Enviar Comunicado
           </Button>
         </CardContent>
       </Card>

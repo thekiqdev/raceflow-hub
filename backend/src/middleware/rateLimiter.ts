@@ -75,3 +75,55 @@ export const authRateLimiter = rateLimiter(15 * 60 * 1000, isDevelopment ? 100 :
 // Increased limits to allow normal user operations (create events, registrations, etc.)
 export const writeRateLimiter = rateLimiter(15 * 60 * 1000, isDevelopment ? 1000 : 500); // 1000 in dev, 500 in prod
 
+/** Store separado para POST /api/auth/lookup-cpf — sempre ativo (não depende de ENABLE_RATE_LIMIT). */
+const cpfLookupStore: RateLimitStore = {};
+
+setInterval(() => {
+  const now = Date.now();
+  Object.keys(cpfLookupStore).forEach((key) => {
+    if (cpfLookupStore[key].resetTime < now) {
+      delete cpfLookupStore[key];
+    }
+  });
+}, 5 * 60 * 1000);
+
+/**
+ * Limite defensivo por IP na consulta de CPF (abuso / scraping).
+ * `CPF_LOOKUP_MAX_PER_IP` (default 60 por janela), `CPF_LOOKUP_WINDOW_MS` (default 15 min).
+ * Se `CPF_LOOKUP_MAX_PER_IP=0`, desliga o limite deste endpoint.
+ */
+export const cpfLookupRateLimiter = (req: Request, res: Response, next: NextFunction) => {
+  const maxRequests = parseInt(process.env.CPF_LOOKUP_MAX_PER_IP || '60', 10);
+  const windowMs = parseInt(process.env.CPF_LOOKUP_WINDOW_MS || '900000', 10);
+  if (!Number.isFinite(maxRequests) || maxRequests <= 0) {
+    return next();
+  }
+  const safeWindow = Number.isFinite(windowMs) && windowMs > 0 ? windowMs : 900000;
+
+  const key = `cpf_lookup:${req.ip || req.socket.remoteAddress || 'unknown'}`;
+  const now = Date.now();
+
+  if (!cpfLookupStore[key] || cpfLookupStore[key].resetTime < now) {
+    cpfLookupStore[key] = {
+      count: 1,
+      resetTime: now + safeWindow,
+    };
+    return next();
+  }
+
+  if (cpfLookupStore[key].count >= maxRequests) {
+    const secondsRemaining = Math.ceil((cpfLookupStore[key].resetTime - now) / 1000);
+    console.warn(`[cpf-lookup] rate limit exceeded: ${key}`);
+    res.status(429).json({
+      success: false,
+      message: 'CPF inválido',
+      code: 'RATE_LIMITED',
+      meta: { retry_after_seconds: secondsRemaining },
+    });
+    return;
+  }
+
+  cpfLookupStore[key].count++;
+  next();
+};
+

@@ -6,6 +6,7 @@ import { MapPin, Calendar, ChevronRight, Trophy, Loader2, AlertCircle, Search } 
 import { useNavigate } from "react-router-dom";
 import { format, isPast, isFuture } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { formatDateShortBrasilia } from "@/lib/utils";
 import heroImage from "@/assets/hero-running.jpg";
 import { EventFilters, EventFiltersState } from "@/components/event/EventFilters";
 import { getEvents, type Event } from "@/lib/api/events";
@@ -25,11 +26,12 @@ export function ExploreEvents() {
     month: "",
     category: "",
     search: "",
+    order_by_date: 'asc',
   });
 
   useEffect(() => {
     loadEvents();
-  }, [debouncedSearchQuery]);
+  }, [debouncedSearchQuery, filters.order_by_date]);
 
   const loadEvents = async () => {
     try {
@@ -39,6 +41,7 @@ export function ExploreEvents() {
       const response = await getEvents({ 
         status: 'published',
         search: debouncedSearchQuery || undefined,
+        order_by_date: filters.order_by_date || 'asc',
       });
       
       if (response.success && response.data) {
@@ -211,7 +214,7 @@ export function ExploreEvents() {
                   variant="outline" 
                   onClick={() => {
                     setSearchQuery("");
-                    setFilters({ city: "", month: "", category: "", search: "" });
+                    setFilters({ city: "", month: "", category: "", search: "", order_by_date: 'asc' });
                   }}
                   className="mt-4"
                 >
@@ -225,7 +228,7 @@ export function ExploreEvents() {
           <Card
             key={event.id}
             className="overflow-hidden hover:shadow-lg transition-shadow cursor-pointer"
-            onClick={() => navigate(`/events/${event.id}`)}
+            onClick={() => navigate(event.slug ? `/evento/${event.slug}` : `/events/${event.id}`)}
           >
             <div className="flex">
               <div className="w-28 h-28 flex-shrink-0 bg-gradient-hero relative">
@@ -255,7 +258,7 @@ export function ExploreEvents() {
                   <div className="space-y-1 text-xs text-muted-foreground">
                     <div className="flex items-center gap-1">
                       <Calendar className="h-3 w-3" />
-                      <span>{format(new Date(event.event_date), "dd 'de' MMM, yyyy", { locale: ptBR })}</span>
+                      <span>{formatDateShortBrasilia(event.event_date)}</span>
                     </div>
                     <div className="flex items-center gap-1">
                       <MapPin className="h-3 w-3" />

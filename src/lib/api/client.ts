@@ -26,6 +26,12 @@ export interface ApiResponse<T = any> {
   data?: T;
   error?: string;
   message?: string;
+  /** Presente em algumas respostas de erro (ex.: lookup CPF). */
+  code?: string;
+  details?: unknown;
+  /** JWT de lookup CPF (sucesso). */
+  proof?: string;
+  meta?: { request_id?: string; code?: string };
 }
 
 class ApiClient {
@@ -81,16 +87,22 @@ class ApiClient {
       if (!response.ok && response.status !== 401) {
         // Try to parse error response
         let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+        let errorDetails: any = null;
         try {
           const errorData = await response.json();
+          console.error('❌ [apiClient] Erro do servidor:', errorData);
           errorMessage = errorData.error || errorData.message || errorMessage;
-        } catch {
+          errorDetails = errorData.details || errorData;
+        } catch (e) {
           // If JSON parsing fails, use status text
+          console.error('❌ [apiClient] Erro ao parsear resposta de erro:', e);
         }
         return {
           success: false,
           error: errorMessage,
-          message: `Request failed with status ${response.status}`,
+          message: (errorDetails as { message?: string })?.message || errorMessage || `Request failed with status ${response.status}`,
+          details: errorDetails,
+          code: (errorDetails as { code?: string })?.code,
         };
       }
 
@@ -139,18 +151,29 @@ class ApiClient {
     return this.request<T>(endpoint, { method: 'GET' });
   }
 
-  async post<T>(endpoint: string, data?: any): Promise<ApiResponse<T>> {
+  async post<T>(endpoint: string, data?: any, init?: RequestInit): Promise<ApiResponse<T>> {
+    if (data) {
+      console.log('📤 [apiClient.post] Enviando dados:', JSON.stringify(data, null, 2));
+      console.log('📤 [apiClient.post] Endpoint:', endpoint);
+    }
     return this.request<T>(endpoint, {
       method: 'POST',
       body: data ? JSON.stringify(data) : undefined,
+      ...init,
     });
   }
 
   async put<T>(endpoint: string, data?: any): Promise<ApiResponse<T>> {
-    return this.request<T>(endpoint, {
+    if (data) {
+      console.log('📤 [apiClient.put] Enviando dados:', JSON.stringify(data, null, 2));
+      console.log('📤 [apiClient.put] Endpoint:', endpoint);
+    }
+    const result = await this.request<T>(endpoint, {
       method: 'PUT',
       body: data ? JSON.stringify(data) : undefined,
     });
+    console.log('📥 [apiClient.put] Resposta recebida:', result);
+    return result;
   }
 
   async delete<T>(endpoint: string): Promise<ApiResponse<T>> {

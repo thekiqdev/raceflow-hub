@@ -21,6 +21,7 @@ RUN npm ci
 # Copy source code from backend directory
 COPY backend/src ./src
 COPY backend/scripts ./scripts
+COPY backend/migrations ./migrations
 
 # Build TypeScript
 RUN npm run build
@@ -41,6 +42,9 @@ RUN npm ci --omit=dev
 
 # Copy built files from builder
 COPY --from=builder /app/dist ./dist
+# Copy scripts and migrations for npm run migrate inside container
+COPY --from=builder /app/scripts ./scripts
+COPY --from=builder /app/migrations ./migrations
 
 # Expose port
 EXPOSE 3001

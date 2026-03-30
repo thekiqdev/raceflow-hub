@@ -1,0 +1,49 @@
+# Encaminha bots para o backend para preview Open Graph:
+# - Raiz (/) → /api/og/home (usa logo da plataforma configurada em Configurações > Geral)
+# - /evento/:slug → /api/og/event/:slug (banner do evento)
+#
+# Uso no Easypanel:
+# 1. Copie este arquivo para o servidor: /etc/easypanel/traefik/config/
+#    Ex.: scp deploy/easypanel/traefik-og-preview-eventos.yaml user@servidor:/etc/easypanel/traefik/config/
+# 2. Substitua SEU_BACKEND pelo nome do serviço do backend no Easypanel (ex.: crono-back, backend).
+# 3. Se a porta do backend não for 3001, ajuste na URL do loadBalancer.
+# 4. Reinicie o Traefik no Easypanel (Settings → reiniciar Traefik).
+#
+# Ver também: docs/OG_PREVIEW_EVENTOS.md
+
+http:
+  routers:
+    home-og-bot:
+      rule: "Host(`cronoteam.com.br`) && Path(`/`) && HeadersRegexp(`User-Agent`, `(?i)(whatsapp|facebookexternalhit|facebot|telegrambot|twitterbot|linkedinbot)`)"
+      priority: 210
+      entryPoints:
+        - websecure
+      service: og-backend
+      middlewares:
+        - home-og-replacepath
+
+    evento-og-bot:
+      rule: "Host(`cronoteam.com.br`) && PathPrefix(`/evento/`) && HeadersRegexp(`User-Agent`, `(?i)(whatsapp|facebookexternalhit|facebot|telegrambot|twitterbot|linkedinbot)`)"
+      priority: 200
+      entryPoints:
+        - websecure
+      service: og-backend
+      middlewares:
+        - evento-og-replacepath
+
+  middlewares:
+    home-og-replacepath:
+      replacePath:
+        path: "/api/og/home"
+
+    evento-og-replacepath:
+      replacePathRegex:
+        regex: "^/evento/([a-z0-9-]+)$"
+        replacement: "/api/og/event/${1}"
+
+  services:
+    og-backend:
+      loadBalancer:
+        servers:
+          - url: "http://SEU_BACKEND:3001"
+        passHostHeader: true

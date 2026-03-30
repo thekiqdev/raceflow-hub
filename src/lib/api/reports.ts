@@ -75,6 +75,12 @@ export interface EventPerformance {
   conversion_rate: number;
 }
 
+export interface LeadersInvitationsGrantedRow {
+  leader_id: string;
+  leader_name: string | null;
+  invitations_granted: number;
+}
+
 /**
  * Get registrations by period
  */
@@ -204,6 +210,36 @@ export const getEventPerformance = async (filters?: {
   const endpoint = `/admin/reports/event-performance${queryString ? `?${queryString}` : ''}`;
 
   return apiClient.get<EventPerformance[]>(endpoint);
+};
+
+/**
+ * GET /api/admin/reports/leaders-invitations-granted/:eventId
+ * Counts invitations per leader for the event in statuses available/sent/used.
+ */
+export const getLeadersInvitationsGrantedByEvent = async (eventId: string): Promise<{
+  success: boolean;
+  data?: LeadersInvitationsGrantedRow[];
+  error?: string;
+}> => {
+  return apiClient.get<LeadersInvitationsGrantedRow[]>(
+    `/admin/reports/leaders-invitations-granted/${eventId}`
+  );
+};
+
+/**
+ * GET /api/organizer/reports/leaders-invitations-granted/:eventId
+ * Counts invitations per leader for the event in statuses available/sent/used.
+ */
+export const getOrganizerLeadersInvitationsGrantedByEvent = async (
+  eventId: string
+): Promise<{
+  success: boolean;
+  data?: LeadersInvitationsGrantedRow[];
+  error?: string;
+}> => {
+  return apiClient.get<LeadersInvitationsGrantedRow[]>(
+    `/organizer/reports/leaders-invitations-granted/${eventId}`
+  );
 };
 
 

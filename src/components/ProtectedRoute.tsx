@@ -2,6 +2,7 @@ import { ReactNode } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Loader2 } from 'lucide-react';
+import { getDashboardRoute } from '@/lib/utils/navigation';
 
 interface ProtectedRouteProps {
   children: ReactNode;
@@ -10,9 +11,8 @@ interface ProtectedRouteProps {
 }
 
 /**
- * ProtectedRoute component
- * Protects routes that require authentication
- * Optionally checks for specific roles
+ * Protege rotas por autenticação e, opcionalmente, por role (Etapa 4: redirect via getDashboardRoute).
+ * /admin/* → admin; /organizador/* → organizer; /corredor/* → runner.
  */
 export function ProtectedRoute({ 
   children, 
@@ -41,14 +41,7 @@ export function ProtectedRoute({
     const hasRole = user.roles?.includes(requiredRole);
     
     if (!hasRole) {
-      // Redirect to appropriate dashboard based on user's actual role
-      if (user.roles?.includes('admin')) {
-        return <Navigate to="/admin/dashboard" replace />;
-      }
-      if (user.roles?.includes('organizer')) {
-        return <Navigate to="/organizer/dashboard" replace />;
-      }
-      return <Navigate to="/runner/dashboard" replace />;
+      return <Navigate to={getDashboardRoute(user)} replace />;
     }
   }
 

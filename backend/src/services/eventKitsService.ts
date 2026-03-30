@@ -1,4 +1,6 @@
 import { query } from '../config/database.js';
+import { getKitCategories, associateKitToCategories } from './kitCategoriesService.js';
+import { getEventById } from './eventsService.js';
 
 export interface ProductVariant {
   id: string;
@@ -28,18 +30,67 @@ export interface EventKit {
   name: string;
   description: string | null;
   price: number;
+  display_order: number;
   created_at: Date | null;
   products?: KitProduct[];
+  category_ids?: string[]; // IDs das categorias associadas ao kit (opcional para compatibilidade retroativa)
+}
+
+/**
+ * Helper function to convert event slug or UUID to UUID
+ */
+async function getEventIdFromSlugOrId(eventIdOrSlug: string): Promise<string | null> {
+  // Check if it's already a UUID
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (uuidRegex.test(eventIdOrSlug)) {
+    return eventIdOrSlug;
+  }
+  
+  // If it's a slug, get the event to find the UUID
+  const event = await getEventById(eventIdOrSlug);
+  return event?.id || null;
 }
 
 /**
  * Get all kits for an event with products and variants
+ * @param eventIdOrSlug - ID or slug of the event
+ * @param categoryId - Optional category ID to filter kits (only kits associated with this category or not associated with any category)
  */
-export const getEventKits = async (eventId: string): Promise<EventKit[]> => {
-  const kitsResult = await query(
-    `SELECT * FROM event_kits WHERE event_id = $1 ORDER BY price ASC, name ASC`,
-    [eventId]
-  );
+export const getEventKits = async (eventIdOrSlug: string, categoryId?: string): Promise<EventKit[]> => {
+  // Convert slug to UUID if necessary
+  const eventId = await getEventIdFromSlugOrId(eventIdOrSlug);
+  if (!eventId) {
+    return [];
+  }
+  let queryText: string;
+  let queryParams: any[];
+
+  if (categoryId) {
+    // Filter kits that are either:
+    // 1. Associated with this category, OR
+    // 2. Not associated with any category (available for all categories)
+    queryText = `
+      SELECT DISTINCT k.*
+      FROM event_kits k
+      WHERE k.event_id = $1
+        AND (
+          k.id IN (
+            SELECT kit_id FROM kit_categories WHERE category_id = $2
+          )
+          OR k.id NOT IN (
+            SELECT DISTINCT kit_id FROM kit_categories
+          )
+        )
+      ORDER BY k.display_order ASC
+    `;
+    queryParams = [eventId, categoryId];
+  } else {
+    // Get all kits for the event
+    queryText = `SELECT * FROM event_kits WHERE event_id = $1 ORDER BY display_order ASC`;
+    queryParams = [eventId];
+  }
+
+  const kitsResult = await query(queryText, queryParams);
 
   const kits: EventKit[] = kitsResult.rows.map((row) => ({
     id: row.id,
@@ -47,11 +98,30 @@ export const getEventKits = async (eventId: string): Promise<EventKit[]> => {
     name: row.name,
     description: row.description,
     price: parseFloat(row.price) || 0,
+    display_order: row.display_order,
     created_at: row.created_at,
   }));
 
-  // Get products for each kit
+  // Usage count per variant in this event (inscrições não canceladas que escolheram cada variante)
+  const usageResult = await query(
+    `SELECT rps.variant_id, COUNT(DISTINCT rps.registration_id)::int AS usage_count
+     FROM registration_product_selections rps
+     INNER JOIN registrations r ON r.id = rps.registration_id AND r.status != 'cancelled'
+     WHERE r.event_id = $1 AND rps.variant_id IS NOT NULL
+     GROUP BY rps.variant_id`,
+    [eventId]
+  );
+  const usageByVariant = new Map<string, number>(
+    usageResult.rows.map((r: any) => [r.variant_id, parseInt(r.usage_count) || 0])
+  );
+
+  // Get category_ids and products for each kit
   for (const kit of kits) {
+    // Get category_ids for this kit
+    const categoryIds = await getKitCategories(kit.id);
+    kit.category_ids = categoryIds.length > 0 ? categoryIds : undefined;
+
+    // Get products for this kit
     const productsResult = await query(
       `SELECT * FROM kit_products WHERE kit_id = $1 ORDER BY name ASC`,
       [kit.id]
@@ -68,24 +138,30 @@ export const getEventKits = async (eventId: string): Promise<EventKit[]> => {
       created_at: row.created_at,
     }));
 
-    // Get variants for variable products
+    // Get variants for variable products; available_quantity = estoque restante (inclui inscrições anteriores)
     for (const product of products) {
       if (product.type === 'variable') {
         const variantsResult = await query(
-          `SELECT * FROM product_variants WHERE product_id = $1 ORDER BY name ASC`,
+          `SELECT * FROM product_variants WHERE product_id = $1 ORDER BY created_at ASC`,
           [product.id]
         );
 
-        product.variants = variantsResult.rows.map((row) => ({
-          id: row.id,
-          product_id: row.product_id,
-          name: row.name,
-          variant_group_name: row.variant_group_name || null,
-          available_quantity: row.available_quantity ? parseInt(row.available_quantity) : null,
-          sku: row.sku || null,
-          price: row.price ? parseFloat(row.price) : null,
-          created_at: row.created_at,
-        }));
+        product.variants = variantsResult.rows.map((row) => {
+          const baseQty = row.available_quantity != null ? parseInt(row.available_quantity) : null;
+          const usage = usageByVariant.get(row.id) || 0;
+          const remaining =
+            baseQty === null ? null : Math.max(0, baseQty - usage);
+          return {
+            id: row.id,
+            product_id: row.product_id,
+            name: row.name,
+            variant_group_name: row.variant_group_name || null,
+            available_quantity: remaining,
+            sku: row.sku || null,
+            price: row.price ? parseFloat(row.price) : null,
+            created_at: row.created_at,
+          };
+        });
       }
     }
 
@@ -96,6 +172,37 @@ export const getEventKits = async (eventId: string): Promise<EventKit[]> => {
 };
 
 /**
+ * Get a kit by ID
+ */
+export const getEventKitById = async (kitId: string): Promise<EventKit | null> => {
+  const result = await query(
+    `SELECT * FROM event_kits WHERE id = $1`,
+    [kitId]
+  );
+
+  if (result.rows.length === 0) {
+    return null;
+  }
+
+  const row = result.rows[0];
+  const kit: EventKit = {
+    id: row.id,
+    event_id: row.event_id,
+    name: row.name,
+    description: row.description,
+    price: parseFloat(row.price) || 0,
+    display_order: row.display_order,
+    created_at: row.created_at,
+  };
+
+  // Get category_ids
+  const categoryIds = await getKitCategories(kit.id);
+  kit.category_ids = categoryIds.length > 0 ? categoryIds : undefined;
+
+  return kit;
+};
+
+/**
  * Create a new kit for an event
  */
 export const createEventKit = async (data: {
@@ -103,16 +210,29 @@ export const createEventKit = async (data: {
   name: string;
   description?: string | null;
   price: number;
+  display_order?: number;
 }): Promise<EventKit> => {
+  // Se display_order não foi fornecido, calcular como próximo valor
+  let displayOrder = data.display_order;
+  if (displayOrder === undefined) {
+    const maxResult = await query(
+      `SELECT COALESCE(MAX(display_order), 0) as max_order 
+       FROM event_kits WHERE event_id = $1`,
+      [data.event_id]
+    );
+    displayOrder = (maxResult.rows[0]?.max_order || 0) + 1;
+  }
+
   const result = await query(
-    `INSERT INTO event_kits (event_id, name, description, price)
-     VALUES ($1, $2, $3, $4)
+    `INSERT INTO event_kits (event_id, name, description, price, display_order)
+     VALUES ($1, $2, $3, $4, $5)
      RETURNING *`,
     [
       data.event_id,
       data.name,
       data.description || null,
       data.price,
+      displayOrder,
     ]
   );
 
@@ -122,6 +242,7 @@ export const createEventKit = async (data: {
     name: result.rows[0].name,
     description: result.rows[0].description,
     price: parseFloat(result.rows[0].price) || 0,
+    display_order: result.rows[0].display_order,
     created_at: result.rows[0].created_at,
   };
 };
@@ -135,6 +256,7 @@ export const updateEventKit = async (
     name?: string;
     description?: string | null;
     price?: number;
+    display_order?: number;
   }
 ): Promise<EventKit | null> => {
   const fields: string[] = [];
@@ -154,6 +276,11 @@ export const updateEventKit = async (
   if (data.price !== undefined) {
     fields.push(`price = $${paramIndex}`);
     values.push(data.price);
+    paramIndex++;
+  }
+  if (data.display_order !== undefined) {
+    fields.push(`display_order = $${paramIndex}`);
+    values.push(data.display_order);
     paramIndex++;
   }
 
@@ -181,6 +308,7 @@ export const updateEventKit = async (
     name: result.rows[0].name,
     description: result.rows[0].description,
     price: parseFloat(result.rows[0].price) || 0,
+    display_order: result.rows[0].display_order,
     created_at: result.rows[0].created_at,
   };
 };
@@ -200,29 +328,33 @@ export const deleteEventKit = async (kitId: string): Promise<boolean> => {
 /**
  * Bulk create/update/delete kits for an event
  */
-export const syncEventKits = async (
-  eventId: string,
-  kits: Array<{
+export interface SyncKitData {
+  id?: string;
+  name: string;
+  description?: string | null;
+  price: number;
+  display_order?: number;
+  category_ids?: string[]; // IDs das categorias associadas ao kit (opcional)
+  products?: Array<{
     id?: string;
     name: string;
     description?: string | null;
-    price: number;
-    products?: Array<{
+    type: 'variable' | 'unique';
+    image_url?: string | null;
+    variant_attributes?: string[] | null;
+    variants?: Array<{
       id?: string;
       name: string;
-      description?: string | null;
-      type: 'variable' | 'unique';
-      image_url?: string | null;
-      variant_attributes?: string[] | null;
-      variants?: Array<{
-        id?: string;
-        name: string;
-        variant_group_name?: string | null;
-        available_quantity?: number | null;
-        sku?: string | null;
-      }>;
+      variant_group_name?: string | null;
+      available_quantity?: number | null;
+      sku?: string | null;
     }>;
-  }>
+  }>;
+}
+
+export const syncEventKits = async (
+  eventId: string,
+  kits: SyncKitData[]
 ): Promise<EventKit[]> => {
   // Get existing kits
   const existing = await getEventKits(eventId);
@@ -247,6 +379,7 @@ export const syncEventKits = async (
         name: kitData.name,
         description: kitData.description,
         price: kitData.price,
+        display_order: kitData.display_order,
       });
       if (!updated) continue;
       kit = updated;
@@ -257,6 +390,7 @@ export const syncEventKits = async (
         name: kitData.name,
         description: kitData.description,
         price: kitData.price,
+        display_order: kitData.display_order,
       });
     }
 
@@ -367,10 +501,15 @@ export const syncEventKits = async (
       }
     }
 
+    // Process category associations for this kit
+    if (kitData.category_ids !== undefined) {
+      await associateKitToCategories(kit.id, kitData.category_ids);
+    }
+
     result.push(kit);
   }
 
-  // Return kits with products and variants loaded
+  // Return kits with products, variants, and category_ids loaded
   return await getEventKits(eventId);
 };
 
@@ -606,5 +745,34 @@ export const deleteProductVariant = async (variantId: string): Promise<boolean> 
   );
 
   return result.rowCount ? result.rowCount > 0 : false;
+};
+
+/**
+ * Reorder event kits for an event
+ * @param eventId Event ID
+ * @param kitOrders Array of { id, display_order } pairs
+ */
+export const reorderEventKits = async (
+  eventId: string,
+  kitOrders: Array<{ id: string; display_order: number }>
+): Promise<void> => {
+  // Validar que todos os IDs pertencem ao evento
+  const ids = kitOrders.map(k => k.id);
+  const checkResult = await query(
+    `SELECT id FROM event_kits WHERE id = ANY($1::UUID[]) AND event_id = $2`,
+    [ids, eventId]
+  );
+  
+  if (checkResult.rows.length !== ids.length) {
+    throw new Error('One or more kits not found or belong to different event');
+  }
+
+  // Atualizar display_order em uma transação
+  for (const { id, display_order } of kitOrders) {
+    await query(
+      `UPDATE event_kits SET display_order = $1 WHERE id = $2`,
+      [display_order, id]
+    );
+  }
 };
 

@@ -293,6 +293,41 @@ export const getEventPerformance = async (
   }));
 };
 
+/** Fase 5: visão de perfis com/sem validação CPF na fonte oficial (contas legadas). */
+export interface CpfValidationOverview {
+  total_profiles: number;
+  /** Perfil com `cpf_validated_at` preenchido (consulta válida na política atual). */
+  validated_count: number;
+  /** `cpf_validated_at` e `cpf_lookup_source` nulos — cadastro anterior à validação ou fluxo sem API. */
+  legacy_without_validation: number;
+  /** Subconjunto de validados com origem explícita `cpf_brasil_api`. */
+  validated_via_cpf_brasil: number;
+  /** Percentual de perfis sem validação (0–100, uma casa decimal). */
+  legacy_pct: number;
+}
 
+export const getCpfValidationOverview = async (): Promise<CpfValidationOverview> => {
+  const result = await query(`
+    SELECT
+      COUNT(*)::int AS total_profiles,
+      COUNT(*) FILTER (WHERE cpf_validated_at IS NOT NULL)::int AS validated_count,
+      COUNT(*) FILTER (WHERE cpf_validated_at IS NULL)::int AS legacy_without_validation,
+      COUNT(*) FILTER (WHERE cpf_lookup_source = 'cpf_brasil_api')::int AS validated_via_cpf_brasil
+    FROM profiles
+  `);
 
+  const row = result.rows[0];
+  const total = parseInt(row.total_profiles, 10) || 0;
+  const legacy = parseInt(row.legacy_without_validation, 10) || 0;
+  const legacy_pct =
+    total > 0 ? Math.round((legacy / total) * 1000) / 10 : 0;
+
+  return {
+    total_profiles: total,
+    validated_count: parseInt(row.validated_count, 10) || 0,
+    legacy_without_validation: legacy,
+    validated_via_cpf_brasil: parseInt(row.validated_via_cpf_brasil, 10) || 0,
+    legacy_pct,
+  };
+};
 

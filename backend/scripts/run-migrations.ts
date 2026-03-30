@@ -45,7 +45,97 @@ const migrations = [
   '016_add_variant_attributes.sql',
   '017_add_profile_is_public.sql',
   '018_allow_null_valid_from.sql',
-  '020_fix_admin_dashboard_views.sql',
+  '019_create_test_users.sql',
+  '020_create_asaas_customers.sql',
+  '021_create_asaas_payments.sql',
+  '022_create_asaas_webhook_events.sql',
+  '023_add_asaas_payment_id_to_registrations.sql',
+  '024_verify_foreign_keys.sql',
+  '025_fix_users_without_roles.sql',
+  '026_transfer_requests.sql',
+  '027_allow_null_registration_id_in_asaas_payments.sql',
+  '028_add_transferred_status.sql',
+  '029_add_address_fields_to_profiles.sql',
+  '030_create_group_leaders_system.sql',
+  '031_create_coupons.sql',
+  '032_add_event_id_to_coupons.sql',
+  '033_create_coupon_events_relation.sql',
+  '034_add_coupon_code_to_registrations.sql',
+  '035_add_platform_fees.sql',
+  '036_separate_modalities_categories.sql',
+  '037_add_is_default_to_categories.sql',
+  '038_update_registrations_category_fk.sql',
+  '039_add_leader_event_commissions.sql',
+  '040_add_leader_id_to_coupons.sql',
+  '041_add_referral_details.sql',
+  '042_add_bonus_system_to_leader_commissions.sql',
+  '043_add_both_bonus_type.sql',
+  '044_create_leader_invitations.sql',
+  '045_add_free_bonus_payment_method.sql',
+  '046_add_convidado_payment_status.sql',
+  '047_add_display_order_to_modalities.sql',
+  '048_add_display_order_to_categories.sql',
+  '049_add_display_order_to_event_kits.sql',
+  '050_add_commission_id_to_leader_invitations.sql',
+  '051_create_quotes_table.sql',
+  '052_create_contact_messages_table.sql',
+  '053_create_form_configurations_table.sql',
+  '054_add_field_width_to_form_configurations.sql',
+  '055_add_additional_fields_to_quotes.sql',
+  '056_create_notification_templates_table.sql',
+  '057_create_password_reset_tokens_table.sql',
+  '058_enhance_pickup_locations.sql',
+  '059_add_additional_info_to_pickup_locations.sql',
+  '060_add_max_age_to_categories.sql',
+  '061_add_profession_cbat_to_profiles.sql',
+  '062_add_team_to_profiles.sql',
+  '063_add_registration_status_to_events.sql',
+  '064_migrate_existing_events_registration_status.sql',
+  '065_add_old_results_url_to_system_settings.sql',
+  '066_adapt_category_batches_to_categories.sql',
+  '067_create_runner_documents.sql',
+  '068_create_document_types.sql',
+  '069_add_old_platform_url_to_system_settings.sql',
+  '070_add_payment_methods_to_events.sql',
+  '071_add_max_participants_to_modalities.sql',
+  '072_add_route_image_to_modalities.sql',
+  '073_create_kit_categories.sql',
+  '074_create_registration_product_selections.sql',
+  '075_add_calculate_value_without_fee_function.sql',
+  '076_update_organizer_views_without_fee.sql',
+  '077_create_organizer_group_leaders.sql',
+  '078_add_slug_to_events.sql',
+  '079_make_slug_not_null_in_events.sql',
+  '080_add_transfers_enabled_to_events.sql',
+  '081_add_modality_id_to_registrations.sql',
+  '082_add_registration_edit_fee.sql',
+  '083_add_category_batch_id_to_registrations.sql',
+  '084_create_registration_amount_adjustments.sql',
+  '085_add_partially_paid_payment_status.sql',
+  '086_add_platform_fee_amount_to_registrations.sql',
+  '088_organizer_views_valor_liquido.sql',
+  '089_admin_dashboard_stats_platform_fees.sql',
+  '090_backfill_registrations_modality_id.sql',
+  '091_add_platform_fee_min.sql',
+  '092_add_runner_preregistered_to_leader_invitations.sql',
+  '092_allow_null_birth_date_phone_profiles.sql',
+  '093_add_runner_chooses_category_modality_kit_to_leader_invitations.sql',
+  '094_allow_null_category_id_kit_id_registrations_invitation.sql',
+  '095_add_premiacao_cronograma_and_cronograma_items.sql',
+  '096_create_home_banners.sql',
+  '097_add_image_url_mobile_to_home_banners.sql',
+  '098_allow_null_image_url_home_banners.sql',
+  '099_create_category_custom_fields.sql',
+  '100_event_organizer_migration_prep.sql',
+  '101_event_organizer_migration_rollback_status.sql',
+  '102_registration_reconciliation_backup.sql',
+  '102_drop_uq_leader_invitation_unique.sql',
+  '103_create_invitation_bonus_assisted_command_audit.sql',
+  '104_add_idempotency_to_invitation_bonus_assisted_audit.sql',
+  '105_assisted_audit_distributed_lock_key.sql',
+  '106_invitation_bonus_assisted_audit_resolution.sql',
+  '107_profiles_cpf_lookup_metadata.sql',
+  '108_cpf_lookup_metrics_daily.sql',
 ];
 
 // Create migrations tracking table
@@ -76,6 +166,33 @@ async function markMigrationExecuted(client: pg.PoolClient, migrationName: strin
   );
 }
 
+/**
+ * Bancos legados: `schema_migrations` pode estar atrás do estado real (migrações aplicadas
+ * manualmente ou por outro processo). Reexecutar falha com "already exists".
+ * Só marcamos como aplicada quando o erro é inequívoco de objeto já existente — nunca para
+ * RAISE EXCEPTION de negócio (ex.: 079 sem slug).
+ */
+function isDriftRepairableError(err: unknown): boolean {
+  const e = err as { code?: string; message?: string };
+  const msg = (e.message || '').toLowerCase();
+
+  if (msg.includes('existem ') && msg.includes('eventos sem slug')) return false;
+  if (msg.includes('execute o script generate-slugs')) return false;
+
+  const driftCodes = new Set([
+    '42710', // duplicate_object
+    '42P07', // duplicate_table
+    '42P06', // duplicate_schema
+    '42701', // duplicate_column
+  ]);
+  if (e.code && driftCodes.has(e.code)) return true;
+  if (msg.includes('already exists')) return true;
+  if (msg.includes('duplicate key value violates unique constraint')) return true;
+  if (msg.includes('cannot drop columns from view')) return true;
+
+  return false;
+}
+
 // Execute a single migration
 async function executeMigration(client: pg.PoolClient, migrationName: string) {
   const migrationPath = join(__dirname, '..', 'migrations', migrationName);
@@ -86,18 +203,29 @@ async function executeMigration(client: pg.PoolClient, migrationName: string) {
     const sql = readFileSync(migrationPath, 'utf-8');
     
     console.log(`🔄 Executando migração: ${migrationName}`);
-    
-    await client.query('BEGIN');
-    
+
+    // VACUUM (e alguns comandos) não podem rodar dentro de um bloco de transação explícito.
+    const needsNonTransactional = /\bVACUUM\b/i.test(sql);
+
     try {
-      await client.query(sql);
-      await markMigrationExecuted(client, migrationName);
-      await client.query('COMMIT');
-      
+      if (needsNonTransactional) {
+        await client.query(sql);
+        await markMigrationExecuted(client, migrationName);
+      } else {
+        await client.query('BEGIN');
+        try {
+          await client.query(sql);
+          await markMigrationExecuted(client, migrationName);
+          await client.query('COMMIT');
+        } catch (error: any) {
+          await client.query('ROLLBACK');
+          throw error;
+        }
+      }
+
       console.log(`✅ Migração ${migrationName} executada com sucesso!`);
       return true;
     } catch (error: any) {
-      await client.query('ROLLBACK');
       throw error;
     }
   } catch (error: any) {
@@ -126,6 +254,7 @@ async function runMigrations() {
     let executed = 0;
     let skipped = 0;
     let failed = 0;
+    let driftRepaired = 0;
 
     for (const migration of migrations) {
       const isExecuted = await isMigrationExecuted(client, migration);
@@ -144,10 +273,16 @@ async function runMigrations() {
           failed++;
         }
       } catch (error: any) {
-        console.error(`❌ Erro ao executar migração ${migration}:`, error.message);
-        failed++;
-        // Continue with next migration even if one fails
-        // You can change this behavior if needed
+        if (isDriftRepairableError(error)) {
+          await markMigrationExecuted(client, migration);
+          driftRepaired++;
+          console.warn(
+            `🔧 Drift: ${migration} — estado já refletia esta migração; registrada em schema_migrations. (${error.message})`
+          );
+        } else {
+          console.error(`❌ Erro ao executar migração ${migration}:`, error.message);
+          failed++;
+        }
       }
 
       console.log(''); // Empty line for readability
@@ -157,6 +292,7 @@ async function runMigrations() {
     console.log('📊 Resumo:');
     console.log(`   ✅ Executadas: ${executed}`);
     console.log(`   ⏭️  Puladas: ${skipped}`);
+    console.log(`   🔧 Drift corrigido (só registro): ${driftRepaired}`);
     console.log(`   ❌ Falhas: ${failed}`);
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 

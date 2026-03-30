@@ -1,9 +1,10 @@
 // Database types
 export type AppRole = 'admin' | 'organizer' | 'runner';
 export type EventStatus = 'draft' | 'published' | 'ongoing' | 'finished' | 'cancelled';
-export type RegistrationStatus = 'pending' | 'confirmed' | 'cancelled' | 'refund_requested' | 'refunded';
-export type PaymentStatus = 'pending' | 'paid' | 'refunded' | 'failed';
-export type PaymentMethod = 'pix' | 'credit_card' | 'boleto';
+export type RegistrationStatus = 'pending' | 'confirmed' | 'cancelled' | 'refund_requested' | 'refunded' | 'transferred';
+export type EventRegistrationStatus = 'not_open' | 'open' | 'closed'; // Status das inscrições do evento
+export type PaymentStatus = 'pending' | 'paid' | 'partially_paid' | 'refunded' | 'failed' | 'convidado';
+export type PaymentMethod = 'pix' | 'credit_card' | 'boleto' | 'free_bonus';
 
 // User types
 export interface User {
@@ -19,10 +20,26 @@ export interface Profile {
   id: string;
   full_name: string;
   cpf: string;
+  /** Preenchido quando a integração de validação de CPF gravar metadados (Fase 2+). */
+  cpf_validated_at?: Date | string | null;
+  /** Ex.: cpf_brasil_api. NULL para cadastros legados ou pré-integração. */
+  cpf_lookup_source?: string | null;
   phone: string;
   gender: string | null;
   birth_date: Date;
   lgpd_consent: boolean | null;
+  is_public: boolean | null;
+  preferred_name: string | null;
+  profession: string | null;
+  cbat: string | null;
+  team: string | null;
+  postal_code: string | null;
+  street: string | null;
+  address_number: string | null;
+  address_complement: string | null;
+  neighborhood: string | null;
+  city: string | null;
+  state: string | null;
   created_at: Date | null;
   updated_at: Date | null;
 }
@@ -34,11 +51,101 @@ export interface UserRole {
   created_at: Date | null;
 }
 
+// Group Leaders types
+export type CommissionStatus = 'pending' | 'paid' | 'cancelled';
+export type ReferralType = 'link' | 'code';
+
+export interface GroupLeader {
+  id: string;
+  user_id: string;
+  referral_code: string;
+  is_active: boolean;
+  commission_percentage: number | null;
+  total_earnings: number;
+  total_referrals: number;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface UserReferral {
+  id: string;
+  user_id: string;
+  leader_id: string;
+  referral_code: string;
+  referral_type: ReferralType;
+  created_at: Date;
+}
+
+export interface LeaderCommission {
+  id: string;
+  leader_id: string;
+  registration_id: string;
+  referred_user_id: string;
+  event_id: string;
+  commission_amount: number;
+  commission_percentage: number;
+  registration_amount: number;
+  status: CommissionStatus;
+  paid_at: Date | null;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface LeaderEventCommission {
+  id: string;
+  leader_id: string;
+  event_id: string;
+  commission_percentage: number;
+  bonus_type: 'commission' | 'invitation' | 'both';
+  required_purchases: number | null;
+  bonus_registration_id: string | null;
+  bonus_earned_at: Date | null;
+  name: string | null;
+  created_at: Date;
+  updated_at: Date;
+  event_title?: string;
+  event_date?: string;
+  organizer_id?: string;
+  coupon?: {
+    id: string;
+    code: string;
+    link: string;
+  } | null;
+}
+
+export interface CreateLeaderEventCommissionData {
+  leader_id: string;
+  event_id: string;
+  commission_percentage: number;
+  bonus_type?: 'commission' | 'invitation' | 'both';
+  required_purchases?: number | null;
+  name?: string | null;
+}
+
+export interface UpdateLeaderEventCommissionData {
+  commission_percentage?: number;
+  bonus_type?: 'commission' | 'invitation' | 'both';
+  required_purchases?: number | null;
+  name?: string | null;
+  coupon_discount?: number;
+}
+
+// Cronograma item (timeline do evento)
+export interface CronogramaItem {
+  id: string;
+  event_id: string;
+  time: string;
+  title: string;
+  description: string | null;
+  display_order: number;
+}
+
 // Event types
 export interface Event {
   id: string;
   organizer_id: string;
   title: string;
+  slug: string;
   description: string | null;
   event_date: Date;
   location: string;
@@ -48,10 +155,23 @@ export interface Event {
   regulation_url: string | null;
   result_url: string | null;
   status: EventStatus | null;
+  registration_status: EventRegistrationStatus | null;
+  registration_start_date: Date | null;
+  registration_end_date: Date | null;
+  registration_auto_mode: boolean | null;
+  pix_enabled: boolean | null;
+  pix_disabled_at: Date | null;
+  credit_card_enabled: boolean | null;
+  credit_card_disabled_at: Date | null;
+  transfers_enabled: boolean | null;
   created_at: Date | null;
   updated_at: Date | null;
+  premiacao?: string | null;
+  cronograma?: string | null;
+  cronograma_items?: CronogramaItem[];
 }
 
+// Legacy EventCategory (mantida para compatibilidade durante transição)
 export interface EventCategory {
   id: string;
   event_id: string;
@@ -60,6 +180,112 @@ export interface EventCategory {
   price: number;
   max_participants: number | null;
   created_at: Date | null;
+}
+
+// New Modality and Category types
+export type CategoryType = 'visitante' | 'local' | 'geral' | 'PCD' | 'militar' | 'civil' | 'outro';
+export type CategoryGender = 'ambos' | 'masculino' | 'feminino';
+
+export interface Modality {
+  id: string;
+  event_id: string;
+  name: string;
+  distance: string;
+  display_order: number;
+  max_participants: number | null;
+  route_image_url: string | null;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface CategoryCustomField {
+  id: string;
+  category_id: string;
+  label: string;
+  field_type: 'text' | 'number';
+  display_order: number;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface Category {
+  id: string;
+  event_id: string;
+  name: string;
+  price: number;
+  category_type: CategoryType;
+  gender: CategoryGender;
+  min_age: number | null;
+  max_age: number | null;
+  max_participants: number | null;
+  is_default: boolean;
+  display_order: number;
+  created_at: Date;
+  updated_at: Date;
+  modality_ids?: string[]; // Para relacionamento (não está no banco, apenas para API)
+  batches?: CategoryBatch[]; // Lotes de preço da categoria
+  custom_fields?: CategoryCustomField[]; // Campos personalizados da categoria (ex.: número da camisa)
+}
+
+export interface CategoryBatch {
+  id: string;
+  category_id: string;
+  name: string | null; // Nome do lote (ex: "1º Lote", "2º Lote")
+  price: number;
+  valid_from: Date | null; // Data de início do lote
+  valid_to: Date | null; // Data de término do lote
+  created_at: Date;
+}
+
+export interface CategoryModality {
+  category_id: string;
+  modality_id: string;
+  created_at: Date;
+}
+
+// Data types for creating/updating modalities and categories
+export interface CreateModalityData {
+  event_id: string;
+  name: string;
+  distance: string;
+  display_order?: number; // Opcional na criação - será calculado automaticamente se não fornecido
+  max_participants?: number | null; // Limite máximo de participantes (NULL = sem limite)
+  route_image_url?: string | null; // URL da imagem do percurso (opcional)
+}
+
+export interface UpdateModalityData {
+  name?: string;
+  distance?: string;
+  display_order?: number; // Permite atualizar a ordem de exibição
+  max_participants?: number | null; // Limite máximo de participantes (NULL = sem limite)
+  route_image_url?: string | null; // URL da imagem do percurso (opcional)
+}
+
+export interface CreateCategoryData {
+  event_id: string;
+  name: string;
+  price: number;
+  category_type: CategoryType;
+  gender: CategoryGender;
+  min_age?: number | null;
+  max_age?: number | null;
+  max_participants?: number | null;
+  is_default?: boolean;
+  display_order?: number; // Opcional na criação - será calculado automaticamente se não fornecido
+  modality_ids?: string[]; // IDs das modalidades associadas
+}
+
+export interface UpdateCategoryData {
+  name?: string;
+  price?: number;
+  category_type?: CategoryType;
+  gender?: CategoryGender;
+  min_age?: number | null;
+  max_age?: number | null;
+  max_participants?: number | null;
+  is_default?: boolean;
+  display_order?: number; // Permite atualizar a ordem de exibição
+  modality_ids?: string[]; // IDs das modalidades associadas
 }
 
 export interface Registration {
@@ -76,6 +302,27 @@ export interface Registration {
   confirmation_code: string | null;
   created_at: Date | null;
   updated_at: Date | null;
+}
+
+// Coupon types
+export type CouponType = 'percentage' | 'fixed';
+
+export interface Coupon {
+  id: string;
+  organizer_id: string;
+  event_id: string | null; // Deprecated, use event_ids instead
+  event_ids?: string[]; // Array of event IDs
+  leader_id: string | null; // ID do líder de grupo (opcional - cupons exclusivos)
+  code: string;
+  name: string;
+  type: CouponType;
+  discount_value: number;
+  expiration_date: Date | null;
+  max_uses: number | null;
+  current_uses: number;
+  is_active: boolean;
+  created_at: Date;
+  updated_at: Date;
 }
 
 // API Response types

@@ -1,28 +1,43 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { useNavigate } from "react-router-dom";
-import { MapPin, Calendar, Award, Users, Clock, TrendingUp, BarChart3, MessageSquare, FileText, Wifi, Award as Trophy, Facebook, Instagram, Linkedin } from "lucide-react";
+import { MapPin, Calendar, Award, Users, Clock, TrendingUp, BarChart3, MessageSquare, FileText, Wifi, Trophy, Facebook, Instagram, Linkedin } from "lucide-react";
 import heroImage from "@/assets/hero-running.jpg";
 import { useState, useEffect } from "react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { formatDateOnlyBrasilia } from "@/lib/utils";
 import { EventFilters, EventFiltersState } from "@/components/event/EventFilters";
 import { Header } from "@/components/Header";
 import { useAuth } from "@/contexts/AuthContext";
 import { getHomePageSettings, updateHomePageSettings } from "@/lib/api/homePageSettings";
+import { getActiveBanners } from "@/lib/api/homeBanners";
 import { getEvents } from "@/lib/api/events";
+import { getEffectiveRegistrationStatus, getRegistrationStatusLabel, getRegistrationStatusVariant, isRegistrationClosed } from "@/lib/utils/eventRegistration";
+import { getPublicBranding } from "@/lib/api/systemSettings";
 import { VisualEditorProvider } from "@/contexts/VisualEditorContext";
 import { EditableText } from "@/components/visual-editor/EditableText";
 import { EditableImage } from "@/components/visual-editor/EditableImage";
 import { EditorToolbar } from "@/components/visual-editor/EditorToolbar";
 import { toast } from "sonner";
+import { HomeBannerSlider } from "@/components/home/HomeBannerSlider";
+import type { HomeBanner } from "@/lib/api/homeBanners";
+
 interface Event {
   id: string;
+  slug?: string;
   title: string;
   event_date: string;
   city: string;
   state: string;
   banner_url: string | null;
+  result_url: string | null;
+  status: string;
+  registration_status?: 'not_open' | 'open' | 'closed' | null;
+  registration_start_date?: string | null;
+  registration_end_date?: string | null;
+  registration_auto_mode?: boolean;
 }
 const Index = () => {
   const navigate = useNavigate();
@@ -33,8 +48,11 @@ const Index = () => {
     city: "",
     month: "",
     category: "",
-    search: ""
+    search: "",
+    order_by_date: 'asc',
   });
+  const [oldResultsUrl, setOldResultsUrl] = useState<string | null>(null);
+  const [activeBanners, setActiveBanners] = useState<HomeBanner[]>([]);
   const [pageSettings, setPageSettings] = useState({
     hero_title: "SOMOS UMA EMPRESA DE CRONOMETRAGEM ESPORTIVA",
     hero_subtitle: "ESPECIALIZADA EM CORRIDA DE RUA, TRABALHANDO COM O SISTEMA DE CHIPS",
@@ -42,7 +60,7 @@ const Index = () => {
     whatsapp_number: "85 99108-4183",
     whatsapp_text: "Tire suas dúvidas sobre inscrições e cronometragem",
     consultoria_title: "CONSULTORIA DE CORRIDAS DE RUA",
-    consultoria_description: "A RunEvents mais que uma empresa de cronometragem esportiva. Nós temos experiência e damos suporte a todos os pontos que é preciso para a execução de qualquer evento de corrida de rua.",
+    consultoria_description: "A Cronoteam mais que uma empresa de cronometragem esportiva. Nós temos experiência e damos suporte a todos os pontos que é preciso para a execução de qualquer evento de corrida de rua.",
     stats_events: "290",
     stats_events_label: "Corridas executadas",
     stats_runners: "71500",
@@ -54,15 +72,85 @@ const Index = () => {
   });
   useEffect(() => {
     loadPageSettings();
-    loadUpcomingEvents(); // Load events from API instead of mock
+    loadPublicHomeLinks();
+    loadActiveBanners();
   }, []);
+
+  const loadActiveBanners = async () => {
+    try {
+      const res = await getActiveBanners();
+      if (res.success && res.data) {
+        setActiveBanners(res.data);
+      }
+    } catch (e) {
+      console.error("Erro ao carregar banners da home:", e);
+    }
+  };
+
+  useEffect(() => {
+    loadUpcomingEvents(); // Load events from API when order filter changes
+  }, [filters.order_by_date]);
+
+  /** Evita GET /admin/settings na home (401 para visitantes); usa rota pública. */
+  const loadPublicHomeLinks = async () => {
+    try {
+      const response = await getPublicBranding();
+      if (response.success && response.data?.old_results_url) {
+        setOldResultsUrl(response.data.old_results_url);
+      }
+    } catch (error) {
+      console.error("Erro ao carregar links públicos da home:", error);
+    }
+  };
 
   const loadUpcomingEvents = async () => {
     try {
-      const response = await getEvents({ status: 'published' });
-      if (response.success && response.data) {
-        setUpcomingEvents(response.data);
+      // Buscar eventos publicados e ongoing
+      // Ordenar por data conforme filtro selecionado
+      const orderBy = filters.order_by_date || 'asc';
+      const publishedResponse = await getEvents({ status: 'published', order_by_date: orderBy });
+      const ongoingResponse = await getEvents({ status: 'ongoing', order_by_date: orderBy });
+      
+      const allEvents: Event[] = [];
+      const now = new Date();
+      
+      // Adicionar eventos publicados com data futura
+      if (publishedResponse.success && publishedResponse.data) {
+        const futureEvents = publishedResponse.data.filter(event => {
+          const eventDate = new Date(event.event_date);
+          return eventDate >= now;
+        });
+        allEvents.push(...futureEvents);
       }
+      
+      // Adicionar eventos ongoing com data futura
+      if (ongoingResponse.success && ongoingResponse.data) {
+        const futureEvents = ongoingResponse.data.filter(event => {
+          const eventDate = new Date(event.event_date);
+          return eventDate >= now;
+        });
+        allEvents.push(...futureEvents);
+      }
+      
+      // Remover duplicatas
+      const uniqueEvents = Array.from(
+        new Map(allEvents.map(event => [event.id, event])).values()
+      );
+      
+      // Incluir eventos com inscrições abertas, em breve e encerradas
+      const filteredEvents = uniqueEvents.filter(event => {
+        const effectiveStatus = getEffectiveRegistrationStatus(event);
+        return effectiveStatus === 'open' || effectiveStatus === 'not_open' || effectiveStatus === 'closed';
+      });
+      
+      // Ordenar apenas por data do evento (mantém inscrições encerradas na mesma ordem)
+      const sortedEvents = filteredEvents.sort((a, b) => {
+        const dateA = new Date(a.event_date).getTime();
+        const dateB = new Date(b.event_date).getTime();
+        return filters.order_by_date === 'desc' ? dateB - dateA : dateA - dateB;
+      });
+      
+      setUpcomingEvents(sortedEvents);
     } catch (error) {
       console.error("Erro ao carregar eventos:", error);
       toast.error("Erro ao carregar eventos");
@@ -154,42 +242,46 @@ const Index = () => {
         {/* Navigation */}
         <Header />
 
-        {/* Hero Section */}
-        <section className="relative h-[600px] flex items-center justify-center overflow-hidden">
-          <div className="absolute inset-0 z-0">
-            <EditableImage
-              contentKey="hero_image_url"
-              defaultValue={pageSettings.hero_image_url}
-              className="w-full h-full object-cover"
-              alt="Corredores em ação"
-            />
-            <div className="absolute inset-0 bg-black/60" />
-          </div>
-
-          <div className="relative z-10 container mx-auto px-4 text-center text-white">
-            <EditableText
-              contentKey="hero_title"
-              defaultValue={pageSettings.hero_title}
-              as="h1"
-              className="text-4xl md:text-5xl font-bold mb-6 leading-tight"
-            />
-            <EditableText
-              contentKey="hero_subtitle"
-              defaultValue={pageSettings.hero_subtitle}
-              as="p"
-              className="text-lg md:text-xl mb-8 max-w-3xl mx-auto"
-            />
-            <Button size="lg" className="shadow-lg">
-              SAIBA MAIS
-            </Button>
-          </div>
-
-          <div className="absolute bottom-8 left-1/2 -translate-x-1/2 animate-bounce">
-            <div className="w-8 h-12 border-2 border-white rounded-full flex items-start justify-center p-2">
-              <div className="w-1 h-3 bg-white rounded-full"></div>
+        {/* Hero: slider de banners ativos ou hero estático */}
+        {activeBanners.length > 0 ? (
+          <HomeBannerSlider banners={activeBanners} />
+        ) : (
+          <section className="relative h-[600px] flex items-center justify-center overflow-hidden">
+            <div className="absolute inset-0 z-0">
+              <EditableImage
+                contentKey="hero_image_url"
+                defaultValue={pageSettings.hero_image_url}
+                className="w-full h-full object-cover"
+                alt="Corredores em ação"
+              />
+              <div className="absolute inset-0 bg-black/60" />
             </div>
-          </div>
-        </section>
+
+            <div className="relative z-10 container mx-auto px-4 text-center text-white">
+              <EditableText
+                contentKey="hero_title"
+                defaultValue={pageSettings.hero_title}
+                as="h1"
+                className="text-4xl md:text-5xl font-bold mb-6 leading-tight"
+              />
+              <EditableText
+                contentKey="hero_subtitle"
+                defaultValue={pageSettings.hero_subtitle}
+                as="p"
+                className="text-lg md:text-xl mb-8 max-w-3xl mx-auto"
+              />
+              <Button size="lg" className="shadow-lg">
+                SAIBA MAIS
+              </Button>
+            </div>
+
+            <div className="absolute bottom-8 left-1/2 -translate-x-1/2 animate-bounce">
+              <div className="w-8 h-12 border-2 border-white rounded-full flex items-start justify-center p-2">
+                <div className="w-1 h-3 bg-white rounded-full"></div>
+              </div>
+            </div>
+          </section>
+        )}
 
         {/* WhatsApp Contact Section */}
         <section className="py-16 bg-muted">
@@ -219,41 +311,107 @@ const Index = () => {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredUpcomingEvents.map(event => <Card key={event.id} className="overflow-hidden hover:shadow-xl transition-all hover:-translate-y-1 cursor-pointer" onClick={() => navigate(`/events/${event.id}`)}>
-                    <div className="h-48 bg-gradient-hero flex items-center justify-center">
-                      <Award className="h-16 w-16 text-white opacity-50" />
+            {filteredUpcomingEvents.map(event => {
+              const EventCard = () => {
+                const [imageError, setImageError] = useState(false);
+                return (
+                  <Card key={event.id} className="overflow-hidden hover:shadow-xl transition-all hover:-translate-y-1 cursor-pointer" onClick={() => navigate(event.slug ? `/evento/${event.slug}` : `/events/${event.id}`)}>
+                    <div className="h-48 bg-gradient-hero flex items-center justify-center relative overflow-hidden">
+                      {event.banner_url && !imageError ? (
+                        <img 
+                          src={event.banner_url} 
+                          alt={event.title} 
+                          className="w-full h-full object-cover"
+                          onError={() => setImageError(true)}
+                        />
+                      ) : (
+                        <Award className="h-16 w-16 text-white opacity-50" />
+                      )}
                     </div>
                     <CardContent className="pt-4">
-                      <h3 className="font-bold text-sm mb-2">
-                        {format(new Date(event.event_date), "dd 'DE' MMMM 'DE' yyyy", {
-                  locale: ptBR
-                }).toUpperCase()}
-                      </h3>
-                      <p className="text-xs text-muted-foreground mb-3">{event.title}</p>
-                      <div className="space-y-1 text-xs mb-4">
+                      <div className="flex items-start justify-between gap-2 mb-2">
+                        <h3 className="font-bold text-base line-clamp-2 flex-1">{event.title}</h3>
+                        {(() => {
+                          const effectiveStatus = getEffectiveRegistrationStatus(event);
+                          if (effectiveStatus !== null) {
+                            return (
+                              <Badge variant={getRegistrationStatusVariant(event)} className="text-xs shrink-0">
+                                {getRegistrationStatusLabel(event)}
+                              </Badge>
+                            );
+                          }
+                          return null;
+                        })()}
+                      </div>
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground mb-3">
+                        <Calendar className="h-3 w-3" />
+                        <span>{formatDateOnlyBrasilia(event.event_date)}</span>
+                      </div>
+                      <div className="space-y-1 text-xs text-muted-foreground mb-4">
                         <div className="flex items-center gap-2">
                           <MapPin className="h-3 w-3" />
                           <span>
                             {event.city} - {event.state}
                           </span>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <Calendar className="h-3 w-3" />
-                          <span>CORRIDA - CP</span>
-                        </div>
                       </div>
                       <div className="flex gap-2">
-                        <Button size="sm" className="flex-1 text-xs" onClick={e => {
-                  e.stopPropagation();
-                  navigate("/events");
-                }}>
-                          RESULTADOS INSCRITOS
-                        </Button>
+                        {event.result_url ? (
+                          <Button 
+                            size="sm" 
+                            className="flex-1 text-xs" 
+                            onClick={e => {
+                              e.stopPropagation();
+                              let urlToOpen = event.result_url!;
+                              if (urlToOpen.includes('${')) {
+                                const port = window.location.port || '3001';
+                                urlToOpen = urlToOpen.replace(/\$\{API_PORT\}/g, port);
+                                if (urlToOpen.includes('${')) {
+                                  urlToOpen = urlToOpen.replace(/http:\/\/localhost:\$\{API_PORT\}/g, 'http://localhost:3001');
+                                }
+                              }
+                              window.open(urlToOpen, '_blank');
+                            }}
+                          >
+                            <Trophy className="h-3 w-3 mr-1" />
+                            RESULTADOS
+                          </Button>
+                        ) : null}
+                        {isRegistrationClosed(event) ? (
+                          <Button 
+                            size="sm" 
+                            variant="secondary"
+                            className="flex-1 text-xs bg-muted hover:bg-muted/90 text-muted-foreground" 
+                            onClick={e => {
+                              e.stopPropagation();
+                              navigate(event.slug ? `/evento/${event.slug}` : `/events/${event.id}`);
+                            }}
+                          >
+                            Inscrições Encerradas
+                          </Button>
+                        ) : (
+                          !event.result_url && (
+                            <Button 
+                              size="sm" 
+                              className="flex-1 text-xs" 
+                              onClick={e => {
+                                e.stopPropagation();
+                                navigate(event.slug ? `/evento/${event.slug}` : `/events/${event.id}`);
+                              }}
+                            >
+                              Inscrever-se
+                            </Button>
+                          )
+                        )}
                       </div>
                     </CardContent>
-                  </Card>)}
-              </div>
-            </section>
+                  </Card>
+                );
+              };
+              return <EventCard key={event.id} />;
+            })}
+          </div>
+        </section>
 
         {/* Consultoria Section */}
         <section className="py-16 bg-muted/50">
@@ -469,6 +627,28 @@ const Index = () => {
           </div>
         </section>
 
+        {/* Old Results Section */}
+        {oldResultsUrl && (
+          <section className="py-16 bg-card">
+            <div className="container mx-auto px-4">
+              <div className="text-center mb-8">
+                <h2 className="text-3xl font-bold mb-2">RESULTADOS ANTIGOS</h2>
+                <p className="text-sm text-muted-foreground">CONSULTE RESULTADOS DE EVENTOS ANTERIORES</p>
+              </div>
+              <div className="flex justify-center">
+                <Button
+                  size="lg"
+                  onClick={() => window.open(oldResultsUrl, '_blank')}
+                  className="gap-2"
+                >
+                  <BarChart3 className="h-5 w-5" />
+                  Acessar Resultados Antigos
+                </Button>
+              </div>
+            </div>
+          </section>
+        )}
+
         {/* Footer */}
         <footer className="py-8 bg-card border-t">
           <div className="container mx-auto px-4">
@@ -483,7 +663,7 @@ const Index = () => {
                 <Linkedin className="h-5 w-5" />
               </Button>
             </div>
-            <p className="text-sm text-center text-muted-foreground">© 2024 RunEvents. Plataforma de corridas de rua.</p>
+            <p className="text-sm text-center text-muted-foreground">© 2024 Cronoteam. Plataforma de corridas de rua.</p>
             <div className="mt-4 text-center">
               <Button variant="link" className="text-muted-foreground text-sm" onClick={() => navigate("/auth")}>
                 É organizador? Clique aqui

@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { LogOut } from "lucide-react";
@@ -11,11 +11,65 @@ import OrganizerRegistrations from "@/components/organizer/OrganizerRegistration
 import OrganizerFinancial from "@/components/organizer/OrganizerFinancial";
 import OrganizerSettings from "@/components/organizer/OrganizerSettings";
 import OrganizerReports from "@/components/organizer/OrganizerReports";
+import { OrganizerGroupLeaders } from "@/components/organizer/OrganizerGroupLeaders";
+import OrganizerContactMessages from "@/components/organizer/OrganizerContactMessages";
+import { getOrganizerSettings } from "@/lib/api/organizerSettings";
+import { getOrganizerPath, getOrganizerSectionFromPath, getBreadcrumbForPath } from "@/lib/utils/navigation";
 
 const OrganizerDashboard = () => {
   const navigate = useNavigate();
-  const { logout } = useAuth();
-  const [activeSection, setActiveSection] = useState("dashboard");
+  const { section: sectionParam } = useParams<{ section?: string }>();
+  const location = useLocation();
+  const { logout, user } = useAuth();
+  const breadcrumb = getBreadcrumbForPath(location.pathname);
+  const [organizerName, setOrganizerName] = useState<string>("");
+
+  const activeSection = getOrganizerSectionFromPath(location.pathname);
+
+  useEffect(() => {
+    if (!sectionParam || sectionParam === "" || sectionParam === "dashboard") {
+      navigate(getOrganizerPath("dashboard"), { replace: true });
+    }
+  }, [sectionParam, navigate]);
+
+  useEffect(() => {
+    const handleNavigateToSection = (event: CustomEvent) => {
+      navigate(getOrganizerPath(event.detail));
+    };
+    window.addEventListener("organizer:navigate-to-section", handleNavigateToSection as EventListener);
+    return () => {
+      window.removeEventListener("organizer:navigate-to-section", handleNavigateToSection as EventListener);
+    };
+  }, [navigate]);
+
+  useEffect(() => {
+    const loadOrganizerName = async () => {
+      try {
+        const response = await getOrganizerSettings();
+        if (response.success && response.data) {
+          // Priorizar organization_name, depois full_name, depois email do usuário
+          const name = response.data.organization_name || 
+                      response.data.full_name || 
+                      user?.email || 
+                      "Organizador";
+          setOrganizerName(name);
+        } else {
+          // Fallback para o nome do perfil do usuário
+          const name = user?.profile?.full_name || user?.email || "Organizador";
+          setOrganizerName(name);
+        }
+      } catch (error) {
+        console.error("Erro ao carregar nome do organizador:", error);
+        // Fallback para o nome do perfil do usuário
+        const name = user?.profile?.full_name || user?.email || "Organizador";
+        setOrganizerName(name);
+      }
+    };
+
+    if (user) {
+      loadOrganizerName();
+    }
+  }, [user]);
 
   const handleSignOut = async () => {
     await logout();
@@ -32,12 +86,14 @@ const OrganizerDashboard = () => {
         return <OrganizerRegistrations />;
       case "financial":
         return <OrganizerFinancial />;
+      case "group-leaders":
+        return <OrganizerGroupLeaders />;
       case "reports":
         return <OrganizerReports />;
       case "results":
         return <div className="text-center py-12 text-muted-foreground">Seção de Resultados em desenvolvimento</div>;
       case "messages":
-        return <div className="text-center py-12 text-muted-foreground">Seção de Mensagens em desenvolvimento</div>;
+        return <OrganizerContactMessages />;
       case "settings":
         return <OrganizerSettings />;
       default:
@@ -48,20 +104,27 @@ const OrganizerDashboard = () => {
   return (
     <SidebarProvider>
       <div className="min-h-screen flex w-full bg-gradient-to-br from-background via-muted/20 to-background">
-        <OrganizerSidebar activeSection={activeSection} onSectionChange={setActiveSection} />
+        <OrganizerSidebar activeSection={activeSection} />
         
         <div className="flex-1 flex flex-col">
           <nav className="border-b bg-card/50 backdrop-blur-sm sticky top-0 z-50">
             <div className="px-4 py-4 flex items-center justify-between">
               <div className="flex items-center gap-4">
                 <SidebarTrigger />
-                <h1 className="text-2xl font-bold bg-gradient-hero bg-clip-text text-transparent">
-                  RunEvents Organizador
-                </h1>
+                <div className="flex flex-col gap-0.5">
+                  <h1 className="text-2xl font-bold bg-gradient-hero bg-clip-text text-transparent">
+                    Cronoteam Organizador
+                  </h1>
+                  {breadcrumb ? (
+                    <p className="text-xs text-muted-foreground" aria-label="Navegação">
+                      {breadcrumb.area} &gt; {breadcrumb.sectionLabel}
+                    </p>
+                  ) : null}
+                </div>
               </div>
               <div className="flex items-center gap-4">
                 <span className="text-sm text-muted-foreground">
-                  João Silva
+                  {organizerName || "Organizador"}
                 </span>
                 <Button variant="outline" size="sm" onClick={handleSignOut}>
                   <LogOut className="mr-2 h-4 w-4" />

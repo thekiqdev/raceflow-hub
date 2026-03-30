@@ -1,5 +1,6 @@
 import { query } from '../config/database.js';
 import { Profile } from '../types/index.js';
+import { comparePassword } from './authService.js';
 
 export interface UpdateProfileData {
   full_name?: string;
@@ -12,6 +13,19 @@ export interface UpdateProfileData {
   contact_phone?: string;
   bio?: string;
   website_url?: string;
+  is_public?: boolean;
+  preferred_name?: string;
+  profession?: string;
+  cbat?: string;
+  team?: string;
+  postal_code?: string;
+  street?: string;
+  address_number?: string;
+  address_complement?: string;
+  neighborhood?: string;
+  city?: string;
+  state?: string;
+  cpf?: string;
 }
 
 // Get profile by user ID
@@ -28,6 +42,21 @@ export const getProfileByUserId = async (userId: string) => {
   return result.rows[0] as Profile;
 };
 
+// Verify user password
+export const verifyUserPassword = async (userId: string, password: string): Promise<boolean> => {
+  const result = await query(
+    'SELECT password_hash FROM users WHERE id = $1',
+    [userId]
+  );
+
+  if (result.rows.length === 0) {
+    return false;
+  }
+
+  const passwordHash = result.rows[0].password_hash;
+  return await comparePassword(password, passwordHash);
+};
+
 // Update profile
 export const updateProfile = async (userId: string, data: UpdateProfileData) => {
   const fields: string[] = [];
@@ -35,10 +64,20 @@ export const updateProfile = async (userId: string, data: UpdateProfileData) => 
   let paramIndex = 1;
 
   Object.entries(data).forEach(([key, value]) => {
-    if (value !== undefined) {
+    if (value !== undefined && key !== 'password') {
+      // Clean CPF: remove formatting
+      if (key === 'cpf' && value) {
+        const cleanCpf = String(value).replace(/[^0-9]/g, '');
+        if (cleanCpf.length === 11) {
+          fields.push(`${key} = $${paramIndex}`);
+          values.push(cleanCpf);
+          paramIndex++;
+        }
+      } else {
       fields.push(`${key} = $${paramIndex}`);
       values.push(value);
       paramIndex++;
+      }
     }
   });
 

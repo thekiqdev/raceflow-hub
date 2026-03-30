@@ -1,0 +1,1229 @@
+import axios, { AxiosInstance, AxiosError } from 'axios';
+import { query } from '../config/database.js';
+import {
+  AsaasCustomerRequest,
+  AsaasCustomerResponse,
+  AsaasPaymentRequest,
+  AsaasPaymentResponse,
+  AsaasBillingType,
+  CreateCustomerResult,
+  CreatePaymentResult,
+  PaymentStatusResult,
+  AsaasCreditCardData,
+  AsaasCreditCardHolderInfo,
+} from '../types/asaas.js';
+
+// Get Asaas configuration from environment
+const getAsaasConfig = () => {
+  const apiKey = process.env.ASAAS_API_KEY;
+  const environment = process.env.ASAAS_ENVIRONMENT || 'sandbox';
+  const apiUrl = process.env.ASAAS_API_URL || 
+    (environment === 'production' 
+      ? 'https://www.asaas.com/api/v3' 
+      : 'https://sandbox.asaas.com/api/v3');
+
+  console.log('🔧 Configuração Asaas:', {
+    environment,
+    apiUrl,
+    hasApiKey: !!apiKey,
+    apiKeyLength: apiKey?.length || 0,
+  });
+
+  if (!apiKey) {
+    throw new Error('ASAAS_API_KEY não configurada nas variáveis de ambiente');
+  }
+
+  return { apiKey, apiUrl };
+};
+
+// Create axios instance for Asaas API
+const createAsaasClient = (): AxiosInstance => {
+  const { apiKey, apiUrl } = getAsaasConfig();
+
+  const client = axios.create({
+    baseURL: apiUrl,
+    timeout: 30000, // 30 seconds
+    headers: {
+      'access_token': apiKey,
+      'Content-Type': 'application/json',
+    },
+  });
+
+  // Request interceptor for logging
+  client.interceptors.request.use(
+    (config) => {
+      console.log(`🌐 Asaas API Request: ${config.method?.toUpperCase()} ${config.url}`);
+      return config;
+    },
+    (error) => {
+      console.error('❌ Asaas API Request Error:', error);
+      return Promise.reject(error);
+    }
+  );
+
+  // Response interceptor for error handling
+  client.interceptors.response.use(
+    (response) => {
+      console.log(`✅ Asaas API Response: ${response.status} ${response.config.url}`);
+      return response;
+    },
+    (error: AxiosError) => {
+      if (error.response) {
+        console.error(`❌ Asaas API Error: ${error.response.status}`, error.response.data);
+      } else if (error.request) {
+        console.error('❌ Asaas API Error: No response received', error.request);
+      } else {
+        console.error('❌ Asaas API Error:', error.message);
+      }
+      return Promise.reject(error);
+    }
+  );
+
+  return client;
+};
+
+// Get or create Asaas customer
+export const createCustomer = async (
+  userId: string,
+  customerData: AsaasCustomerRequest
+): Promise<CreateCustomerResult> => {
+  const asaasClient = createAsaasClient();
+
+  try {
+    // Check if customer already exists in our database
+    const existingCustomer = await query(
+      'SELECT asaas_customer_id FROM asaas_customers WHERE user_id = $1',
+      [userId]
+    );
+
+    if (existingCustomer.rows.length > 0) {
+      console.log(`📋 Cliente Asaas já existe para user_id: ${userId}`);
+      return {
+        asaas_customer_id: existingCustomer.rows[0].asaas_customer_id,
+        created: false,
+      };
+    }
+
+    // Check if customer exists in Asaas by CPF/CNPJ
+    try {
+      const searchResponse = await asaasClient.get('/customers', {
+        params: {
+          cpfCnpj: customerData.cpfCnpj,
+        },
+      });
+
+      if (searchResponse.data?.data && searchResponse.data.data.length > 0) {
+        const existingAsaasCustomer = searchResponse.data.data[0] as AsaasCustomerResponse;
+        console.log(`📋 Cliente já existe no Asaas: ${existingAsaasCustomer.id}`);
+
+        // Save to our database
+        await query(
+          'INSERT INTO asaas_customers (user_id, asaas_customer_id) VALUES ($1, $2)',
+          [userId, existingAsaasCustomer.id]
+        );
+
+        return {
+          asaas_customer_id: existingAsaasCustomer.id,
+          created: false,
+        };
+      }
+    } catch (searchError: any) {
+      // If search fails, continue to create new customer
+      console.log('⚠️ Erro ao buscar cliente no Asaas, criando novo:', searchError.message);
+    }
+
+    // Create new customer in Asaas (notificações desligadas por padrão – Cronoteam envia as próprias)
+    console.log('🆕 Criando novo cliente no Asaas...');
+    const payload = { ...customerData, notificationDisabled: customerData.notificationDisabled ?? true };
+    const response = await asaasClient.post<AsaasCustomerResponse>('/customers', payload);
+
+    const asaasCustomer = response.data;
+
+    // Save to our database
+    await query(
+      'INSERT INTO asaas_customers (user_id, asaas_customer_id) VALUES ($1, $2)',
+      [userId, asaasCustomer.id]
+    );
+
+    console.log(`✅ Cliente criado no Asaas: ${asaasCustomer.id}`);
+
+    return {
+      asaas_customer_id: asaasCustomer.id,
+      created: true,
+    };
+  } catch (error: any) {
+    console.error('❌ Erro ao criar cliente no Asaas:', error);
+    
+    if (error.response?.data) {
+      const errorData = error.response.data;
+      if (errorData.errors) {
+        const errorMessages = errorData.errors.map((e: any) => e.description).join(', ');
+        
+        // Check if error is related to invalid CPF
+        const isInvalidCpf = errorMessages.includes('CPF/CNPJ informado é inválido') || 
+                            errorMessages.toLowerCase().includes('cpf') && errorMessages.toLowerCase().includes('inválido');
+        
+        if (isInvalidCpf) {
+          throw new Error('CPF/CNPJ informado é inválido');
+        }
+        
+        throw new Error(`Erro ao criar cliente no Asaas: ${errorMessages}`);
+      }
+    }
+
+    throw new Error(`Erro ao criar cliente no Asaas: ${error.message}`);
+  }
+};
+
+// Get customer by user ID
+export const getCustomerByUserId = async (userId: string): Promise<string | null> => {
+  const result = await query(
+    'SELECT asaas_customer_id FROM asaas_customers WHERE user_id = $1',
+    [userId]
+  );
+
+  if (result.rows.length === 0) {
+    return null;
+  }
+
+  return result.rows[0].asaas_customer_id;
+};
+
+/** Atualiza cliente no Asaas para desabilitar notificações de faturas (PUT /customers/{id}). */
+export const updateCustomerNotificationDisabled = async (
+  asaasCustomerId: string
+): Promise<{ ok: boolean; error?: string }> => {
+  const asaasClient = createAsaasClient();
+  try {
+    await asaasClient.put(`/customers/${asaasCustomerId}`, { notificationDisabled: true });
+    return { ok: true };
+  } catch (error: any) {
+    const msg = error.response?.data?.errors
+      ? error.response.data.errors.map((e: any) => e.description).join(', ')
+      : error.message;
+    return { ok: false, error: msg };
+  }
+};
+
+// Validate customer exists in Asaas and recreate if invalid
+export const validateOrRecreateCustomer = async (
+  userId: string,
+  customerData: AsaasCustomerRequest
+): Promise<string> => {
+  const asaasClient = createAsaasClient();
+  
+  // Get existing customer ID from database
+  let asaasCustomerId = await getCustomerByUserId(userId);
+  
+  if (!asaasCustomerId) {
+    // No customer in database, create new one
+    console.log('📋 Nenhum customer encontrado no banco, criando novo...');
+    const customerResult = await createCustomer(userId, customerData);
+    return customerResult.asaas_customer_id;
+  }
+  
+  // Validate customer exists in Asaas
+  try {
+    console.log(`🔍 Validando customer no Asaas: ${asaasCustomerId}`);
+    await asaasClient.get(`/customers/${asaasCustomerId}`);
+    console.log(`✅ Customer válido no Asaas: ${asaasCustomerId}`);
+    return asaasCustomerId;
+  } catch (error: any) {
+    // Customer doesn't exist in Asaas (probably from different environment)
+    if (error.response?.status === 404 || 
+        (error.response?.data?.errors && 
+         error.response.data.errors.some((e: any) => 
+           e.description?.toLowerCase().includes('não encontrado') ||
+           e.description?.toLowerCase().includes('not found') ||
+           e.description?.toLowerCase().includes('inválido')
+         ))) {
+      console.log(`⚠️ Customer ${asaasCustomerId} não existe no Asaas (provavelmente de outro ambiente), removendo do banco e criando novo...`);
+      
+      // Remove invalid customer from database
+      await query(
+        'DELETE FROM asaas_customers WHERE user_id = $1',
+        [userId]
+      );
+      
+      // Create new customer
+      const customerResult = await createCustomer(userId, customerData);
+      return customerResult.asaas_customer_id;
+    }
+    
+    // Other error, rethrow
+    throw error;
+  }
+};
+
+// Create payment in Asaas
+export const createPayment = async (
+  registrationId: string,
+  customerId: string,
+  paymentData: {
+    value: number;
+    dueDate: string; // YYYY-MM-DD
+    description: string;
+    billingType: AsaasBillingType;
+    externalReference?: string;
+  },
+  options?: { setAsRegistrationPaymentId?: boolean }
+): Promise<CreatePaymentResult> => {
+  const setAsRegistrationPaymentId = options?.setAsRegistrationPaymentId !== false;
+  const asaasClient = createAsaasClient();
+
+  try {
+    // Prepare payment request
+    const paymentRequest: AsaasPaymentRequest = {
+      customer: customerId,
+      billingType: paymentData.billingType,
+      value: paymentData.value,
+      dueDate: paymentData.dueDate,
+      description: paymentData.description,
+      externalReference: paymentData.externalReference || `REG-${registrationId}`,
+      installmentCount: 1,
+      installmentValue: paymentData.value,
+    };
+
+    console.log('💳 Criando pagamento no Asaas...', { 
+      registrationId, 
+      customerId, 
+      value: paymentData.value,
+      billingType: paymentData.billingType,
+      dueDate: paymentData.dueDate
+    });
+
+    // Create payment in Asaas
+    const response = await asaasClient.post<AsaasPaymentResponse>('/payments', paymentRequest);
+    const asaasPayment = response.data;
+
+    // Log completo da resposta para identificar todos os campos
+    console.log(`✅ Pagamento criado no Asaas - Resposta completa:`, JSON.stringify(asaasPayment, null, 2));
+    
+    // O Asaas pode retornar o ID numérico em invoiceNumber
+    // Verificar se há um campo com ID numérico
+    const invoiceNumber = (asaasPayment as any).invoiceNumber;
+    const paymentIdForQuery = invoiceNumber || asaasPayment.id;
+    
+    console.log(`✅ Pagamento criado no Asaas:`, {
+      id: asaasPayment.id,
+      invoiceNumber: invoiceNumber,
+      paymentIdForQuery: paymentIdForQuery,
+      allFields: Object.keys(asaasPayment),
+      status: asaasPayment.status,
+      billingType: asaasPayment.billingType,
+      value: asaasPayment.value,
+      pixQrCodeAvailable: !!asaasPayment.pixQrCode,
+      pixQrCodeId: asaasPayment.pixQrCodeId
+    });
+
+    // If PIX, wait and fetch QR Code
+    let pixQrCode: string | null = null;
+    let pixQrCodeId: string | null = null;
+
+    if (paymentData.billingType === 'PIX') {
+      console.log('🔍 Buscando QR Code PIX...');
+      
+      // Check if QR Code is already available in the initial response
+      if (asaasPayment.pixQrCode) {
+        pixQrCode = asaasPayment.pixQrCode;
+        pixQrCodeId = asaasPayment.pixQrCodeId || null;
+        console.log('✅ QR Code PIX já disponível na resposta inicial');
+      } else {
+        // Wait 2 seconds for QR Code to be generated
+        console.log('⏳ Aguardando 2 segundos para geração do QR Code...');
+        await new Promise(resolve => setTimeout(resolve, 2000));
+
+        // Try to get QR Code (up to 5 attempts)
+        // O Asaas pode usar o invoiceNumber como ID para consulta
+        const invoiceNumber = (asaasPayment as any).invoiceNumber;
+        const paymentIdToUse = invoiceNumber || asaasPayment.id;
+        
+        console.log(`🔍 IDs disponíveis:`, {
+          originalId: asaasPayment.id,
+          invoiceNumber: invoiceNumber,
+          paymentIdToUse: paymentIdToUse
+        });
+        
+        for (let attempt = 1; attempt <= 5; attempt++) {
+          try {
+            console.log(`🔍 Tentativa ${attempt}/5: Consultando pagamento com ID: ${paymentIdToUse}...`);
+            
+            // Usar o invoiceNumber se disponível, senão usar o ID original
+            const paymentResponse = await asaasClient.get<AsaasPaymentResponse>(
+              `/payments/${paymentIdToUse}`
+            );
+
+            const payment = paymentResponse.data;
+
+            // Log completo da resposta para debug
+            console.log(`📋 Resposta completa da consulta:`, {
+              id: payment.id,
+              status: payment.status,
+              billingType: payment.billingType,
+              pixQrCode: payment.pixQrCode ? `${payment.pixQrCode.substring(0, 50)}...` : null,
+              pixQrCodeId: payment.pixQrCodeId,
+              pixTransactionId: payment.pixTransactionId,
+              // Verificar todos os campos possíveis
+              allKeys: Object.keys(payment),
+            });
+
+            // Segundo a documentação do Asaas, o QR Code PIX deve ser obtido via endpoint específico
+            // GET /v3/payments/{id}/pixQrCode
+            // Este endpoint retorna: payload (código copia e cola), encodedImage (Base64), expirationDate
+            // Vamos sempre tentar este endpoint primeiro, pois é o método recomendado
+            try {
+              console.log(`🔍 Tentando obter QR Code via endpoint específico: /payments/${paymentIdToUse}/pixQrCode`);
+              const qrCodeResponse = await asaasClient.get(
+                `/payments/${paymentIdToUse}/pixQrCode`
+              );
+              
+              console.log(`📋 Resposta do endpoint pixQrCode:`, {
+                hasPayload: !!qrCodeResponse.data?.payload,
+                hasEncodedImage: !!qrCodeResponse.data?.encodedImage,
+                expirationDate: qrCodeResponse.data?.expirationDate,
+                allKeys: Object.keys(qrCodeResponse.data || {}),
+              });
+              
+              if (qrCodeResponse.data?.payload) {
+                pixQrCode = qrCodeResponse.data.payload;
+                // O pixQrCodeId pode estar na resposta ou no payment
+                pixQrCodeId = qrCodeResponse.data.id || payment.pixQrCodeId || (payment as any).pixTransaction?.id || null;
+                console.log(`✅ QR Code PIX obtido via endpoint específico /pixQrCode`);
+                if (pixQrCode) {
+                  console.log(`📝 QR Code payload (primeiros 100 chars): ${pixQrCode.substring(0, 100)}...`);
+                }
+                break;
+              }
+            } catch (qrError: any) {
+              console.log(`⚠️ Erro ao obter QR Code via endpoint específico:`, {
+                message: qrError.message,
+                status: qrError.response?.status,
+                data: qrError.response?.data
+              });
+              // Se o endpoint específico falhar, tentar campos diretos na resposta do payment
+              const pixTransaction = (payment as any).pixTransaction;
+              const qrCode = payment.pixQrCode || 
+                            (pixTransaction?.payload) || 
+                            (pixTransaction?.qrCode) || 
+                            (payment as any).pixQrCodeBase64 || 
+                            (payment as any).qrCode;
+              
+              if (qrCode) {
+                pixQrCode = qrCode;
+                pixQrCodeId = payment.pixQrCodeId || pixTransaction?.id || null;
+                console.log(`✅ QR Code PIX obtido nos campos diretos do payment`);
+                break;
+              }
+            }
+
+            if (attempt < 5) {
+              const waitTime = attempt * 2000; // 2s, 4s, 6s, 8s
+              console.log(`⏳ QR Code ainda não disponível, tentando novamente em ${waitTime/1000} segundos... (${attempt}/5)`);
+              await new Promise(resolve => setTimeout(resolve, waitTime));
+            } else {
+              console.log('⚠️ QR Code PIX não disponível após 5 tentativas. Será buscado posteriormente.');
+              console.log('💡 O QR Code pode estar disponível em alguns minutos. Use o endpoint de consulta de status.');
+            }
+          } catch (error: any) {
+            console.error(`❌ Erro ao buscar QR Code (tentativa ${attempt}/5):`, {
+              message: error.message,
+              status: error.response?.status,
+              data: error.response?.data
+            });
+            if (attempt < 5) {
+              const waitTime = attempt * 2000;
+              await new Promise(resolve => setTimeout(resolve, waitTime));
+            }
+          }
+        }
+      }
+    }
+
+    // Save payment to database
+    await query(
+      `INSERT INTO asaas_payments (
+        registration_id, asaas_payment_id, asaas_customer_id, value, net_value,
+        billing_type, status, due_date, payment_link, invoice_url, bank_slip_url,
+        external_reference, pix_qr_code_id, pix_qr_code
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+      [
+        registrationId,
+        asaasPayment.id,
+        customerId,
+        asaasPayment.value,
+        asaasPayment.netValue || null,
+        asaasPayment.billingType,
+        asaasPayment.status,
+        asaasPayment.dueDate,
+        asaasPayment.paymentLink || null,
+        asaasPayment.invoiceUrl || null,
+        asaasPayment.bankSlipUrl || null,
+        asaasPayment.externalReference || null,
+        pixQrCodeId,
+        pixQrCode,
+      ]
+    );
+
+    // Update registration with asaas_payment_id (omit when creating 2nd charge for difference)
+    if (setAsRegistrationPaymentId) {
+      await query(
+        'UPDATE registrations SET asaas_payment_id = $1 WHERE id = $2',
+        [asaasPayment.id, registrationId]
+      );
+    }
+
+    return {
+      asaas_payment_id: asaasPayment.id,
+      payment_link: asaasPayment.paymentLink,
+      pix_qr_code: pixQrCode,
+      pix_qr_code_id: pixQrCodeId,
+      status: asaasPayment.status,
+      value: asaasPayment.value,
+      net_value: asaasPayment.netValue,
+      due_date: asaasPayment.dueDate,
+    };
+  } catch (error: any) {
+    console.error('❌ Erro ao criar pagamento no Asaas:', error);
+    
+    if (error.response?.data) {
+      const errorData = error.response.data;
+      if (errorData.errors) {
+        const errorMessages = errorData.errors.map((e: any) => e.description).join(', ');
+        
+        // Check if error is related to invalid customer
+        const isInvalidCustomer = errorMessages.toLowerCase().includes('customer') && 
+                                  (errorMessages.toLowerCase().includes('inválido') || 
+                                   errorMessages.toLowerCase().includes('não informado') ||
+                                   errorMessages.toLowerCase().includes('not found'));
+        
+        if (isInvalidCustomer) {
+          // Throw a special error that can be caught and handled by the controller
+          const invalidCustomerError: any = new Error(`Customer inválido ou não encontrado no Asaas: ${errorMessages}`);
+          invalidCustomerError.isInvalidCustomer = true;
+          invalidCustomerError.customerId = customerId;
+          throw invalidCustomerError;
+        }
+        
+        throw new Error(`Erro ao criar pagamento no Asaas: ${errorMessages}`);
+      }
+    }
+
+    throw new Error(`Erro ao criar pagamento no Asaas: ${error.message}`);
+  }
+};
+
+/**
+ * Create credit card payment in Asaas
+ */
+export const createCreditCardPayment = async (
+  registrationId: string,
+  customerId: string,
+  paymentData: {
+    value: number;
+    dueDate: string; // YYYY-MM-DD
+    description: string;
+    externalReference?: string;
+  },
+  creditCard: AsaasCreditCardData,
+  creditCardHolderInfo: AsaasCreditCardHolderInfo
+): Promise<CreatePaymentResult> => {
+  const asaasClient = createAsaasClient();
+
+  try {
+    // Prepare credit card payment request
+    const paymentRequest: AsaasPaymentRequest = {
+      customer: customerId,
+      billingType: 'CREDIT_CARD',
+      value: paymentData.value,
+      dueDate: paymentData.dueDate,
+      description: paymentData.description,
+      externalReference: paymentData.externalReference || `REG-${registrationId}`,
+      installmentCount: 1,
+      installmentValue: paymentData.value,
+      // Credit card data
+      creditCard: {
+        holderName: creditCard.holderName,
+        number: creditCard.number, // Should be unmasked (numbers only)
+        expiryMonth: creditCard.expiryMonth, // MM format (01-12)
+        expiryYear: creditCard.expiryYear, // YYYY format
+        ccv: creditCard.ccv, // 3 or 4 digits
+      },
+      creditCardHolderInfo: {
+        name: creditCardHolderInfo.name,
+        email: creditCardHolderInfo.email,
+        cpfCnpj: creditCardHolderInfo.cpfCnpj, // Should be unmasked (numbers only)
+        postalCode: creditCardHolderInfo.postalCode, // Should be unmasked (numbers only)
+        addressNumber: creditCardHolderInfo.addressNumber,
+        addressComplement: creditCardHolderInfo.addressComplement,
+        phone: creditCardHolderInfo.phone, // Should be unmasked (numbers only)
+        mobilePhone: creditCardHolderInfo.mobilePhone, // Should be unmasked (numbers only)
+      },
+    };
+
+    console.log('💳 Criando pagamento com cartão de crédito no Asaas...', { 
+      registrationId, 
+      customerId, 
+      value: paymentData.value,
+      dueDate: paymentData.dueDate,
+      cardLast4: creditCard.number.slice(-4),
+      holderName: creditCard.holderName,
+    });
+
+    // Create payment in Asaas
+    const response = await asaasClient.post<AsaasPaymentResponse>('/payments', paymentRequest);
+    const asaasPayment = response.data;
+
+    console.log(`✅ Pagamento com cartão de crédito criado no Asaas:`, {
+      id: asaasPayment.id,
+      status: asaasPayment.status,
+      value: asaasPayment.value,
+      netValue: asaasPayment.netValue,
+      billingType: asaasPayment.billingType,
+      dateCreated: asaasPayment.dateCreated,
+    });
+
+    // Credit card payments can have different statuses:
+    // - CONFIRMED: Payment approved immediately
+    // - PENDING: Payment pending analysis
+    // - AWAITING_RISK_ANALYSIS: Payment awaiting risk analysis
+    // - Other statuses for declined/refunded payments
+
+    let creditCardToken: string | null = null;
+    
+    // Check if Asaas returned a credit card token for future use
+    // (This might be in the response or a separate field)
+    if ((asaasPayment as any).creditCardToken) {
+      creditCardToken = (asaasPayment as any).creditCardToken;
+      console.log('💳 Token de cartão de crédito recebido (para uso futuro)');
+    }
+
+    // Save payment to database
+    await query(
+      `INSERT INTO asaas_payments (
+        registration_id, asaas_payment_id, asaas_customer_id, value, net_value,
+        billing_type, status, due_date, payment_link, invoice_url, bank_slip_url,
+        external_reference, pix_qr_code_id, pix_qr_code
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+      [
+        registrationId,
+        asaasPayment.id,
+        customerId,
+        asaasPayment.value,
+        asaasPayment.netValue || null,
+        asaasPayment.billingType,
+        asaasPayment.status,
+        asaasPayment.dueDate,
+        asaasPayment.paymentLink || null,
+        asaasPayment.invoiceUrl || null,
+        asaasPayment.bankSlipUrl || null,
+        asaasPayment.externalReference || null,
+        null, // No PIX QR Code for credit card
+        null, // No PIX QR Code for credit card
+      ]
+    );
+
+    // Update registration with asaas_payment_id
+    await query(
+      'UPDATE registrations SET asaas_payment_id = $1 WHERE id = $2',
+      [asaasPayment.id, registrationId]
+    );
+
+    // Log payment status for monitoring
+    if (asaasPayment.status === 'CONFIRMED') {
+      console.log('✅ Pagamento com cartão de crédito APROVADO imediatamente');
+    } else if (asaasPayment.status === 'PENDING' || asaasPayment.status === 'AWAITING_RISK_ANALYSIS') {
+      console.log('⏳ Pagamento com cartão de crédito PENDENTE de análise');
+    } else {
+      console.log(`⚠️ Pagamento com cartão de crédito com status: ${asaasPayment.status}`);
+    }
+
+    return {
+      asaas_payment_id: asaasPayment.id,
+      payment_link: asaasPayment.paymentLink,
+      pix_qr_code: null, // No PIX QR Code for credit card
+      pix_qr_code_id: null, // No PIX QR Code for credit card
+      status: asaasPayment.status,
+      value: asaasPayment.value,
+      net_value: asaasPayment.netValue,
+      due_date: asaasPayment.dueDate,
+      credit_card_token: creditCardToken || undefined,
+    };
+  } catch (error: any) {
+    console.error('❌ Erro ao criar pagamento com cartão de crédito no Asaas:', error);
+    
+    if (error.response?.data) {
+      const errorData = error.response.data;
+      if (errorData.errors) {
+        const errorMessages = errorData.errors.map((e: any) => e.description).join(', ');
+        
+        // Check if error is related to invalid customer
+        const isInvalidCustomer = errorMessages.toLowerCase().includes('customer') && 
+                                  (errorMessages.toLowerCase().includes('inválido') || 
+                                   errorMessages.toLowerCase().includes('não informado') ||
+                                   errorMessages.toLowerCase().includes('not found'));
+        
+        if (isInvalidCustomer) {
+          const invalidCustomerError: any = new Error(`Customer inválido ou não encontrado no Asaas: ${errorMessages}`);
+          invalidCustomerError.isInvalidCustomer = true;
+          invalidCustomerError.customerId = customerId;
+          throw invalidCustomerError;
+        }
+
+        // Check for credit card specific errors
+        const isCardError = errorMessages.toLowerCase().includes('cartão') || 
+                           errorMessages.toLowerCase().includes('card') ||
+                           errorMessages.toLowerCase().includes('credit') ||
+                           errorMessages.toLowerCase().includes('inválido') ||
+                           errorMessages.toLowerCase().includes('negado') ||
+                           errorMessages.toLowerCase().includes('declined');
+        
+        if (isCardError) {
+          throw new Error(`Erro no cartão de crédito: ${errorMessages}`);
+        }
+        
+        throw new Error(`Erro ao criar pagamento com cartão de crédito no Asaas: ${errorMessages}`);
+      }
+    }
+
+    throw new Error(`Erro ao criar pagamento com cartão de crédito no Asaas: ${error.message}`);
+  }
+};
+
+/**
+ * Create payment for transfer fee (doesn't update registrations table)
+ */
+export const createTransferPayment = async (
+  transferRequestId: string,
+  customerId: string,
+  paymentData: {
+    value: number;
+    dueDate: string; // YYYY-MM-DD
+    description: string;
+    billingType: AsaasBillingType;
+    externalReference?: string;
+  }
+): Promise<CreatePaymentResult> => {
+  const asaasClient = createAsaasClient();
+
+  try {
+    // Prepare payment request
+    const paymentRequest: AsaasPaymentRequest = {
+      customer: customerId,
+      billingType: paymentData.billingType,
+      value: paymentData.value,
+      dueDate: paymentData.dueDate,
+      description: paymentData.description,
+      externalReference: paymentData.externalReference || `TRANSFER-${transferRequestId}`,
+      installmentCount: 1,
+      installmentValue: paymentData.value,
+    };
+
+    console.log('💳 Criando pagamento de transferência no Asaas...', { 
+      transferRequestId, 
+      customerId, 
+      value: paymentData.value,
+      billingType: paymentData.billingType,
+      dueDate: paymentData.dueDate
+    });
+
+    // Create payment in Asaas
+    const response = await asaasClient.post<AsaasPaymentResponse>('/payments', paymentRequest);
+    const asaasPayment = response.data;
+
+    console.log(`✅ Pagamento de transferência criado no Asaas:`, {
+      id: asaasPayment.id,
+      status: asaasPayment.status,
+      value: asaasPayment.value,
+    });
+
+    // If PIX, wait and fetch QR Code
+    let pixQrCode: string | null = null;
+    let pixQrCodeId: string | null = null;
+
+    if (paymentData.billingType === 'PIX') {
+      console.log('🔍 Buscando QR Code PIX para transferência...');
+      
+      if (asaasPayment.pixQrCode) {
+        pixQrCode = asaasPayment.pixQrCode;
+        pixQrCodeId = asaasPayment.pixQrCodeId || null;
+        console.log('✅ QR Code PIX já disponível na resposta inicial');
+      } else {
+        await new Promise(resolve => setTimeout(resolve, 2000));
+
+        const invoiceNumber = (asaasPayment as any).invoiceNumber;
+        const paymentIdToUse = invoiceNumber || asaasPayment.id;
+        
+        for (let attempt = 1; attempt <= 5; attempt++) {
+          try {
+            const paymentResponse = await asaasClient.get<AsaasPaymentResponse>(
+              `/payments/${paymentIdToUse}`
+            );
+            const payment = paymentResponse.data;
+
+            try {
+              const qrCodeResponse = await asaasClient.get(
+                `/payments/${paymentIdToUse}/pixQrCode`
+              );
+              
+              if (qrCodeResponse.data?.payload) {
+                pixQrCode = qrCodeResponse.data.payload;
+                pixQrCodeId = qrCodeResponse.data.id || payment.pixQrCodeId || null;
+                console.log(`✅ QR Code PIX obtido para transferência`);
+                break;
+              }
+            } catch (qrError: any) {
+              const pixTransaction = (payment as any).pixTransaction;
+              const qrCode = payment.pixQrCode || 
+                            (pixTransaction?.payload) || 
+                            (pixTransaction?.qrCode);
+              
+              if (qrCode) {
+                pixQrCode = qrCode;
+                pixQrCodeId = payment.pixQrCodeId || pixTransaction?.id || null;
+                console.log(`✅ QR Code PIX obtido para transferência`);
+                break;
+              }
+            }
+
+            if (attempt < 5) {
+              const waitTime = attempt * 2000;
+              await new Promise(resolve => setTimeout(resolve, waitTime));
+            }
+          } catch (error: any) {
+            console.error(`❌ Erro ao buscar QR Code (tentativa ${attempt}/5):`, error.message);
+            if (attempt < 5) {
+              const waitTime = attempt * 2000;
+              await new Promise(resolve => setTimeout(resolve, waitTime));
+            }
+          }
+        }
+      }
+    }
+
+    // Save payment to database (without updating registrations table)
+    try {
+      console.log(`💾 Salvando pagamento de transferência no banco de dados...`);
+      await query(
+        `INSERT INTO asaas_payments (
+          registration_id, asaas_payment_id, asaas_customer_id, value, net_value,
+          billing_type, status, due_date, payment_link, invoice_url, bank_slip_url,
+          external_reference, pix_qr_code_id, pix_qr_code
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+        [
+          null, // No registration_id for transfer payments
+          asaasPayment.id,
+          customerId,
+          asaasPayment.value,
+          asaasPayment.netValue || null,
+          asaasPayment.billingType,
+          asaasPayment.status,
+          asaasPayment.dueDate,
+          asaasPayment.paymentLink || null,
+          asaasPayment.invoiceUrl || null,
+          asaasPayment.bankSlipUrl || null,
+          asaasPayment.externalReference || null,
+          pixQrCodeId,
+          pixQrCode,
+        ]
+      );
+      console.log(`✅ Pagamento de transferência salvo no banco de dados`);
+    } catch (dbError: any) {
+      console.error(`❌ Erro ao salvar pagamento de transferência no banco:`, {
+        message: dbError.message,
+        code: dbError.code,
+        detail: dbError.detail,
+        constraint: dbError.constraint,
+      });
+      // Se o erro for por constraint, pode ser que a migration não foi executada
+      if (dbError.code === '23502' || dbError.constraint) {
+        throw new Error(
+          `Erro ao salvar pagamento: A coluna registration_id ainda não permite NULL. ` +
+          `Execute a migration 027_allow_null_registration_id_in_asaas_payments.sql`
+        );
+      }
+      throw dbError;
+    }
+
+    return {
+      asaas_payment_id: asaasPayment.id,
+      payment_link: asaasPayment.paymentLink,
+      pix_qr_code: pixQrCode,
+      pix_qr_code_id: pixQrCodeId,
+      status: asaasPayment.status,
+      value: asaasPayment.value,
+      net_value: asaasPayment.netValue,
+      due_date: asaasPayment.dueDate,
+    };
+  } catch (error: any) {
+    console.error('❌ Erro ao criar pagamento de transferência no Asaas:', error);
+    
+    if (error.response?.data) {
+      const errorData = error.response.data;
+      if (errorData.errors) {
+        const errorMessages = errorData.errors.map((e: any) => e.description).join(', ');
+        throw new Error(`Erro ao criar pagamento de transferência no Asaas: ${errorMessages}`);
+      }
+    }
+
+    throw new Error(`Erro ao criar pagamento de transferência no Asaas: ${error.message}`);
+  }
+};
+
+// Get payment status from Asaas
+export const getPaymentStatus = async (
+  asaasPaymentId: string
+): Promise<PaymentStatusResult> => {
+  const asaasClient = createAsaasClient();
+
+  try {
+    console.log(`🔍 Consultando status do pagamento no Asaas: ${asaasPaymentId}`);
+
+    const response = await asaasClient.get<AsaasPaymentResponse>(`/payments/${asaasPaymentId}`);
+    const payment = response.data;
+    
+    console.log(`📊 Status retornado do Asaas:`, {
+      id: payment.id,
+      status: payment.status,
+      invoiceNumber: payment.invoiceNumber,
+      paymentDate: payment.paymentDate,
+    });
+
+    // Update payment in database
+    await query(
+      `UPDATE asaas_payments 
+       SET status = $1, payment_date = $2, pix_transaction_id = $3, updated_at = NOW()
+       WHERE asaas_payment_id = $4`,
+      [
+        payment.status,
+        payment.paymentDate ? new Date(payment.paymentDate) : null,
+        payment.pixTransactionId || null,
+        asaasPaymentId,
+      ]
+    );
+
+    // If QR Code is now available, update it
+    if (payment.billingType === 'PIX' && payment.pixQrCode) {
+      const existingPayment = await query(
+        'SELECT pix_qr_code FROM asaas_payments WHERE asaas_payment_id = $1',
+        [asaasPaymentId]
+      );
+      
+      if (!existingPayment.rows[0]?.pix_qr_code) {
+        await query(
+          'UPDATE asaas_payments SET pix_qr_code = $1, pix_qr_code_id = $2 WHERE asaas_payment_id = $3',
+          [payment.pixQrCode, payment.pixQrCodeId || null, asaasPaymentId]
+        );
+        console.log('✅ QR Code PIX atualizado no banco de dados');
+      }
+    }
+
+    return {
+      status: payment.status,
+      payment_date: payment.paymentDate || null,
+      pix_transaction_id: payment.pixTransactionId || null,
+    };
+  } catch (error: any) {
+    console.error('❌ Erro ao consultar status do pagamento:', error);
+    throw new Error(`Erro ao consultar status do pagamento: ${error.message}`);
+  }
+};
+
+// Get payment by registration ID
+export const getPaymentByRegistrationId = async (
+  registrationId: string
+): Promise<any | null> => {
+  const result = await query(
+    'SELECT * FROM asaas_payments WHERE registration_id = $1 ORDER BY created_at DESC LIMIT 1',
+    [registrationId]
+  );
+
+  if (result.rows.length === 0) {
+    return null;
+  }
+
+  return result.rows[0];
+};
+
+/** Soma do valor já pago para uma inscrição (todos os pagamentos com status pago). */
+export const getTotalPaidForRegistration = async (
+  registrationId: string
+): Promise<number> => {
+  const result = await query(
+    `SELECT COALESCE(SUM(value), 0)::numeric AS total_paid
+     FROM asaas_payments
+     WHERE registration_id = $1 AND status IN ('CONFIRMED', 'RECEIVED', 'RECEIVED_IN_CASH', 'MANUAL_CONFIRMED')`,
+    [registrationId]
+  );
+  return parseFloat(result.rows[0]?.total_paid || '0') || 0;
+};
+
+/**
+ * Valor já pago para efeito organizador (total pago − taxa inicial da plataforma).
+ * OK Etapa 2: usado no cálculo da diferença a cobrar na edição, para não incluir a taxa inicial.
+ */
+export const getAmountPaidForOrganizer = async (
+  registrationId: string
+): Promise<number> => {
+  const [paidResult, regResult] = await Promise.all([
+    query(
+      `SELECT COALESCE(SUM(value), 0)::numeric AS total_paid
+       FROM asaas_payments
+       WHERE registration_id = $1 AND status IN ('CONFIRMED', 'RECEIVED', 'RECEIVED_IN_CASH', 'MANUAL_CONFIRMED')`,
+      [registrationId]
+    ),
+    query(
+      `SELECT COALESCE(platform_fee_amount, 0)::numeric AS platform_fee_amount FROM registrations WHERE id = $1`,
+      [registrationId]
+    ),
+  ]);
+  const totalPaid = parseFloat(paidResult.rows[0]?.total_paid || '0') || 0;
+  const platformFeeAmount = parseFloat(regResult.rows[0]?.platform_fee_amount || '0') || 0;
+  const forOrganizer = Math.max(0, totalPaid - platformFeeAmount);
+  return Math.round(forOrganizer * 100) / 100;
+};
+
+/** Soma do valor já pago por inscrição (para listagem). */
+export const getTotalPaidForRegistrationIds = async (
+  registrationIds: string[]
+): Promise<Record<string, number>> => {
+  if (registrationIds.length === 0) return {};
+  const result = await query(
+    `SELECT registration_id, COALESCE(SUM(value), 0)::numeric AS total_paid
+     FROM asaas_payments
+     WHERE registration_id = ANY($1::uuid[]) AND status IN ('CONFIRMED', 'RECEIVED', 'RECEIVED_IN_CASH', 'MANUAL_CONFIRMED')
+     GROUP BY registration_id`,
+    [registrationIds]
+  );
+  const map: Record<string, number> = {};
+  for (const id of registrationIds) map[id] = 0;
+  for (const row of result.rows) {
+    map[row.registration_id] = parseFloat(row.total_paid || '0') || 0;
+  }
+  return map;
+};
+
+/** Cobranças pendentes da inscrição (para cancelar ao editar valor). */
+export const getPendingPaymentsForRegistration = async (
+  registrationId: string
+): Promise<Array<{ asaas_payment_id: string }>> => {
+  const result = await query(
+    `SELECT asaas_payment_id FROM asaas_payments
+     WHERE registration_id = $1 AND status IN ('PENDING', 'OVERDUE')`,
+    [registrationId]
+  );
+  return result.rows;
+};
+
+/** Soma do valor das cobranças pendentes (diferença a pagar). Para expor na API (Etapa 10). */
+export const getPendingDifferenceAmountForRegistration = async (
+  registrationId: string
+): Promise<number> => {
+  const result = await query(
+    `SELECT COALESCE(SUM(value), 0)::numeric AS total
+     FROM asaas_payments
+     WHERE registration_id = $1 AND status IN ('PENDING', 'OVERDUE')`,
+    [registrationId]
+  );
+  return parseFloat(result.rows[0]?.total || '0') || 0;
+};
+
+/** Soma das cobranças pendentes por registration_id (para listagem). */
+export const getPendingDifferenceAmountsForRegistrationIds = async (
+  registrationIds: string[]
+): Promise<Record<string, number>> => {
+  if (registrationIds.length === 0) return {};
+  const result = await query(
+    `SELECT registration_id, COALESCE(SUM(value), 0)::numeric AS total
+     FROM asaas_payments
+     WHERE registration_id = ANY($1::uuid[]) AND status IN ('PENDING', 'OVERDUE')
+     GROUP BY registration_id`,
+    [registrationIds]
+  );
+  const map: Record<string, number> = {};
+  for (const id of registrationIds) map[id] = 0;
+  for (const row of result.rows) {
+    map[row.registration_id] = parseFloat(row.total || '0') || 0;
+  }
+  return map;
+};
+
+/** Última cobrança pendente da inscrição (para o corredor pagar diferença). Retorna pix_qr_code, value, due_date. */
+export const getLatestPendingPaymentForRegistration = async (
+  registrationId: string
+): Promise<{ pix_qr_code: string | null; value: number; due_date: string } | null> => {
+  const full = await getLatestPendingPaymentWithIdForRegistration(registrationId);
+  if (!full) return null;
+  return { pix_qr_code: full.pix_qr_code, value: full.value, due_date: full.due_date };
+};
+
+/** Última cobrança pendente com asaas_payment_id (para verificar status no Asaas antes de exibir PIX). */
+export const getLatestPendingPaymentWithIdForRegistration = async (
+  registrationId: string
+): Promise<{ asaas_payment_id: string; pix_qr_code: string | null; value: number; due_date: string } | null> => {
+  const result = await query(
+    `SELECT asaas_payment_id, pix_qr_code, value, due_date FROM asaas_payments
+     WHERE registration_id = $1 AND status IN ('PENDING', 'OVERDUE')
+     ORDER BY created_at DESC LIMIT 1`,
+    [registrationId]
+  );
+  if (result.rows.length === 0) return null;
+  const row = result.rows[0];
+  const dueDate = row.due_date instanceof Date ? row.due_date.toISOString().slice(0, 10) : String(row.due_date || '');
+  return {
+    asaas_payment_id: row.asaas_payment_id,
+    pix_qr_code: row.pix_qr_code || null,
+    value: parseFloat(row.value) || 0,
+    due_date: dueDate,
+  };
+};
+
+/** Marca cobrança como paga manualmente (admin recebeu em dinheiro/transferência). */
+export const markPaymentAsManualConfirmed = async (asaasPaymentId: string): Promise<void> => {
+  await query(
+    `UPDATE asaas_payments 
+     SET status = 'MANUAL_CONFIRMED', payment_date = CURRENT_DATE, updated_at = NOW()
+     WHERE asaas_payment_id = $1`,
+    [asaasPaymentId]
+  );
+};
+
+/**
+ * Atualiza payment_status da inscrição com base na soma dos pagamentos.
+ * Regra: payment_status = 'paid' quando getTotalPaidForRegistration(id) ≥ total_amount.
+ * Usado pelo webhook Asaas e quando admin confirma pagamento manual (Etapa 9b).
+ */
+export const syncRegistrationPaymentStatus = async (
+  registrationId: string
+): Promise<void> => {
+  const totalPaid = await getTotalPaidForRegistration(registrationId);
+  const regResult = await query(
+    'SELECT total_amount, payment_status, status FROM registrations WHERE id = $1',
+    [registrationId]
+  );
+  if (regResult.rows.length === 0) return;
+  const totalAmount = parseFloat(regResult.rows[0].total_amount) || 0;
+  const currentPaymentStatus = regResult.rows[0].payment_status;
+  const isFullyPaid = totalAmount <= 0 || totalPaid >= totalAmount - 0.005;
+  if (isFullyPaid) {
+    await query(
+      `UPDATE registrations SET payment_status = 'paid', status = 'confirmed', updated_at = NOW() WHERE id = $1`,
+      [registrationId]
+    );
+  } else {
+    if (currentPaymentStatus !== 'refunded' && currentPaymentStatus !== 'failed') {
+      await query(
+        `UPDATE registrations SET payment_status = 'pending', updated_at = NOW() WHERE id = $1`,
+        [registrationId]
+      );
+    }
+  }
+};
+
+/** Remove a cobrança apenas no Asaas (não altera nosso banco). Usado após confirmar pagamento manual (manter MANUAL_CONFIRMED no banco). */
+export const deletePaymentInAsaasOnly = async (asaasPaymentId: string): Promise<void> => {
+  const asaasClient = createAsaasClient();
+  try {
+    const paymentResponse = await asaasClient.get(`/payments/${asaasPaymentId}`);
+    const payment = paymentResponse.data as { status?: string };
+    if (payment.status === 'CONFIRMED' || payment.status === 'RECEIVED' || payment.status === 'RECEIVED_IN_CASH') {
+      return; // já pago, não deletar
+    }
+    await asaasClient.delete(`/payments/${asaasPaymentId}`);
+  } catch (err: any) {
+    if (err.response?.status === 404) return;
+    throw err;
+  }
+};
+
+// Cancel payment in Asaas
+export const cancelPayment = async (
+  asaasPaymentId: string
+): Promise<void> => {
+  const asaasClient = createAsaasClient();
+
+  try {
+    console.log(`🗑️ Cancelando pagamento no Asaas: ${asaasPaymentId}`);
+
+    // First, check payment status to ensure it can be deleted
+    try {
+      const paymentResponse = await asaasClient.get(`/payments/${asaasPaymentId}`);
+      const payment = paymentResponse.data;
+      
+      console.log(`📊 Status atual do pagamento: ${payment.status}`);
+      
+      // Only delete if payment is pending or overdue
+      // Paid, confirmed, or received payments cannot be deleted
+      if (payment.status === 'CONFIRMED' || payment.status === 'RECEIVED' || payment.status === 'RECEIVED_IN_CASH') {
+        console.log(`⚠️ Pagamento ${asaasPaymentId} já foi pago (status: ${payment.status}). Não é possível cancelar.`);
+        throw new Error(`Pagamento já foi pago e não pode ser cancelado`);
+      }
+    } catch (checkError: any) {
+      if (checkError.response?.status === 404) {
+        console.log(`ℹ️ Pagamento ${asaasPaymentId} não encontrado no Asaas (já foi deletado?)`);
+        // Update database anyway
+        await query(
+          `UPDATE asaas_payments 
+           SET status = 'DELETED', updated_at = NOW()
+           WHERE asaas_payment_id = $1`,
+          [asaasPaymentId]
+        );
+        return;
+      }
+      // If error is about payment being paid, rethrow
+      if (checkError.message?.includes('já foi pago')) {
+        throw checkError;
+      }
+      // Otherwise, continue to try delete
+      console.log(`⚠️ Erro ao verificar status do pagamento, tentando deletar mesmo assim: ${checkError.message}`);
+    }
+
+    // Delete payment in Asaas (DELETE /payments/{id})
+    // According to Asaas docs: https://docs.asaas.com/reference/excluir-cobranca
+    const deleteResponse = await asaasClient.delete(`/payments/${asaasPaymentId}`);
+    
+    console.log(`✅ Pagamento ${asaasPaymentId} cancelado no Asaas`);
+    console.log(`📋 Resposta do Asaas:`, deleteResponse.status, deleteResponse.data);
+
+    // Update payment status in database
+    await query(
+      `UPDATE asaas_payments 
+       SET status = 'DELETED', updated_at = NOW()
+       WHERE asaas_payment_id = $1`,
+      [asaasPaymentId]
+    );
+
+    console.log(`✅ Status do pagamento atualizado no banco de dados`);
+  } catch (error: any) {
+    console.error('❌ Erro ao cancelar pagamento no Asaas:', {
+      message: error.message,
+      status: error.response?.status,
+      statusText: error.response?.statusText,
+      data: error.response?.data,
+      asaasPaymentId,
+    });
+    
+    // If payment is already deleted or doesn't exist, that's okay
+    if (error.response?.status === 404) {
+      console.log(`ℹ️ Pagamento ${asaasPaymentId} já foi deletado ou não existe no Asaas`);
+      // Still update database
+      await query(
+        `UPDATE asaas_payments 
+         SET status = 'DELETED', updated_at = NOW()
+         WHERE asaas_payment_id = $1`,
+        [asaasPaymentId]
+      ).catch((dbError) => {
+        console.error(`⚠️ Erro ao atualizar banco após 404: ${dbError.message}`);
+      });
+      return;
+    }
+    
+    // If payment was paid, don't throw error - just log
+    if (error.message?.includes('já foi pago')) {
+      console.log(`ℹ️ Pagamento ${asaasPaymentId} não pode ser cancelado porque já foi pago`);
+      return;
+    }
+    
+    // For other errors, throw to be handled by caller
+    throw new Error(`Erro ao cancelar pagamento no Asaas: ${error.message || 'Erro desconhecido'}`);
+  }
+};

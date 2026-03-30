@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ArrowLeft, Calendar, MapPin, User, Loader2, AlertCircle, Download } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { formatDateTimeBrasilia } from "@/lib/utils";
 import { getRegistrationById, type Registration } from "@/lib/api/registrations";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
@@ -62,7 +63,7 @@ Data da Inscrição: ${registration?.created_at ? format(new Date(registration.c
 
 DADOS DO EVENTO:
 ${registration?.event_title || 'Evento'}
-Data: ${registration?.event_date ? format(new Date(registration.event_date), "dd 'de' MMMM 'de' yyyy 'às' HH:mm", { locale: ptBR }) : 'N/A'}
+Data: ${registration?.event_date ? formatDateTimeBrasilia(registration.event_date) : 'N/A'}
 Local: ${registration?.location || `${registration?.city || ''}, ${registration?.state || ''}`}
 
 DADOS DO CORREDOR:
@@ -72,10 +73,34 @@ CPF: ${registration?.runner_cpf || 'N/A'}
 DADOS DA INSCRIÇÃO:
 Categoria: ${registration?.category_name || 'N/A'} ${registration?.category_distance ? `(${registration.category_distance})` : ''}
 Kit: ${registration?.kit_name || 'Sem kit'}
-Valor: R$ ${registration?.total_amount.toFixed(2).replace('.', ',') || '0,00'}
-Método de Pagamento: ${registration?.payment_method === 'pix' ? 'PIX' : registration?.payment_method === 'credit_card' ? 'Cartão de Crédito' : registration?.payment_method === 'boleto' ? 'Boleto' : 'N/A'}
+${registration?.product_selections && registration.product_selections.length > 0 ? (() => {
+  // Group by product
+  const productGroups = new Map<string, {
+    product_name: string;
+    attributes: Array<{ attribute_name: string; attribute_value: string }>;
+  }>();
+  
+  registration.product_selections.forEach((sel: any) => {
+    const productKey = sel.product_id;
+    if (!productGroups.has(productKey)) {
+      productGroups.set(productKey, {
+        product_name: sel.product_name || 'Produto',
+        attributes: [],
+      });
+    }
+    productGroups.get(productKey)!.attributes.push({
+      attribute_name: sel.attribute_name,
+      attribute_value: sel.attribute_value,
+    });
+  });
+
+  return Array.from(productGroups.entries()).map(([productId, productData]) => {
+    return productData.attributes.map(attr => `${attr.attribute_name}: ${attr.attribute_value}`).join('\n');
+  }).join('\n');
+})() + '\n' : ''}Valor: R$ ${registration?.total_amount.toFixed(2).replace('.', ',') || '0,00'}
+Método de Pagamento: ${registration?.payment_method === 'pix' ? 'PIX' : registration?.payment_method === 'credit_card' ? 'Cartão de Crédito' : registration?.payment_method === 'boleto' ? 'Boleto' : registration?.payment_method === 'free_bonus' ? 'Convite' : 'N/A'}
 Status: ${registration?.status === 'confirmed' ? 'Confirmada' : registration?.status || 'Pendente'}
-Status do Pagamento: ${registration?.payment_status === 'paid' ? 'Pago' : registration?.payment_status || 'Pendente'}
+Status do Pagamento: ${registration?.payment_status === 'paid' ? 'Pago' : registration?.payment_status === 'convidado' ? 'Convite' : registration?.payment_status || 'Pendente'}
       `.trim();
 
       const blob = new Blob([receiptText], { type: 'text/plain' });
@@ -197,11 +222,7 @@ Status do Pagamento: ${registration?.payment_status === 'paid' ? 'Pago' : regist
             {registration.event_date && (
               <div className="flex items-center gap-2 text-sm">
                 <Calendar className="h-4 w-4 text-muted-foreground" />
-                <span>
-                  {format(new Date(registration.event_date), "dd 'de' MMMM 'de' yyyy 'às' HH:mm", {
-                    locale: ptBR
-                  })}
-                </span>
+                <span>{formatDateTimeBrasilia(registration.event_date)}</span>
               </div>
             )}
             <div className="flex items-center gap-2 text-sm">
@@ -282,6 +303,7 @@ Status do Pagamento: ${registration?.payment_status === 'paid' ? 'Pago' : regist
                   {registration.payment_method === 'pix' ? 'PIX' : 
                    registration.payment_method === 'credit_card' ? 'Cartão de Crédito' : 
                    registration.payment_method === 'boleto' ? 'Boleto' : 
+                   registration.payment_method === 'free_bonus' ? 'Convite' : 
                    registration.payment_method}
                 </span>
               </div>
@@ -290,10 +312,12 @@ Status do Pagamento: ${registration?.payment_status === 'paid' ? 'Pago' : regist
               <span className="text-muted-foreground">Status:</span>
               <span className={`font-medium ${
                 registration.payment_status === 'paid' ? 'text-green-600' : 
+                registration.payment_status === 'convidado' ? 'text-blue-600' : 
                 registration.payment_status === 'pending' ? 'text-yellow-600' : 
                 'text-red-600'
               }`}>
                 {registration.payment_status === 'paid' ? 'Pago' : 
+                 registration.payment_status === 'convidado' ? 'Convite' : 
                  registration.payment_status === 'pending' ? 'Pendente' : 
                  registration.payment_status === 'refunded' ? 'Reembolsado' : 
                  registration.payment_status === 'failed' ? 'Falhou' : 

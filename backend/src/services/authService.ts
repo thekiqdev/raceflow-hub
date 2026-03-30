@@ -2,6 +2,14 @@ import bcrypt from 'bcrypt';
 import jwt, { SignOptions } from 'jsonwebtoken';
 import { query, getClient } from '../config/database.js';
 import { AppRole } from '../types/index.js';
+import { validateCompletionRegistration } from './leaderInvitationsService.js';
+import {
+  proofMatchesRegisterBody,
+  registerRequiresCpfLookupProof,
+  verifyCpfLookupProof,
+} from './cpfLookupProof.js';
+import { isValidCpfDigits, normalizeCpfDigits } from '../utils/cpf.js';
+import { getSystemSettings } from './systemSettingsService.js';
 
 export interface RegisterData {
   email: string;
@@ -9,12 +17,27 @@ export interface RegisterData {
   full_name: string;
   cpf: string;
   phone: string;
-  gender?: string;
+  gender?: 'M' | 'F';
   birth_date: string;
+  /** JWT emitido por POST /auth/lookup-cpf após sucesso (obrigatório quando integração CPF Brasil ativa). */
+  cpf_lookup_proof?: string;
+  preferred_name?: string;
+  profession?: string;
+  cbat?: string;
+  team?: string;
+  postal_code?: string;
+  street?: string;
+  address_number?: string;
+  address_complement?: string;
+  neighborhood?: string;
+  city?: string;
+  state?: string;
   lgpd_consent: boolean;
+  referral_code?: string; // Código de referência opcional
 }
 
 export interface LoginData {
+  /** E-mail **ou** CPF (campo JSON continua `email` por compatibilidade). */
   email: string;
   password: string;
 }
@@ -64,12 +87,49 @@ export const generateToken = (userId: string, email: string): string => {
   );
 };
 
+/** Indica se já existe perfil com esse CPF na Cronoteam (evita novo cadastro duplicado). */
+export const isCpfRegisteredInPlatform = async (cpfDigits: string): Promise<boolean> => {
+  const clean = normalizeCpfDigits(cpfDigits);
+  if (clean.length !== 11) return false;
+  const r = await query(
+    `SELECT 1 FROM profiles WHERE regexp_replace(COALESCE(cpf::text, ''), '[^0-9]', '', 'g') = $1 LIMIT 1`,
+    [clean]
+  );
+  return r.rows.length > 0;
+};
+
 // Register new user
 export const register = async (data: RegisterData): Promise<AuthResponse> => {
   const client = await getClient();
 
   try {
     await client.query('BEGIN');
+
+    const cleanCpf = String(data.cpf).replace(/\D/g, '');
+
+    let cpfValidatedAt: string | null = null;
+    let cpfLookupSource: string | null = null;
+
+    if (registerRequiresCpfLookupProof()) {
+      const token = data.cpf_lookup_proof?.trim();
+      if (!token) {
+        throw new Error('CPF_LOOKUP_PROOF_REQUIRED');
+      }
+      const payload = verifyCpfLookupProof(token);
+      if (
+        !payload ||
+        !proofMatchesRegisterBody(payload, {
+          cpf: cleanCpf,
+          full_name: data.full_name,
+          birth_date: data.birth_date,
+          gender: data.gender,
+        })
+      ) {
+        throw new Error('CPF_LOOKUP_PROOF_INVALID');
+      }
+      cpfValidatedAt = new Date().toISOString();
+      cpfLookupSource = 'cpf_brasil_api';
+    }
 
     // Check if email already exists
     const emailCheck = await client.query(
@@ -84,7 +144,7 @@ export const register = async (data: RegisterData): Promise<AuthResponse> => {
     // Check if CPF already exists
     const cpfCheck = await client.query(
       'SELECT id FROM profiles WHERE cpf = $1',
-      [data.cpf]
+      [cleanCpf]
     );
 
     if (cpfCheck.rows.length > 0) {
@@ -104,31 +164,88 @@ export const register = async (data: RegisterData): Promise<AuthResponse> => {
 
     const user = userResult.rows[0];
 
-    // Create profile
+    // Create profile with new address fields
     const profileResult = await client.query(
-      `INSERT INTO profiles (id, full_name, cpf, phone, gender, birth_date, lgpd_consent)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+      `INSERT INTO profiles (
+        id, full_name, cpf, phone, gender, birth_date, lgpd_consent,
+        preferred_name, profession, cbat, team, postal_code, street, address_number, address_complement,
+        neighborhood, city, state,
+        cpf_validated_at, cpf_lookup_source
+      )
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19::timestamptz, $20)
        RETURNING id, full_name, cpf, phone`,
       [
         user.id,
         data.full_name,
-        data.cpf,
+        cleanCpf,
         data.phone,
         data.gender || null,
         data.birth_date,
         data.lgpd_consent,
+        data.preferred_name || null,
+        data.profession || null,
+        data.cbat || null,
+        data.team || null,
+        data.postal_code || null,
+        data.street || null,
+        data.address_number || null,
+        data.address_complement || null,
+        data.neighborhood || null,
+        data.city || null,
+        data.state || null,
+        cpfValidatedAt,
+        cpfLookupSource,
       ]
     );
 
     const profile = profileResult.rows[0];
 
-    // Get user roles (should have 'runner' by default from trigger)
+    // Ensure 'runner' role is created (in case trigger didn't fire)
+    await client.query(
+      `INSERT INTO user_roles (user_id, role)
+       VALUES ($1, 'runner')
+       ON CONFLICT (user_id, role) DO NOTHING`,
+      [user.id]
+    );
+
+    // Get user roles
     const rolesResult = await client.query(
       'SELECT role FROM user_roles WHERE user_id = $1',
       [user.id]
     );
 
     const roles = rolesResult.rows.map((row) => row.role as AppRole);
+    
+    // Ensure at least 'runner' role exists
+    if (roles.length === 0) {
+      console.warn(`⚠️ No roles found for user ${user.id}, forcing 'runner' role`);
+      await client.query(
+        `INSERT INTO user_roles (user_id, role)
+         VALUES ($1, 'runner')
+         ON CONFLICT (user_id, role) DO NOTHING`,
+        [user.id]
+      );
+      roles.push('runner');
+    }
+    
+    console.log(`✅ User registered: ${user.email}, roles: ${roles.join(', ')}`);
+
+    // Create user referral if referral_code is provided
+    if (data.referral_code) {
+      try {
+        const { createUserReferral } = await import('./referralsService.js');
+        await createUserReferral({
+          user_id: user.id,
+          referral_code: data.referral_code,
+          referral_type: 'code', // Default to 'code', can be 'link' if needed
+        }, client); // Pass transaction client
+        console.log(`✅ Referência criada para usuário ${user.id} com código ${data.referral_code}`);
+      } catch (error: any) {
+        // Log error but don't fail registration if referral creation fails
+        console.error('⚠️ Erro ao criar referência (não bloqueia cadastro):', error.message);
+        // Don't rollback - referral is optional and shouldn't block registration
+      }
+    }
 
     // Generate token
     const token = generateToken(user.id, user.email);
@@ -157,13 +274,46 @@ export const register = async (data: RegisterData): Promise<AuthResponse> => {
   }
 };
 
-// Login user
+function resolveLoginIdentifier(raw: string): { kind: 'cpf'; cpfDigits: string } | { kind: 'email'; email: string } {
+  const trimmed = String(raw || '').trim();
+  if (!trimmed) {
+    return { kind: 'email', email: '' };
+  }
+  if (trimmed.includes('@')) {
+    return { kind: 'email', email: trimmed };
+  }
+  const digits = normalizeCpfDigits(trimmed);
+  if (digits.length === 11 && isValidCpfDigits(digits)) {
+    return { kind: 'cpf', cpfDigits: digits };
+  }
+  return { kind: 'email', email: trimmed };
+}
+
+// Login user (e-mail **ou** CPF válido de 11 dígitos)
 export const login = async (data: LoginData): Promise<AuthResponse> => {
-  // Get user by email
-  const userResult = await query(
-    'SELECT id, email, password_hash FROM users WHERE email = $1',
-    [data.email]
-  );
+  const resolved = resolveLoginIdentifier(data.email);
+
+  const settings = await getSystemSettings();
+  const loginCpfOnly = settings.enabled_modules?.login_cpf_only === true;
+  if (loginCpfOnly && resolved.kind !== 'cpf') {
+    throw new Error('LOGIN_CPF_ONLY');
+  }
+
+  let userResult;
+  if (resolved.kind === 'cpf') {
+    userResult = await query(
+      `SELECT u.id, u.email, u.password_hash
+       FROM users u
+       INNER JOIN profiles p ON p.id = u.id
+       WHERE regexp_replace(COALESCE(p.cpf::text, ''), '[^0-9]', '', 'g') = $1`,
+      [resolved.cpfDigits]
+    );
+  } else {
+    userResult = await query(
+      'SELECT id, email, password_hash FROM users WHERE lower(trim(email)) = lower(trim($1))',
+      [resolved.email]
+    );
+  }
 
   if (userResult.rows.length === 0) {
     throw new Error('Invalid email or password');
@@ -214,6 +364,70 @@ export const login = async (data: LoginData): Promise<AuthResponse> => {
       roles,
     },
     token,
+  };
+};
+
+/**
+ * Set password for runner who completed registration via invitation link (JWT token).
+ * Validates token (convite/runner, status sent), updates password_hash, returns login token.
+ */
+export const setPasswordByInvitationToken = async (
+  token: string,
+  newPassword: string
+): Promise<AuthResponse> => {
+  const validation = await validateCompletionRegistration(token);
+  if (!validation.valid || !validation.runnerId) {
+    throw new Error(validation.error || 'Token inválido ou expirado.');
+  }
+
+  if (!newPassword || newPassword.length < 6) {
+    throw new Error('A senha deve ter no mínimo 6 caracteres.');
+  }
+
+  const password_hash = await hashPassword(newPassword);
+  await query('UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2', [
+    password_hash,
+    validation.runnerId,
+  ]);
+
+  const userResult = await query(
+    'SELECT id, email FROM users WHERE id = $1',
+    [validation.runnerId]
+  );
+  if (userResult.rows.length === 0) {
+    throw new Error('Usuário não encontrado.');
+  }
+  const user = userResult.rows[0];
+
+  const profileResult = await query(
+    'SELECT id, full_name, cpf, phone FROM profiles WHERE id = $1',
+    [user.id]
+  );
+  const profile = profileResult.rows[0];
+  if (!profile) {
+    throw new Error('Perfil não encontrado.');
+  }
+
+  const rolesResult = await query(
+    'SELECT role FROM user_roles WHERE user_id = $1',
+    [user.id]
+  );
+  const roles = rolesResult.rows.map((row) => row.role as AppRole);
+
+  const authToken = generateToken(user.id, user.email);
+  return {
+    user: {
+      id: user.id,
+      email: user.email,
+      profile: {
+        id: profile.id,
+        full_name: profile.full_name,
+        cpf: profile.cpf,
+        phone: profile.phone,
+      },
+      roles,
+    },
+    token: authToken,
   };
 };
 

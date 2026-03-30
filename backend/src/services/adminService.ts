@@ -12,6 +12,12 @@ export interface DashboardStats {
   total_registrations: number;
   total_commissions: number;
   finished_events: number;
+  /** OK Etapa 4: Taxa de inscrição (soma de platform_fee_amount em inscrições pagas) */
+  platform_fee_revenue?: number;
+  /** OK Etapa 4: Taxa de atualização (soma de registration_edit_fee_amount em inscrições pagas) */
+  registration_edit_fee_revenue?: number;
+  /** OK Etapa 4: Total taxas da plataforma (inscrição + atualização) */
+  total_platform_fees?: number;
 }
 
 export interface ChartDataPoint {
@@ -32,7 +38,23 @@ export const getDashboardStats = async (): Promise<DashboardStats> => {
     );
 
     if (result.rows.length > 0) {
-      return result.rows[0];
+      const row = result.rows[0];
+      return {
+        active_events: parseInt(row.active_events) || 0,
+        pending_events: parseInt(row.pending_events) || 0,
+        total_runners: parseInt(row.total_runners) || 0,
+        new_runners_this_month: parseInt(row.new_runners_this_month) || 0,
+        active_organizers: parseInt(row.active_organizers) || 0,
+        pending_organizers: parseInt(row.pending_organizers) || 0,
+        total_revenue: parseFloat(row.total_revenue) || 0,
+        previous_month_revenue: parseFloat(row.previous_month_revenue) || 0,
+        total_registrations: parseInt(row.total_registrations) || 0,
+        total_commissions: parseFloat(row.total_commissions) || 0,
+        finished_events: parseInt(row.finished_events) || 0,
+        platform_fee_revenue: row.platform_fee_revenue != null ? parseFloat(row.platform_fee_revenue) : undefined,
+        registration_edit_fee_revenue: row.registration_edit_fee_revenue != null ? parseFloat(row.registration_edit_fee_revenue) : undefined,
+        total_platform_fees: row.total_platform_fees != null ? parseFloat(row.total_platform_fees) : undefined,
+      };
     }
   } catch (error: any) {
     // View doesn't exist, calculate stats directly
@@ -52,6 +74,8 @@ export const getDashboardStats = async (): Promise<DashboardStats> => {
       previousMonthRevenueResult,
       totalRegistrationsResult,
       finishedEventsResult,
+      platformFeeRevenueResult,
+      registrationEditFeeRevenueResult,
     ] = await Promise.all([
       // Active events (published and not finished)
       query(`
@@ -121,12 +145,27 @@ export const getDashboardStats = async (): Promise<DashboardStats> => {
         FROM events
         WHERE event_date IS NOT NULL AND event_date < NOW()
       `),
+      // OK Etapa 4: Taxa de inscrição (inscrições pagas)
+      query(`
+        SELECT COALESCE(SUM(platform_fee_amount), 0) as total
+        FROM registrations
+        WHERE payment_status = 'paid'
+      `),
+      // OK Etapa 4: Taxa de atualização (inscrições pagas)
+      query(`
+        SELECT COALESCE(SUM(registration_edit_fee_amount), 0) as total
+        FROM registrations
+        WHERE payment_status = 'paid'
+      `),
     ]);
 
     // Calculate commissions (5% default)
     const totalRevenue = parseFloat(totalRevenueResult.rows[0]?.total || '0');
     const commissionPercentage = 0.05; // 5%
     const totalCommissions = totalRevenue * commissionPercentage;
+
+    const platformFeeRevenue = parseFloat(platformFeeRevenueResult.rows[0]?.total || '0');
+    const registrationEditFeeRevenue = parseFloat(registrationEditFeeRevenueResult.rows[0]?.total || '0');
 
     return {
       active_events: parseInt(activeEventsResult.rows[0]?.count || '0'),
@@ -140,6 +179,9 @@ export const getDashboardStats = async (): Promise<DashboardStats> => {
       total_registrations: parseInt(totalRegistrationsResult.rows[0]?.count || '0'),
       total_commissions: totalCommissions,
       finished_events: parseInt(finishedEventsResult.rows[0]?.count || '0'),
+      platform_fee_revenue: platformFeeRevenue,
+      registration_edit_fee_revenue: registrationEditFeeRevenue,
+      total_platform_fees: platformFeeRevenue + registrationEditFeeRevenue,
     };
   } catch (error: any) {
     console.error('Error calculating dashboard stats:', error);
@@ -156,6 +198,9 @@ export const getDashboardStats = async (): Promise<DashboardStats> => {
       total_registrations: 0,
       total_commissions: 0,
       finished_events: 0,
+      platform_fee_revenue: 0,
+      registration_edit_fee_revenue: 0,
+      total_platform_fees: 0,
     };
   }
 };

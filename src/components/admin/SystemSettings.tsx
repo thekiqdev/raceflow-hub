@@ -7,9 +7,14 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Separator } from "@/components/ui/separator";
 import { Building2, Trash2, Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import { getSystemSettings, updateSystemSettings, type SystemSettings as SystemSettingsType } from "@/lib/api/systemSettings";
+import { getSystemSettings, updateSystemSettings, testEmail, type SystemSettings as SystemSettingsType } from "@/lib/api/systemSettings";
+import FormConfigurations from "./FormConfigurations";
+import NotificationTemplatesManagement from "./NotificationTemplatesManagement";
+import { DocumentTypesManagement } from "./DocumentTypesManagement";
+import AdvancedSettings from "./AdvancedSettings";
 
 const SystemSettings = () => {
   const [settings, setSettings] = useState<SystemSettingsType | null>(null);
@@ -28,6 +33,8 @@ const SystemSettings = () => {
     company_state: "",
     company_zip: "",
     company_country: "",
+    old_results_url: "",
+    old_platform_url: "",
   });
   
   const [emailForm, setEmailForm] = useState({
@@ -39,6 +46,8 @@ const SystemSettings = () => {
     smtp_from_name: "",
     smtp_secure: true,
   });
+  const [testEmailAddress, setTestEmailAddress] = useState("");
+  const [testingEmail, setTestingEmail] = useState(false);
   
   const [paymentForm, setPaymentForm] = useState({
     payment_gateway: "stripe",
@@ -53,6 +62,21 @@ const SystemSettings = () => {
     support: false,
     notifications: false,
     analytics: false,
+    transfers: false,
+    senior_discount_60_plus: false,
+    platform_fees: false,
+    organizer_edit_attributes: false,
+    /** true = apenas CPF na tela de login; false = e-mail ou CPF */
+    login_cpf_only: false,
+  });
+
+  const [feesForm, setFeesForm] = useState({
+    platform_fee: 0,
+    platform_fee_type: 'fixed' as 'fixed' | 'percentage',
+    platform_fee_min: 0,
+    registration_edit_fee: 0,
+    withdrawal_fee: 0,
+    withdrawal_fee_type: 'fixed' as 'fixed' | 'percentage',
   });
 
   useEffect(() => {
@@ -88,6 +112,8 @@ const SystemSettings = () => {
           company_state: data.company_state || "",
           company_zip: data.company_zip || "",
           company_country: data.company_country || "Brasil",
+          old_results_url: data.old_results_url || "",
+          old_platform_url: data.old_platform_url || "",
         });
         
         setEmailForm({
@@ -107,12 +133,32 @@ const SystemSettings = () => {
           payment_secret_key: data.payment_secret_key || "",
         });
         
-        setModulesForm(data.enabled_modules || {
+        setModulesForm({
           coupons: false,
           refunds: false,
           support: false,
           notifications: false,
           analytics: false,
+          transfers: false,
+          senior_discount_60_plus: false,
+          platform_fees: false,
+          organizer_edit_attributes: false,
+          login_cpf_only: false,
+          ...(data.enabled_modules || {}),
+        });
+
+        setFeesForm({
+          platform_fee: data.platform_fee || 0,
+          platform_fee_type: data.platform_fee_type || 'fixed',
+          platform_fee_min: data.platform_fee_min ?? 0,
+          registration_edit_fee: data.registration_edit_fee ?? 0,
+          withdrawal_fee: data.withdrawal_fee || 0,
+          withdrawal_fee_type: data.withdrawal_fee_type || 'fixed',
+        });
+
+        // leader_commission_percentage removed - now using event-specific commissions only
+        setSettings({
+          ...data,
         });
       }
     } catch (error) {
@@ -210,6 +256,8 @@ const SystemSettings = () => {
         company_state: generalForm.company_state || null,
         company_zip: generalForm.company_zip || null,
         company_country: generalForm.company_country,
+        old_results_url: generalForm.old_results_url || null,
+        old_platform_url: generalForm.old_platform_url || null,
       });
       
       if (response.success) {
@@ -254,6 +302,28 @@ const SystemSettings = () => {
       setSaving(false);
     }
   };
+
+  const handleTestEmail = async () => {
+    if (!testEmailAddress || !testEmailAddress.includes('@')) {
+      toast.error('Por favor, insira um email válido para teste');
+      return;
+    }
+
+    setTestingEmail(true);
+    try {
+      const response = await testEmail(testEmailAddress);
+      
+      if (response.success) {
+        toast.success(response.message || `Email de teste enviado com sucesso para ${testEmailAddress}`);
+      } else {
+        toast.error(response.error || 'Erro ao enviar email de teste');
+      }
+    } catch (error: any) {
+      toast.error(error.message || 'Erro ao enviar email de teste');
+    } finally {
+      setTestingEmail(false);
+    }
+  };
   
   const handleSavePayment = async () => {
     setSaving(true);
@@ -292,6 +362,35 @@ const SystemSettings = () => {
           setSettings(response.data);
         }
         toast.success('Configurações de módulos salvas com sucesso!');
+        // Dispatch event to update sidebar
+        window.dispatchEvent(new CustomEvent('admin-settings-updated'));
+      } else {
+        toast.error(response.error || 'Erro ao salvar configurações');
+      }
+    } catch (error) {
+      toast.error('Erro ao salvar configurações');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleSaveFees = async () => {
+    setSaving(true);
+    try {
+      const response = await updateSystemSettings({
+        platform_fee: feesForm.platform_fee,
+        platform_fee_type: feesForm.platform_fee_type,
+        platform_fee_min: feesForm.platform_fee_min,
+        registration_edit_fee: feesForm.registration_edit_fee,
+        withdrawal_fee: feesForm.withdrawal_fee,
+        withdrawal_fee_type: feesForm.withdrawal_fee_type,
+      });
+      
+      if (response.success) {
+        if (response.data) {
+          setSettings(response.data);
+        }
+        toast.success('Configurações de taxas salvas com sucesso!');
       } else {
         toast.error(response.error || 'Erro ao salvar configurações');
       }
@@ -323,6 +422,13 @@ const SystemSettings = () => {
           <TabsTrigger value="email">E-mail</TabsTrigger>
           <TabsTrigger value="payment">Pagamento</TabsTrigger>
           <TabsTrigger value="modules">Módulos</TabsTrigger>
+          {modulesForm.platform_fees && (
+            <TabsTrigger value="fees">Taxas</TabsTrigger>
+          )}
+          <TabsTrigger value="forms">Formulários</TabsTrigger>
+          <TabsTrigger value="notification-templates">Templates de Notificação</TabsTrigger>
+          <TabsTrigger value="document-types">Documentos</TabsTrigger>
+          <TabsTrigger value="advanced">Avançado</TabsTrigger>
         </TabsList>
 
         <TabsContent value="general" className="space-y-4">
@@ -333,7 +439,7 @@ const SystemSettings = () => {
                 Logo da Plataforma
               </CardTitle>
               <CardDescription>
-                Faça upload da logo da plataforma. Esta logo será exibida no menu lateral.
+                Logo da plataforma configurada aqui é usada no cabeçalho do site, no menu lateral do admin e no cabeçalho dos emails enviados pelo sistema.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -475,6 +581,34 @@ const SystemSettings = () => {
                   className="mt-2" 
                 />
               </div>
+              <div>
+                <Label htmlFor="old_results_url">Resultados Antigos (URL)</Label>
+                <Input 
+                  id="old_results_url"
+                  type="url"
+                  value={generalForm.old_results_url}
+                  onChange={(e) => setGeneralForm({ ...generalForm, old_results_url: e.target.value })}
+                  placeholder="https://exemplo.com/resultados"
+                  className="mt-2" 
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  URL do site antigo para visualização de resultados. Será exibido na página inicial após a seção "Nossos Números".
+                </p>
+              </div>
+              <div>
+                <Label htmlFor="old_platform_url">Plataforma Antiga (URL)</Label>
+                <Input 
+                  id="old_platform_url"
+                  type="url"
+                  value={generalForm.old_platform_url}
+                  onChange={(e) => setGeneralForm({ ...generalForm, old_platform_url: e.target.value })}
+                  placeholder="https://exemplo.com/plataforma-antiga"
+                  className="mt-2" 
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  URL da plataforma antiga. Será exibido no menu perfil do runner, logo abaixo da versão do app.
+                </p>
+              </div>
               <Button onClick={handleSaveGeneral} disabled={saving}>
                 {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                 Salvar Alterações
@@ -505,9 +639,37 @@ const SystemSettings = () => {
                   id="smtp_port"
                   type="number"
                   value={emailForm.smtp_port}
-                  onChange={(e) => setEmailForm({ ...emailForm, smtp_port: e.target.value })}
+                  onChange={(e) => {
+                    const port = e.target.value;
+                    // Auto-adjust secure setting based on port
+                    let secure = emailForm.smtp_secure;
+                    if (port === '465') {
+                      secure = true; // Port 465 always uses SSL
+                    } else if (port === '587') {
+                      secure = false; // Port 587 uses STARTTLS
+                    }
+                    setEmailForm({ ...emailForm, smtp_port: port, smtp_secure: secure });
+                  }}
                   className="mt-2" 
                 />
+                {emailForm.smtp_port === '21' && (
+                  <p className="text-sm text-destructive mt-1">
+                    ⚠️ Porta 21 é FTP, não SMTP! Use 587 (STARTTLS) ou 465 (SSL)
+                  </p>
+                )}
+                {emailForm.smtp_port === '587' && emailForm.smtp_secure && (
+                  <p className="text-sm text-yellow-600 dark:text-yellow-400 mt-1">
+                    💡 Porta 587 usa STARTTLS. Desative "Conexão Segura" para esta porta.
+                  </p>
+                )}
+                {emailForm.smtp_port === '465' && !emailForm.smtp_secure && (
+                  <p className="text-sm text-yellow-600 dark:text-yellow-400 mt-1">
+                    💡 Porta 465 usa SSL direto. Ative "Conexão Segura" para esta porta.
+                  </p>
+                )}
+                <p className="text-sm text-muted-foreground mt-1">
+                  Portas comuns: 587 (STARTTLS), 465 (SSL), 25 (sem criptografia)
+                </p>
               </div>
               <div>
                 <Label htmlFor="smtp_user">Usuário</Label>
@@ -558,6 +720,40 @@ const SystemSettings = () => {
                   onCheckedChange={(checked) => setEmailForm({ ...emailForm, smtp_secure: checked })}
                 />
               </div>
+              
+              <Separator className="my-4" />
+              
+              <div>
+                <Label htmlFor="test_email">Testar Envio de Email</Label>
+                <p className="text-sm text-muted-foreground mb-2">
+                  Envie um email de teste para verificar se as configurações SMTP estão funcionando corretamente
+                </p>
+                <div className="flex gap-2">
+                  <Input 
+                    id="test_email"
+                    type="email"
+                    placeholder="email@exemplo.com"
+                    value={testEmailAddress}
+                    onChange={(e) => setTestEmailAddress(e.target.value)}
+                    className="flex-1"
+                  />
+                  <Button 
+                    onClick={handleTestEmail} 
+                    disabled={testingEmail || !testEmailAddress || !testEmailAddress.includes('@')}
+                    variant="outline"
+                  >
+                    {testingEmail ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Enviando...
+                      </>
+                    ) : (
+                      "Enviar Teste"
+                    )}
+                  </Button>
+                </div>
+              </div>
+              
               <Button onClick={handleSaveEmail} disabled={saving}>
                 {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                 Salvar Configurações
@@ -636,6 +832,20 @@ const SystemSettings = () => {
             <CardContent className="space-y-4">
               <div className="flex items-center justify-between">
                 <div>
+                  <p className="font-medium">Login apenas com CPF</p>
+                  <p className="text-sm text-muted-foreground">
+                    Quando ativo, a tela de entrada aceita somente CPF e senha. Desligado: e-mail ou CPF.
+                  </p>
+                </div>
+                <Switch
+                  checked={modulesForm.login_cpf_only || false}
+                  onCheckedChange={(checked) =>
+                    setModulesForm({ ...modulesForm, login_cpf_only: checked })
+                  }
+                />
+              </div>
+              <div className="flex items-center justify-between">
+                <div>
                   <p className="font-medium">Sistema de Cupons</p>
                   <p className="text-sm text-muted-foreground">Permitir desconto nas inscrições</p>
                 </div>
@@ -684,12 +894,226 @@ const SystemSettings = () => {
                   onCheckedChange={(checked) => setModulesForm({ ...modulesForm, analytics: checked })}
                 />
               </div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="font-medium">Transferência de Inscrições</p>
+                  <p className="text-sm text-muted-foreground">Permitir transferência de inscrições entre corredores</p>
+                </div>
+                <Switch 
+                  checked={modulesForm.transfers || false}
+                  onCheckedChange={(checked) => setModulesForm({ ...modulesForm, transfers: checked })}
+                />
+              </div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="font-medium">Desconto 60+</p>
+                  <p className="text-sm text-muted-foreground">Aplicar desconto automático de 50% para pessoas com 60 anos ou mais</p>
+                </div>
+                <Switch 
+                  checked={modulesForm.senior_discount_60_plus || false}
+                  onCheckedChange={(checked) => setModulesForm({ ...modulesForm, senior_discount_60_plus: checked })}
+                />
+              </div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="font-medium">Taxas da Plataforma</p>
+                  <p className="text-sm text-muted-foreground">Configurar taxas da plataforma, saque e transferência</p>
+                </div>
+                <Switch 
+                  checked={modulesForm.platform_fees || false}
+                  onCheckedChange={(checked) => setModulesForm({ ...modulesForm, platform_fees: checked })}
+                />
+              </div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="font-medium">Edição de Atributos pelo Organizador</p>
+                  <p className="text-sm text-muted-foreground">Permitir que organizadores editem atributos de produtos nas inscrições</p>
+                </div>
+                <Switch 
+                  checked={modulesForm.organizer_edit_attributes || false}
+                  onCheckedChange={(checked) => setModulesForm({ ...modulesForm, organizer_edit_attributes: checked })}
+                />
+              </div>
               <Button onClick={handleSaveModules} disabled={saving}>
                 {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                 Salvar Alterações
               </Button>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        {modulesForm.platform_fees && (
+          <TabsContent value="fees" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>Taxas da Plataforma</CardTitle>
+                <CardDescription>Configure as taxas cobradas pela plataforma</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                {/* Taxa da Plataforma */}
+                <div className="space-y-4">
+                  <div>
+                    <Label htmlFor="platform_fee_type">Tipo de Taxa da Plataforma</Label>
+                    <Select
+                      value={feesForm.platform_fee_type}
+                      onValueChange={(value: 'fixed' | 'percentage') => 
+                        setFeesForm({ ...feesForm, platform_fee_type: value })
+                      }
+                    >
+                      <SelectTrigger className="mt-1">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="fixed">Valor Fixo (R$)</SelectItem>
+                        <SelectItem value="percentage">Percentual (%)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label htmlFor="platform_fee">
+                      Taxa da Plataforma {feesForm.platform_fee_type === 'fixed' ? '(R$)' : '(%)'}
+                    </Label>
+                    <Input
+                      id="platform_fee"
+                      type="number"
+                      step={feesForm.platform_fee_type === 'fixed' ? '0.01' : '0.1'}
+                      min="0"
+                      value={feesForm.platform_fee}
+                      onChange={(e) => setFeesForm({ ...feesForm, platform_fee: parseFloat(e.target.value) || 0 })}
+                      placeholder={feesForm.platform_fee_type === 'fixed' ? '0.00' : '0.0'}
+                      className="mt-1"
+                    />
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Taxa cobrada dos corredores ao fazer inscrições
+                    </p>
+                  </div>
+                  {feesForm.platform_fee_type === 'percentage' && (
+                    <div>
+                      <Label htmlFor="platform_fee_min">Taxa mínima (R$)</Label>
+                      <Input
+                        id="platform_fee_min"
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={feesForm.platform_fee_min}
+                        onChange={(e) => setFeesForm({ ...feesForm, platform_fee_min: parseFloat(e.target.value) || 0 })}
+                        placeholder="0.00"
+                        className="mt-1"
+                      />
+                      <p className="text-sm text-muted-foreground mt-1">
+                        Quando o percentual sobre o valor for menor que este valor, será aplicada esta taxa mínima (para cobrir custos).
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                <Separator />
+
+                {/* Taxa de Saque */}
+                <div className="space-y-4">
+                  <div>
+                    <Label htmlFor="withdrawal_fee_type">Tipo de Taxa de Saque</Label>
+                    <Select
+                      value={feesForm.withdrawal_fee_type}
+                      onValueChange={(value: 'fixed' | 'percentage') => 
+                        setFeesForm({ ...feesForm, withdrawal_fee_type: value })
+                      }
+                    >
+                      <SelectTrigger className="mt-1">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="fixed">Valor Fixo (R$)</SelectItem>
+                        <SelectItem value="percentage">Percentual (%)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label htmlFor="withdrawal_fee">
+                      Taxa de Saque {feesForm.withdrawal_fee_type === 'fixed' ? '(R$)' : '(%)'}
+                    </Label>
+                    <Input
+                      id="withdrawal_fee"
+                      type="number"
+                      step={feesForm.withdrawal_fee_type === 'fixed' ? '0.01' : '0.1'}
+                      min="0"
+                      value={feesForm.withdrawal_fee}
+                      onChange={(e) => setFeesForm({ ...feesForm, withdrawal_fee: parseFloat(e.target.value) || 0 })}
+                      placeholder={feesForm.withdrawal_fee_type === 'fixed' ? '0.00' : '0.0'}
+                      className="mt-1"
+                    />
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Taxa cobrada dos organizadores ao realizar saques
+                    </p>
+                  </div>
+                </div>
+
+                <Separator />
+
+                {/* Taxa de Atualização - Cobrada ao editar inscrição */}
+                <div className="space-y-4">
+                  <div>
+                    <Label htmlFor="registration_edit_fee">Taxa de Atualização (R$)</Label>
+                    <Input
+                      id="registration_edit_fee"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={feesForm.registration_edit_fee}
+                      onChange={(e) => setFeesForm({ ...feesForm, registration_edit_fee: parseFloat(e.target.value) || 0 })}
+                      placeholder="0.00"
+                      className="mt-1"
+                    />
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Taxa fixa cobrada quando o admin edita uma inscrição e o valor é alterado (ex.: troca de categoria/kit).
+                    </p>
+                  </div>
+                </div>
+
+                <Separator />
+
+                {/* Taxa de Transferência - Apenas exibição (configurada em TransferManagement) */}
+                <div className="space-y-4">
+                  <div>
+                    <Label htmlFor="transfer_fee_display">Taxa de Transferência (R$)</Label>
+                    <Input
+                      id="transfer_fee_display"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={settings?.transfer_fee || 0}
+                      disabled
+                      className="mt-1 bg-muted"
+                    />
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Esta taxa é configurada em <strong>Transferências &gt; Configurar Taxa</strong>
+                    </p>
+                  </div>
+                </div>
+
+                <Button onClick={handleSaveFees} disabled={saving}>
+                  {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                  Salvar Alterações
+                </Button>
+              </CardContent>
+            </Card>
+          </TabsContent>
+        )}
+
+        <TabsContent value="forms" className="space-y-4">
+          <FormConfigurations />
+        </TabsContent>
+
+        <TabsContent value="notification-templates" className="space-y-4">
+          <NotificationTemplatesManagement />
+        </TabsContent>
+
+        <TabsContent value="document-types" className="space-y-4">
+          <DocumentTypesManagement />
+        </TabsContent>
+
+        <TabsContent value="advanced" className="space-y-4">
+          <AdvancedSettings />
         </TabsContent>
       </Tabs>
     </div>

@@ -1,6 +1,6 @@
 import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth.js';
-import { register, login, getUserById, RegisterData, LoginData } from '../services/authService.js';
+import { register, login, getUserById, setPasswordByInvitationToken, RegisterData, LoginData } from '../services/authService.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 
 // Register new user
@@ -43,6 +43,17 @@ export const registerUser = asyncHandler(async (req: AuthRequest, res: Response)
       });
       return;
     }
+    if (
+      error.message === 'CPF_LOOKUP_PROOF_REQUIRED' ||
+      error.message === 'CPF_LOOKUP_PROOF_INVALID'
+    ) {
+      res.status(400).json({
+        success: false,
+        error: 'CPF inválido',
+        message: 'CPF inválido',
+      });
+      return;
+    }
 
     throw error;
   }
@@ -52,12 +63,12 @@ export const registerUser = asyncHandler(async (req: AuthRequest, res: Response)
 export const loginUser = asyncHandler(async (req: AuthRequest, res: Response) => {
   const data: LoginData = req.body;
 
-  // Validation
-  if (!data.email || !data.password) {
+  // Validation (campo `email`: e-mail ou CPF)
+  if (!data.email?.trim() || !data.password) {
     res.status(400).json({
       success: false,
       error: 'Missing required fields',
-      message: 'Email and password are required',
+      message: 'Email (or CPF) and password are required',
     });
     return;
   }
@@ -71,6 +82,14 @@ export const loginUser = asyncHandler(async (req: AuthRequest, res: Response) =>
       message: 'Login successful',
     });
   } catch (error: any) {
+    if (error.message === 'LOGIN_CPF_ONLY') {
+      res.status(403).json({
+        success: false,
+        error: 'LOGIN_CPF_ONLY',
+        message: 'Nesta plataforma o login é feito apenas com CPF. Informe seu CPF e senha.',
+      });
+      return;
+    }
     if (error.message === 'Invalid email or password') {
       res.status(401).json({
         success: false,
@@ -110,6 +129,59 @@ export const getCurrentUser = asyncHandler(async (req: AuthRequest, res: Respons
     success: true,
     data: user,
   });
+});
+
+/**
+ * POST /api/auth/set-password-invitation
+ * Define senha usando token do link de completar cadastro (convite sem cadastro).
+ * Body: { token, newPassword }. Retorna token de login para o front autenticar.
+ */
+export const setPasswordInvitationController = asyncHandler(async (req: AuthRequest, res: Response) => {
+  const { token, newPassword } = req.body || {};
+  if (!token || typeof token !== 'string' || !token.trim()) {
+    res.status(400).json({
+      success: false,
+      error: 'Token é obrigatório.',
+      message: 'Token é obrigatório.',
+    });
+    return;
+  }
+  if (!newPassword || typeof newPassword !== 'string') {
+    res.status(400).json({
+      success: false,
+      error: 'Nova senha é obrigatória.',
+      message: 'Nova senha é obrigatória.',
+    });
+    return;
+  }
+
+  try {
+    const result = await setPasswordByInvitationToken(token.trim(), newPassword);
+    res.json({
+      success: true,
+      data: result,
+      message: 'Senha definida com sucesso. Você já está logado.',
+    });
+  } catch (error: any) {
+    const msg = error.message || 'Não foi possível definir a senha.';
+    if (msg.includes('inválido') || msg.includes('expirado') || msg.includes('não encontrado')) {
+      res.status(400).json({
+        success: false,
+        error: msg,
+        message: msg,
+      });
+      return;
+    }
+    if (msg.includes('mínimo 6')) {
+      res.status(400).json({
+        success: false,
+        error: msg,
+        message: msg,
+      });
+      return;
+    }
+    throw error;
+  }
 });
 
 // Logout (client-side token removal, but we can add token blacklist here if needed)

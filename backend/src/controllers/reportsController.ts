@@ -8,7 +8,9 @@ import {
   getAthleteBehavior,
   getMonthlyEvolution,
   getEventPerformance,
+  getCpfValidationOverview,
 } from '../services/reportsService.js';
+import { getCpfLookupMetricsSummary } from '../services/cpfLookupMetricsService.js';
 
 /**
  * GET /api/admin/reports/registrations-by-period
@@ -202,6 +204,53 @@ export const getEventPerformanceController = async (
   }
 };
 
+/**
+ * GET /api/admin/reports/cpf-validation-overview
+ * Fase 5: contagem de perfis legados (sem validação na fonte oficial).
+ */
+export const getCpfValidationOverviewController = async (
+  _req: AuthRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    const data = await getCpfValidationOverview();
+    res.json({
+      success: true,
+      data,
+    });
+  } catch (error: any) {
+    console.error('Error fetching CPF validation overview:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Internal server error',
+      message: error.message || 'Failed to fetch CPF validation overview',
+    });
+  }
+};
 
-
+/**
+ * GET /api/admin/reports/cpf-lookup-metrics?days=30
+ * Série diária de sucesso/falha em POST /auth/lookup-cpf (Fase 6).
+ */
+export const getCpfLookupMetricsController = async (
+  req: AuthRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    const raw = req.query.days ? parseInt(req.query.days as string, 10) : 30;
+    const days = Number.isFinite(raw) && raw > 0 ? raw : 30;
+    const data = await getCpfLookupMetricsSummary(days);
+    res.json({
+      success: true,
+      data,
+    });
+  } catch (error: any) {
+    console.error('Error fetching CPF lookup metrics:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Internal server error',
+      message: error.message || 'Failed to fetch CPF lookup metrics',
+    });
+  }
+};
 
