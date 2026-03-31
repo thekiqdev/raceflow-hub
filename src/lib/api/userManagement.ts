@@ -1,4 +1,4 @@
-import { apiClient } from './client.js';
+import { apiClient, type ApiResponse } from './client.js';
 
 export interface UserWithStats {
   id: string;
@@ -22,43 +22,82 @@ export interface CreateAdminData {
   role?: 'admin';
 }
 
-/**
- * Get all organizers with statistics
- */
-export const getOrganizers = async (searchTerm?: string): Promise<{
-  success: boolean;
-  data?: UserWithStats[];
-  error?: string;
-  message?: string;
-}> => {
-  const query = searchTerm ? `?search=${encodeURIComponent(searchTerm)}` : '';
-  return apiClient.get<UserWithStats[]>(`/admin/users/organizers${query}`);
-};
+export interface PaginatedUsersData {
+  items: UserWithStats[];
+  page: number;
+  page_size: number;
+  total: number;
+  total_pages: number;
+}
 
-/**
- * Get all athletes with statistics
- */
-export const getAthletes = async (searchTerm?: string): Promise<{
-  success: boolean;
-  data?: UserWithStats[];
-  error?: string;
-  message?: string;
-}> => {
-  const query = searchTerm ? `?search=${encodeURIComponent(searchTerm)}` : '';
-  return apiClient.get<UserWithStats[]>(`/admin/users/athletes${query}`);
-};
+function buildUserListQuery(
+  basePath: '/admin/users/organizers' | '/admin/users/athletes' | '/admin/users/admins',
+  searchTerm: string | undefined,
+  pagination: { page: number; page_size: 30 | 50 } | undefined
+): string {
+  const q = new URLSearchParams();
+  if (searchTerm) q.set('search', searchTerm);
+  if (pagination) {
+    q.set('page', String(pagination.page));
+    q.set('page_size', String(pagination.page_size));
+  }
+  const qs = q.toString();
+  return `${basePath}${qs ? `?${qs}` : ''}`;
+}
 
-/**
- * Get all admins
- */
-export const getAdmins = async (): Promise<{
-  success: boolean;
-  data?: UserWithStats[];
-  error?: string;
-  message?: string;
-}> => {
-  return apiClient.get<UserWithStats[]>('/admin/users/admins');
-};
+export async function getOrganizers(
+  searchTerm?: string,
+  pagination?: undefined
+): Promise<ApiResponse<UserWithStats[]>>;
+export async function getOrganizers(
+  searchTerm: string | undefined,
+  pagination: { page: number; page_size: 30 | 50 }
+): Promise<ApiResponse<PaginatedUsersData>>;
+export async function getOrganizers(
+  searchTerm?: string,
+  pagination?: { page: number; page_size: 30 | 50 }
+): Promise<ApiResponse<UserWithStats[] | PaginatedUsersData>> {
+  const path = buildUserListQuery('/admin/users/organizers', searchTerm, pagination);
+  if (pagination) {
+    return apiClient.get<PaginatedUsersData>(path);
+  }
+  return apiClient.get<UserWithStats[]>(path);
+}
+
+export async function getAthletes(
+  searchTerm?: string,
+  pagination?: undefined
+): Promise<ApiResponse<UserWithStats[]>>;
+export async function getAthletes(
+  searchTerm: string | undefined,
+  pagination: { page: number; page_size: 30 | 50 }
+): Promise<ApiResponse<PaginatedUsersData>>;
+export async function getAthletes(
+  searchTerm?: string,
+  pagination?: { page: number; page_size: 30 | 50 }
+): Promise<ApiResponse<UserWithStats[] | PaginatedUsersData>> {
+  const path = buildUserListQuery('/admin/users/athletes', searchTerm, pagination);
+  if (pagination) {
+    return apiClient.get<PaginatedUsersData>(path);
+  }
+  return apiClient.get<UserWithStats[]>(path);
+}
+
+export async function getAdmins(
+  pagination?: undefined
+): Promise<ApiResponse<UserWithStats[]>>;
+export async function getAdmins(
+  pagination: { page: number; page_size: 30 | 50 }
+): Promise<ApiResponse<PaginatedUsersData>>;
+export async function getAdmins(
+  pagination?: { page: number; page_size: 30 | 50 }
+): Promise<ApiResponse<UserWithStats[] | PaginatedUsersData>> {
+  const path = buildUserListQuery('/admin/users/admins', undefined, pagination);
+  if (pagination) {
+    return apiClient.get<PaginatedUsersData>(path);
+  }
+  return apiClient.get<UserWithStats[]>(path);
+}
 
 /**
  * Get user by ID

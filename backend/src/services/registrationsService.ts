@@ -134,8 +134,26 @@ async function getRegistrationCustomFieldValuesMap(
   return map;
 }
 
-// Get registrations with filters
-export const getRegistrations = async (filters?: {
+/** JOINs compartilhados pela listagem de inscrições (filtros em e, p, r, etc.) */
+const REGISTRATIONS_LIST_JOINS = `
+    FROM registrations r
+    LEFT JOIN events e ON r.event_id = e.id
+    LEFT JOIN categories c ON r.category_id = c.id
+    LEFT JOIN profiles p ON r.runner_id = p.id
+    LEFT JOIN users u ON p.id = u.id
+    LEFT JOIN event_kits ek ON r.kit_id = ek.id
+    LEFT JOIN coupons cp ON r.coupon_code = cp.code
+    LEFT JOIN group_leaders gl ON cp.leader_id = gl.id
+    LEFT JOIN profiles lp ON gl.user_id = lp.id
+`;
+
+export type GetRegistrationsPagination = {
+  page: number;
+  page_size: number;
+};
+
+/** Condições WHERE da listagem (mesma semântica para COUNT e SELECT paginado). */
+function buildRegistrationListWhereClause(filters?: {
   event_id?: string;
   runner_id?: string;
   registered_by?: string;
@@ -143,7 +161,165 @@ export const getRegistrations = async (filters?: {
   status?: RegistrationStatus;
   payment_status?: PaymentStatus;
   search?: string;
-}) => {
+}): { conditions: string[]; params: any[] } {
+  const conditions: string[] = [];
+  const params: any[] = [];
+
+  if (filters?.event_id) {
+    conditions.push(`r.event_id = $${params.length + 1}`);
+    params.push(filters.event_id);
+  }
+
+  if (filters?.runner_id) {
+    conditions.push(`(
+      r.runner_id = $${params.length + 1} OR 
+      (r.registered_by = $${params.length + 1} AND r.status = 'transferred')
+    )`);
+    params.push(filters.runner_id);
+  }
+
+  if (filters?.registered_by) {
+    conditions.push(`r.registered_by = $${params.length + 1}`);
+    params.push(filters.registered_by);
+  }
+
+  if (filters?.organizer_id) {
+    conditions.push(`e.organizer_id = $${params.length + 1}`);
+    params.push(filters.organizer_id);
+  }
+
+  if (filters?.status) {
+    if (filters.status === 'confirmed') {
+      conditions.push(`(
+        r.status = $${params.length + 1} OR 
+        (r.status = 'transferred' AND r.runner_id != r.registered_by)
+      )`);
+      params.push(filters.status);
+    } else {
+      conditions.push(`r.status = $${params.length + 1}`);
+      params.push(filters.status);
+    }
+  }
+
+  if (filters?.payment_status) {
+    conditions.push(`r.payment_status = $${params.length + 1}`);
+    params.push(filters.payment_status);
+  }
+
+  if (filters?.search) {
+    conditions.push(`(
+      p.full_name ILIKE $${params.length + 1} OR
+      p.cpf ILIKE $${params.length + 1} OR
+      e.title ILIKE $${params.length + 1}
+    )`);
+    params.push(`%${filters.search}%`);
+  }
+
+  conditions.push(`NOT EXISTS (
+    SELECT 1 FROM leader_invitations li
+    WHERE li.bonus_registration_id = r.id AND li.status = 'expired'
+  )`);
+
+  return { conditions, params };
+}
+
+/** Pós-processamento comum da listagem (map + pendências + campos customizados). */
+async function mapRegistrationRows(
+  resultRows: any[],
+  filters?: {
+    runner_id?: string;
+  }
+): Promise<
+  Array<
+    any & {
+      modality_name: string | null;
+      status: string;
+      event_banner_url: string | null;
+      pending_difference_amount: number;
+      has_pending_difference: boolean;
+      amount_paid: number;
+      registration_edit_fee: number;
+      custom_field_values: Record<string, string>;
+    }
+  >
+> {
+  const { getFileUrl } = await import('../middleware/upload.js');
+  const { getPendingDifferenceAmountsForRegistrationIds, getTotalPaidForRegistrationIds } = await import('./asaasService.js');
+  const { getSystemSettings } = await import('./systemSettingsService.js');
+  const ids = resultRows.map((r: any) => r.id);
+  const [pendingMap, totalPaidMap, settings, customFieldValuesMap] = await Promise.all([
+    getPendingDifferenceAmountsForRegistrationIds(ids),
+    getTotalPaidForRegistrationIds(ids),
+    getSystemSettings(),
+    getRegistrationCustomFieldValuesMap(ids),
+  ]);
+  const registrationEditFee = settings.registration_edit_fee ?? 0;
+
+  return resultRows.map((row: any) => {
+    let finalStatus = row.display_status || row.status;
+
+    if (filters?.runner_id && row.is_transferred && row.registered_by === filters.runner_id) {
+      finalStatus = 'transferred';
+    }
+    const pendingDifferenceAmount = pendingMap[row.id] ?? 0;
+    const amountPaid = totalPaidMap[row.id] ?? 0;
+    const modalityName = row.modality_name || (row.modality_names && row.modality_names[0]) || null;
+    return {
+      ...row,
+      modality_name: modalityName,
+      status: finalStatus,
+      event_banner_url: row.event_banner_url ? getFileUrl(row.event_banner_url) : null,
+      pending_difference_amount: pendingDifferenceAmount,
+      has_pending_difference: pendingDifferenceAmount > 0.005,
+      amount_paid: amountPaid,
+      registration_edit_fee: registrationEditFee,
+      custom_field_values: customFieldValuesMap.get(row.id) ?? {},
+    };
+  });
+}
+
+export type PaginatedRegistrationsResult = {
+  items: Awaited<ReturnType<typeof mapRegistrationRows>>;
+  page: number;
+  page_size: number;
+  total: number;
+  total_pages: number;
+  summary: RegistrationListSummary;
+};
+
+export type RegistrationListSummary = {
+  total_registrations: number;
+  confirmed_payments: number;
+  pending_payments: number;
+  refunds: number;
+};
+
+type RegistrationListFilters = {
+  event_id?: string;
+  runner_id?: string;
+  registered_by?: string;
+  organizer_id?: string;
+  status?: RegistrationStatus;
+  payment_status?: PaymentStatus;
+  search?: string;
+};
+
+// Get registrations with filters
+export async function getRegistrations(
+  filters?: RegistrationListFilters,
+  pagination?: undefined
+): Promise<Awaited<ReturnType<typeof mapRegistrationRows>>>;
+export async function getRegistrations(
+  filters: RegistrationListFilters | undefined,
+  pagination: GetRegistrationsPagination
+): Promise<PaginatedRegistrationsResult>;
+export async function getRegistrations(
+  filters?: RegistrationListFilters,
+  pagination?: GetRegistrationsPagination
+): Promise<Awaited<ReturnType<typeof mapRegistrationRows>> | PaginatedRegistrationsResult> {
+  const { conditions, params } = buildRegistrationListWhereClause(filters);
+  const whereSql = conditions.length > 0 ? ' WHERE ' + conditions.join(' AND ') : '';
+
   let queryText = `
     SELECT DISTINCT ON (r.id)
       r.*,
@@ -205,88 +381,12 @@ export const getRegistrations = async (filters?: {
       lp.full_name as leader_name,
       -- Etapa 4: convite com "corredor escolhe" (para fluxo de completar categoria/modalidade/kit)
       (SELECT li.runner_chooses_category_modality_kit FROM leader_invitations li WHERE li.bonus_registration_id = r.id AND li.runner_id = r.runner_id LIMIT 1) as invitation_runner_chooses_category_modality_kit
-    FROM registrations r
-    LEFT JOIN events e ON r.event_id = e.id
-    LEFT JOIN categories c ON r.category_id = c.id
-    LEFT JOIN profiles p ON r.runner_id = p.id
-    LEFT JOIN users u ON p.id = u.id
-    LEFT JOIN event_kits ek ON r.kit_id = ek.id
-    LEFT JOIN coupons cp ON r.coupon_code = cp.code
-    LEFT JOIN group_leaders gl ON cp.leader_id = gl.id
-    LEFT JOIN profiles lp ON gl.user_id = lp.id
+    ${REGISTRATIONS_LIST_JOINS}
+    ${whereSql}
   `;
-  const params: any[] = [];
-  const conditions: string[] = [];
 
-  if (filters?.event_id) {
-    conditions.push(`r.event_id = $${params.length + 1}`);
-    params.push(filters.event_id);
-  }
-
-  if (filters?.runner_id) {
-    // Include registrations where:
-    // 1. runner_id matches (current owner)
-    // 2. OR registered_by matches AND status is 'transferred' (transferred by this user)
-    conditions.push(`(
-      r.runner_id = $${params.length + 1} OR 
-      (r.registered_by = $${params.length + 1} AND r.status = 'transferred')
-    )`);
-    params.push(filters.runner_id);
-  }
-
-  if (filters?.registered_by) {
-    conditions.push(`r.registered_by = $${params.length + 1}`);
-    params.push(filters.registered_by);
-  }
-
-  if (filters?.organizer_id) {
-    conditions.push(`e.organizer_id = $${params.length + 1}`);
-    params.push(filters.organizer_id);
-  }
-
-  if (filters?.status) {
-    // When filtering by status, also check display_status for transferred registrations
-    if (filters.status === 'confirmed') {
-      conditions.push(`(
-        r.status = $${params.length + 1} OR 
-        (r.status = 'transferred' AND r.runner_id != r.registered_by)
-      )`);
-      params.push(filters.status);
-    } else {
-      conditions.push(`r.status = $${params.length + 1}`);
-      params.push(filters.status);
-    }
-  }
-
-  if (filters?.payment_status) {
-    conditions.push(`r.payment_status = $${params.length + 1}`);
-    params.push(filters.payment_status);
-  }
-
-  if (filters?.search) {
-    conditions.push(`(
-      p.full_name ILIKE $${params.length + 1} OR
-      p.cpf ILIKE $${params.length + 1} OR
-      e.title ILIKE $${params.length + 1}
-    )`);
-    params.push(`%${filters.search}%`);
-  }
-
-  // Excluir inscrições que são convite (bônus) e cujo convite expirou – não aparecem na lista do evento
-  conditions.push(`NOT EXISTS (
-    SELECT 1 FROM leader_invitations li
-    WHERE li.bonus_registration_id = r.id AND li.status = 'expired'
-  )`);
-
-  if (conditions.length > 0) {
-    queryText += ' WHERE ' + conditions.join(' AND ');
-  }
-
-  // DISTINCT ON requires the first ORDER BY column to match DISTINCT ON column
-  // So we order by r.id first, then created_at DESC
   queryText += ' ORDER BY r.id, r.created_at DESC';
-  
-  // Wrap query to apply final ordering by created_at DESC (most recent first)
+
   queryText = `
     SELECT * FROM (
       ${queryText}
@@ -294,49 +394,59 @@ export const getRegistrations = async (filters?: {
     ORDER BY created_at DESC
   `;
 
-  const result = await query(queryText, params);
-  
-  // Import getFileUrl, payment helpers and system settings (taxa de atualização)
-  const { getFileUrl } = await import('../middleware/upload.js');
-  const { getPendingDifferenceAmountsForRegistrationIds, getTotalPaidForRegistrationIds } = await import('./asaasService.js');
-  const { getSystemSettings } = await import('./systemSettingsService.js');
-  const ids = result.rows.map((r: any) => r.id);
-  const [pendingMap, totalPaidMap, settings, customFieldValuesMap] = await Promise.all([
-    getPendingDifferenceAmountsForRegistrationIds(ids),
-    getTotalPaidForRegistrationIds(ids),
-    getSystemSettings(),
-    getRegistrationCustomFieldValuesMap(ids),
-  ]);
-  const registrationEditFee = settings.registration_edit_fee ?? 0;
+  let total: number | undefined;
+  let page = 1;
+  let pageSize = 30;
+  let queryParams = [...params];
 
-  // Replace status with display_status in the results
-  // If this is a transferred registration viewed by the original owner (registered_by),
-  // show as 'transferred' instead of 'confirmed'
-  return result.rows.map((row: any) => {
-    let finalStatus = row.display_status || row.status;
-
-    // If filtering by runner_id and this is a transferred registration
-    // where the runner_id filter matches registered_by, show as 'transferred'
-    if (filters?.runner_id && row.is_transferred && row.registered_by === filters.runner_id) {
-      finalStatus = 'transferred';
-    }
-    const pendingDifferenceAmount = pendingMap[row.id] ?? 0;
-    const amountPaid = totalPaidMap[row.id] ?? 0;
-    // Fallback: inscrições antigas sem modality_id mostram a primeira modalidade da categoria
-    const modalityName = row.modality_name || (row.modality_names && row.modality_names[0]) || null;
-    return {
-      ...row,
-      modality_name: modalityName,
-      status: finalStatus,
-      event_banner_url: row.event_banner_url ? getFileUrl(row.event_banner_url) : null,
-      pending_difference_amount: pendingDifferenceAmount,
-      has_pending_difference: pendingDifferenceAmount > 0.005,
-      amount_paid: amountPaid,
-      registration_edit_fee: registrationEditFee,
-      custom_field_values: customFieldValuesMap.get(row.id) ?? {},
+  if (pagination) {
+    page = Math.max(1, pagination.page);
+    pageSize = pagination.page_size === 50 ? 50 : 30;
+    const summarySql = `
+      SELECT
+        COUNT(DISTINCT r.id)::bigint AS total_registrations,
+        COUNT(DISTINCT r.id) FILTER (WHERE r.payment_status = 'paid')::bigint AS confirmed_payments,
+        COUNT(DISTINCT r.id) FILTER (WHERE r.payment_status = 'pending')::bigint AS pending_payments,
+        COUNT(DISTINCT r.id) FILTER (
+          WHERE r.payment_status = 'refunded' OR r.status = 'refunded'
+        )::bigint AS refunds
+      ${REGISTRATIONS_LIST_JOINS}
+      ${whereSql}
+    `;
+    const summaryRes = await query(summarySql, params);
+    total = parseInt(String(summaryRes.rows[0]?.total_registrations ?? '0'), 10) || 0;
+    const summary: RegistrationListSummary = {
+      total_registrations: total,
+      confirmed_payments:
+        parseInt(String(summaryRes.rows[0]?.confirmed_payments ?? '0'), 10) || 0,
+      pending_payments:
+        parseInt(String(summaryRes.rows[0]?.pending_payments ?? '0'), 10) || 0,
+      refunds: parseInt(String(summaryRes.rows[0]?.refunds ?? '0'), 10) || 0,
     };
-  });
-};
+
+    const offset = (page - 1) * pageSize;
+    queryText += ` LIMIT $${queryParams.length + 1} OFFSET $${queryParams.length + 2}`;
+    queryParams = [...queryParams, pageSize, offset];
+
+    const result = await query(queryText, queryParams);
+    const mapped = await mapRegistrationRows(result.rows, filters);
+    const total_pages = total === 0 ? 0 : Math.ceil(total / pageSize);
+    return {
+      items: mapped,
+      page,
+      page_size: pageSize,
+      total,
+      total_pages,
+      summary,
+    };
+  }
+
+  const result = await query(queryText, queryParams);
+
+  const mapped = await mapRegistrationRows(result.rows, filters);
+
+  return mapped;
+}
 
 // Get registration by ID
 export const getRegistrationById = async (registrationId: string, viewerId?: string) => {

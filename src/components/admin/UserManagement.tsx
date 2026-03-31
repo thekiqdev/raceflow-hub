@@ -1,11 +1,11 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Search, Download, Edit, Eye, Lock, Unlock, CheckCircle, XCircle, RotateCcw, Loader2, UserPlus, Trash2 } from "lucide-react";
+import { Search, Download, Edit, Eye, Lock, Unlock, CheckCircle, XCircle, RotateCcw, Loader2, UserPlus, Trash2, ChevronLeft, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
 import {
   getOrganizers,
@@ -21,55 +21,101 @@ import {
 } from "@/lib/api/userManagement";
 import { UserProfileDialog } from "./UserProfileDialog";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { useDebounce } from "@/hooks/useDebounce";
 
 const UserManagement = () => {
   const [searchTerm, setSearchTerm] = useState("");
+  const debouncedSearch = useDebounce(searchTerm, 400);
   const [activeTab, setActiveTab] = useState("organizers");
   const [loading, setLoading] = useState(false);
   const [organizers, setOrganizers] = useState<UserWithStats[]>([]);
   const [athletes, setAthletes] = useState<UserWithStats[]>([]);
   const [admins, setAdmins] = useState<UserWithStats[]>([]);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState<30 | 50>(30);
+  const [listTotal, setListTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(0);
+  const filterKeyRef = useRef<string | null>(null);
+  const lastRequestKeyRef = useRef<string>("");
   const [profileDialogOpen, setProfileDialogOpen] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [blockDialogOpen, setBlockDialogOpen] = useState(false);
   const [userToBlock, setUserToBlock] = useState<{ id: string; name: string } | null>(null);
 
-  useEffect(() => {
-    loadData();
-  }, [activeTab, searchTerm]);
+  const listFilterKey = useMemo(
+    () => `${activeTab}|${activeTab === "admins" ? "" : debouncedSearch}|${pageSize}`,
+    [activeTab, debouncedSearch, pageSize]
+  );
 
-  const loadData = async () => {
-    setLoading(true);
-    try {
-      if (activeTab === "organizers") {
-        const response = await getOrganizers(searchTerm || undefined);
-        if (response.success && response.data) {
-          setOrganizers(response.data);
-        } else {
-          toast.error("Erro ao carregar organizadores");
+  const loadDataWithPage = useCallback(
+    async (effectivePage: number) => {
+      setLoading(true);
+      const pagination = { page: effectivePage, page_size: pageSize };
+      try {
+        if (activeTab === "organizers") {
+          const response = await getOrganizers(debouncedSearch || undefined, pagination);
+          if (response.success && response.data && "items" in response.data) {
+            setOrganizers(response.data.items);
+            setListTotal(response.data.total);
+            setTotalPages(response.data.total_pages);
+          } else {
+            toast.error("Erro ao carregar organizadores");
+          }
+        } else if (activeTab === "athletes") {
+          const response = await getAthletes(debouncedSearch || undefined, pagination);
+          if (response.success && response.data && "items" in response.data) {
+            setAthletes(response.data.items);
+            setListTotal(response.data.total);
+            setTotalPages(response.data.total_pages);
+          } else {
+            toast.error("Erro ao carregar atletas");
+          }
+        } else if (activeTab === "admins") {
+          const response = await getAdmins(pagination);
+          if (response.success && response.data && "items" in response.data) {
+            setAdmins(response.data.items);
+            setListTotal(response.data.total);
+            setTotalPages(response.data.total_pages);
+          } else {
+            toast.error("Erro ao carregar administradores");
+          }
         }
-      } else if (activeTab === "athletes") {
-        const response = await getAthletes(searchTerm || undefined);
-        if (response.success && response.data) {
-          setAthletes(response.data);
-        } else {
-          toast.error("Erro ao carregar atletas");
-        }
-      } else if (activeTab === "admins") {
-        const response = await getAdmins();
-        if (response.success && response.data) {
-          setAdmins(response.data);
-        } else {
-          toast.error("Erro ao carregar administradores");
-        }
+      } catch (error) {
+        console.error("Erro ao carregar dados:", error);
+        toast.error("Erro ao carregar dados");
+      } finally {
+        setLoading(false);
       }
-    } catch (error) {
-      console.error("Erro ao carregar dados:", error);
-      toast.error("Erro ao carregar dados");
-    } finally {
-      setLoading(false);
+    },
+    [activeTab, debouncedSearch, pageSize]
+  );
+
+  const loadData = useCallback(() => {
+    lastRequestKeyRef.current = "";
+    void loadDataWithPage(page);
+  }, [page, loadDataWithPage]);
+
+  useEffect(() => {
+    const filtersChanged = filterKeyRef.current !== null && filterKeyRef.current !== listFilterKey;
+    filterKeyRef.current = listFilterKey;
+    const effectivePage = filtersChanged ? 1 : page;
+    if (filtersChanged && page !== 1) {
+      setPage(1);
     }
-  };
+    const requestKey = `${listFilterKey}|${effectivePage}`;
+    if (lastRequestKeyRef.current === requestKey) {
+      return;
+    }
+    lastRequestKeyRef.current = requestKey;
+    void loadDataWithPage(effectivePage);
+  }, [listFilterKey, page, loadDataWithPage]);
 
   const handleApproveOrganizer = async (userId: string) => {
     try {
@@ -202,7 +248,15 @@ const UserManagement = () => {
           <Card>
             <CardHeader>
               <CardTitle>Organizadores</CardTitle>
-              <CardDescription>Gerenciar todos os organizadores da plataforma</CardDescription>
+              <CardDescription>
+                {activeTab !== "organizers"
+                  ? "Gerenciar todos os organizadores da plataforma"
+                  : loading
+                    ? "Carregando..."
+                    : listTotal === 0
+                      ? "Nenhum resultado com os filtros atuais"
+                      : `Exibindo ${(page - 1) * pageSize + 1}–${Math.min(page * pageSize, listTotal)} de ${listTotal}`}
+              </CardDescription>
               <div className="flex gap-2 pt-4">
                 <div className="relative flex-1">
                   <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
@@ -332,7 +386,15 @@ const UserManagement = () => {
           <Card>
             <CardHeader>
               <CardTitle>Atletas</CardTitle>
-              <CardDescription>Gerenciar todos os atletas cadastrados</CardDescription>
+              <CardDescription>
+                {activeTab !== "athletes"
+                  ? "Gerenciar todos os atletas cadastrados"
+                  : loading
+                    ? "Carregando..."
+                    : listTotal === 0
+                      ? "Nenhum resultado com os filtros atuais"
+                      : `Exibindo ${(page - 1) * pageSize + 1}–${Math.min(page * pageSize, listTotal)} de ${listTotal}`}
+              </CardDescription>
               <div className="flex gap-2 pt-4">
                 <div className="relative flex-1">
                   <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
@@ -443,7 +505,15 @@ const UserManagement = () => {
           <Card>
             <CardHeader>
               <CardTitle>Administradores</CardTitle>
-              <CardDescription>Gerenciar acesso de administradores</CardDescription>
+              <CardDescription>
+                {activeTab !== "admins"
+                  ? "Gerenciar acesso de administradores"
+                  : loading
+                    ? "Carregando..."
+                    : listTotal === 0
+                      ? "Nenhum administrador cadastrado"
+                      : `Exibindo ${(page - 1) * pageSize + 1}–${Math.min(page * pageSize, listTotal)} de ${listTotal}`}
+              </CardDescription>
               <Button className="mt-4">Criar Novo Admin</Button>
             </CardHeader>
             <CardContent>
@@ -526,6 +596,48 @@ const UserManagement = () => {
           </Card>
         </TabsContent>
       </Tabs>
+
+      {!loading && listTotal > 0 && (
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 rounded-lg border bg-card p-4">
+          <p className="text-sm text-muted-foreground">
+            Página {page} de {Math.max(1, totalPages || 1)}
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <Select
+              value={String(pageSize)}
+              onValueChange={(v) => setPageSize(Number(v) as 30 | 50)}
+            >
+              <SelectTrigger className="w-[160px]">
+                <SelectValue placeholder="Por página" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="30">30 por página</SelectItem>
+                <SelectItem value="50">50 por página</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={page <= 1}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              aria-label="Página anterior"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={page >= totalPages || totalPages === 0}
+              onClick={() => setPage((p) => p + 1)}
+              aria-label="Próxima página"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+      )}
 
       <UserProfileDialog
         open={profileDialogOpen}

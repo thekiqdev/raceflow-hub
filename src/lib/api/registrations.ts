@@ -1,4 +1,4 @@
-import { apiClient } from './client.js';
+import { apiClient, type ApiResponse } from './client.js';
 
 export interface Registration {
   id: string;
@@ -136,15 +136,42 @@ export const previewRegistrationEdit = async (
   return apiClient.post<PreviewRegistrationEditResponse>(`/registrations/${id}/preview-edit`, body);
 };
 
-// Get registrations
-export const getRegistrations = async (filters?: {
+/** Resposta paginada de GET /registrations (quando page e page_size são enviados). */
+export interface PaginatedRegistrationsData {
+  items: Registration[];
+  page: number;
+  page_size: number;
+  total: number;
+  total_pages: number;
+  summary: {
+    total_registrations: number;
+    confirmed_payments: number;
+    pending_payments: number;
+    refunds: number;
+  };
+}
+
+type GetRegistrationsFilters = {
   event_id?: string;
   runner_id?: string;
   organizer_id?: string;
   status?: string;
   payment_status?: string;
   search?: string;
-}) => {
+};
+
+export async function getRegistrations(
+  filters?: GetRegistrationsFilters,
+  pagination?: undefined
+): Promise<ApiResponse<Registration[]>>;
+export async function getRegistrations(
+  filters: GetRegistrationsFilters | undefined,
+  pagination: { page: number; page_size: 30 | 50 }
+): Promise<ApiResponse<PaginatedRegistrationsData>>;
+export async function getRegistrations(
+  filters?: GetRegistrationsFilters,
+  pagination?: { page: number; page_size: 30 | 50 }
+): Promise<ApiResponse<Registration[] | PaginatedRegistrationsData>> {
   const queryParams = new URLSearchParams();
   if (filters?.event_id) queryParams.append('event_id', filters.event_id);
   if (filters?.runner_id) queryParams.append('runner_id', filters.runner_id);
@@ -152,12 +179,19 @@ export const getRegistrations = async (filters?: {
   if (filters?.status) queryParams.append('status', filters.status);
   if (filters?.payment_status) queryParams.append('payment_status', filters.payment_status);
   if (filters?.search) queryParams.append('search', filters.search);
+  if (pagination) {
+    queryParams.append('page', String(pagination.page));
+    queryParams.append('page_size', String(pagination.page_size));
+  }
 
   const queryString = queryParams.toString();
   const endpoint = `/registrations${queryString ? `?${queryString}` : ''}`;
 
+  if (pagination) {
+    return apiClient.get<PaginatedRegistrationsData>(endpoint);
+  }
   return apiClient.get<Registration[]>(endpoint);
-};
+}
 
 // Check if user already has an active registration for an event
 export const checkExistingRegistration = async (eventId: string) => {

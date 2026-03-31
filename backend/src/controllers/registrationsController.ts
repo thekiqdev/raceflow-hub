@@ -270,6 +270,27 @@ export const getAllRegistrations = asyncHandler(async (req: AuthRequest, res: Re
     }
   }
 
+  const pageRaw = req.query.page;
+  const pageSizeRaw = req.query.page_size;
+  const usePagination =
+    (pageRaw !== undefined && pageRaw !== '') ||
+    (pageSizeRaw !== undefined && pageSizeRaw !== '');
+
+  if (usePagination) {
+    const page = Math.max(1, parseInt(String(pageRaw ?? '1'), 10) || 1);
+    let rawSize = parseInt(String(pageSizeRaw ?? '30'), 10);
+    if (![30, 50].includes(rawSize)) {
+      rawSize = 30;
+    }
+    const page_size = rawSize as 30 | 50;
+    const paginated = await getRegistrations(filters, { page, page_size });
+    res.json({
+      success: true,
+      data: paginated,
+    });
+    return;
+  }
+
   const registrations = await getRegistrations(filters);
 
   res.json({

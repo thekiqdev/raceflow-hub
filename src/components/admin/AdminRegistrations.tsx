@@ -25,7 +25,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Search, MoreVertical, Eye, FileDown, Loader2, Edit2, Save, X, Trash2, Link2 } from "lucide-react";
+import { Search, MoreVertical, Eye, FileDown, Loader2, Edit2, Save, X, Trash2, Link2, ChevronLeft, ChevronRight } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { useNavigate } from "react-router-dom";
@@ -55,7 +55,17 @@ const AdminRegistrations = () => {
   const [paymentStatusFilter, setPaymentStatusFilter] = useState("all");
   const [eventFilter, setEventFilter] = useState("all");
   const [isExporting, setIsExporting] = useState(false);
-  
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState<30 | 50>(30);
+  const [listTotal, setListTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(0);
+  const [summary, setSummary] = useState({
+    total_registrations: 0,
+    confirmed_payments: 0,
+    pending_payments: 0,
+    refunds: 0,
+  });
+
   // Registration details dialog
   const [isDetailsDialogOpen, setIsDetailsDialogOpen] = useState(false);
   const [selectedRegistration, setSelectedRegistration] = useState<Registration | null>(null);
@@ -105,9 +115,16 @@ const AdminRegistrations = () => {
 
   useEffect(() => {
     loadEvents();
-    loadRegistrations();
     loadPlatformFeeSettings();
-  }, [debouncedSearch, statusFilter, paymentStatusFilter, eventFilter]);
+  }, []);
+
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearch, statusFilter, paymentStatusFilter, eventFilter, pageSize]);
+
+  useEffect(() => {
+    loadRegistrations();
+  }, [debouncedSearch, statusFilter, paymentStatusFilter, eventFilter, page, pageSize]);
 
   // Pré-visualização ao alterar categoria/kit/modalidade/lote (Etapa 8)
   useEffect(() => {
@@ -185,10 +202,14 @@ const AdminRegistrations = () => {
         filters.search = debouncedSearch;
       }
 
-      const response = await getRegistrations(filters);
+      const response = await getRegistrations(filters, { page, page_size: pageSize });
 
       if (response.success && response.data) {
-        setRegistrations(response.data);
+        const d = response.data;
+        setRegistrations(d.items);
+        setListTotal(d.total);
+        setTotalPages(d.total_pages);
+        setSummary(d.summary);
       } else {
         toast.error(response.error || "Erro ao carregar inscrições");
       }
@@ -886,12 +907,6 @@ const AdminRegistrations = () => {
     }).format(value);
   };
 
-  // Calculate statistics
-  const totalRegistrations = registrations.length;
-  const paidRegistrations = registrations.filter(r => r.payment_status === "paid").length;
-  const pendingRegistrations = registrations.filter(r => r.payment_status === "pending").length;
-  const refundedRegistrations = registrations.filter(r => r.payment_status === "refunded" || r.status === "refunded").length;
-
   return (
     <div className="space-y-6">
       <div>
@@ -906,7 +921,8 @@ const AdminRegistrations = () => {
             <CardTitle className="text-sm font-medium">Total de Inscrições</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{totalRegistrations}</div>
+            <div className="text-2xl font-bold">{summary.total_registrations}</div>
+            <p className="text-xs text-muted-foreground mt-1">Total filtrado completo</p>
           </CardContent>
         </Card>
 
@@ -916,8 +932,9 @@ const AdminRegistrations = () => {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-green-600">
-              {paidRegistrations}
+              {summary.confirmed_payments}
             </div>
+            <p className="text-xs text-muted-foreground mt-1">Total filtrado completo</p>
           </CardContent>
         </Card>
 
@@ -927,8 +944,9 @@ const AdminRegistrations = () => {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-yellow-600">
-              {pendingRegistrations}
+              {summary.pending_payments}
             </div>
+            <p className="text-xs text-muted-foreground mt-1">Total filtrado completo</p>
           </CardContent>
         </Card>
 
@@ -938,8 +956,9 @@ const AdminRegistrations = () => {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-red-600">
-              {refundedRegistrations}
+              {summary.refunds}
             </div>
+            <p className="text-xs text-muted-foreground mt-1">Total filtrado completo</p>
           </CardContent>
         </Card>
       </div>
@@ -993,6 +1012,19 @@ const AdminRegistrations = () => {
                   <SelectItem value="failed">Falhou</SelectItem>
                 </SelectContent>
               </Select>
+
+              <Select
+                value={String(pageSize)}
+                onValueChange={(v) => setPageSize(Number(v) as 30 | 50)}
+              >
+                <SelectTrigger className="w-full sm:w-[180px]">
+                  <SelectValue placeholder="Por página" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="30">30 por página</SelectItem>
+                  <SelectItem value="50">50 por página</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
 
             <div className="flex flex-wrap gap-2">
@@ -1018,7 +1050,11 @@ const AdminRegistrations = () => {
         <CardHeader>
           <CardTitle>Inscrições</CardTitle>
           <CardDescription>
-            {loading ? "Carregando..." : `${registrations.length} ${registrations.length === 1 ? "inscrição encontrada" : "inscrições encontradas"}`}
+            {loading
+              ? "Carregando..."
+              : listTotal === 0
+                ? "Nenhuma inscrição com os filtros atuais"
+                : `Exibindo ${(page - 1) * pageSize + 1}–${Math.min(page * pageSize, listTotal)} de ${listTotal} (${registrations.length} nesta página)`}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -1116,6 +1152,35 @@ const AdminRegistrations = () => {
                   )}
                 </TableBody>
               </Table>
+            </div>
+          )}
+          {!loading && listTotal > 0 && (
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-4 border-t mt-4">
+              <p className="text-sm text-muted-foreground">
+                Página {page} de {Math.max(1, totalPages || 1)}
+              </p>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={page <= 1}
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  aria-label="Página anterior"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={page >= totalPages || totalPages === 0}
+                  onClick={() => setPage((p) => p + 1)}
+                  aria-label="Próxima página"
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
             </div>
           )}
         </CardContent>

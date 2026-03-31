@@ -20,6 +20,19 @@ import {
 import { updateProfile } from '../services/profilesService.js';
 import { query } from '../config/database.js';
 import { z } from 'zod';
+import type { AdminUserListPagination } from '../services/userManagementService.js';
+
+function parseAdminUserListPagination(query: Record<string, unknown>): AdminUserListPagination | undefined {
+  const pageRaw = query.page;
+  const pageSizeRaw = query.page_size;
+  const usePagination =
+    (pageRaw !== undefined && pageRaw !== '') || (pageSizeRaw !== undefined && pageSizeRaw !== '');
+  if (!usePagination) return undefined;
+  const page = Math.max(1, parseInt(String(pageRaw ?? '1'), 10) || 1);
+  let rawSize = parseInt(String(pageSizeRaw ?? '30'), 10);
+  if (![30, 50].includes(rawSize)) rawSize = 30;
+  return { page, page_size: rawSize as 30 | 50 };
+}
 
 // Validation schemas
 const updateStatusSchema = z.object({
@@ -70,11 +83,12 @@ export const getOrganizersController = async (
 ): Promise<void> => {
   try {
     const searchTerm = req.query.search as string | undefined;
-    const organizers = await getOrganizers(searchTerm);
+    const pagination = parseAdminUserListPagination(req.query as Record<string, unknown>);
+    const result = await getOrganizers(searchTerm, pagination);
 
     res.json({
       success: true,
-      data: organizers,
+      data: result,
     });
   } catch (error: any) {
     console.error('Error fetching organizers:', error);
@@ -96,11 +110,12 @@ export const getAthletesController = async (
 ): Promise<void> => {
   try {
     const searchTerm = req.query.search as string | undefined;
-    const athletes = await getAthletes(searchTerm);
+    const pagination = parseAdminUserListPagination(req.query as Record<string, unknown>);
+    const result = await getAthletes(searchTerm, pagination);
 
     res.json({
       success: true,
-      data: athletes,
+      data: result,
     });
   } catch (error: any) {
     console.error('Error fetching athletes:', error);
@@ -117,15 +132,16 @@ export const getAthletesController = async (
  * Get all admins
  */
 export const getAdminsController = async (
-  _req: AuthRequest,
+  req: AuthRequest,
   res: Response
 ): Promise<void> => {
   try {
-    const admins = await getAdmins();
+    const pagination = parseAdminUserListPagination(req.query as Record<string, unknown>);
+    const result = await getAdmins(pagination);
 
     res.json({
       success: true,
-      data: admins,
+      data: result,
     });
   } catch (error: any) {
     console.error('Error fetching admins:', error);

@@ -22,58 +22,32 @@ export interface OrganizerStats {
   revenue: number;
 }
 
-/**
- * Get all organizers with statistics
- */
-export const getOrganizers = async (searchTerm?: string): Promise<UserWithStats[]> => {
-  // Get platform fee settings
-  const { getSystemSettings } = await import('./systemSettingsService.js');
-  const settings = await getSystemSettings();
-  const platformFee = settings.platform_fee || 0;
-  const platformFeeType = (settings.platform_fee_type || 'fixed') as 'fixed' | 'percentage';
-  const platformFeeMin = settings.platform_fee_min ?? 0;
+/** Paginação da listagem admin de usuários (organizadores / atletas / admins). */
+export type AdminUserListPagination = {
+  page: number;
+  page_size: 30 | 50;
+};
+
+export type PaginatedUsersListResult = {
+  items: UserWithStats[];
+  page: number;
+  page_size: number;
+  total: number;
+  total_pages: number;
+};
+
+async function mapOrganizersWithRegistrationStats(
+  organizersResultRows: any[],
+  platformFee: number,
+  platformFeeType: 'fixed' | 'percentage',
+  platformFeeMin: number
+): Promise<UserWithStats[]> {
   const { calculateValueWithoutFee } = await import('../utils/feeCalculations.js');
-
-  // First, get organizers with basic info and events count
-  let queryText = `
-    SELECT 
-      p.id,
-      p.full_name as name,
-      u.email,
-      p.cpf,
-      p.phone,
-      COALESCE(p.status, 'active') as status,
-      p.created_at,
-      COUNT(DISTINCT e.id) as events
-    FROM profiles p
-    JOIN users u ON p.id = u.id
-    JOIN user_roles ur ON p.id = ur.user_id
-    LEFT JOIN events e ON p.id = e.organizer_id
-    WHERE ur.role = 'organizer'
-  `;
-
-  const params: any[] = [];
-
-  if (searchTerm) {
-    queryText += ` AND (
-      p.full_name ILIKE $${params.length + 1} OR
-      u.email ILIKE $${params.length + 1} OR
-      p.cpf ILIKE $${params.length + 1}
-    )`;
-    params.push(`%${searchTerm}%`);
-  }
-
-  queryText += `
-    GROUP BY p.id, u.email, p.full_name, p.cpf, p.phone, p.status, p.created_at
-    ORDER BY p.full_name
-  `;
-
-  const organizersResult = await query(queryText, params);
-  
-  // Get registrations for all organizers
-  const organizerIds = organizersResult.rows.map((row: any) => row.id);
-  const registrationsResult = organizerIds.length > 0 ? await query(
-    `SELECT 
+  const organizerIds = organizersResultRows.map((row: any) => row.id);
+  const registrationsResult =
+    organizerIds.length > 0
+      ? await query(
+          `SELECT 
       e.organizer_id,
       r.id as registration_id,
       r.payment_status,
@@ -81,10 +55,10 @@ export const getOrganizers = async (searchTerm?: string): Promise<UserWithStats[
     FROM registrations r
     JOIN events e ON r.event_id = e.id
     WHERE e.organizer_id = ANY($1::uuid[])`,
-    [organizerIds]
-  ) : { rows: [] };
+          [organizerIds]
+        )
+      : { rows: [] as any[] };
 
-  // Group registrations by organizer
   const organizerStats = new Map<string, { registrations: number; revenue: number }>();
   registrationsResult.rows.forEach((row) => {
     const organizerId = row.organizer_id;
@@ -103,7 +77,7 @@ export const getOrganizers = async (searchTerm?: string): Promise<UserWithStats[
     }
   });
 
-  return organizersResult.rows.map((row: any) => {
+  return organizersResultRows.map((row: any) => {
     const stats = organizerStats.get(row.id) || { registrations: 0, revenue: 0 };
     return {
       id: row.id,
@@ -118,14 +92,32 @@ export const getOrganizers = async (searchTerm?: string): Promise<UserWithStats[
       created_at: row.created_at,
     };
   });
-};
+}
 
 /**
- * Get all athletes with statistics
- * Includes users with 'runner' role OR users without any role (default runners)
- * Excludes users who have 'admin' or 'organizer' roles
+ * Get all organizers with statistics
  */
-export const getAthletes = async (searchTerm?: string): Promise<UserWithStats[]> => {
+export const getOrganizers = async (
+  searchTerm?: string,
+  pagination?: AdminUserListPagination
+): Promise<UserWithStats[] | PaginatedUsersListResult> => {
+  const { getSystemSettings } = await import('./systemSettingsService.js');
+  const settings = await getSystemSettings();
+  const platformFee = settings.platform_fee || 0;
+  const platformFeeType = (settings.platform_fee_type || 'fixed') as 'fixed' | 'percentage';
+  const platformFeeMin = settings.platform_fee_min ?? 0;
+
+  const params: any[] = [];
+  let searchSql = '';
+  if (searchTerm) {
+    searchSql = ` AND (
+      p.full_name ILIKE $${params.length + 1} OR
+      u.email ILIKE $${params.length + 1} OR
+      p.cpf ILIKE $${params.length + 1}
+    )`;
+    params.push(`%${searchTerm}%`);
+  }
+
   let queryText = `
     SELECT 
       p.id,
@@ -135,11 +127,64 @@ export const getAthletes = async (searchTerm?: string): Promise<UserWithStats[]>
       p.phone,
       COALESCE(p.status, 'active') as status,
       p.created_at,
-      COUNT(DISTINCT r.id) as registrations
+      COUNT(DISTINCT e.id) as events
     FROM profiles p
     JOIN users u ON p.id = u.id
-    LEFT JOIN user_roles ur ON p.id = ur.user_id
-    LEFT JOIN registrations r ON p.id = r.runner_id
+    JOIN user_roles ur ON p.id = ur.user_id
+    LEFT JOIN events e ON p.id = e.organizer_id
+    WHERE ur.role = 'organizer'
+    ${searchSql}
+    GROUP BY p.id, u.email, p.full_name, p.cpf, p.phone, p.status, p.created_at
+    ORDER BY p.full_name
+  `;
+
+  if (pagination) {
+    const pageSize = pagination.page_size === 50 ? 50 : 30;
+    const offset = (pagination.page - 1) * pageSize;
+
+    const countSql = `
+      SELECT COUNT(*)::bigint AS total FROM (
+        SELECT p.id
+        FROM profiles p
+        JOIN users u ON p.id = u.id
+        JOIN user_roles ur ON p.id = ur.user_id
+        WHERE ur.role = 'organizer'
+        ${searchSql}
+        GROUP BY p.id, u.email, p.full_name, p.cpf, p.phone, p.status, p.created_at
+      ) sub
+    `;
+    const countRes = await query(countSql, params);
+    const total = parseInt(String(countRes.rows[0]?.total ?? '0'), 10) || 0;
+
+    queryText += ` LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
+    const listParams = [...params, pageSize, offset];
+    const organizersResult = await query(queryText, listParams);
+    const items = await mapOrganizersWithRegistrationStats(
+      organizersResult.rows,
+      platformFee,
+      platformFeeType,
+      platformFeeMin
+    );
+    const total_pages = total === 0 ? 0 : Math.ceil(total / pageSize);
+    return {
+      items,
+      page: pagination.page,
+      page_size: pageSize,
+      total,
+      total_pages,
+    };
+  }
+
+  const organizersResult = await query(queryText, params);
+  return mapOrganizersWithRegistrationStats(
+    organizersResult.rows,
+    platformFee,
+    platformFeeType,
+    platformFeeMin
+  );
+};
+
+const ATHLETE_BASE_WHERE = `
     WHERE p.id NOT IN (
       SELECT DISTINCT user_id 
       FROM user_roles 
@@ -155,12 +200,21 @@ export const getAthletes = async (searchTerm?: string): Promise<UserWithStats[]>
         WHERE ur3.user_id = p.id
       )
     )
-  `;
+`;
 
+/**
+ * Get all athletes with statistics
+ * Includes users with 'runner' role OR users without any role (default runners)
+ * Excludes users who have 'admin' or 'organizer' roles
+ */
+export const getAthletes = async (
+  searchTerm?: string,
+  pagination?: AdminUserListPagination
+): Promise<UserWithStats[] | PaginatedUsersListResult> => {
   const params: any[] = [];
-
+  let searchSql = '';
   if (searchTerm) {
-    queryText += ` AND (
+    searchSql = ` AND (
       p.full_name ILIKE $${params.length + 1} OR
       u.email ILIKE $${params.length + 1} OR
       p.cpf ILIKE $${params.length + 1}
@@ -168,10 +222,67 @@ export const getAthletes = async (searchTerm?: string): Promise<UserWithStats[]>
     params.push(`%${searchTerm}%`);
   }
 
-  queryText += `
+  let queryText = `
+    SELECT 
+      p.id,
+      p.full_name as name,
+      u.email,
+      p.cpf,
+      p.phone,
+      COALESCE(p.status, 'active') as status,
+      p.created_at,
+      COUNT(DISTINCT r.id) as registrations
+    FROM profiles p
+    JOIN users u ON p.id = u.id
+    LEFT JOIN user_roles ur ON p.id = ur.user_id
+    LEFT JOIN registrations r ON p.id = r.runner_id
+    ${ATHLETE_BASE_WHERE}
+    ${searchSql}
     GROUP BY p.id, u.email, p.full_name, p.cpf, p.phone, p.status, p.created_at
     ORDER BY p.full_name
   `;
+
+  if (pagination) {
+    const pageSize = pagination.page_size === 50 ? 50 : 30;
+    const offset = (pagination.page - 1) * pageSize;
+
+    const countSql = `
+      SELECT COUNT(*)::bigint AS total FROM (
+        SELECT p.id
+        FROM profiles p
+        JOIN users u ON p.id = u.id
+        LEFT JOIN user_roles ur ON p.id = ur.user_id
+        LEFT JOIN registrations r ON p.id = r.runner_id
+        ${ATHLETE_BASE_WHERE}
+        ${searchSql}
+        GROUP BY p.id, u.email, p.full_name, p.cpf, p.phone, p.status, p.created_at
+      ) sub
+    `;
+    const countRes = await query(countSql, params);
+    const total = parseInt(String(countRes.rows[0]?.total ?? '0'), 10) || 0;
+
+    queryText += ` LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
+    const listParams = [...params, pageSize, offset];
+    const result = await query(queryText, listParams);
+    const items = result.rows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      email: row.email,
+      cpf: row.cpf,
+      phone: row.phone,
+      status: row.status || 'active',
+      registrations: parseInt(row.registrations) || 0,
+      created_at: row.created_at,
+    }));
+    const total_pages = total === 0 ? 0 : Math.ceil(total / pageSize);
+    return {
+      items,
+      page: pagination.page,
+      page_size: pageSize,
+      total,
+      total_pages,
+    };
+  }
 
   const result = await query(queryText, params);
   return result.rows.map((row) => ({
@@ -189,8 +300,10 @@ export const getAthletes = async (searchTerm?: string): Promise<UserWithStats[]>
 /**
  * Get all admins
  */
-export const getAdmins = async (): Promise<UserWithStats[]> => {
-  const queryText = `
+export const getAdmins = async (
+  pagination?: AdminUserListPagination
+): Promise<UserWithStats[] | PaginatedUsersListResult> => {
+  const baseSql = `
     SELECT 
       p.id,
       p.full_name as name,
@@ -206,7 +319,45 @@ export const getAdmins = async (): Promise<UserWithStats[]> => {
     ORDER BY p.full_name
   `;
 
-  const result = await query(queryText);
+  if (pagination) {
+    const pageSize = pagination.page_size === 50 ? 50 : 30;
+    const offset = (pagination.page - 1) * pageSize;
+
+    const countSql = `
+      SELECT COUNT(*)::bigint AS total FROM (
+        SELECT p.id
+        FROM profiles p
+        JOIN users u ON p.id = u.id
+        JOIN user_roles ur ON p.id = ur.user_id
+        WHERE ur.role = 'admin'
+        GROUP BY p.id, u.email, p.full_name, p.phone, p.status, p.created_at, ur.role
+      ) sub
+    `;
+    const countRes = await query(countSql, []);
+    const total = parseInt(String(countRes.rows[0]?.total ?? '0'), 10) || 0;
+
+    const queryText = `${baseSql.trim()} LIMIT $1 OFFSET $2`;
+    const result = await query(queryText, [pageSize, offset]);
+    const items = result.rows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      email: row.email,
+      phone: row.phone,
+      status: row.status || 'active',
+      role: row.role,
+      created_at: row.created_at,
+    }));
+    const total_pages = total === 0 ? 0 : Math.ceil(total / pageSize);
+    return {
+      items,
+      page: pagination.page,
+      page_size: pageSize,
+      total,
+      total_pages,
+    };
+  }
+
+  const result = await query(baseSql);
   return result.rows.map((row) => ({
     id: row.id,
     name: row.name,
