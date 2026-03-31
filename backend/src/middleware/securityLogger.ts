@@ -1,6 +1,20 @@
 import { Response, NextFunction } from 'express';
 import { AuthRequest } from './auth.js';
 
+const isProduction = process.env.NODE_ENV === 'production';
+const SECURITY_LOG_SUPPRESS_MS = parseInt(process.env.SECURITY_LOG_SUPPRESS_MS || '15000', 10);
+const securityLogLastSeen = new Map<string, number>();
+
+const shouldLogSecurityEvent = (key: string): boolean => {
+  const now = Date.now();
+  const lastSeen = securityLogLastSeen.get(key) || 0;
+  if (now - lastSeen < SECURITY_LOG_SUPPRESS_MS) {
+    return false;
+  }
+  securityLogLastSeen.set(key, now);
+  return true;
+};
+
 // Log security events
 export const securityLogger = (
   req: AuthRequest,
@@ -22,8 +36,10 @@ export const securityLogger = (
         userId: req.user?.id || 'anonymous',
         email: req.user?.email || 'anonymous',
       };
-
-      console.warn('[SECURITY] Unauthorized access attempt:', JSON.stringify(logData));
+      const key = `${res.statusCode}:${req.method}:${req.path}:${logData.ip}:${logData.userId}`;
+      if (!isProduction || shouldLogSecurityEvent(key)) {
+        console.warn('[SECURITY] Unauthorized access attempt:', JSON.stringify(logData));
+      }
     }
 
     // Log admin actions

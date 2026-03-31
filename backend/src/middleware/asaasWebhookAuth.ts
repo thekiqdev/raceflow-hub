@@ -9,16 +9,22 @@ export const validateAsaasWebhookToken = (
   res: Response,
   next: NextFunction
 ): void => {
-  console.log('🔐 ============================================');
-  console.log('🔐 VALIDANDO TOKEN DO WEBHOOK');
-  console.log('🔐 ============================================');
-  console.log('📋 Headers recebidos:', JSON.stringify(req.headers, null, 2));
+  const verboseWebhookLogs =
+    process.env.LOG_WEBHOOK_VERBOSE === 'true' && process.env.NODE_ENV !== 'production';
+  if (verboseWebhookLogs) {
+    console.log('🔐 ============================================');
+    console.log('🔐 VALIDANDO TOKEN DO WEBHOOK');
+    console.log('🔐 ============================================');
+    console.log('📋 Headers recebidos:', JSON.stringify(req.headers, null, 2));
+  }
   
   const webhookToken = req.headers['asaas-access-token'] as string;
   const expectedToken = process.env.ASAAS_WEBHOOK_TOKEN;
 
-  console.log('📋 Token recebido:', webhookToken ? 'SIM (oculto)' : 'NÃO');
-  console.log('📋 Token esperado configurado:', expectedToken ? 'SIM' : 'NÃO');
+  if (verboseWebhookLogs) {
+    console.log('📋 Token recebido:', webhookToken ? 'SIM (oculto)' : 'NÃO');
+    console.log('📋 Token esperado configurado:', expectedToken ? 'SIM' : 'NÃO');
+  }
 
   // If webhook token is not configured, allow request (for development)
   if (!expectedToken || expectedToken.trim() === '') {

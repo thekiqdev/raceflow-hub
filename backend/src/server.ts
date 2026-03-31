@@ -72,12 +72,16 @@ const allowedOrigins = process.env.CORS_ORIGIN
   : ['http://localhost:5173', 'http://localhost:8080', 'http://localhost:3000'];
 
 const isProduction = process.env.NODE_ENV === 'production';
+const verboseHttpLogs = process.env.LOG_HTTP_VERBOSE === 'true' && !isProduction;
+const verboseWebhookLogs = process.env.LOG_WEBHOOK_VERBOSE === 'true' && !isProduction;
 
 app.use(cors({
   origin: (origin, callback) => {
     // Always allow requests with no origin (webhooks, mobile apps, curl requests)
     if (!origin) {
-      console.log('🌐 CORS: Request sem origin permitida (webhook ou app mobile)');
+      if (verboseHttpLogs) {
+        console.log('🌐 CORS: Request sem origin permitida (webhook ou app mobile)');
+      }
       return callback(null, true);
     }
     
@@ -153,7 +157,7 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Log body parsing for webhooks
 app.use((req: Request, _res: Response, next: NextFunction) => {
-  if (req.path.startsWith('/api/webhooks') && req.method === 'POST') {
+  if (verboseWebhookLogs && req.path.startsWith('/api/webhooks') && req.method === 'POST') {
     console.log('📦 Body parsing middleware executado para webhook');
     console.log('📦 Body após parsing:', JSON.stringify(req.body, null, 2));
   }
@@ -224,7 +228,7 @@ app.use('/uploads', (req: Request, _res: Response, next: NextFunction) => {
 // Request logging middleware - AFTER body parsing to see parsed body
 app.use((req: Request, _res: Response, next) => {
   // Special logging for webhooks
-  if (req.path.startsWith('/api/webhooks')) {
+  if (verboseWebhookLogs && req.path.startsWith('/api/webhooks')) {
     console.log('🔔 ============================================');
     console.log('🔔 WEBHOOK REQUEST DETECTED');
     console.log('🔔 ============================================');
@@ -240,10 +244,16 @@ app.use((req: Request, _res: Response, next) => {
     console.log('📋 Body keys:', req.body ? Object.keys(req.body) : 'null');
   }
   
-  console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`, {
-    ip: req.ip,
-    body: req.method === 'POST' ? req.body : undefined,
-  });
+  if (isProduction) {
+    console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`, {
+      ip: req.ip,
+    });
+  } else {
+    console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`, {
+      ip: req.ip,
+      body: req.method === 'POST' ? req.body : undefined,
+    });
+  }
   next();
 });
 

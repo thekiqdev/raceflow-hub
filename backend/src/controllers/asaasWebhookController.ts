@@ -17,19 +17,27 @@ import { sendNotificationSafely, getUserEmail, getUserName } from '../services/n
  * POST /api/webhooks/asaas
  */
 export const handleWebhook = asyncHandler(async (req: Request, res: Response) => {
-  // Log incoming request immediately
-  console.log('🔔 ============================================');
-  console.log('🔔 WEBHOOK RECEBIDO - INÍCIO DO PROCESSAMENTO');
-  console.log('🔔 ============================================');
-  console.log('📋 Headers:', JSON.stringify(req.headers, null, 2));
-  console.log('📋 Body completo:', JSON.stringify(req.body, null, 2));
+  const verboseWebhookLogs =
+    process.env.LOG_WEBHOOK_VERBOSE === 'true' && process.env.NODE_ENV !== 'production';
+  // Log incoming request immediately (resumo em produção)
+  console.log('🔔 WEBHOOK RECEBIDO', {
+    path: req.path,
+    ip: req.ip,
+    userAgent: req.get('user-agent'),
+  });
+  if (verboseWebhookLogs) {
+    console.log('📋 Headers:', JSON.stringify(req.headers, null, 2));
+    console.log('📋 Body completo:', JSON.stringify(req.body, null, 2));
+  }
   
   const payload = req.body as AsaasWebhookPayload;
 
   // Validate payload
   if (!payload.event || !payload.payment) {
     console.error('❌ Payload inválido do webhook - event ou payment ausente');
-    console.error('📋 Payload recebido:', JSON.stringify(payload, null, 2));
+    if (verboseWebhookLogs) {
+      console.error('📋 Payload recebido:', JSON.stringify(payload, null, 2));
+    }
     res.status(400).json({
       success: false,
       error: 'Invalid payload',
@@ -41,7 +49,9 @@ export const handleWebhook = asyncHandler(async (req: Request, res: Response) =>
   // Validate payment.id
   if (!payload.payment.id) {
     console.error('❌ payment.id não fornecido no webhook');
-    console.error('📋 Payment object:', JSON.stringify(payload.payment, null, 2));
+    if (verboseWebhookLogs) {
+      console.error('📋 Payment object:', JSON.stringify(payload.payment, null, 2));
+    }
     res.status(400).json({
       success: false,
       error: 'Invalid payload',

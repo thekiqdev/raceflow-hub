@@ -188,7 +188,7 @@ const EventDetails = () => {
       try {
         setLoading(true);
         setOrganizerLogoError(false); // Reset logo error when loading new event
-        const [eventResponse, categoriesResponse, kitsResponse, modalitiesResponse] = await Promise.all([
+        const [eventResponse, categoriesResponse, kitsResponse, modalitiesResponse, pickupResponse] = await Promise.all([
           getEventById(eventIdOrSlug),
           getCategories(eventIdOrSlug),
           getEventKits(eventIdOrSlug),
@@ -267,15 +267,10 @@ const EventDetails = () => {
           setModalities([]);
         }
 
-        // Load pickup locations (optional, don't fail if endpoint doesn't exist)
-        try {
-          const pickupResponse = await getEventPickupLocations(eventIdOrSlug);
-          if (pickupResponse.success && pickupResponse.data) {
-            setPickupLocations(pickupResponse.data);
-          }
-        } catch (pickupError) {
-          // Silently fail if pickup locations endpoint doesn't exist or has no data
-          console.log("No pickup locations available");
+        if (pickupResponse.success && pickupResponse.data) {
+          setPickupLocations(pickupResponse.data);
+        } else {
+          setPickupLocations([]);
         }
       } catch (error: any) {
         console.error("Error loading event data:", error);

@@ -4,6 +4,9 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 const { Pool } = pg;
+const isProduction = process.env.NODE_ENV === 'production';
+const sqlSlowMs = parseInt(process.env.SQL_SLOW_QUERY_MS || '300', 10);
+const logSqlAll = process.env.LOG_SQL_ALL === 'true' && !isProduction;
 
 // Database connection configuration
 const pool = new Pool({
@@ -33,10 +36,14 @@ export const query = async (text: string, params?: any[]) => {
   try {
     const res = await pool.query(text, params);
     const duration = Date.now() - start;
-    console.log('Executed query', { text, duration, rows: res.rowCount });
+    if (logSqlAll) {
+      console.log('Executed query', { text, duration, rows: res.rowCount });
+    } else if (duration >= sqlSlowMs) {
+      console.warn('Slow query detected', { duration, rows: res.rowCount });
+    }
     return res;
   } catch (error) {
-    console.error('Query error', { text, error });
+    console.error('Query error', { duration: Date.now() - start, error });
     throw error;
   }
 };

@@ -15,6 +15,8 @@ import {
 
 // Get Asaas configuration from environment
 const getAsaasConfig = () => {
+  const isProduction = process.env.NODE_ENV === 'production';
+  const verboseAsaasLogs = process.env.LOG_ASAAS_VERBOSE === 'true' && !isProduction;
   const apiKey = process.env.ASAAS_API_KEY;
   const environment = process.env.ASAAS_ENVIRONMENT || 'sandbox';
   const apiUrl = process.env.ASAAS_API_URL || 
@@ -22,12 +24,14 @@ const getAsaasConfig = () => {
       ? 'https://www.asaas.com/api/v3' 
       : 'https://sandbox.asaas.com/api/v3');
 
-  console.log('🔧 Configuração Asaas:', {
-    environment,
-    apiUrl,
-    hasApiKey: !!apiKey,
-    apiKeyLength: apiKey?.length || 0,
-  });
+  if (verboseAsaasLogs) {
+    console.log('🔧 Configuração Asaas:', {
+      environment,
+      apiUrl,
+      hasApiKey: !!apiKey,
+      apiKeyLength: apiKey?.length || 0,
+    });
+  }
 
   if (!apiKey) {
     throw new Error('ASAAS_API_KEY não configurada nas variáveis de ambiente');
@@ -38,6 +42,8 @@ const getAsaasConfig = () => {
 
 // Create axios instance for Asaas API
 const createAsaasClient = (): AxiosInstance => {
+  const isProduction = process.env.NODE_ENV === 'production';
+  const verboseAsaasLogs = process.env.LOG_ASAAS_VERBOSE === 'true' && !isProduction;
   const { apiKey, apiUrl } = getAsaasConfig();
 
   const client = axios.create({
@@ -52,7 +58,9 @@ const createAsaasClient = (): AxiosInstance => {
   // Request interceptor for logging
   client.interceptors.request.use(
     (config) => {
-      console.log(`🌐 Asaas API Request: ${config.method?.toUpperCase()} ${config.url}`);
+      if (verboseAsaasLogs) {
+        console.log(`🌐 Asaas API Request: ${config.method?.toUpperCase()} ${config.url}`);
+      }
       return config;
     },
     (error) => {
@@ -64,7 +72,9 @@ const createAsaasClient = (): AxiosInstance => {
   // Response interceptor for error handling
   client.interceptors.response.use(
     (response) => {
-      console.log(`✅ Asaas API Response: ${response.status} ${response.config.url}`);
+      if (verboseAsaasLogs) {
+        console.log(`✅ Asaas API Response: ${response.status} ${response.config.url}`);
+      }
       return response;
     },
     (error: AxiosError) => {

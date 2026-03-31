@@ -66,15 +66,13 @@ export function CompleteInvitationModal({
     const load = async () => {
       setLoading(true);
       try {
-        const [catRes, modRes, kitsRes] = await Promise.all([
+        const [catRes, modRes] = await Promise.all([
           getCategories(eventId),
           getModalities(eventId),
-          getEventKits(eventId),
         ]);
         if (cancelled) return;
         if (catRes.success && catRes.data) setCategories(catRes.data);
         if (modRes.success && modRes.data) setModalities(modRes.data);
-        if (kitsRes.success && kitsRes.data) setKits(kitsRes.data);
       } catch {
         if (!cancelled) toast.error("Erro ao carregar opções do evento.");
       } finally {
