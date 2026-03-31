@@ -7,6 +7,8 @@ const { Pool } = pg;
 const isProduction = process.env.NODE_ENV === 'production';
 const sqlSlowMs = parseInt(process.env.SQL_SLOW_QUERY_MS || '300', 10);
 const logSqlAll = process.env.LOG_SQL_ALL === 'true' && !isProduction;
+const verboseDbLogs = process.env.LOG_DB_VERBOSE === 'true' && !isProduction;
+let poolConnectCount = 0;
 
 // Database connection configuration
 const pool = new Pool({
@@ -22,7 +24,12 @@ const pool = new Pool({
 
 // Test database connection
 pool.on('connect', () => {
-  console.log('✅ Connected to PostgreSQL database');
+  poolConnectCount += 1;
+  if (poolConnectCount === 1) {
+    console.log('✅ PostgreSQL pool initialized');
+  } else if (verboseDbLogs) {
+    console.log(`✅ PostgreSQL client connected (pool connection #${poolConnectCount})`);
+  }
 });
 
 pool.on('error', (err) => {

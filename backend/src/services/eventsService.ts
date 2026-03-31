@@ -5,6 +5,7 @@ import { generateSlug } from '../utils/slug.js';
 /** Formato HH:mm para horário em cronograma_items */
 const TIME_HHMM_REGEX = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/;
 const MAX_CRONOGRAMA_ITEMS = 50;
+const verboseEventsLogs = process.env.LOG_EVENTS_VERBOSE === 'true' && process.env.NODE_ENV !== 'production';
 
 export interface CronogramaItemInput {
   time: string;
@@ -324,22 +325,26 @@ export const getEvents = async (filters?: {
   const orderBy = filters?.order_by_date === 'desc' ? 'DESC' : 'ASC';
   queryText += ` ORDER BY e.event_date ${orderBy}, e.created_at DESC`;
 
-  console.log('🔍 Executing query with filters:', JSON.stringify(filters, null, 2));
-  console.log('🔍 Query text:', queryText);
-  console.log('🔍 Query params:', params);
-  console.log('🔍 Number of conditions:', conditions.length);
+  if (verboseEventsLogs) {
+    console.log('🔍 Executing query with filters:', JSON.stringify(filters, null, 2));
+    console.log('🔍 Query text:', queryText);
+    console.log('🔍 Query params:', params);
+    console.log('🔍 Number of conditions:', conditions.length);
+  }
   
   const result = await query(queryText, params);
   
-  console.log(`📊 getEvents query returned ${result.rows.length} events`);
-  if (result.rows.length > 0) {
-    console.log('📊 First event:', {
-      id: result.rows[0].id,
-      title: result.rows[0].title,
-      status: result.rows[0].status,
-    });
-  } else if (filters?.search) {
-    console.log('⚠️ No events found with search term:', filters.search);
+  if (verboseEventsLogs) {
+    console.log(`📊 getEvents query returned ${result.rows.length} events`);
+    if (result.rows.length > 0) {
+      console.log('📊 First event:', {
+        id: result.rows[0].id,
+        title: result.rows[0].title,
+        status: result.rows[0].status,
+      });
+    } else if (filters?.search) {
+      console.log('⚠️ No events found with search term:', filters.search);
+    }
   }
   
   // Import getFileUrl to convert file paths to URLs

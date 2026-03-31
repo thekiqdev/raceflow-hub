@@ -14,6 +14,8 @@ import { hasRole } from '../services/userRolesService.js';
 import { deleteFile, getFilePath } from '../middleware/upload.js';
 import { z } from 'zod';
 
+const verboseEventsLogs = process.env.LOG_EVENTS_VERBOSE === 'true' && process.env.NODE_ENV !== 'production';
+
 // Schema for create event request
 const createEventSchema = z.object({
   organizer_id: z.string().uuid('ID do organizador inválido').optional(),
@@ -162,15 +164,17 @@ export const getAllEvents = asyncHandler(async (req: AuthRequest, res: Response)
     const isAdmin = await hasRole(req.user.id, 'admin');
     const isOrganizer = await hasRole(req.user.id, 'organizer');
     
-    console.log('👤 User roles - Admin:', isAdmin, 'Organizer:', isOrganizer, 'User ID:', req.user.id);
-    console.log('🔍 Filters before status logic:', JSON.stringify(filters, null, 2));
-    console.log('🔍 Query status param:', req.query.status);
-    console.log('🔍 statusExplicitlyRequested:', statusExplicitlyRequested);
+    if (verboseEventsLogs) {
+      console.log('👤 User roles - Admin:', isAdmin, 'Organizer:', isOrganizer, 'User ID:', req.user.id);
+      console.log('🔍 Filters before status logic:', JSON.stringify(filters, null, 2));
+      console.log('🔍 Query status param:', req.query.status);
+      console.log('🔍 statusExplicitlyRequested:', statusExplicitlyRequested);
+    }
     
     if (isAdmin) {
       // Admins can see all events - only apply status filter if explicitly requested
       shouldApplyStatusFilter = statusExplicitlyRequested;
-      console.log('✅ Admin: shouldApplyStatusFilter =', shouldApplyStatusFilter);
+      if (verboseEventsLogs) console.log('✅ Admin: shouldApplyStatusFilter =', shouldApplyStatusFilter);
     } else if (isOrganizer) {
       // Organizers can see all their own events
       // Convert both to strings for comparison to avoid type mismatch
@@ -179,30 +183,36 @@ export const getAllEvents = asyncHandler(async (req: AuthRequest, res: Response)
       const viewingOwnEvents = organizerIdStr && organizerIdStr === userIdStr;
       const notFilteringByOrganizer = !filters.organizer_id;
       
-      console.log('👤 Organizer - User ID (trimmed):', userIdStr);
-      console.log('👤 Organizer - Filter organizer_id (trimmed):', organizerIdStr);
-      console.log('👤 Organizer - IDs match:', organizerIdStr === userIdStr);
-      console.log('👤 Organizer - viewingOwnEvents:', viewingOwnEvents);
-      console.log('👤 Organizer - notFilteringByOrganizer:', notFilteringByOrganizer);
+      if (verboseEventsLogs) {
+        console.log('👤 Organizer - User ID (trimmed):', userIdStr);
+        console.log('👤 Organizer - Filter organizer_id (trimmed):', organizerIdStr);
+        console.log('👤 Organizer - IDs match:', organizerIdStr === userIdStr);
+        console.log('👤 Organizer - viewingOwnEvents:', viewingOwnEvents);
+        console.log('👤 Organizer - notFilteringByOrganizer:', notFilteringByOrganizer);
+      }
       
       if (viewingOwnEvents || notFilteringByOrganizer) {
         // Viewing own events or not filtering - show all statuses unless explicitly requested
         shouldApplyStatusFilter = statusExplicitlyRequested;
-        console.log('✅ Organizer viewing own events: shouldApplyStatusFilter =', shouldApplyStatusFilter, '(will show ALL statuses)');
+        if (verboseEventsLogs) {
+          console.log('✅ Organizer viewing own events: shouldApplyStatusFilter =', shouldApplyStatusFilter, '(will show ALL statuses)');
+        }
       } else {
         // Viewing other organizer's events - only published
         shouldApplyStatusFilter = true;
-        console.log('✅ Organizer viewing other events: shouldApplyStatusFilter = true (published only)');
+        if (verboseEventsLogs) {
+          console.log('✅ Organizer viewing other events: shouldApplyStatusFilter = true (published only)');
+        }
       }
     } else {
       // Regular users only see published events
       shouldApplyStatusFilter = true;
-      console.log('✅ Regular user: shouldApplyStatusFilter = true (published only)');
+      if (verboseEventsLogs) console.log('✅ Regular user: shouldApplyStatusFilter = true (published only)');
     }
   } else {
     // Not authenticated - only show published
     shouldApplyStatusFilter = true;
-    console.log('✅ Not authenticated: shouldApplyStatusFilter = true (published only)');
+    if (verboseEventsLogs) console.log('✅ Not authenticated: shouldApplyStatusFilter = true (published only)');
   }
   
   // Apply status filter based on decision
@@ -210,27 +220,33 @@ export const getAllEvents = asyncHandler(async (req: AuthRequest, res: Response)
   if (shouldApplyStatusFilter) {
     if (statusExplicitlyRequested) {
       filters.status = req.query.status;
-      console.log('✅ Applying explicit status filter:', req.query.status);
+      if (verboseEventsLogs) console.log('✅ Applying explicit status filter:', req.query.status);
     } else {
       filters.status = 'published';
-      console.log('✅ Applying default status filter: published');
+      if (verboseEventsLogs) console.log('✅ Applying default status filter: published');
     }
   } else {
     // Explicitly remove status filter if it exists
     if ('status' in filters) {
       delete filters.status;
     }
-    console.log('✅ No status filter applied - showing all statuses (draft, published, finished, etc)');
+    if (verboseEventsLogs) {
+      console.log('✅ No status filter applied - showing all statuses (draft, published, finished, etc)');
+    }
   }
   
-  console.log('🔍 Final filters after status logic:', JSON.stringify(filters, null, 2));
-  console.log('🔍 filters.status value:', filters.status);
-  console.log('🔍 filters.status exists?', 'status' in filters);
+  if (verboseEventsLogs) {
+    console.log('🔍 Final filters after status logic:', JSON.stringify(filters, null, 2));
+    console.log('🔍 filters.status value:', filters.status);
+    console.log('🔍 filters.status exists?', 'status' in filters);
+  }
 
   const events = await getEvents(filters);
 
-  console.log(`📤 Sending ${events.length} events to client for filters:`, filters);
-  console.log('📤 First event sample:', events[0] || 'No events');
+  if (verboseEventsLogs) {
+    console.log(`📤 Sending ${events.length} events to client for filters:`, filters);
+    console.log('📤 First event sample:', events[0] || 'No events');
+  }
 
   res.json({
     success: true,

@@ -3,6 +3,9 @@ import { AuthRequest } from '../middleware/auth.js';
 import { getSystemSettings, updateSystemSettings } from '../services/systemSettingsService.js';
 import { z } from 'zod';
 
+const brandingCacheTtlMs = parseInt(process.env.BRANDING_CACHE_TTL_MS || '30000', 10);
+let brandingCache: { expiresAt: number; data: any } | null = null;
+
 // Validation schema for system settings update
 const updateSystemSettingsSchema = z.object({
   platform_name: z.string().min(1).optional(),
@@ -58,19 +61,33 @@ export const getPublicBrandingController = async (
   res: Response
 ): Promise<void> => {
   try {
+    const now = Date.now();
+    if (brandingCache && brandingCache.expiresAt > now) {
+      res.json({
+        success: true,
+        data: brandingCache.data,
+      });
+      return;
+    }
+
     const settings = await getSystemSettings();
     const modules = settings.enabled_modules || {};
+    const responseData = {
+      platform_name: settings.platform_name ?? 'Cronoteam',
+      platform_logo_url: settings.platform_logo_url ?? null,
+      /** Links públicos da home (sem autenticação). */
+      old_results_url: settings.old_results_url ?? null,
+      old_platform_url: settings.old_platform_url ?? null,
+      /** Quando true, tela de login aceita apenas CPF (não e-mail). */
+      login_cpf_only: modules.login_cpf_only === true,
+    };
+    brandingCache = {
+      data: responseData,
+      expiresAt: now + brandingCacheTtlMs,
+    };
     res.json({
       success: true,
-      data: {
-        platform_name: settings.platform_name ?? 'Cronoteam',
-        platform_logo_url: settings.platform_logo_url ?? null,
-        /** Links públicos da home (sem autenticação). */
-        old_results_url: settings.old_results_url ?? null,
-        old_platform_url: settings.old_platform_url ?? null,
-        /** Quando true, tela de login aceita apenas CPF (não e-mail). */
-        login_cpf_only: modules.login_cpf_only === true,
-      },
+      data: responseData,
     });
   } catch (error: any) {
     console.error('Error fetching public branding:', error);
@@ -167,6 +184,7 @@ export const updateSystemSettingsController = async (
       cleanedData[key] = value === null ? undefined : value;
     });
     const settings = await updateSystemSettings(cleanedData);
+    brandingCache = null;
 
     res.json({
       success: true,
