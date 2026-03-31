@@ -13,6 +13,10 @@ import {
   AsaasCreditCardHolderInfo,
 } from '../types/asaas.js';
 
+/** Criação de pagamento / QR / status — em produção só detalhes com LOG_ASAAS_VERBOSE=true */
+const isVerboseAsaasPaymentLogs = (): boolean =>
+  process.env.LOG_ASAAS_VERBOSE === 'true' || process.env.NODE_ENV !== 'production';
+
 // Get Asaas configuration from environment
 const getAsaasConfig = () => {
   const isProduction = process.env.NODE_ENV === 'production';
@@ -294,53 +298,58 @@ export const createPayment = async (
       installmentValue: paymentData.value,
     };
 
-    console.log('💳 Criando pagamento no Asaas...', { 
-      registrationId, 
-      customerId, 
-      value: paymentData.value,
-      billingType: paymentData.billingType,
-      dueDate: paymentData.dueDate
-    });
+    if (isVerboseAsaasPaymentLogs()) {
+      console.log('💳 Criando pagamento no Asaas...', {
+        registrationId,
+        customerId,
+        value: paymentData.value,
+        billingType: paymentData.billingType,
+        dueDate: paymentData.dueDate,
+      });
+    }
 
     // Create payment in Asaas
     const response = await asaasClient.post<AsaasPaymentResponse>('/payments', paymentRequest);
     const asaasPayment = response.data;
 
-    // Log completo da resposta para identificar todos os campos
-    console.log(`✅ Pagamento criado no Asaas - Resposta completa:`, JSON.stringify(asaasPayment, null, 2));
-    
+    if (isVerboseAsaasPaymentLogs()) {
+      console.log(`✅ Pagamento criado no Asaas - Resposta completa:`, JSON.stringify(asaasPayment, null, 2));
+    }
+
     // O Asaas pode retornar o ID numérico em invoiceNumber
     // Verificar se há um campo com ID numérico
     const invoiceNumber = (asaasPayment as any).invoiceNumber;
     const paymentIdForQuery = invoiceNumber || asaasPayment.id;
-    
-    console.log(`✅ Pagamento criado no Asaas:`, {
-      id: asaasPayment.id,
-      invoiceNumber: invoiceNumber,
-      paymentIdForQuery: paymentIdForQuery,
-      allFields: Object.keys(asaasPayment),
-      status: asaasPayment.status,
-      billingType: asaasPayment.billingType,
-      value: asaasPayment.value,
-      pixQrCodeAvailable: !!asaasPayment.pixQrCode,
-      pixQrCodeId: asaasPayment.pixQrCodeId
-    });
+
+    if (isVerboseAsaasPaymentLogs()) {
+      console.log(`✅ Pagamento criado no Asaas:`, {
+        id: asaasPayment.id,
+        invoiceNumber: invoiceNumber,
+        paymentIdForQuery: paymentIdForQuery,
+        allFields: Object.keys(asaasPayment),
+        status: asaasPayment.status,
+        billingType: asaasPayment.billingType,
+        value: asaasPayment.value,
+        pixQrCodeAvailable: !!asaasPayment.pixQrCode,
+        pixQrCodeId: asaasPayment.pixQrCodeId,
+      });
+    }
 
     // If PIX, wait and fetch QR Code
     let pixQrCode: string | null = null;
     let pixQrCodeId: string | null = null;
 
     if (paymentData.billingType === 'PIX') {
-      console.log('🔍 Buscando QR Code PIX...');
-      
+      if (isVerboseAsaasPaymentLogs()) console.log('🔍 Buscando QR Code PIX...');
+
       // Check if QR Code is already available in the initial response
       if (asaasPayment.pixQrCode) {
         pixQrCode = asaasPayment.pixQrCode;
         pixQrCodeId = asaasPayment.pixQrCodeId || null;
-        console.log('✅ QR Code PIX já disponível na resposta inicial');
+        if (isVerboseAsaasPaymentLogs()) console.log('✅ QR Code PIX já disponível na resposta inicial');
       } else {
         // Wait 2 seconds for QR Code to be generated
-        console.log('⏳ Aguardando 2 segundos para geração do QR Code...');
+        if (isVerboseAsaasPaymentLogs()) console.log('⏳ Aguardando 2 segundos para geração do QR Code...');
         await new Promise(resolve => setTimeout(resolve, 2000));
 
         // Try to get QR Code (up to 5 attempts)
@@ -348,15 +357,19 @@ export const createPayment = async (
         const invoiceNumber = (asaasPayment as any).invoiceNumber;
         const paymentIdToUse = invoiceNumber || asaasPayment.id;
         
-        console.log(`🔍 IDs disponíveis:`, {
-          originalId: asaasPayment.id,
-          invoiceNumber: invoiceNumber,
-          paymentIdToUse: paymentIdToUse
-        });
-        
+        if (isVerboseAsaasPaymentLogs()) {
+          console.log(`🔍 IDs disponíveis:`, {
+            originalId: asaasPayment.id,
+            invoiceNumber: invoiceNumber,
+            paymentIdToUse: paymentIdToUse,
+          });
+        }
+
         for (let attempt = 1; attempt <= 5; attempt++) {
           try {
-            console.log(`🔍 Tentativa ${attempt}/5: Consultando pagamento com ID: ${paymentIdToUse}...`);
+            if (isVerboseAsaasPaymentLogs()) {
+              console.log(`🔍 Tentativa ${attempt}/5: Consultando pagamento com ID: ${paymentIdToUse}...`);
+            }
             
             // Usar o invoiceNumber se disponível, senão usar o ID original
             const paymentResponse = await asaasClient.get<AsaasPaymentResponse>(
@@ -365,51 +378,59 @@ export const createPayment = async (
 
             const payment = paymentResponse.data;
 
-            // Log completo da resposta para debug
-            console.log(`📋 Resposta completa da consulta:`, {
-              id: payment.id,
-              status: payment.status,
-              billingType: payment.billingType,
-              pixQrCode: payment.pixQrCode ? `${payment.pixQrCode.substring(0, 50)}...` : null,
-              pixQrCodeId: payment.pixQrCodeId,
-              pixTransactionId: payment.pixTransactionId,
-              // Verificar todos os campos possíveis
-              allKeys: Object.keys(payment),
-            });
+            if (isVerboseAsaasPaymentLogs()) {
+              console.log(`📋 Resposta completa da consulta:`, {
+                id: payment.id,
+                status: payment.status,
+                billingType: payment.billingType,
+                pixQrCode: payment.pixQrCode ? `${payment.pixQrCode.substring(0, 50)}...` : null,
+                pixQrCodeId: payment.pixQrCodeId,
+                pixTransactionId: payment.pixTransactionId,
+                allKeys: Object.keys(payment),
+              });
+            }
 
             // Segundo a documentação do Asaas, o QR Code PIX deve ser obtido via endpoint específico
             // GET /v3/payments/{id}/pixQrCode
             // Este endpoint retorna: payload (código copia e cola), encodedImage (Base64), expirationDate
             // Vamos sempre tentar este endpoint primeiro, pois é o método recomendado
             try {
-              console.log(`🔍 Tentando obter QR Code via endpoint específico: /payments/${paymentIdToUse}/pixQrCode`);
+              if (isVerboseAsaasPaymentLogs()) {
+                console.log(`🔍 Tentando obter QR Code via endpoint específico: /payments/${paymentIdToUse}/pixQrCode`);
+              }
               const qrCodeResponse = await asaasClient.get(
                 `/payments/${paymentIdToUse}/pixQrCode`
               );
-              
-              console.log(`📋 Resposta do endpoint pixQrCode:`, {
-                hasPayload: !!qrCodeResponse.data?.payload,
-                hasEncodedImage: !!qrCodeResponse.data?.encodedImage,
-                expirationDate: qrCodeResponse.data?.expirationDate,
-                allKeys: Object.keys(qrCodeResponse.data || {}),
-              });
-              
+
+              if (isVerboseAsaasPaymentLogs()) {
+                console.log(`📋 Resposta do endpoint pixQrCode:`, {
+                  hasPayload: !!qrCodeResponse.data?.payload,
+                  hasEncodedImage: !!qrCodeResponse.data?.encodedImage,
+                  expirationDate: qrCodeResponse.data?.expirationDate,
+                  allKeys: Object.keys(qrCodeResponse.data || {}),
+                });
+              }
+
               if (qrCodeResponse.data?.payload) {
                 pixQrCode = qrCodeResponse.data.payload;
                 // O pixQrCodeId pode estar na resposta ou no payment
                 pixQrCodeId = qrCodeResponse.data.id || payment.pixQrCodeId || (payment as any).pixTransaction?.id || null;
-                console.log(`✅ QR Code PIX obtido via endpoint específico /pixQrCode`);
-                if (pixQrCode) {
-                  console.log(`📝 QR Code payload (primeiros 100 chars): ${pixQrCode.substring(0, 100)}...`);
+                if (isVerboseAsaasPaymentLogs()) {
+                  console.log(`✅ QR Code PIX obtido via endpoint específico /pixQrCode`);
+                  if (pixQrCode) {
+                    console.log(`📝 QR Code payload (primeiros 100 chars): ${pixQrCode.substring(0, 100)}...`);
+                  }
                 }
                 break;
               }
             } catch (qrError: any) {
-              console.log(`⚠️ Erro ao obter QR Code via endpoint específico:`, {
-                message: qrError.message,
-                status: qrError.response?.status,
-                data: qrError.response?.data
-              });
+              if (isVerboseAsaasPaymentLogs()) {
+                console.log(`⚠️ Erro ao obter QR Code via endpoint específico:`, {
+                  message: qrError.message,
+                  status: qrError.response?.status,
+                  data: qrError.response?.data,
+                });
+              }
               // Se o endpoint específico falhar, tentar campos diretos na resposta do payment
               const pixTransaction = (payment as any).pixTransaction;
               const qrCode = payment.pixQrCode || 
@@ -421,24 +442,30 @@ export const createPayment = async (
               if (qrCode) {
                 pixQrCode = qrCode;
                 pixQrCodeId = payment.pixQrCodeId || pixTransaction?.id || null;
-                console.log(`✅ QR Code PIX obtido nos campos diretos do payment`);
+                if (isVerboseAsaasPaymentLogs()) console.log(`✅ QR Code PIX obtido nos campos diretos do payment`);
                 break;
               }
             }
 
             if (attempt < 5) {
               const waitTime = attempt * 2000; // 2s, 4s, 6s, 8s
-              console.log(`⏳ QR Code ainda não disponível, tentando novamente em ${waitTime/1000} segundos... (${attempt}/5)`);
+              if (isVerboseAsaasPaymentLogs()) {
+                console.log(
+                  `⏳ QR Code ainda não disponível, tentando novamente em ${waitTime / 1000} segundos... (${attempt}/5)`
+                );
+              }
               await new Promise(resolve => setTimeout(resolve, waitTime));
             } else {
-              console.log('⚠️ QR Code PIX não disponível após 5 tentativas. Será buscado posteriormente.');
-              console.log('💡 O QR Code pode estar disponível em alguns minutos. Use o endpoint de consulta de status.');
+              if (isVerboseAsaasPaymentLogs()) {
+                console.log('⚠️ QR Code PIX não disponível após 5 tentativas. Será buscado posteriormente.');
+                console.log('💡 O QR Code pode estar disponível em alguns minutos. Use o endpoint de consulta de status.');
+              }
             }
           } catch (error: any) {
             console.error(`❌ Erro ao buscar QR Code (tentativa ${attempt}/5):`, {
               message: error.message,
               status: error.response?.status,
-              data: error.response?.data
+              data: error.response?.data,
             });
             if (attempt < 5) {
               const waitTime = attempt * 2000;
@@ -886,30 +913,52 @@ export const getPaymentStatus = async (
   const asaasClient = createAsaasClient();
 
   try {
-    console.log(`🔍 Consultando status do pagamento no Asaas: ${asaasPaymentId}`);
+    if (isVerboseAsaasPaymentLogs()) {
+      console.log(`🔍 Consultando status do pagamento no Asaas: ${asaasPaymentId}`);
+    }
 
     const response = await asaasClient.get<AsaasPaymentResponse>(`/payments/${asaasPaymentId}`);
     const payment = response.data;
-    
-    console.log(`📊 Status retornado do Asaas:`, {
-      id: payment.id,
-      status: payment.status,
-      invoiceNumber: payment.invoiceNumber,
-      paymentDate: payment.paymentDate,
-    });
 
-    // Update payment in database
-    await query(
-      `UPDATE asaas_payments 
-       SET status = $1, payment_date = $2, pix_transaction_id = $3, updated_at = NOW()
-       WHERE asaas_payment_id = $4`,
-      [
-        payment.status,
-        payment.paymentDate ? new Date(payment.paymentDate) : null,
-        payment.pixTransactionId || null,
-        asaasPaymentId,
-      ]
+    if (isVerboseAsaasPaymentLogs()) {
+      console.log(`📊 Status retornado do Asaas:`, {
+        id: payment.id,
+        status: payment.status,
+        invoiceNumber: payment.invoiceNumber,
+        paymentDate: payment.paymentDate,
+      });
+    }
+
+    const newPaymentDate = payment.paymentDate ? new Date(payment.paymentDate) : null;
+    const newPixTx = payment.pixTransactionId || null;
+
+    const existingRow = await query(
+      `SELECT status, payment_date, pix_transaction_id FROM asaas_payments WHERE asaas_payment_id = $1`,
+      [asaasPaymentId]
     );
+    const row = existingRow.rows[0] as
+      | { status?: string; payment_date?: Date | null; pix_transaction_id?: string | null }
+      | undefined;
+
+    const dateEqual =
+      !row?.payment_date && !newPaymentDate
+        ? true
+        : row?.payment_date && newPaymentDate
+          ? new Date(row.payment_date).getTime() === newPaymentDate.getTime()
+          : false;
+
+    const statusUnchanged = row && row.status === payment.status;
+    const pixTxUnchanged = (row?.pix_transaction_id || null) === newPixTx;
+    const skipMainUpdate = statusUnchanged && pixTxUnchanged && dateEqual;
+
+    if (!skipMainUpdate) {
+      await query(
+        `UPDATE asaas_payments 
+         SET status = $1, payment_date = $2, pix_transaction_id = $3, updated_at = NOW()
+         WHERE asaas_payment_id = $4`,
+        [payment.status, newPaymentDate, newPixTx, asaasPaymentId]
+      );
+    }
 
     // If QR Code is now available, update it
     if (payment.billingType === 'PIX' && payment.pixQrCode) {
@@ -917,13 +966,13 @@ export const getPaymentStatus = async (
         'SELECT pix_qr_code FROM asaas_payments WHERE asaas_payment_id = $1',
         [asaasPaymentId]
       );
-      
+
       if (!existingPayment.rows[0]?.pix_qr_code) {
         await query(
-          'UPDATE asaas_payments SET pix_qr_code = $1, pix_qr_code_id = $2 WHERE asaas_payment_id = $3',
+          'UPDATE asaas_payments SET pix_qr_code = $1, pix_qr_code_id = $2, updated_at = NOW() WHERE asaas_payment_id = $3',
           [payment.pixQrCode, payment.pixQrCodeId || null, asaasPaymentId]
         );
-        console.log('✅ QR Code PIX atualizado no banco de dados');
+        if (isVerboseAsaasPaymentLogs()) console.log('✅ QR Code PIX atualizado no banco de dados');
       }
     }
 

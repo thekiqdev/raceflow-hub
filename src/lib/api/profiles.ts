@@ -57,14 +57,13 @@ export const updateOwnProfile = async (data: UpdateProfileData) => {
 };
 
 // Get public profile by CPF (for registration by others)
-export const getPublicProfileByCpf = async (cpf: string) => {
-  // Build query string manually like other API functions
+export const getPublicProfileByCpf = async (cpf: string, signal?: AbortSignal) => {
   const queryParams = new URLSearchParams();
   queryParams.append('cpf', cpf);
   const queryString = queryParams.toString();
   const endpoint = `/profiles/search-by-cpf${queryString ? `?${queryString}` : ''}`;
-  
-  return apiClient.get<Profile>(endpoint);
+
+  return apiClient.get<Profile>(endpoint, { signal });
 };
 
 

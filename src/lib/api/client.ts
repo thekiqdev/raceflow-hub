@@ -147,8 +147,8 @@ class ApiClient {
     }
   }
 
-  async get<T>(endpoint: string): Promise<ApiResponse<T>> {
-    return this.request<T>(endpoint, { method: 'GET' });
+  async get<T>(endpoint: string, init?: RequestInit): Promise<ApiResponse<T>> {
+    return this.request<T>(endpoint, { method: 'GET', ...init });
   }
 
   async post<T>(endpoint: string, data?: any, init?: RequestInit): Promise<ApiResponse<T>> {

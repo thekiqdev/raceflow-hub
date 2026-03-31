@@ -1043,15 +1043,21 @@ export const createRunnerByOrganizer = async (
  * Returns registrations that have products with variants but missing attribute selections
  */
 export const getRegistrationsWithMissingAttributes = async (userId: string) => {
-  console.log(`🔍 getRegistrationsWithMissingAttributes - Buscando para userId: ${userId}`);
-  
+  const verboseMissing =
+    process.env.LOG_MISSING_ATTR_VERBOSE === 'true' || process.env.NODE_ENV !== 'production';
+  const log = (...args: unknown[]) => {
+    if (verboseMissing) console.log(...args);
+  };
+
+  log(`🔍 getRegistrationsWithMissingAttributes - Buscando para userId: ${userId}`);
+
   // Get all active registrations for the user
   const registrations = await getRegistrations({
     runner_id: userId,
     status: 'confirmed',
   });
 
-  console.log(`🔍 getRegistrationsWithMissingAttributes - Inscrições confirmadas encontradas: ${registrations.length}`);
+  log(`🔍 getRegistrationsWithMissingAttributes - Inscrições confirmadas encontradas: ${registrations.length}`);
 
   // Also get pending registrations
   const pendingRegistrations = await getRegistrations({
@@ -1059,23 +1065,23 @@ export const getRegistrationsWithMissingAttributes = async (userId: string) => {
     status: 'pending',
   });
 
-  console.log(`🔍 getRegistrationsWithMissingAttributes - Inscrições pendentes encontradas: ${pendingRegistrations.length}`);
+  log(`🔍 getRegistrationsWithMissingAttributes - Inscrições pendentes encontradas: ${pendingRegistrations.length}`);
 
   // Combine and filter unique registrations
   const allRegistrations = [...registrations, ...pendingRegistrations].filter(
     (reg, index, self) => index === self.findIndex((r) => r.id === reg.id)
   );
 
-  console.log(`🔍 getRegistrationsWithMissingAttributes - Total de inscrições únicas: ${allRegistrations.length}`);
+  log(`🔍 getRegistrationsWithMissingAttributes - Total de inscrições únicas: ${allRegistrations.length}`);
 
   const result = [];
 
   for (const registration of allRegistrations) {
-    console.log(`🔍 Processando inscrição ${registration.id} - Status: ${registration.status}, Kit: ${registration.kit_id}`);
-    
+    log(`🔍 Processando inscrição ${registration.id} - Status: ${registration.status}, Kit: ${registration.kit_id}`);
+
     // Skip if no kit selected
     if (!registration.kit_id) {
-      console.log(`⚠️ Inscrição ${registration.id} não tem kit, pulando`);
+      log(`⚠️ Inscrição ${registration.id} não tem kit, pulando`);
       continue;
     }
 
@@ -1095,15 +1101,15 @@ export const getRegistrationsWithMissingAttributes = async (userId: string) => {
       [registration.kit_id]
     );
 
-    console.log(`🔍 Inscrição ${registration.id} - Produtos com variações encontrados: ${productsWithVariants.rows.length}`);
-    
+    log(`🔍 Inscrição ${registration.id} - Produtos com variações encontrados: ${productsWithVariants.rows.length}`);
+
     if (productsWithVariants.rows.length === 0) {
       // Debug: verificar todos os produtos do kit
       const allProducts = await query(
         `SELECT id, name, type, variant_attributes FROM kit_products WHERE kit_id = $1`,
         [registration.kit_id]
       );
-      console.log(`🔍 Inscrição ${registration.id} - Todos os produtos do kit:`, allProducts.rows.map(p => ({
+      log(`🔍 Inscrição ${registration.id} - Todos os produtos do kit:`, allProducts.rows.map(p => ({
         id: p.id,
         name: p.name,
         type: p.type,
@@ -1118,7 +1124,7 @@ export const getRegistrationsWithMissingAttributes = async (userId: string) => {
 
     for (const product of productsWithVariants.rows) {
       const variantAttributes = product.variant_attributes as string[];
-      console.log(`🔍 Produto ${product.product_name} (${product.product_id}) - Atributos necessários:`, variantAttributes);
+      log(`🔍 Produto ${product.product_name} (${product.product_id}) - Atributos necessários:`, variantAttributes);
 
       // Get existing selections for this product in this registration
       const existingSelections = await query(
@@ -1129,7 +1135,7 @@ export const getRegistrationsWithMissingAttributes = async (userId: string) => {
         [registration.id, product.product_id]
       );
 
-      console.log(`🔍 Produto ${product.product_name} - Seleções existentes:`, existingSelections.rows.map(r => r.attribute_name));
+      log(`🔍 Produto ${product.product_name} - Seleções existentes:`, existingSelections.rows.map(r => r.attribute_name));
 
       const selectedAttributeNames = new Set(
         existingSelections.rows.map((row) => row.attribute_name)
@@ -1140,7 +1146,7 @@ export const getRegistrationsWithMissingAttributes = async (userId: string) => {
         (attrName) => !selectedAttributeNames.has(attrName)
       );
 
-      console.log(`🔍 Produto ${product.product_name} - Atributos faltando:`, missingAttributes);
+      log(`🔍 Produto ${product.product_name} - Atributos faltando:`, missingAttributes);
 
       if (missingAttributes.length > 0) {
         // Get available variants for this product

@@ -70,18 +70,23 @@ export const validateVariables = (
 /**
  * Send email using SMTP configuration
  */
+const isVerboseSmtp = (): boolean =>
+  process.env.LOG_SMTP_VERBOSE === 'true' || process.env.NODE_ENV !== 'production';
+
 export const sendEmail = async (options: SendEmailOptions): Promise<boolean> => {
   try {
     const settings = await getSystemSettings();
-    
+
     // Check if SMTP is configured
     if (!settings.smtp_host || !settings.smtp_user || !settings.smtp_password) {
       console.warn('⚠️ SMTP não configurado. Email não enviado.');
-      console.log('📧 Email que seria enviado:', {
-        to: options.to,
-        subject: options.subject,
-        from: options.from || settings.smtp_from_email || settings.contact_email,
-      });
+      if (isVerboseSmtp()) {
+        console.log('📧 Email que seria enviado:', {
+          to: options.to,
+          subject: options.subject,
+          from: options.from || settings.smtp_from_email || settings.contact_email,
+        });
+      }
       return false;
     }
 
@@ -128,7 +133,9 @@ export const sendEmail = async (options: SendEmailOptions): Promise<boolean> => 
       throw new Error('Porta 21 é FTP, não SMTP. Use 587 (STARTTLS) ou 465 (SSL)');
     }
     
-    console.log(`📧 Configurando SMTP: host=${settings.smtp_host}, port=${port}, secure=${secure}, requireTLS=${requireTLS}`);
+    if (isVerboseSmtp()) {
+      console.log(`📧 Configurando SMTP: host=${settings.smtp_host}, port=${port}, secure=${secure}, requireTLS=${requireTLS}`);
+    }
     
     // Create transporter
     const transporter = nodemailer.createTransport({
@@ -150,9 +157,9 @@ export const sendEmail = async (options: SendEmailOptions): Promise<boolean> => 
     // Verify connection (skip for test emails to avoid blocking)
     try {
       await transporter.verify();
-      console.log('✅ SMTP connection verified');
+      if (isVerboseSmtp()) console.log('✅ SMTP connection verified');
     } catch (verifyError: any) {
-      console.error('❌ SMTP verification failed:', verifyError);
+      console.error('❌ SMTP verification failed:', verifyError?.message || verifyError);
       // For test emails, we still want to try sending even if verify fails
       // Some servers don't support verify but can still send emails
     }
@@ -171,21 +178,27 @@ export const sendEmail = async (options: SendEmailOptions): Promise<boolean> => 
       text: textContent,
     });
 
-    console.log('✅ Email enviado com sucesso:', {
-      messageId: info.messageId,
-      to: options.to,
-      subject: options.subject,
-    });
+    if (isVerboseSmtp()) {
+      console.log('✅ Email enviado com sucesso:', {
+        messageId: info.messageId,
+        to: options.to,
+        subject: options.subject,
+      });
+    } else {
+      console.log('✅ Email enviado:', { messageId: info.messageId });
+    }
 
     return true;
   } catch (error: any) {
-    console.error('❌ Erro ao enviar email:', error);
-    console.error('Detalhes do erro:', {
-      message: error.message,
-      code: error.code,
-      command: error.command,
-      reason: error.reason,
-    });
+    console.error('❌ Erro ao enviar email:', error?.message || error);
+    if (isVerboseSmtp()) {
+      console.error('Detalhes do erro:', {
+        message: error.message,
+        code: error.code,
+        command: error.command,
+        reason: error.reason,
+      });
+    }
     
     // Provide more helpful error messages
     let errorMessage = error.message || 'Erro desconhecido ao enviar email';
@@ -366,7 +379,7 @@ export const getUserName = async (userId: string): Promise<string | null> => {
  * Send notification safely (wrapper that doesn't break the main flow)
  * This function catches all errors and logs them, but never throws
  */
-export const sendNotificationSafely = async (options: SendNotificationOptions): Promise<void> => {
+export const sendNotificationSafely = async (options: SendNotificationOptions): Promise<boolean> => {
   try {
     const success = await sendNotification(options);
     if (success) {
@@ -374,10 +387,13 @@ export const sendNotificationSafely = async (options: SendNotificationOptions): 
     } else {
       console.warn(`⚠️ Falha ao enviar notificação: ${options.templateKey} para ${options.recipient.email || options.recipient.userId}`);
     }
+    return success;
   } catch (error: any) {
-    // Log error but don't throw - we don't want to break the main flow
-    console.error(`❌ Erro ao enviar notificação ${options.templateKey}:`, error);
-    console.error('Stack trace:', error.stack);
+    console.error(`❌ Erro ao enviar notificação ${options.templateKey}:`, error?.message || error);
+    if (process.env.NODE_ENV !== 'production' || process.env.LOG_SMTP_VERBOSE === 'true') {
+      console.error('Stack trace:', error.stack);
+    }
+    return false;
   }
 };
 

@@ -22,6 +22,7 @@ import { getEventById } from '../services/eventsService.js';
 import { getGroupLeaderById } from '../services/groupLeadersService.js';
 import { getCategoryById } from '../services/categoriesService.js';
 import { createCustomer, createPayment, createCreditCardPayment, getPaymentByRegistrationId, getTotalPaidForRegistration, getAmountPaidForOrganizer, getPendingPaymentsForRegistration, getPaymentStatus as getAsaasPaymentStatus, markPaymentAsManualConfirmed, deletePaymentInAsaasOnly, syncRegistrationPaymentStatus, cancelPayment, validateOrRecreateCustomer } from '../services/asaasService.js';
+import { getAsaasPaymentStatusWithPollCache } from '../services/asaasPaymentStatusPollCache.js';
 import { getProfileByUserId } from '../services/profilesService.js';
 import { query } from '../config/database.js';
 import { sendNotificationSafely, getUserEmail, getUserName, getOrganizerEmail } from '../services/notificationService.js';
@@ -299,9 +300,15 @@ export const getRegistrationsWithMissingAttributesController = asyncHandler(asyn
       return;
     }
 
-    console.log(`🔍 getRegistrationsWithMissingAttributesController - Buscando para userId: ${req.user.id}`);
+    if (process.env.LOG_MISSING_ATTR_VERBOSE === 'true' || process.env.NODE_ENV !== 'production') {
+      console.log(`🔍 getRegistrationsWithMissingAttributesController - userId: ${req.user.id}`);
+    }
     const registrations = await getRegistrationsWithMissingAttributes(req.user.id);
-    console.log(`🔍 getRegistrationsWithMissingAttributesController - Resultado: ${registrations.length} inscrições com atributos pendentes`);
+    if (process.env.LOG_MISSING_ATTR_VERBOSE === 'true' || process.env.NODE_ENV !== 'production') {
+      console.log(
+        `🔍 getRegistrationsWithMissingAttributesController - resultado: ${registrations.length} inscrições`
+      );
+    }
 
     res.json({
       success: true,
@@ -1807,9 +1814,10 @@ export const getPaymentStatusController = asyncHandler(async (req: AuthRequest, 
   // This ensures we get the latest status even if webhook hasn't arrived yet
   if (payment.status === 'PENDING' && payment.asaas_payment_id) {
     try {
-      console.log(`🔄 Consultando Asaas diretamente para atualizar status: ${payment.asaas_payment_id}`);
-      const { getPaymentStatus } = await import('../services/asaasService.js');
-      const asaasStatus = await getPaymentStatus(payment.asaas_payment_id);
+      const asaasStatus = await getAsaasPaymentStatusWithPollCache(
+        payment.asaas_payment_id,
+        () => getAsaasPaymentStatus(payment.asaas_payment_id)
+      );
       
       // If payment was confirmed in Asaas, update registration status
       if (asaasStatus.status === 'CONFIRMED' || asaasStatus.status === 'RECEIVED') {

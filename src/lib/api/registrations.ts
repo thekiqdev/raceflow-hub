@@ -203,8 +203,11 @@ export const getRegistrationForValidation = async (id: string) => {
 };
 
 // Get payment status by registration ID
-export const getPaymentStatus = async (registrationId: string) => {
-  return apiClient.get<{ status: string; payment_date?: string; pix_qr_code?: string | null; due_date?: string | null }>(`/registrations/${registrationId}/payment-status`);
+export const getPaymentStatus = async (registrationId: string, signal?: AbortSignal) => {
+  return apiClient.get<{ status: string; payment_date?: string; pix_qr_code?: string | null; due_date?: string | null }>(
+    `/registrations/${registrationId}/payment-status`,
+    { signal }
+  );
 };
 
 // Generate payment for registration (creates payment if it doesn't exist)

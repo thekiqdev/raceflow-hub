@@ -137,6 +137,8 @@ export function RegistrationFlow({
   } | null>(null);
   const [paymentStatus, setPaymentStatus] = useState<'pending' | 'paid' | 'confirmed'>('pending');
   const [isPollingPayment, setIsPollingPayment] = useState(false);
+  const paymentPollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const qrPollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<'pix' | 'credit_card' | null>(null);
   const [hasExistingRegistration, setHasExistingRegistration] = useState(false);
   const [checkingRegistration, setCheckingRegistration] = useState(false);
@@ -484,7 +486,15 @@ export function RegistrationFlow({
         }
       }
     } else {
-      // Reset states when modal closes
+      if (paymentPollTimeoutRef.current) {
+        clearTimeout(paymentPollTimeoutRef.current);
+        paymentPollTimeoutRef.current = null;
+      }
+      if (qrPollTimeoutRef.current) {
+        clearTimeout(qrPollTimeoutRef.current);
+        qrPollTimeoutRef.current = null;
+      }
+      setIsPollingPayment(false);
       setSelectedModality(null);
       setSelectedCategory(null);
       setSelectedBatch(null);
@@ -493,26 +503,35 @@ export function RegistrationFlow({
     }
   }, [open, user, event.id, searchParams]);
 
-  // Load other person profile when otherPersonId changes
+  // Load other person profile when otherPersonId changes (só com CPF completo e válido; cancela requisição anterior)
   useEffect(() => {
+    if (!otherPersonId) {
+      setOtherPersonProfile(null);
+      return;
+    }
+    const digits = searchCpf.replace(/\D/g, "");
+    if (digits.length !== 11 || !validateCpf(searchCpf)) {
+      return;
+    }
+
+    const ac = new AbortController();
     const loadOtherPersonProfile = async () => {
-      if (otherPersonId) {
-        try {
-          const profileResponse = await getPublicProfileByCpf(searchCpf);
-          if (profileResponse.success && profileResponse.data) {
-            setOtherPersonProfile({
-              birth_date: profileResponse.data.birth_date,
-            });
-          }
-        } catch (error) {
-          console.error('Erro ao carregar perfil da outra pessoa:', error);
+      try {
+        const profileResponse = await getPublicProfileByCpf(searchCpf, ac.signal);
+        if (profileResponse.success && profileResponse.data) {
+          setOtherPersonProfile({
+            birth_date: profileResponse.data.birth_date,
+          });
         }
-      } else {
-        setOtherPersonProfile(null);
+      } catch (error: unknown) {
+        const name = error instanceof Error ? error.name : "";
+        if (name === "AbortError") return;
+        console.error("Erro ao carregar perfil da outra pessoa:", error);
       }
     };
 
     loadOtherPersonProfile();
+    return () => ac.abort();
   }, [otherPersonId, searchCpf]);
 
   // Debug: Log quando o modal abre ou categorias mudam
@@ -1035,6 +1054,11 @@ export function RegistrationFlow({
       toast.error("Por favor, informe o CPF");
       return;
     }
+    const digits = searchCpf.replace(/\D/g, "");
+    if (digits.length !== 11 || !validateCpf(searchCpf)) {
+      toast.error("Informe um CPF válido com 11 dígitos.");
+      return;
+    }
 
     setIsSearchingProfile(true);
     try {
@@ -1344,74 +1368,88 @@ export function RegistrationFlow({
     }
   };
 
-  // Polling function to get QR Code if not available immediately
-  const startPollingForQrCode = async (asaasPaymentId: string, registrationId: string) => {
+  // Polling para QR/status com backoff (menos carga que intervalo fixo)
+  const startPollingForQrCode = (asaasPaymentId: string, registrationId: string) => {
     if (!asaasPaymentId) return;
-
+    if (qrPollTimeoutRef.current) {
+      clearTimeout(qrPollTimeoutRef.current);
+      qrPollTimeoutRef.current = null;
+    }
     let attempts = 0;
-    const maxAttempts = 5; // Try 5 times (10 seconds total)
+    const maxAttempts = 5;
+    const delaysMs = [2000, 3000, 4000, 5000, 6000];
 
-    const pollInterval = setInterval(async () => {
-      attempts++;
-      
-      try {
-        // Get registration again to check for payment data
-        const response = await getPaymentStatus(registrationId);
-        
-        if (response.success && response.data) {
-          // Check if we can get payment data from registration
-          // This would require a new endpoint, so for now we'll just check status
-          const status = response.data.status;
-          
-          if (status === 'paid' || status === 'confirmed') {
-            setPaymentStatus('paid');
-            clearInterval(pollInterval);
-            toast.success('Pagamento confirmado!');
-            return;
-          }
-        }
-      } catch (error) {
-        console.error('Erro ao verificar status do pagamento:', error);
-      }
-
+    const scheduleNext = () => {
       if (attempts >= maxAttempts) {
-        clearInterval(pollInterval);
-        console.log('Polling encerrado após máximo de tentativas');
+        return;
       }
-    }, 2000); // Poll every 2 seconds
+      const delay = delaysMs[Math.min(attempts, delaysMs.length - 1)];
+      qrPollTimeoutRef.current = setTimeout(async () => {
+        try {
+          const response = await getPaymentStatus(registrationId);
+          if (response.success && response.data) {
+            const status = response.data.status;
+            if (status === "paid" || status === "confirmed") {
+              setPaymentStatus("paid");
+              qrPollTimeoutRef.current = null;
+              toast.success("Pagamento confirmado!");
+              return;
+            }
+          }
+        } catch (error) {
+          console.error("Erro ao verificar status do pagamento:", error);
+        }
+        attempts += 1;
+        if (attempts >= maxAttempts) {
+          qrPollTimeoutRef.current = null;
+          return;
+        }
+        scheduleNext();
+      }, delay);
+    };
+    scheduleNext();
   };
 
-  // Polling function to check payment status
   const startPaymentStatusPolling = (registrationId: string) => {
     if (isPollingPayment) return;
-    
     setIsPollingPayment(true);
-    
-    const pollInterval = setInterval(async () => {
-      try {
-        const response = await getPaymentStatus(registrationId);
-        
-        if (response.success && response.data) {
-          const status = response.data.status;
-          
-          if (status === 'paid' || status === 'confirmed') {
-            setPaymentStatus('paid');
-            clearInterval(pollInterval);
-            setIsPollingPayment(false);
-            toast.success('Pagamento confirmado! Sua inscrição foi confirmada.');
-            return;
-          }
-        }
-      } catch (error) {
-        console.error('Erro ao verificar status do pagamento:', error);
-      }
-    }, 5000); // Poll every 5 seconds
+    if (paymentPollTimeoutRef.current) {
+      clearTimeout(paymentPollTimeoutRef.current);
+      paymentPollTimeoutRef.current = null;
+    }
+    const POLL_DELAYS_MS = [4000, 5000, 6000, 8000, 10000, 12000, 15000];
+    const started = Date.now();
+    const MAX_MS = 600_000;
+    let attempt = 0;
 
-    // Stop polling after 10 minutes
-    setTimeout(() => {
-      clearInterval(pollInterval);
-      setIsPollingPayment(false);
-    }, 600000); // 10 minutes
+    const scheduleNext = () => {
+      if (Date.now() - started > MAX_MS) {
+        setIsPollingPayment(false);
+        paymentPollTimeoutRef.current = null;
+        return;
+      }
+      const delay = POLL_DELAYS_MS[Math.min(attempt, POLL_DELAYS_MS.length - 1)];
+      attempt += 1;
+      paymentPollTimeoutRef.current = setTimeout(async () => {
+        try {
+          const response = await getPaymentStatus(registrationId);
+          if (response.success && response.data) {
+            const status = response.data.status;
+            if (status === "paid" || status === "confirmed") {
+              setPaymentStatus("paid");
+              setIsPollingPayment(false);
+              paymentPollTimeoutRef.current = null;
+              toast.success("Pagamento confirmado! Sua inscrição foi confirmada.");
+              return;
+            }
+          }
+        } catch (error) {
+          console.error("Erro ao verificar status do pagamento:", error);
+        }
+        scheduleNext();
+      }, delay);
+    };
+    scheduleNext();
   };
 
   const handleDownloadReceipt = async () => {

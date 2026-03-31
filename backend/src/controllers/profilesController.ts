@@ -4,6 +4,7 @@ import { getProfileByUserId, updateProfile, getPublicProfileByCpf, verifyUserPas
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { hasRole } from '../services/userRolesService.js';
 import { query } from '../config/database.js';
+import { isValidCpfDigits, maskCpf } from '../utils/cpf.js';
 
 // Get own profile
 export const getOwnProfile = asyncHandler(async (req: AuthRequest, res: Response) => {
@@ -119,14 +120,10 @@ export const getPublicProfileByCpfController = asyncHandler(async (req: AuthRequ
 
   const { cpf } = req.query;
 
-  console.log('🔍 Buscando perfil público por CPF:', { 
-    cpf, 
-    cpfType: typeof cpf,
-    queryParams: req.query 
-  });
+  const verboseProfileCpf =
+    process.env.LOG_PROFILE_CPF_VERBOSE === 'true' || process.env.NODE_ENV !== 'production';
 
   if (!cpf) {
-    console.error('❌ CPF não fornecido na query');
     return res.status(400).json({
       success: false,
       error: 'CPF é obrigatório',
@@ -136,9 +133,8 @@ export const getPublicProfileByCpfController = asyncHandler(async (req: AuthRequ
 
   // Convert to string if it's not already
   const cpfString = String(cpf).trim();
-  
+
   if (!cpfString || cpfString.length === 0) {
-    console.error('❌ CPF vazio após conversão');
     return res.status(400).json({
       success: false,
       error: 'CPF inválido',
@@ -146,18 +142,18 @@ export const getPublicProfileByCpfController = asyncHandler(async (req: AuthRequ
     });
   }
 
-  // Validate CPF format (should have at least 11 digits)
   const cleanCpf = cpfString.replace(/[^0-9]/g, '');
-  if (cleanCpf.length < 11) {
-    console.error('❌ CPF com formato inválido:', { original: cpfString, clean: cleanCpf, length: cleanCpf.length });
+  if (cleanCpf.length !== 11 || !isValidCpfDigits(cleanCpf)) {
     return res.status(400).json({
       success: false,
       error: 'CPF inválido',
-      message: 'O CPF deve conter pelo menos 11 dígitos',
+      message: 'Informe um CPF válido com 11 dígitos.',
     });
   }
 
-  console.log('✅ CPF validado, buscando perfil:', { original: cpfString, clean: cleanCpf });
+  if (verboseProfileCpf) {
+    console.log('🔍 Buscando perfil público por CPF:', { masked: maskCpf(cleanCpf) });
+  }
 
   let profile = await getPublicProfileByCpf(cpfString);
 
@@ -188,7 +184,9 @@ export const getPublicProfileByCpfController = asyncHandler(async (req: AuthRequ
   }
 
   if (!profile) {
-    console.log('⚠️ Perfil não encontrado ou não é público para CPF:', cleanCpf);
+    if (verboseProfileCpf) {
+      console.log('⚠️ Perfil não encontrado ou não é público para CPF:', maskCpf(cleanCpf));
+    }
     return res.status(404).json({
       success: false,
       error: 'Perfil não encontrado ou não está público',
@@ -196,8 +194,10 @@ export const getPublicProfileByCpfController = asyncHandler(async (req: AuthRequ
     });
   }
 
-  console.log('✅ Perfil encontrado:', { id: profile.id, name: profile.full_name });
-  
+  if (verboseProfileCpf) {
+    console.log('✅ Perfil encontrado:', { id: profile.id, name: profile.full_name });
+  }
+
   res.json({
     success: true,
     data: profile,

@@ -59,15 +59,17 @@ export const requestPasswordResetController = asyncHandler(async (req: AuthReque
 
   // Create new reset token FIRST
   const resetToken = await createPasswordResetToken(user.id);
-  
-  console.log('🔑 [requestPasswordResetController] Token criado:', {
-    tokenId: resetToken.id,
-    tokenLength: resetToken.token.length,
-    tokenPreview: resetToken.token.substring(0, 10) + '...',
-    expiresAt: resetToken.expires_at,
-    userId: user.id,
-    tokenValue: resetToken.token, // Log full token for debugging
-  });
+
+  const verboseReset =
+    process.env.LOG_AUTH_VERBOSE === 'true' || process.env.NODE_ENV !== 'production';
+  if (verboseReset) {
+    console.log('🔑 [requestPasswordResetController] Token criado:', {
+      tokenId: resetToken.id,
+      tokenLength: resetToken.token.length,
+      expiresAt: resetToken.expires_at,
+      userId: user.id,
+    });
+  }
 
   // Then invalidate previous tokens (excluding the one we just created)
   const invalidateResult = await query(
@@ -79,12 +81,13 @@ export const requestPasswordResetController = asyncHandler(async (req: AuthReque
      RETURNING id`,
     [user.id, resetToken.id]
   );
-  
-  console.log('✅ [requestPasswordResetController] Tokens anteriores invalidados:', {
-    count: invalidateResult.rows.length,
-    invalidatedIds: invalidateResult.rows.map(r => r.id),
-    newTokenId: resetToken.id,
-  });
+
+  if (verboseReset) {
+    console.log('✅ [requestPasswordResetController] Tokens anteriores invalidados:', {
+      count: invalidateResult.rows.length,
+      newTokenId: resetToken.id,
+    });
+  }
 
   // Verify the new token is still valid
   const verifyResult = await query(
@@ -93,17 +96,9 @@ export const requestPasswordResetController = asyncHandler(async (req: AuthReque
      WHERE id = $1`,
     [resetToken.id]
   );
-  
-  if (verifyResult.rows.length > 0) {
-    const verified = verifyResult.rows[0];
-    console.log('✅ [requestPasswordResetController] Verificação do novo token:', {
-      id: verified.id,
-      usedAt: verified.used_at,
-      expiresAt: verified.expires_at,
-      isValid: verified.is_valid,
-    });
-  } else {
-    console.error('❌ [requestPasswordResetController] ERRO: Novo token não encontrado após invalidação!');
+
+  if (verifyResult.rows.length === 0) {
+    console.error('❌ [requestPasswordResetController] Novo token não encontrado após invalidação');
   }
 
   // Get user name for email
@@ -113,30 +108,23 @@ export const requestPasswordResetController = asyncHandler(async (req: AuthReque
   // Generate reset URL - encode token properly
   const encodedToken = encodeURIComponent(resetToken.token);
   const resetUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/reset-password?token=${encodedToken}`;
-  
-  console.log('📧 URL de reset gerada:', {
-    url: resetUrl,
-    tokenInUrl: encodedToken.substring(0, 20) + '...',
-  });
 
-  // Send email notification
-  try {
-    await sendNotificationSafely({
-      templateKey: 'password_reset_request',
-      recipient: {
-        email: userEmail,
-        name: userName,
-      },
-          variables: {
-            userName: userName,
-            resetUrl: resetUrl,
-            expiresIn: '1 dia (24 horas)',
-          },
-    });
-    console.log(`✅ Email de recuperação de senha enviado para ${userEmail}`);
-  } catch (error: any) {
-    console.error('❌ Erro ao enviar email de recuperação de senha:', error);
-    // Don't fail the request if email fails
+  const emailSent = await sendNotificationSafely({
+    templateKey: 'password_reset_request',
+    recipient: {
+      email: userEmail,
+      name: userName,
+    },
+    variables: {
+      userName: userName,
+      resetUrl: resetUrl,
+      expiresIn: '1 dia (24 horas)',
+    },
+  });
+  if (!emailSent) {
+    console.warn(
+      '⚠️ Email de recuperação de senha não foi enviado (SMTP/template). Resposta genérica mantida por segurança.'
+    );
   }
 
   res.json({
@@ -164,19 +152,14 @@ export const resetPasswordController = asyncHandler(async (req: AuthRequest, res
 
   const { token, newPassword } = validation.data;
 
-  console.log('🔍 [resetPasswordController] Recebido:', {
-    tokenLength: token.length,
-    tokenPreview: token.substring(0, 20) + '...',
-  });
+  const verboseReset =
+    process.env.LOG_AUTH_VERBOSE === 'true' || process.env.NODE_ENV !== 'production';
 
   // Decode token if it's URL encoded
   const decodedToken = decodeURIComponent(token.trim());
-  console.log('🔍 [resetPasswordController] Token decodificado:', {
-    decodedLength: decodedToken.length,
-    preview: decodedToken.substring(0, 20) + '...',
-    isUUID: decodedToken.length === 36 && decodedToken.includes('-'),
-    isValidFormat: decodedToken.length === 64 && !decodedToken.includes('-'),
-  });
+  if (verboseReset) {
+    console.log('🔍 [resetPasswordController] Token recebido (length):', decodedToken.length);
+  }
   
   // Validate token format - reject UUIDs (token IDs) immediately
   if (decodedToken.length === 36 && decodedToken.includes('-')) {
@@ -230,22 +213,18 @@ export const resetPasswordController = asyncHandler(async (req: AuthRequest, res
   const userEmail = await getUserEmail(resetToken.user_id);
   const userName = await getUserName(resetToken.user_id) || 'Usuário';
 
-  // Send confirmation email
-  try {
-    await sendNotificationSafely({
-      templateKey: 'password_reset_success',
-      recipient: {
-        email: userEmail || '',
-        name: userName,
-      },
-      variables: {
-        userName: userName,
-      },
-    });
-    console.log(`✅ Email de confirmação de alteração de senha enviado para ${userEmail}`);
-  } catch (error: any) {
-    console.error('❌ Erro ao enviar email de confirmação:', error);
-    // Don't fail the request if email fails
+  const confirmSent = await sendNotificationSafely({
+    templateKey: 'password_reset_success',
+    recipient: {
+      email: userEmail || '',
+      name: userName,
+    },
+    variables: {
+      userName: userName,
+    },
+  });
+  if (!confirmSent) {
+    console.warn('⚠️ Email de confirmação de alteração de senha não foi enviado (SMTP/template). Senha já alterada.');
   }
 
   res.json({
@@ -261,12 +240,6 @@ export const resetPasswordController = asyncHandler(async (req: AuthRequest, res
 export const validateTokenController = asyncHandler(async (req: AuthRequest, res: Response) => {
   const { token } = req.query;
 
-  console.log('🔍 [validateTokenController] Recebido:', {
-    token: token ? (typeof token === 'string' ? token.substring(0, 20) + '...' : 'not string') : 'missing',
-    tokenType: typeof token,
-    queryParams: Object.keys(req.query),
-  });
-
   if (!token || typeof token !== 'string') {
     res.status(400).json({
       success: false,
@@ -278,14 +251,7 @@ export const validateTokenController = asyncHandler(async (req: AuthRequest, res
 
   // Decode token if it's URL encoded
   const decodedToken = decodeURIComponent(token);
-  console.log('🔍 [validateTokenController] Token decodificado:', {
-    originalLength: token.length,
-    decodedLength: decodedToken.length,
-    preview: decodedToken.substring(0, 20) + '...',
-    isUUID: decodedToken.length === 36 && decodedToken.includes('-'),
-    isValidFormat: decodedToken.length === 64 && !decodedToken.includes('-'),
-  });
-  
+
   // Validate token format - reject UUIDs (token IDs) immediately
   if (decodedToken.length === 36 && decodedToken.includes('-')) {
     console.error('❌ [validateTokenController] Token inválido: recebido UUID (ID do token) ao invés do valor do token');
