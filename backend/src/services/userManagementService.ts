@@ -1,6 +1,7 @@
 import { query, getClient } from '../config/database.js';
 import { AppRole } from '../types/index.js';
 import bcrypt from 'bcrypt';
+import { isValidCpfDigits, normalizeCpfDigits } from '../utils/cpf.js';
 
 export interface UserWithStats {
   id: string;
@@ -715,6 +716,122 @@ export const createAdmin = async (data: {
     await client.query(
       'INSERT INTO user_roles (user_id, role) VALUES ($1, $2)',
       [userId, data.role || 'admin']
+    );
+
+    await client.query('COMMIT');
+    return userId;
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+};
+
+export interface CreateManualRunnerData {
+  email: string;
+  password: string;
+  full_name: string;
+  cpf: string;
+  phone: string;
+  gender?: 'M' | 'F' | 'O' | null;
+  birth_date: string;
+  preferred_name?: string | null;
+  profession?: string | null;
+  cbat?: string | null;
+  team?: string | null;
+  postal_code?: string | null;
+  street?: string | null;
+  address_number?: string | null;
+  address_complement?: string | null;
+  neighborhood?: string | null;
+  city?: string | null;
+  state?: string | null;
+  lgpd_consent: boolean;
+}
+
+/**
+ * Create runner manually (admin only) without CPF Brasil lookup.
+ * Keeps local CPF validation and uniqueness checks.
+ */
+export const createManualRunner = async (data: CreateManualRunnerData): Promise<string> => {
+  const client = await getClient();
+  try {
+    await client.query('BEGIN');
+
+    const cleanEmail = String(data.email || '').trim().toLowerCase();
+    const cleanCpf = normalizeCpfDigits(data.cpf);
+    if (!isValidCpfDigits(cleanCpf)) {
+      throw new Error('CPF_INVALID');
+    }
+
+    const emailCheck = await client.query(
+      'SELECT id FROM users WHERE lower(trim(email)) = $1 LIMIT 1',
+      [cleanEmail]
+    );
+    if (emailCheck.rows.length > 0) {
+      throw new Error('EMAIL_ALREADY_EXISTS');
+    }
+
+    const cpfCheck = await client.query(
+      `SELECT id
+       FROM profiles
+       WHERE regexp_replace(COALESCE(cpf::text, ''), '[^0-9]', '', 'g') = $1
+       LIMIT 1`,
+      [cleanCpf]
+    );
+    if (cpfCheck.rows.length > 0) {
+      throw new Error('CPF_ALREADY_EXISTS');
+    }
+
+    const saltRounds = 10;
+    const passwordHash = await bcrypt.hash(data.password, saltRounds);
+
+    const userResult = await client.query(
+      `INSERT INTO users (email, password_hash, email_verified)
+       VALUES ($1, $2, false)
+       RETURNING id`,
+      [cleanEmail, passwordHash]
+    );
+    const userId = userResult.rows[0].id as string;
+
+    await client.query(
+      `INSERT INTO profiles (
+        id, full_name, cpf, phone, gender, birth_date, lgpd_consent,
+        preferred_name, profession, cbat, team, postal_code, street, address_number, address_complement,
+        neighborhood, city, state, status, cpf_validated_at, cpf_lookup_source
+      )
+       VALUES (
+        $1, $2, $3, $4, $5, $6, $7,
+        $8, $9, $10, $11, $12, $13, $14, $15,
+        $16, $17, $18, 'active', NULL, NULL
+      )`,
+      [
+        userId,
+        data.full_name.trim(),
+        cleanCpf,
+        data.phone.trim(),
+        data.gender ?? null,
+        data.birth_date,
+        data.lgpd_consent,
+        data.preferred_name?.trim() || null,
+        data.profession?.trim() || null,
+        data.cbat?.trim() || null,
+        data.team?.trim() || null,
+        data.postal_code?.trim() || null,
+        data.street?.trim() || null,
+        data.address_number?.trim() || null,
+        data.address_complement?.trim() || null,
+        data.neighborhood?.trim() || null,
+        data.city?.trim() || null,
+        data.state?.trim() || null,
+      ]
+    );
+
+    await client.query(
+      `INSERT INTO user_roles (user_id, role) VALUES ($1, 'runner')
+       ON CONFLICT (user_id, role) DO NOTHING`,
+      [userId]
     );
 
     await client.query('COMMIT');

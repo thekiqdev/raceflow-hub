@@ -6,6 +6,7 @@ import { User } from '@/lib/api/auth';
 export const ADMIN_SECTION_TO_PATH: Record<string, string> = {
   overview: 'visao-geral',
   users: 'usuarios',
+  'runner-manual': 'cadastro-corredor',
   events: 'eventos',
   registrations: 'inscricoes',
   quotes: 'orcamentos',
@@ -24,6 +25,7 @@ export const ADMIN_SECTION_TO_PATH: Record<string, string> = {
 export const ADMIN_SECTION_LABELS: Record<string, string> = {
   overview: 'Visão geral',
   users: 'Usuários',
+  'runner-manual': 'Cadastro de Corredor',
   events: 'Eventos',
   registrations: 'Inscrições',
   quotes: 'Orçamentos',

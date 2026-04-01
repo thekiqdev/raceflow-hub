@@ -11,6 +11,7 @@ import {
   unblockUser,
   resetUserPassword,
   createAdmin,
+  createManualRunner,
   convertAthleteToOrganizer,
   updateUserStatus,
   updateUserRole,
@@ -49,6 +50,28 @@ const createAdminSchema = z.object({
   full_name: z.string().min(1, 'Full name is required'),
   phone: z.string().min(1, 'Phone is required'),
   role: z.enum(['admin']).optional(),
+});
+
+const createManualRunnerSchema = z.object({
+  email: z.string().email('E-mail inválido'),
+  password: z.string().min(6, 'Senha deve ter no mínimo 6 caracteres'),
+  full_name: z.string().min(1, 'Nome completo é obrigatório'),
+  cpf: z.string().min(11, 'CPF inválido'),
+  phone: z.string().min(1, 'Telefone é obrigatório'),
+  gender: z.enum(['M', 'F', 'O']).optional().nullable(),
+  birth_date: z.string().min(1, 'Data de nascimento é obrigatória'),
+  preferred_name: z.string().optional().nullable(),
+  profession: z.string().optional().nullable(),
+  cbat: z.string().optional().nullable(),
+  team: z.string().optional().nullable(),
+  postal_code: z.string().optional().nullable(),
+  street: z.string().optional().nullable(),
+  address_number: z.string().optional().nullable(),
+  address_complement: z.string().optional().nullable(),
+  neighborhood: z.string().optional().nullable(),
+  city: z.string().optional().nullable(),
+  state: z.string().optional().nullable(),
+  lgpd_consent: z.boolean(),
 });
 
 const updateProfileSchema = z.object({
@@ -399,6 +422,75 @@ export const createAdminController = async (
       success: false,
       error: 'Internal server error',
       message: error.message || 'Failed to create admin user',
+    });
+  }
+};
+
+/**
+ * POST /api/admin/users/runners/manual
+ * Create runner manually (admin only), without CPF Brasil external validation.
+ */
+export const createManualRunnerController = async (
+  req: AuthRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    const validation = createManualRunnerSchema.safeParse(req.body);
+    if (!validation.success) {
+      res.status(400).json({
+        success: false,
+        error: 'Validation Error',
+        message: validation.error.errors[0].message,
+      });
+      return;
+    }
+
+    const userId = await createManualRunner(validation.data);
+    res.status(201).json({
+      success: true,
+      data: { id: userId },
+      message: 'Corredor cadastrado manualmente com sucesso',
+    });
+  } catch (error: any) {
+    console.error('Error creating manual runner:', error);
+
+    if (error.message === 'CPF_INVALID') {
+      res.status(400).json({
+        success: false,
+        error: 'CPF inválido',
+        message: 'CPF inválido',
+      });
+      return;
+    }
+    if (error.message === 'CPF_ALREADY_EXISTS') {
+      res.status(409).json({
+        success: false,
+        error: 'Conflict',
+        message: 'CPF já cadastrado',
+      });
+      return;
+    }
+    if (error.message === 'EMAIL_ALREADY_EXISTS') {
+      res.status(409).json({
+        success: false,
+        error: 'Conflict',
+        message: 'E-mail já cadastrado',
+      });
+      return;
+    }
+    if (error.code === '23505' || error.message?.includes('duplicate')) {
+      res.status(409).json({
+        success: false,
+        error: 'Conflict',
+        message: 'E-mail ou CPF já cadastrado',
+      });
+      return;
+    }
+
+    res.status(500).json({
+      success: false,
+      error: 'Internal server error',
+      message: error.message || 'Failed to create manual runner',
     });
   }
 };

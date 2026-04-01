@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,8 +30,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useDebounce } from "@/hooks/useDebounce";
+import { getAdminPath } from "@/lib/utils/navigation";
 
 const UserManagement = () => {
+  const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState("");
   const debouncedSearch = useDebounce(searchTerm, 400);
   const [activeTab, setActiveTab] = useState("organizers");
@@ -408,6 +411,10 @@ const UserManagement = () => {
                 <Button variant="outline">
                   <Download className="mr-2 h-4 w-4" />
                   Exportar
+                </Button>
+                <Button onClick={() => navigate(getAdminPath("runner-manual"))}>
+                  <UserPlus className="mr-2 h-4 w-4" />
+                  Cadastrar Corredor
                 </Button>
               </div>
             </CardHeader>

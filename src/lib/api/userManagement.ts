@@ -22,6 +22,28 @@ export interface CreateAdminData {
   role?: 'admin';
 }
 
+export interface CreateManualRunnerData {
+  email: string;
+  password: string;
+  full_name: string;
+  cpf: string;
+  phone: string;
+  gender?: 'M' | 'F' | 'O' | null;
+  birth_date: string;
+  preferred_name?: string | null;
+  profession?: string | null;
+  cbat?: string | null;
+  team?: string | null;
+  postal_code?: string | null;
+  street?: string | null;
+  address_number?: string | null;
+  address_complement?: string | null;
+  neighborhood?: string | null;
+  city?: string | null;
+  state?: string | null;
+  lgpd_consent: boolean;
+}
+
 export interface PaginatedUsersData {
   items: UserWithStats[];
   page: number;
@@ -176,6 +198,15 @@ export const createAdmin = async (data: CreateAdminData): Promise<{
   error?: string;
 }> => {
   return apiClient.post<{ id: string }>('/admin/users/admins', data);
+};
+
+export const createManualRunner = async (data: CreateManualRunnerData): Promise<{
+  success: boolean;
+  data?: { id: string };
+  message?: string;
+  error?: string;
+}> => {
+  return apiClient.post<{ id: string }>('/admin/users/runners/manual', data);
 };
 
 /**

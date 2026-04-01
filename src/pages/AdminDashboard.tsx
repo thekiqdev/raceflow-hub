@@ -7,6 +7,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { AdminSidebar } from "@/components/admin/AdminSidebar";
 import DashboardOverview from "@/components/admin/DashboardOverview";
 import UserManagement from "@/components/admin/UserManagement";
+import AdminManualRunnerCreate from "@/components/admin/AdminManualRunnerCreate";
 import EventManagement from "@/components/admin/EventManagement";
 import FinancialManagement from "@/components/admin/FinancialManagement";
 import AdvancedReports from "@/components/admin/AdvancedReports";
@@ -85,6 +86,8 @@ const AdminDashboard = () => {
         return <DashboardOverview />;
       case "users":
         return <UserManagement />;
+      case "runner-manual":
+        return <AdminManualRunnerCreate />;
       case "events":
         return <EventManagement />;
       case "registrations":

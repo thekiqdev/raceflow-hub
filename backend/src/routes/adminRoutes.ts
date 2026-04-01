@@ -21,6 +21,7 @@ import {
   unblockUserController,
   resetUserPasswordController,
   createAdminController,
+  createManualRunnerController,
 } from '../controllers/userManagementController.js';
 import {
   getFinancialOverviewController,
@@ -182,6 +183,7 @@ router.post('/users/:id/block', blockUserController);
 router.post('/users/:id/unblock', unblockUserController);
 router.post('/users/:id/reset-password', resetUserPasswordController);
 router.post('/users/admins', createAdminController);
+router.post('/users/runners/manual', createManualRunnerController);
 
 // Financial management endpoints
 router.get('/financial/overview', getFinancialOverviewController);
