@@ -63,6 +63,9 @@ export function proofMatchesRegisterBody(
   if (String(body.birth_date).slice(0, 10) !== String(proof.birth_date).slice(0, 10)) return false;
   const g = (body.gender || '').trim().toUpperCase();
   const pg = proof.gender.trim().toUpperCase();
+  if (pg === '__MANUAL__') {
+    return g === 'M' || g === 'F';
+  }
   return g === pg;
 }
 

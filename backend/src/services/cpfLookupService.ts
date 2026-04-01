@@ -9,6 +9,7 @@ export interface LookupCpfSuccessData {
   full_name: string;
   birth_date: string;
   gender: string;
+  gender_locked: boolean;
 }
 
 export interface LookupCpfResult {
@@ -21,12 +22,11 @@ export interface LookupCpfResult {
 }
 
 /** Mapeia SEXO da API para texto armazenado em profiles.gender. */
-export function mapSexoToProfileGender(sexoRaw: string): string {
+export function mapSexoToProfileGender(sexoRaw: string): { gender: string; locked: boolean } {
   const s = sexoRaw.trim().toUpperCase();
-  if (!s) return '';
-  if (s === 'M' || s.startsWith('MASC')) return 'M';
-  if (s === 'F' || s.startsWith('FEM')) return 'F';
-  return sexoRaw.trim().slice(0, 64);
+  if (s === 'M' || s.startsWith('MASC')) return { gender: 'M', locked: true };
+  if (s === 'F' || s.startsWith('FEM')) return { gender: 'F', locked: true };
+  return { gender: '', locked: false };
 }
 
 /**
@@ -64,16 +64,7 @@ export async function lookupCpfForRegistration(rawCpf: string): Promise<LookupCp
     };
   }
 
-  const gender = mapSexoToProfileGender(api.payload.sexoRaw);
-  if (!gender) {
-    console.warn('[cpf-lookup] SEXO vazio após parse', { requestId, cpf: maskCpf(digits) });
-    return {
-      success: false,
-      message: 'CPF inválido',
-      code: 'EXTERNAL_BAD_RESPONSE',
-      requestId,
-    };
-  }
+  const mappedGender = mapSexoToProfileGender(api.payload.sexoRaw);
 
   return {
     success: true,
@@ -84,7 +75,8 @@ export async function lookupCpfForRegistration(rawCpf: string): Promise<LookupCp
       cpf: digits,
       full_name: api.payload.nome,
       birth_date: api.payload.nascIso,
-      gender,
+      gender: mappedGender.gender,
+      gender_locked: mappedGender.locked,
     },
   };
 }

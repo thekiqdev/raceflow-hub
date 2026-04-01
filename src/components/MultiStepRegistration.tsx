@@ -73,6 +73,7 @@ export function MultiStepRegistration({ open, onOpenChange }: MultiStepRegistrat
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<StepErrors>({});
   const [loadingCep, setLoadingCep] = useState(false);
+  const [genderLockedFromLookup, setGenderLockedFromLookup] = useState(false);
   const [referralCode, setReferralCode] = useState<string>("");
 
   // Estado para todos os dados do formulário
@@ -134,15 +135,18 @@ export function MultiStepRegistration({ open, onOpenChange }: MultiStepRegistrat
         gender: "",
         cpfLookupProof: "",
       }));
+      setGenderLockedFromLookup(false);
       return;
     }
+    const recognizedGender = data.gender === "M" || data.gender === "F";
     setFormData((prev) => ({
       ...prev,
       fullName: data.full_name,
       birthDate: apiBd,
-      gender: data.gender === "M" || data.gender === "F" ? data.gender : "",
+      gender: recognizedGender ? data.gender : "",
       cpfLookupProof: proof,
     }));
+    setGenderLockedFromLookup(Boolean(data.gender_locked && recognizedGender));
   }, []);
 
   const onCpfLookupInvalidate = useCallback(() => {
@@ -153,6 +157,7 @@ export function MultiStepRegistration({ open, onOpenChange }: MultiStepRegistrat
       gender: "",
       cpfLookupProof: "",
     }));
+    setGenderLockedFromLookup(false);
   }, []);
 
   const { lookupLoading, lookupError, manualLookup, cpfAlreadyRegistered, clearLookupCompleted } =
@@ -240,6 +245,7 @@ export function MultiStepRegistration({ open, onOpenChange }: MultiStepRegistrat
         });
         setCurrentStep(1);
         setErrors({});
+        setGenderLockedFromLookup(false);
       }, 500);
     }
   }, [open]);
@@ -580,19 +586,25 @@ export function MultiStepRegistration({ open, onOpenChange }: MultiStepRegistrat
 
             <div className="space-y-2">
               <Label htmlFor="gender-display">Sexo *</Label>
-              <Input
-                id="gender-display"
-                value={
-                  formData.gender === "M"
-                    ? "Masculino"
-                    : formData.gender === "F"
-                      ? "Feminino"
-                      : formData.gender || ""
-                }
-                readOnly
-                placeholder="—"
-                className={`bg-muted ${errors.gender ? "border-destructive" : ""}`}
-              />
+              {genderLockedFromLookup ? (
+                <Input
+                  id="gender-display"
+                  value={formData.gender === "M" ? "Masculino" : "Feminino"}
+                  readOnly
+                  placeholder="—"
+                  className={`bg-muted ${errors.gender ? "border-destructive" : ""}`}
+                />
+              ) : (
+                <Select value={formData.gender} onValueChange={(v) => updateField("gender", v as "M" | "F" | "")}>
+                  <SelectTrigger className={errors.gender ? "border-destructive" : ""}>
+                    <SelectValue placeholder="Selecione" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="M">Masculino</SelectItem>
+                    <SelectItem value="F">Feminino</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
               {errors.gender && <p className="text-sm text-destructive">{errors.gender}</p>}
             </div>
 

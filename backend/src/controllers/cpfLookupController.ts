@@ -55,11 +55,12 @@ export const lookupCpfController = asyncHandler(async (req: Request, res: Respon
   }
 
   const d = result.data!;
+  const proofGender = d.gender === 'M' || d.gender === 'F' ? d.gender : '__MANUAL__';
   const proof = issueCpfLookupProof({
     cpf: d.cpf,
     full_name: d.full_name,
     birth_date: d.birth_date,
-    gender: d.gender,
+    gender: proofGender,
   });
 
   res.json({

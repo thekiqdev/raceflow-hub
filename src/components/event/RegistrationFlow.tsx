@@ -154,6 +154,7 @@ export function RegistrationFlow({
     password: "",
   });
   const [isRegistering, setIsRegistering] = useState(false); // Toggle between login and register
+  const [registerGenderLockedFromLookup, setRegisterGenderLockedFromLookup] = useState(false);
   const [registerData, setRegisterData] = useState({
     fullName: "",
     email: "",
@@ -192,15 +193,18 @@ export function RegistrationFlow({
         gender: "",
         cpfLookupProof: "",
       }));
+      setRegisterGenderLockedFromLookup(false);
       return;
     }
+    const recognizedGender = data.gender === "M" || data.gender === "F";
     setRegisterData((prev) => ({
       ...prev,
       fullName: data.full_name,
       birthDate: apiBd,
-      gender: data.gender === "M" || data.gender === "F" ? data.gender : "",
+      gender: recognizedGender ? data.gender : "",
       cpfLookupProof: proof,
     }));
+    setRegisterGenderLockedFromLookup(Boolean(data.gender_locked && recognizedGender));
   }, []);
 
   const onRegisterCpfLookupInvalidate = useCallback(() => {
@@ -211,6 +215,7 @@ export function RegistrationFlow({
       gender: "",
       cpfLookupProof: "",
     }));
+    setRegisterGenderLockedFromLookup(false);
   }, []);
 
   const { lookupLoading, lookupError, manualLookup, cpfAlreadyRegistered, clearLookupCompleted } =
@@ -1033,6 +1038,7 @@ export function RegistrationFlow({
           gender: "",
           cpfLookupProof: "",
         });
+        setRegisterGenderLockedFromLookup(false);
         setLgpdConsent(false);
         setIsRegistering(false); // Switch back to login view
         
@@ -1911,20 +1917,31 @@ export function RegistrationFlow({
                           </div>
                           <div>
                             <Label htmlFor="registerGenderDisplay">Gênero *</Label>
-                            <Input
-                              id="registerGenderDisplay"
-                              value={
-                                registerData.gender === "M"
-                                  ? "Masculino"
-                                  : registerData.gender === "F"
-                                    ? "Feminino"
-                                    : registerData.gender
-                              }
-                              readOnly
-                              placeholder="—"
-                              className="mt-1 bg-muted"
-                              disabled={isRegisteringAccount}
-                            />
+                            {registerGenderLockedFromLookup ? (
+                              <Input
+                                id="registerGenderDisplay"
+                                value={registerData.gender === "M" ? "Masculino" : "Feminino"}
+                                readOnly
+                                placeholder="—"
+                                className="mt-1 bg-muted"
+                                disabled={isRegisteringAccount}
+                              />
+                            ) : (
+                              <select
+                                id="registerGenderDisplay"
+                                value={registerData.gender}
+                                onChange={(e) =>
+                                  setRegisterData((prev) => ({ ...prev, gender: e.target.value }))
+                                }
+                                className="mt-1 flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                                disabled={isRegisteringAccount}
+                                required
+                              >
+                                <option value="">Selecione</option>
+                                <option value="M">Masculino</option>
+                                <option value="F">Feminino</option>
+                              </select>
+                            )}
                           </div>
                         </>
                       )}

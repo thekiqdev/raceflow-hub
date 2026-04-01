@@ -32,6 +32,7 @@ const Auth = () => {
   const [phone, setPhone] = useState("");
   const [birthDate, setBirthDate] = useState("");
   const [gender, setGender] = useState("");
+  const [genderLockedFromLookup, setGenderLockedFromLookup] = useState(false);
   const [lgpdConsent, setLgpdConsent] = useState(false);
   const [cpfLookupProof, setCpfLookupProof] = useState<string | null>(null);
 
@@ -58,12 +59,15 @@ const Auth = () => {
         clearLookupCompletedRef.current();
         setFullName("");
         setGender("");
+        setGenderLockedFromLookup(false);
         setCpfLookupProof(null);
         return;
       }
       setFullName(data.full_name);
       setBirthDate(apiBd);
-      setGender(data.gender);
+      const recognizedGender = data.gender === "M" || data.gender === "F";
+      setGender(recognizedGender ? data.gender : "");
+      setGenderLockedFromLookup(Boolean(data.gender_locked && recognizedGender));
       setCpfLookupProof(proof);
     },
     []
@@ -73,6 +77,7 @@ const Auth = () => {
     setFullName("");
     setBirthDate("");
     setGender("");
+    setGenderLockedFromLookup(false);
     setCpfLookupProof(null);
   }, []);
 
@@ -310,15 +315,29 @@ const Auth = () => {
                     </div>
 
                     <div className="space-y-2">
-                      <Label htmlFor="signup-gender">Gênero *</Label>
-                      <Input
-                        id="signup-gender"
-                        value={gender === "M" ? "Masculino" : gender === "F" ? "Feminino" : gender}
-                        readOnly
-                        placeholder="—"
-                        required
-                        className="bg-muted"
-                      />
+                      <Label htmlFor="signup-gender">Sexo *</Label>
+                      {genderLockedFromLookup ? (
+                        <Input
+                          id="signup-gender"
+                          value={gender === "M" ? "Masculino" : "Feminino"}
+                          readOnly
+                          placeholder="—"
+                          required
+                          className="bg-muted"
+                        />
+                      ) : (
+                        <select
+                          id="signup-gender"
+                          value={gender}
+                          onChange={(e) => setGender(e.target.value)}
+                          required
+                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                        >
+                          <option value="">Selecione</option>
+                          <option value="M">Masculino</option>
+                          <option value="F">Feminino</option>
+                        </select>
+                      )}
                     </div>
                   </>
                 )}

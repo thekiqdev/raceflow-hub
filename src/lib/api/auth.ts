@@ -72,6 +72,7 @@ export interface LookupCpfData {
   full_name: string;
   birth_date: string;
   gender: string;
+  gender_locked: boolean;
 }
 
 export interface LookupCpfResponseBody {
