@@ -66,6 +66,16 @@ export const getPublicProfileByCpf = async (cpf: string, signal?: AbortSignal) =
   return apiClient.get<Profile>(endpoint, { signal });
 };
 
+/** Busca atleta por CPF para inscrição pelo organizador (não exige perfil público). Requer papel organizer ou admin. */
+export const getRunnerProfileByCpfForOrganizer = async (cpf: string, signal?: AbortSignal) => {
+  const queryParams = new URLSearchParams();
+  queryParams.append('cpf', cpf);
+  const queryString = queryParams.toString();
+  const endpoint = `/profiles/organizer/search-by-cpf${queryString ? `?${queryString}` : ''}`;
+
+  return apiClient.get<Profile>(endpoint, { signal });
+};
+
 
 
 

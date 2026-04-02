@@ -32,7 +32,7 @@ import { ptBR } from "date-fns/locale";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { getRegistrations, exportRegistrations, createRegistrationByOrganizer, getRegistrationById, updateRegistration, completeRegistrationAttributes, removeRegistrationAttributes, attachRegistrationToCommission, getRegistrationCommission, detachCommission, type Registration, type RegistrationCommissionInfo } from "@/lib/api/registrations";
-import { getPublicProfileByCpf, type Profile } from "@/lib/api/profiles";
+import { getRunnerProfileByCpfForOrganizer, type Profile } from "@/lib/api/profiles";
 import { maskCpf, maskPhone, unmask } from "@/lib/utils/masks";
 import { validateCpf } from "@/lib/utils/validators";
 import { getEventCommissionsByEvent, type EventCommissionOption } from "@/lib/api/leaderEventCommissions";
@@ -394,7 +394,7 @@ const OrganizerRegistrations = () => {
     setAthleteFound(null);
     setAthleteData(null);
     try {
-      const response = await getPublicProfileByCpf(registerCpf);
+      const response = await getRunnerProfileByCpfForOrganizer(registerCpf);
       if (response.success && response.data) {
         setAthleteFound(true);
         setAthleteData(response.data);

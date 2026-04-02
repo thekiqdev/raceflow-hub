@@ -139,3 +139,37 @@ export const getPublicProfileByCpf = async (cpf: string) => {
     birth_date: result.rows[0].birth_date,
   };
 };
+
+/** Perfil por CPF para fluxo operacional (organizador/admin). Não exige is_public. */
+export const getProfileByCpfForOrganizerLookup = async (cpf: string) => {
+  const cleanCpf = cpf.replace(/[^0-9]/g, '');
+
+  const result = await query(
+    `SELECT 
+      p.id,
+      p.full_name,
+      p.cpf,
+      p.phone,
+      p.gender,
+      p.birth_date,
+      u.email
+    FROM profiles p
+    JOIN users u ON p.id = u.id
+    WHERE p.cpf = $1`,
+    [cleanCpf]
+  );
+
+  if (result.rows.length === 0) {
+    return null;
+  }
+
+  return {
+    id: result.rows[0].id,
+    full_name: result.rows[0].full_name,
+    cpf: result.rows[0].cpf,
+    phone: result.rows[0].phone,
+    email: result.rows[0].email,
+    gender: result.rows[0].gender,
+    birth_date: result.rows[0].birth_date,
+  };
+};

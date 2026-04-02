@@ -1,6 +1,12 @@
 import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth.js';
-import { getProfileByUserId, updateProfile, getPublicProfileByCpf, verifyUserPassword } from '../services/profilesService.js';
+import {
+  getProfileByUserId,
+  updateProfile,
+  getPublicProfileByCpf,
+  getProfileByCpfForOrganizerLookup,
+  verifyUserPassword,
+} from '../services/profilesService.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { hasRole } from '../services/userRolesService.js';
 import { query } from '../config/database.js';
@@ -196,6 +202,72 @@ export const getPublicProfileByCpfController = asyncHandler(async (req: AuthRequ
 
   if (verboseProfileCpf) {
     console.log('✅ Perfil encontrado:', { id: profile.id, name: profile.full_name });
+  }
+
+  res.json({
+    success: true,
+    data: profile,
+  });
+  return;
+});
+
+/**
+ * GET /api/profiles/organizer/search-by-cpf
+ * Busca corredor cadastrado por CPF para inscrição pelo organizador (ou admin).
+ * Não aplica filtro de perfil público.
+ */
+export const searchRunnerByCpfForOrganizerController = asyncHandler(async (req: AuthRequest, res: Response) => {
+  if (!req.user) {
+    return res.status(401).json({
+      success: false,
+      error: 'Not authenticated',
+    });
+  }
+
+  const isOrganizer = await hasRole(req.user.id, 'organizer');
+  const isAdmin = await hasRole(req.user.id, 'admin');
+  if (!isOrganizer && !isAdmin) {
+    return res.status(403).json({
+      success: false,
+      error: 'Forbidden',
+      message: 'Apenas organizadores e administradores podem usar esta busca',
+    });
+  }
+
+  const { cpf } = req.query;
+  if (!cpf) {
+    return res.status(400).json({
+      success: false,
+      error: 'CPF é obrigatório',
+      message: 'Por favor, informe o CPF para buscar o atleta',
+    });
+  }
+
+  const cpfString = String(cpf).trim();
+  if (!cpfString) {
+    return res.status(400).json({
+      success: false,
+      error: 'CPF inválido',
+      message: 'O CPF informado está vazio',
+    });
+  }
+
+  const cleanCpf = cpfString.replace(/[^0-9]/g, '');
+  if (cleanCpf.length !== 11 || !isValidCpfDigits(cleanCpf)) {
+    return res.status(400).json({
+      success: false,
+      error: 'CPF inválido',
+      message: 'Informe um CPF válido com 11 dígitos.',
+    });
+  }
+
+  const profile = await getProfileByCpfForOrganizerLookup(cpfString);
+  if (!profile) {
+    return res.status(404).json({
+      success: false,
+      error: 'Atleta não encontrado',
+      message: 'Não há cadastro na plataforma com este CPF.',
+    });
   }
 
   res.json({
