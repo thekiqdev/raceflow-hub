@@ -100,8 +100,6 @@ const OrganizerRegistrations = () => {
   
   // Edit mode
   const [isEditMode, setIsEditMode] = useState(false);
-  const [editingStatus, setEditingStatus] = useState<string>("");
-  const [editingPaymentStatus, setEditingPaymentStatus] = useState<string>("");
   const [editingProductAttributes, setEditingProductAttributes] = useState<Record<string, Record<string, string>>>({});
   const [kitProducts, setKitProducts] = useState<KitProduct[]>([]);
   const [loadingKit, setLoadingKit] = useState(false);
@@ -497,8 +495,6 @@ const OrganizerRegistrations = () => {
       const response = await getRegistrationById(registration.id);
       if (response.success && response.data) {
         setRegistrationDetails(response.data);
-        setEditingStatus(response.data.status || "pending");
-        setEditingPaymentStatus(response.data.payment_status || "pending");
         setSelectedCategoryForDetails(null);
         if (response.data.category_id) {
           const catRes = await getCategoryById(response.data.category_id);
@@ -640,11 +636,6 @@ const OrganizerRegistrations = () => {
     setIsEditMode(false);
     setEditingProductAttributes({});
     setEditingCustomFieldValues({});
-    // Reset to original values
-    if (registrationDetails) {
-      setEditingStatus(registrationDetails.status || "pending");
-      setEditingPaymentStatus(registrationDetails.payment_status || "pending");
-    }
   };
 
   const handleSaveEdit = async () => {
@@ -653,14 +644,8 @@ const OrganizerRegistrations = () => {
     setSaving(true);
 
     try {
-      // Update registration status, payment status and custom field values
+      // Status / pagamento: somente admin (via painel admin). Organizador: campos personalizados e demais regras do backend.
       const updateData: any = {};
-      if (editingStatus !== registrationDetails.status) {
-        updateData.status = editingStatus;
-      }
-      if (editingPaymentStatus !== registrationDetails.payment_status) {
-        updateData.payment_status = editingPaymentStatus;
-      }
       if (selectedCategoryForDetails?.custom_fields?.length) {
         updateData.custom_field_values = editingCustomFieldValues;
       } else if (selectedCategoryForDetails) {
@@ -743,8 +728,6 @@ const OrganizerRegistrations = () => {
       const response = await getRegistrationById(registrationDetails.id);
       if (response.success && response.data) {
         setRegistrationDetails(response.data);
-        setEditingStatus(response.data.status || "pending");
-        setEditingPaymentStatus(response.data.payment_status || "pending");
         if (response.data.category_id) {
           const catRes = await getCategoryById(response.data.category_id);
           if (catRes.success && catRes.data) setSelectedCategoryForDetails(catRes.data);
@@ -796,9 +779,6 @@ const OrganizerRegistrations = () => {
       const response = await getRegistrationById(registrationDetails.id);
       if (response.success && response.data) {
         setRegistrationDetails(response.data);
-        setEditingStatus(response.data.status || "pending");
-        setEditingPaymentStatus(response.data.payment_status || "pending");
-        
         // Reset editing attributes if in edit mode
         if (isEditMode && registrationDetails.kit_id) {
           const currentAttributes: Record<string, Record<string, string>> = {};
@@ -2044,42 +2024,16 @@ const OrganizerRegistrations = () => {
                   </div>
                   <div>
                     <Label className="text-sm text-muted-foreground">Status</Label>
-                    {isEditMode ? (
-                      <Select value={editingStatus} onValueChange={setEditingStatus}>
-                        <SelectTrigger className="mt-1">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="pending">Pendente</SelectItem>
-                          <SelectItem value="confirmed">Confirmado</SelectItem>
-                          <SelectItem value="cancelled">Cancelado</SelectItem>
-                          <SelectItem value="refund_requested">Reembolso Solicitado</SelectItem>
-                          <SelectItem value="refunded">Reembolsado</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    ) : (
                     <div className="mt-1">{getStatusBadge(registrationDetails.status || "pending")}</div>
+                    {isEditMode && (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Alteração de status e de pagamento é feita apenas pelo administrador.
+                      </p>
                     )}
                   </div>
                   <div>
                     <Label className="text-sm text-muted-foreground">Status do Pagamento</Label>
-                    {isEditMode ? (
-                      <Select value={editingPaymentStatus} onValueChange={setEditingPaymentStatus}>
-                        <SelectTrigger className="mt-1">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="pending">Pendente</SelectItem>
-                          <SelectItem value="paid">Pago</SelectItem>
-                          <SelectItem value="convidado">Convite</SelectItem>
-                          <SelectItem value="partially_paid">Pago parcialmente</SelectItem>
-                          <SelectItem value="refunded">Reembolsado</SelectItem>
-                          <SelectItem value="failed">Falhou</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    ) : (
                     <div className="mt-1">{getPaymentStatusBadge(registrationDetails.payment_status || "pending")}</div>
-                    )}
                   </div>
                   <div>
                     <Label className="text-sm text-muted-foreground">Data da Inscrição</Label>

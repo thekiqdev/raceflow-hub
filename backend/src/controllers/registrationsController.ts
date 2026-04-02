@@ -2245,13 +2245,8 @@ export const updateRegistrationController = asyncHandler(async (req: AuthRequest
     return;
   }
 
-  // Check if payment status is being updated to 'paid' or status to 'confirmed'
   const wasPaid = registration.payment_status === 'paid';
   const wasConfirmed = registration.status === 'confirmed';
-  const willBePaid = req.body.payment_status === 'paid';
-  const willBeConfirmed = req.body.status === 'confirmed';
-  const paymentJustConfirmed = !wasPaid && willBePaid;
-  const statusJustConfirmed = !wasConfirmed && willBeConfirmed;
 
   // Allowlist: only these fields can be updated via this endpoint
   const allowedKeys = ['status', 'payment_status', 'payment_method', 'coupon_code', 'category_id', 'kit_id', 'modality_id', 'category_batch_id', 'custom_field_values'] as const;
@@ -2266,16 +2261,23 @@ export const updateRegistrationController = asyncHandler(async (req: AuthRequest
     updatePayload.category_batch_id = req.body.batch_id;
   }
 
-  // Apenas admin pode definir método de pagamento (evita organizador forçar PIX/cartão via API)
+  // Apenas admin pode alterar status, status de pagamento e método de pagamento
   if (!isAdmin) {
     delete updatePayload.payment_method;
+    delete updatePayload.status;
+    delete updatePayload.payment_status;
   }
+
+  const willBePaid = updatePayload.payment_status === 'paid';
+  const willBeConfirmed = updatePayload.status === 'confirmed';
+  const paymentJustConfirmed = !wasPaid && willBePaid;
+  const statusJustConfirmed = !wasConfirmed && willBeConfirmed;
 
   // Etapa 3 + Etapa 4: quando status for ou permanecer convite, zerar valores e taxa da plataforma.
   // Inclui o caso em que o frontend não envia payment_status (edição só de categoria/kit): inscrição convite continua convite com totais zerados.
   const willBeConvite =
-    req.body.payment_status === 'convidado' ||
-    (registration.payment_status === 'convidado' && req.body.payment_status === undefined);
+    updatePayload.payment_status === 'convidado' ||
+    (registration.payment_status === 'convidado' && updatePayload.payment_status === undefined);
   if (willBeConvite) {
     updatePayload.total_amount = 0;
     updatePayload.platform_fee_amount = 0;
