@@ -78,6 +78,8 @@ const AdminRegistrations = () => {
   const [isEditMode, setIsEditMode] = useState(false);
   const [editingStatus, setEditingStatus] = useState<string>("");
   const [editingPaymentStatus, setEditingPaymentStatus] = useState<string>("");
+  /** Admin: PIX / cartão / boleto ao editar inscrição fora de convite */
+  const [editingPaymentMethod, setEditingPaymentMethod] = useState<string>("pix");
   const [editingCategoryId, setEditingCategoryId] = useState<string>("");
   const [editingKitId, setEditingKitId] = useState<string>("");
   const [editingModalityId, setEditingModalityId] = useState<string>("");
@@ -236,6 +238,10 @@ const AdminRegistrations = () => {
         setRegistrationDetails(response.data);
         setEditingStatus(response.data.status || "pending");
         setEditingPaymentStatus(response.data.payment_status || "pending");
+        const pm = response.data.payment_method;
+        setEditingPaymentMethod(
+          pm && ["pix", "credit_card", "boleto"].includes(pm) ? pm : "pix"
+        );
         setSelectedCategoryForDetails(null);
         if (response.data.category_id) {
           const catRes = await getCategoryById(response.data.category_id);
@@ -372,6 +378,10 @@ const AdminRegistrations = () => {
     if (!registrationDetails) return;
 
     setIsEditMode(true);
+    const pm0 = registrationDetails.payment_method;
+    setEditingPaymentMethod(
+      pm0 && ["pix", "credit_card", "boleto"].includes(pm0) ? pm0 : "pix"
+    );
     setEditingModalityId(registrationDetails.modality_id || "");
     setEditingCategoryId(registrationDetails.category_id || "");
     setEditingKitId(registrationDetails.kit_id || "");
@@ -466,6 +476,10 @@ const AdminRegistrations = () => {
     if (registrationDetails) {
       setEditingStatus(registrationDetails.status || "pending");
       setEditingPaymentStatus(registrationDetails.payment_status || "pending");
+      const pm = registrationDetails.payment_method;
+      setEditingPaymentMethod(
+        pm && ["pix", "credit_card", "boleto"].includes(pm) ? pm : "pix"
+      );
     }
   };
 
@@ -627,6 +641,16 @@ const AdminRegistrations = () => {
       if (editingPaymentStatus !== registrationDetails.payment_status) {
         updateData.payment_status = editingPaymentStatus;
       }
+      if (editingPaymentStatus !== "convidado") {
+        const leavingConvite =
+          registrationDetails.payment_status === "convidado" &&
+          editingPaymentStatus !== "convidado";
+        const methodChanged =
+          editingPaymentMethod !== (registrationDetails.payment_method || "");
+        if (leavingConvite || methodChanged) {
+          updateData.payment_method = editingPaymentMethod as "pix" | "credit_card" | "boleto";
+        }
+      }
       if (editingCategoryId && editingCategoryId !== registrationDetails.category_id) {
         updateData.category_id = editingCategoryId;
       }
@@ -723,6 +747,10 @@ const AdminRegistrations = () => {
         setRegistrationDetails(response.data);
         setEditingStatus(response.data.status || "pending");
         setEditingPaymentStatus(response.data.payment_status || "pending");
+        const pmR = response.data.payment_method;
+        setEditingPaymentMethod(
+          pmR && ["pix", "credit_card", "boleto"].includes(pmR) ? pmR : "pix"
+        );
         if (response.data.category_id) {
           const catRes = await getCategoryById(response.data.category_id);
           if (catRes.success && catRes.data) setSelectedCategoryForDetails(catRes.data);
@@ -797,7 +825,10 @@ const AdminRegistrations = () => {
         setRegistrationDetails(response.data);
         setEditingStatus(response.data.status || "pending");
         setEditingPaymentStatus(response.data.payment_status || "pending");
-        
+        const pmA = response.data.payment_method;
+        setEditingPaymentMethod(
+          pmA && ["pix", "credit_card", "boleto"].includes(pmA) ? pmA : "pix"
+        );
         // Reset editing attributes if in edit mode
         if (isEditMode && registrationDetails.kit_id) {
           const currentAttributes: Record<string, Record<string, string>> = {};
@@ -1590,7 +1621,15 @@ const AdminRegistrations = () => {
                   <div>
                     <Label className="text-sm text-muted-foreground">Status do Pagamento</Label>
                     {isEditMode ? (
-                      <Select value={editingPaymentStatus} onValueChange={setEditingPaymentStatus}>
+                      <Select
+                        value={editingPaymentStatus}
+                        onValueChange={(v) => {
+                          setEditingPaymentStatus(v);
+                          if (v !== "convidado" && registrationDetails?.payment_status === "convidado") {
+                            setEditingPaymentMethod("pix");
+                          }
+                        }}
+                      >
                         <SelectTrigger className="mt-1">
                           <SelectValue />
                         </SelectTrigger>
@@ -1607,6 +1646,24 @@ const AdminRegistrations = () => {
                       <div className="mt-1">{getPaymentStatusBadge(registrationDetails.payment_status || "pending")}</div>
                     )}
                   </div>
+                  {isEditMode && editingPaymentStatus !== "convidado" && (
+                    <div>
+                      <Label className="text-sm text-muted-foreground">Método de pagamento</Label>
+                      <p className="text-xs text-muted-foreground mb-1">
+                        Ao sair de convite, o valor da inscrição é recalculado (categoria, kit e taxas).
+                      </p>
+                      <Select value={editingPaymentMethod} onValueChange={setEditingPaymentMethod}>
+                        <SelectTrigger className="mt-1">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="pix">PIX</SelectItem>
+                          <SelectItem value="credit_card">Cartão de crédito</SelectItem>
+                          <SelectItem value="boleto">Boleto</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
                   <div>
                     <Label className="text-sm text-muted-foreground">Data da Inscrição</Label>
                     <p className="font-medium">

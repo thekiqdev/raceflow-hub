@@ -2266,6 +2266,11 @@ export const updateRegistrationController = asyncHandler(async (req: AuthRequest
     updatePayload.category_batch_id = req.body.batch_id;
   }
 
+  // Apenas admin pode definir método de pagamento (evita organizador forçar PIX/cartão via API)
+  if (!isAdmin) {
+    delete updatePayload.payment_method;
+  }
+
   // Etapa 3 + Etapa 4: quando status for ou permanecer convite, zerar valores e taxa da plataforma.
   // Inclui o caso em que o frontend não envia payment_status (edição só de categoria/kit): inscrição convite continua convite com totais zerados.
   const willBeConvite =
@@ -2276,6 +2281,22 @@ export const updateRegistrationController = asyncHandler(async (req: AuthRequest
     updatePayload.platform_fee_amount = 0;
     updatePayload.registration_edit_fee_amount = null;
     updatePayload.payment_method = 'free_bonus';
+  }
+
+  /** Admin alterando inscrição de convite para fluxo pago/pendente (recalcular valores). */
+  const leavingConviteForPaidFlow =
+    registration.payment_status === 'convidado' &&
+    updatePayload.payment_status !== undefined &&
+    String(updatePayload.payment_status) !== 'convidado';
+
+  if (leavingConviteForPaidFlow && !isAdmin) {
+    res.status(403).json({
+      success: false,
+      error: 'Forbidden',
+      message:
+        'Apenas administradores podem alterar o status de pagamento de convite para pago, pendente ou outro estado cobrável.',
+    });
+    return;
   }
 
   // Validate category_id belongs to the registration's event (admin/organizer only)
@@ -2352,11 +2373,12 @@ export const updateRegistrationController = asyncHandler(async (req: AuthRequest
     }
   }
 
-  // Recalcular total e aplicar taxa quando categoria/kit/modalidade/lote mudam. Etapa 4: não recalcular se for convite (preservar totais zerados).
+  // Recalcular total quando categoria/kit/lote mudam OU quando admin sai de convite (valores estavam zerados).
   const priceRelatedKeys = ['category_id', 'kit_id', 'modality_id', 'category_batch_id'];
   const anyPriceChange = priceRelatedKeys.some((k) => updatePayload[k] !== undefined);
+  const needsPriceRecalculation = !willBeConvite && (anyPriceChange || leavingConviteForPaidFlow);
   let newTotalForOrganizer: number | undefined; // usado no bloco de pagamento para diferença a cobrar (sem taxa de inscrição de novo)
-  if (!willBeConvite && anyPriceChange) {
+  if (needsPriceRecalculation) {
     const { calculateRegistrationTotal } = await import('../services/registrationTotalService.js');
     const { getSystemSettings } = await import('../services/systemSettingsService.js');
     const categoryId = (updatePayload.category_id as string) ?? registration.category_id;
@@ -2373,21 +2395,36 @@ export const updateRegistrationController = asyncHandler(async (req: AuthRequest
       runnerId: registration.runner_id,
     });
     const oldTotal = parseFloat(String(registration.total_amount)) || 0;
+    const oldPlatformFee = parseFloat(String(registration.platform_fee_amount)) || 0;
     const settings = await getSystemSettings();
     const updateFee = settings.registration_edit_fee ?? 0;
     // Novo total para organizador (sem taxa de inscrição) + taxa de atualização; não cobrar taxa de inscrição de novo na diferença
     const newSubtotalForOrganizer = calculation.amountAfterDiscounts;
-    const valueChanged = Math.abs(newSubtotalForOrganizer - (oldTotal - (parseFloat(String(registration.platform_fee_amount)) || 0))) >= 0.01;
-    const appliedUpdateFee = valueChanged ? updateFee : 0;
+    const oldOrganizerPortion = Math.max(0, oldTotal - oldPlatformFee);
+    const subtotalChanged = Math.abs(newSubtotalForOrganizer - oldOrganizerPortion) >= 0.01;
+    // Conversão convite → pago: recalcula preço sem taxa de edição de inscrição
+    const appliedUpdateFee = leavingConviteForPaidFlow ? 0 : subtotalChanged ? updateFee : 0;
     newTotalForOrganizer = Math.round((newSubtotalForOrganizer + appliedUpdateFee) * 100) / 100;
-    // total_amount na inscrição = valor total (taxa plataforma original + novo valor organizador + taxa atualização) para exibição correta
-    const platformFeeAmount = parseFloat(String(registration.platform_fee_amount)) || 0;
+    // Ao sair de convite, recalcular taxa da plataforma; em edição comum, manter taxa já gravada
+    const platformFeeAmount = leavingConviteForPaidFlow ? calculation.platformFee : oldPlatformFee;
     const newTotalAmount = Math.round((platformFeeAmount + newSubtotalForOrganizer + appliedUpdateFee) * 100) / 100;
     updatePayload.total_amount = newTotalAmount;
+    updatePayload.platform_fee_amount = platformFeeAmount;
     updatePayload.category_batch_id = batchId ?? null;
     // OK Etapa 1: Persistir taxa de atualização quando aplicada
     if (appliedUpdateFee > 0) {
       updatePayload.registration_edit_fee_amount = appliedUpdateFee;
+    } else if (leavingConviteForPaidFlow) {
+      updatePayload.registration_edit_fee_amount = null;
+    }
+  }
+
+  // Método cobrável ao sair de convite: admin escolhe PIX/cartão/boleto (padrão PIX)
+  if (isAdmin && !willBeConvite && leavingConviteForPaidFlow) {
+    const validPaid = ['pix', 'credit_card', 'boleto'] as const;
+    const pm = updatePayload.payment_method as string | undefined;
+    if (!pm || pm === 'free_bonus' || !validPaid.includes(pm as (typeof validPaid)[number])) {
+      updatePayload.payment_method = 'pix';
     }
   }
 
@@ -2420,7 +2457,11 @@ export const updateRegistrationController = asyncHandler(async (req: AuthRequest
   }
 
   // Etapa 5 + OK Etapa 2: regras de pagamento quando o valor foi alterado na edição (usa valor já pago para organizador, sem taxa inicial)
-  if (anyPriceChange && typeof updatePayload.total_amount === 'number' && newTotalForOrganizer !== undefined) {
+  if (
+    (anyPriceChange || leavingConviteForPaidFlow) &&
+    typeof updatePayload.total_amount === 'number' &&
+    newTotalForOrganizer !== undefined
+  ) {
     let amountPaid = await getTotalPaidForRegistration(id);
     let amountPaidForOrganizer = await getAmountPaidForOrganizer(id);
     const oldTotal = parseFloat(String(registration.total_amount)) || 0;
@@ -2449,6 +2490,13 @@ export const updateRegistrationController = asyncHandler(async (req: AuthRequest
             const dueDate = new Date();
             dueDate.setDate(dueDate.getDate() + 7);
             const dueDateStr = dueDate.toISOString().slice(0, 10);
+            const regMethod = String(updatedRegistration.payment_method || 'pix');
+            const billingType =
+              regMethod === 'boleto'
+                ? 'BOLETO'
+                : regMethod === 'credit_card'
+                  ? 'CREDIT_CARD'
+                  : 'PIX';
             await createPayment(
               id,
               customerRow.rows[0].asaas_customer_id,
@@ -2456,7 +2504,7 @@ export const updateRegistrationController = asyncHandler(async (req: AuthRequest
                 value: differenceToCharge,
                 dueDate: dueDateStr,
                 description: amountPaidForOrganizer > 0 ? 'Complemento - Alteração da inscrição' : 'Inscrição - Alteração',
-                billingType: 'PIX',
+                billingType,
                 externalReference: updatedRegistration.confirmation_code || undefined,
               },
               { setAsRegistrationPaymentId: amountPaid === 0 }
