@@ -25,6 +25,7 @@ import { FileUpload } from "@/components/ui/file-upload";
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { isoToDatetimeLocal, processDatetimeLocalForSave, datetimeLocalToISO } from "@/lib/utils";
+import { RegisterAthleteStaffDialog } from "@/components/registration/RegisterAthleteStaffDialog";
 
 interface EventViewEditDialogProps {
   eventId: string | null;
@@ -68,6 +69,7 @@ export function EventViewEditDialog({
   const [editingCustomFieldLabel, setEditingCustomFieldLabel] = useState("");
   const [editingCustomFieldType, setEditingCustomFieldType] = useState<"text" | "number">("text");
   const [customFieldSaving, setCustomFieldSaving] = useState(false);
+  const [adminRegisterAthleteOpen, setAdminRegisterAthleteOpen] = useState(false);
 
   const [formData, setFormData] = useState({
     title: "",
@@ -1462,6 +1464,7 @@ export function EventViewEditDialog({
   }
 
   return (
+    <>
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="fixed inset-0 z-50 w-screen h-screen max-w-none translate-x-0 translate-y-0 rounded-none border-0 bg-background p-6 overflow-y-auto data-[state=open]:zoom-in-100">
         <DialogHeader>
@@ -3862,11 +3865,15 @@ export function EventViewEditDialog({
 
           <TabsContent value="registrations" className="space-y-4">
             <div className="grid gap-4">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
                 <h3 className="text-lg font-semibold">
                   Total: {allRegistrations.length} inscrições
                   {(searchTerm || statusFilter !== "all") && ` (${registrations.length} encontradas)`}
                 </h3>
+                <Button type="button" size="sm" onClick={() => setAdminRegisterAthleteOpen(true)}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Inscrever atleta
+                </Button>
               </div>
               
               {/* Search and filter bar */}
@@ -3989,5 +3996,18 @@ export function EventViewEditDialog({
         </Tabs>
       </DialogContent>
     </Dialog>
+    {eventId ? (
+      <RegisterAthleteStaffDialog
+        mode="super_admin"
+        open={adminRegisterAthleteOpen}
+        onOpenChange={setAdminRegisterAthleteOpen}
+        events={event ? [event] : []}
+        lockedEventId={eventId}
+        onSuccess={() => {
+          void loadEventData();
+        }}
+      />
+    ) : null}
+    </>
   );
 }

@@ -27,6 +27,7 @@ import { EventViewEditDialog } from "./EventViewEditDialog";
 import { EventFormDialog } from "@/components/organizer/EventFormDialog";
 import EventDetailedReport from "@/components/organizer/EventDetailedReport";
 import { ChangeOrganizerModal } from "./ChangeOrganizerModal";
+import { RegisterAthleteStaffDialog } from "@/components/registration/RegisterAthleteStaffDialog";
 import { useNavigate } from "react-router-dom";
 import { getEffectiveRegistrationStatus, getRegistrationStatusLabel, getRegistrationStatusVariant } from "@/lib/utils/eventRegistration";
 
@@ -51,6 +52,8 @@ const EventManagement = () => {
   const [selectedEventIdForReport, setSelectedEventIdForReport] = useState<string | null>(null);
   const [changeOrganizerEvent, setChangeOrganizerEvent] = useState<{ id: string; organizer_id?: string; title: string; organizer?: string } | null>(null);
   const [changeOrganizerModalOpen, setChangeOrganizerModalOpen] = useState(false);
+  const [isRegisterAthleteDialogOpen, setIsRegisterAthleteDialogOpen] = useState(false);
+  const [registerAthleteEventId, setRegisterAthleteEventId] = useState<string | null>(null);
   const { toast } = useToast();
 
   const loadEvents = useCallback(async () => {
@@ -180,6 +183,11 @@ const EventManagement = () => {
     setSelectedEventId(eventId);
     setDialogMode("edit");
     setDialogOpen(true);
+  };
+
+  const handleOpenRegisterAthlete = (eventId: string) => {
+    setRegisterAthleteEventId(eventId);
+    setIsRegisterAthleteDialogOpen(true);
   };
 
   const handleDeleteEvent = (event: any) => {
@@ -498,6 +506,10 @@ const EventManagement = () => {
                                   <Edit className="mr-2 h-4 w-4" />
                                   Editar
                                 </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => handleOpenRegisterAthlete(event.id)}>
+                                  <Plus className="mr-2 h-4 w-4" />
+                                  Inscrever atleta
+                                </DropdownMenuItem>
                                 <DropdownMenuItem
                                   onClick={async () => {
                                     let organizerId = event.organizer_id;
@@ -588,6 +600,10 @@ const EventManagement = () => {
                                   <DropdownMenuItem onClick={() => handleEditEvent(event.id)}>
                                     <Edit className="mr-2 h-4 w-4" />
                                     Editar
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem onClick={() => handleOpenRegisterAthlete(event.id)}>
+                                    <Plus className="mr-2 h-4 w-4" />
+                                    Inscrever atleta
                                   </DropdownMenuItem>
                                   <DropdownMenuItem
                                     onClick={async () => {
@@ -759,6 +775,15 @@ const EventManagement = () => {
         open={changeOrganizerModalOpen}
         onOpenChange={setChangeOrganizerModalOpen}
         event={changeOrganizerEvent}
+        onSuccess={loadEvents}
+      />
+
+      <RegisterAthleteStaffDialog
+        mode="super_admin"
+        open={isRegisterAthleteDialogOpen}
+        onOpenChange={setIsRegisterAthleteDialogOpen}
+        events={events as any}
+        lockedEventId={registerAthleteEventId}
         onSuccess={loadEvents}
       />
 

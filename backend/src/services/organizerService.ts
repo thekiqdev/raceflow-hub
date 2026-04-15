@@ -1,5 +1,9 @@
 import { query } from '../config/database.js';
-import { calculateValueWithoutFee } from '../utils/feeCalculations.js';
+import {
+  getLiquidRegistrationValue,
+  getReportableRevenue,
+  type FinancialRegistrationLike,
+} from './financialReportingService.js';
 
 /**
  * Get dashboard statistics for an organizer
@@ -181,12 +185,11 @@ export const getOrganizerFinancialSummary = async (organizerId: string): Promise
   result.rows.forEach((row) => {
     if (row.payment_status === 'paid') {
       paidRegistrations++;
-      const total = parseFloat(row.total_amount) || 0;
-      const pf = parseFloat(row.platform_fee_amount) || 0;
-      const ef = parseFloat(row.registration_edit_fee_amount) || 0;
-      const valorLiquido = (pf > 0 || ef > 0)
-        ? Math.round((total - pf - ef) * 100) / 100
-        : calculateValueWithoutFee(total, platformFee, platformFeeType, platformFeeMin);
+      const valorLiquido = getLiquidRegistrationValue(row as FinancialRegistrationLike, {
+        platformFee,
+        platformFeeType,
+        platformFeeMin,
+      });
 
       totalRevenue += valorLiquido;
 
@@ -253,7 +256,7 @@ export const getOrganizerEventRevenues = async (organizerId: string): Promise<Or
     [organizerId]
   );
 
-  // Group by event and calculate revenue as valor líquido (OK Etapa 3)
+  // Group by event and calculate revenue with canonical financial helper.
   const eventMap = new Map<string, {
     eventId: string;
     eventTitle: string;
@@ -262,6 +265,13 @@ export const getOrganizerEventRevenues = async (organizerId: string): Promise<Or
     paidRegistrations: number;
     totalRevenue: number;
   }>();
+
+  const rowsByEvent = new Map<string, any[]>();
+  result.rows.forEach((row) => {
+    const eventRows = rowsByEvent.get(row.event_id) || [];
+    eventRows.push(row);
+    rowsByEvent.set(row.event_id, eventRows);
+  });
 
   result.rows.forEach((row) => {
     const eventId = row.event_id;
@@ -281,16 +291,19 @@ export const getOrganizerEventRevenues = async (organizerId: string): Promise<Or
       event.registrations++;
       if (row.payment_status === 'paid') {
         event.paidRegistrations++;
-        const total = parseFloat(row.total_amount) || 0;
-        const pf = parseFloat(row.platform_fee_amount) || 0;
-        const ef = parseFloat(row.registration_edit_fee_amount) || 0;
-        const valorLiquido = (pf > 0 || ef > 0)
-          ? Math.round((total - pf - ef) * 100) / 100
-          : calculateValueWithoutFee(total, platformFee, platformFeeType, platformFeeMin);
-        event.totalRevenue += valorLiquido;
       }
     }
   });
+
+  for (const [eventId, rows] of rowsByEvent.entries()) {
+    const event = eventMap.get(eventId);
+    if (!event) continue;
+    event.totalRevenue = getReportableRevenue(rows as FinancialRegistrationLike[], {
+      platformFee,
+      platformFeeType,
+      platformFeeMin,
+    });
+  }
 
   return Array.from(eventMap.values()).map((event) => ({
     eventId: event.eventId,

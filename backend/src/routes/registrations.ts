@@ -21,6 +21,7 @@ import {
   confirmDifferencePaymentController,
   generatePaymentController,
   createRegistrationByOrganizerController,
+  createRegistrationBySuperAdminController,
   createRegistrationByLeaderController,
   checkExistingRegistrationController,
   getRegistrationsWithMissingAttributesController,
@@ -60,6 +61,7 @@ router.get('/:id', getRegistration);
 router.post('/:id/preview-edit', previewRegistrationEditController);
 router.post('/', createRegistrationController);
 router.post('/organizer/register-athlete', createRegistrationByOrganizerController);
+router.post('/admin/register-athlete', createRegistrationBySuperAdminController);
 router.post('/leader/register-athlete', createRegistrationByLeaderController);
 router.put('/:id', updateRegistrationController);
 router.post('/:id/attach-commission', attachRegistrationToCommissionController);

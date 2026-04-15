@@ -128,6 +128,29 @@ const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
   const [leaderCouponSales, setLeaderCouponSales] = useState<LeaderCouponSalesRow[]>([]);
   const [leaderInvitationsGranted, setLeaderInvitationsGranted] = useState<Record<string, number>>({});
 
+  const getCanonicalDisplayValue = (
+    reg: RegistrationDetail,
+    currentPlatformFee: number,
+    currentPlatformFeeType: 'fixed' | 'percentage'
+  ): number => {
+    if (reg.payment_method === 'free_bonus' || reg.payment_status === 'convidado') {
+      return 0;
+    }
+    const total = Number(reg.total_amount) || 0;
+    const hasPersistedFeeFields =
+      reg.platform_fee_amount != null || reg.registration_edit_fee_amount != null;
+
+    if (hasPersistedFeeFields) {
+      const feeTotal =
+        (reg.platform_fee_amount == null ? 0 : Number(reg.platform_fee_amount) || 0) +
+        (reg.registration_edit_fee_amount == null ? 0 : Number(reg.registration_edit_fee_amount) || 0);
+      return Math.max(0, Math.round((total - feeTotal) * 100) / 100);
+    }
+
+    // Legacy fallback: only when both fee fields are null/undefined in payload.
+    return Math.max(0, calculateValueWithoutFee(total, currentPlatformFee, currentPlatformFeeType));
+  };
+
   useEffect(() => {
     loadEventDetails();
   }, [eventId]);
@@ -285,15 +308,6 @@ const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
         setLeaderInvitationsGranted({});
       }
 
-      // OK Etapa 3: Receita só com "paid"; valor líquido (getValorLiquido). Convidado não entra na receita.
-      const getValorLiquidoHere = (r: RegistrationDetail): number => {
-        const t = Number(r.total_amount) || 0;
-        const pf = Number(r.platform_fee_amount) || 0;
-        const ef = Number(r.registration_edit_fee_amount) || 0;
-        if (pf > 0 || ef > 0) return Math.round((t - pf - ef) * 100) / 100;
-        return calculateValueWithoutFee(t, currentPlatformFee, currentPlatformFeeType);
-      };
-
       let total = 0;
       let paid = 0;
       let pixTotal = 0;
@@ -307,7 +321,7 @@ const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
 
         if (isPaid && regAmount > 0) {
           paid++;
-          const valorLiquido = getValorLiquidoHere(reg);
+          const valorLiquido = getCanonicalDisplayValue(reg, currentPlatformFee, currentPlatformFeeType);
           total += valorLiquido;
 
           if (reg.payment_method === "pix") {
@@ -434,7 +448,10 @@ const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
           // OK Etapa 3: só "paid"; valor líquido (convidado não entra na receita)
           const paidRegs = modalityRegs.filter((reg) => reg.payment_status === "paid" && (Number(reg.total_amount) || 0) > 0);
           const count = paidRegs.length;
-          const revenue = paidRegs.reduce((sum, reg) => sum + getValorLiquidoHere(reg), 0);
+          const revenue = paidRegs.reduce(
+            (sum, reg) => sum + getCanonicalDisplayValue(reg, currentPlatformFee, currentPlatformFeeType),
+            0
+          );
           
           modalityStatsMap.set(modality.id, { count, revenue });
         });
@@ -449,19 +466,13 @@ const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
     }
   };
 
-  /** OK Etapa 2: Valor líquido do organizador (total - taxas). Alinhado ao backend. */
+  /** Valor de exibição canônico da inscrição (alinhado ao backend da Etapa 1). */
   const getValorLiquido = (
     reg: RegistrationDetail,
     platformFee: number,
     platformFeeType: 'fixed' | 'percentage'
   ): number => {
-    const total = Number(reg.total_amount) || 0;
-    const pf = Number(reg.platform_fee_amount) || 0;
-    const ef = Number(reg.registration_edit_fee_amount) || 0;
-    if (pf > 0 || ef > 0) {
-      return Math.round((total - pf - ef) * 100) / 100;
-    }
-    return calculateValueWithoutFee(total, platformFee, platformFeeType);
+    return getCanonicalDisplayValue(reg, platformFee, platformFeeType);
   };
 
   const formatCurrency = (value: number) => {

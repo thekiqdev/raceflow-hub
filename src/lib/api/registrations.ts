@@ -296,6 +296,11 @@ export const createRegistrationByOrganizer = async (data: CreateRegistrationByOr
   return apiClient.post<Registration>('/registrations/organizer/register-athlete', data);
 };
 
+/** Inscrição administrativa pelo super admin: mesma carga útil do organizador, sem taxa da plataforma; backend ignora janela de inscrições. */
+export const createRegistrationBySuperAdmin = async (data: CreateRegistrationByOrganizerData) => {
+  return apiClient.post<Registration>('/registrations/admin/register-athlete', data);
+};
+
 // Create registration by group leader
 export interface CreateRegistrationByLeaderData {
   email: string;

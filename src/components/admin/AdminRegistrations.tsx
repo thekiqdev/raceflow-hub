@@ -25,7 +25,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Search, MoreVertical, Eye, FileDown, Loader2, Edit2, Save, X, Trash2, Link2, ChevronLeft, ChevronRight } from "lucide-react";
+import { Search, MoreVertical, Eye, FileDown, Loader2, Edit2, Save, X, Trash2, Link2, ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { useNavigate } from "react-router-dom";
@@ -44,6 +44,7 @@ import { getEnabledModules } from "@/lib/api/systemSettings";
 import { calculateValueWithoutFee } from "@/lib/utils/feeCalculations";
 import { Label } from "@/components/ui/label";
 import { EventSelect } from "@/components/ui/event-select";
+import { RegisterAthleteStaffDialog } from "@/components/registration/RegisterAthleteStaffDialog";
 
 const AdminRegistrations = () => {
   const navigate = useNavigate();
@@ -112,6 +113,7 @@ const AdminRegistrations = () => {
   // Comissão da inscrição (detalhe) - para botão Remover comissão
   const [registrationCommission, setRegistrationCommission] = useState<LeaderCommissionRecord | null>(null);
   const [removingCommission, setRemovingCommission] = useState(false);
+  const [isRegisterAthleteDialogOpen, setIsRegisterAthleteDialogOpen] = useState(false);
 
   const debouncedSearch = useDebounce(searchQuery, 500);
 
@@ -1059,6 +1061,10 @@ const AdminRegistrations = () => {
             </div>
 
             <div className="flex flex-wrap gap-2">
+              <Button type="button" onClick={() => setIsRegisterAthleteDialogOpen(true)}>
+                <Plus className="mr-2 h-4 w-4" />
+                Inscrever atleta
+              </Button>
               <Button 
                 variant="outline" 
                 onClick={handleExport}
@@ -2037,6 +2043,14 @@ const AdminRegistrations = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <RegisterAthleteStaffDialog
+        mode="super_admin"
+        open={isRegisterAthleteDialogOpen}
+        onOpenChange={setIsRegisterAthleteDialogOpen}
+        events={events}
+        onSuccess={loadRegistrations}
+      />
     </div>
   );
 };

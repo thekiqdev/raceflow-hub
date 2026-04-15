@@ -7,8 +7,6 @@ import {
   updateRegistration,
   findUserByCpfOrEmail,
   findUserByEmail,
-  findUserByCpf,
-  createRunnerByOrganizer,
   transferRegistration,
   cancelRegistration,
   getRegistrationsWithMissingAttributes,
@@ -1592,15 +1590,13 @@ export const createRegistrationByOrganizerController = asyncHandler(async (req: 
     return;
   }
 
-  // Check if user is organizer or admin
   const isOrganizer = await hasRole(req.user.id, 'organizer');
-  const isAdmin = await hasRole(req.user.id, 'admin');
-  
-  if (!isOrganizer && !isAdmin) {
+  if (!isOrganizer) {
     res.status(403).json({
       success: false,
       error: 'Forbidden',
-      message: 'Apenas organizadores e administradores podem inscrever atletas',
+      message:
+        'Apenas organizadores podem usar esta rota. Administradores: use POST /api/registrations/admin/register-athlete.',
     });
     return;
   }
@@ -1616,20 +1612,37 @@ export const createRegistrationByOrganizerController = asyncHandler(async (req: 
     return;
   }
 
-  const cleanCpf = String(cpf).replace(/[^0-9]/g, '');
-  if (cleanCpf.length !== 11) {
-    res.status(400).json({
-      success: false,
-      error: 'Invalid CPF',
-      message: 'CPF deve conter 11 dígitos',
+  const { registerAthleteByStaff } = await import('../services/adminAthleteRegistrationService.js');
+
+  try {
+    const { registration, event } = await registerAthleteByStaff({
+      actorType: 'organizer',
+      actorUserId: req.user.id,
+      ignoreEventRegistrationWindow: true,
+      waivePlatformFee: false,
+      cpf: String(cpf),
+      runner_data,
+      event_id: String(event_id),
+      category_id: String(category_id),
+      kit_id,
+      modality_id: modality_id ?? null,
+      product_selections,
+      custom_field_values,
     });
-    return;
-  }
 
-  let athlete = await findUserByCpf(cleanCpf);
+    await sendRegistrationNotifications(registration, event, registration.runner_id);
 
-  if (!athlete) {
-    if (!runner_data || !runner_data.full_name) {
+    res.status(201).json({
+      success: true,
+      data: {
+        ...registration,
+        payment: null,
+      },
+      message: 'Atleta inscrito com sucesso',
+    });
+  } catch (err: any) {
+    const msg = err?.message || String(err);
+    if (msg === 'CPF_NOT_REGISTERED') {
       res.status(400).json({
         success: false,
         error: 'CPF not registered',
@@ -1637,145 +1650,160 @@ export const createRegistrationByOrganizerController = asyncHandler(async (req: 
       });
       return;
     }
-    try {
-      const created = await createRunnerByOrganizer(cleanCpf, runner_data);
-      athlete = { id: created.id, full_name: runner_data.full_name, cpf: cleanCpf };
-    } catch (err: any) {
-      res.status(400).json({
+    if (msg === 'EVENT_NOT_FOUND') {
+      res.status(404).json({ success: false, error: 'Event not found', message: 'Evento não encontrado' });
+      return;
+    }
+    if (msg === 'FORBIDDEN_ORGANIZER_EVENT') {
+      res.status(403).json({
         success: false,
-        error: 'Error creating athlete',
-        message: err.message || 'Erro ao criar cadastro do atleta',
+        error: 'Forbidden',
+        message: 'Você só pode inscrever atletas nos seus próprios eventos',
       });
       return;
     }
-  }
-
-  // Validate event
-  const event = await getEventById(event_id);
-  if (!event) {
-    res.status(404).json({
+    if (msg === 'CATEGORY_NOT_FOUND') {
+      res.status(404).json({ success: false, error: 'Category not found', message: 'Categoria não encontrada' });
+      return;
+    }
+    if (msg === 'Category does not belong to this event') {
+      res.status(400).json({
+        success: false,
+        error: 'Category does not belong to this event',
+        message: 'A categoria não pertence a este evento',
+      });
+      return;
+    }
+    if (msg === 'ALREADY_REGISTERED') {
+      res.status(400).json({
+        success: false,
+        error: 'Already registered',
+        message:
+          'Este atleta já possui uma inscrição ativa neste evento. Cada corredor pode se inscrever apenas uma vez por evento.',
+      });
+      return;
+    }
+    if (msg.includes('CPF deve conter')) {
+      res.status(400).json({ success: false, error: 'Invalid CPF', message: msg });
+      return;
+    }
+    console.error('createRegistrationByOrganizerController:', err);
+    res.status(400).json({
       success: false,
-      error: 'Event not found',
-      message: 'Evento não encontrado',
+      error: 'Error creating registration',
+      message: msg || 'Erro ao inscrever atleta',
     });
+  }
+});
+
+/** Super admin: inscrição com valor de categoria/kit, sem taxa da plataforma; ignora janela de inscrições. */
+export const createRegistrationBySuperAdminController = asyncHandler(async (req: AuthRequest, res: Response) => {
+  if (!req.user) {
+    res.status(401).json({ success: false, error: 'Not authenticated' });
     return;
   }
 
-  // Check if organizer owns the event (unless admin)
-  if (!isAdmin && event.organizer_id !== req.user.id) {
+  const isAdminUser = await hasRole(req.user.id, 'admin');
+  if (!isAdminUser) {
     res.status(403).json({
       success: false,
       error: 'Forbidden',
-      message: 'Você só pode inscrever atletas nos seus próprios eventos',
+      message: 'Apenas administradores podem usar esta rota.',
     });
     return;
   }
 
-  // Organizadores podem inscrever atletas mesmo quando as inscrições estão encerradas ou fechadas
-  // Apenas verificar se o evento existe (não precisa estar publicado ou com inscrições abertas)
+  const {
+    cpf: cpfSa,
+    runner_data: runnerDataSa,
+    event_id: eventIdSa,
+    category_id: categoryIdSa,
+    kit_id: kitIdSa,
+    modality_id: modalityIdSa,
+    product_selections: productSelectionsSa,
+    custom_field_values: customFieldValuesSa,
+  } = req.body;
 
-  // Validate category
-  const selectedCategory = await getCategoryById(category_id);
-  
-  if (!selectedCategory) {
-    res.status(404).json({
-      success: false,
-      error: 'Category not found',
-      message: 'Categoria não encontrada',
-    });
-    return;
-  }
-
-  // Verify category belongs to the event
-  if (selectedCategory.event_id !== event_id) {
+  if (!cpfSa || !eventIdSa || !categoryIdSa) {
     res.status(400).json({
       success: false,
-      error: 'Category does not belong to this event',
-      message: 'A categoria não pertence a este evento',
+      error: 'Missing required fields',
+      message: 'cpf, event_id e category_id são obrigatórios',
     });
     return;
   }
 
-  // Organizadores podem inscrever atletas mesmo quando os limites de categoria ou modalidade foram atingidos
-  // Não verificar limites de participantes quando o organizador cria a inscrição manualmente
+  const { registerAthleteByStaff: registerStaffSa } = await import('../services/adminAthleteRegistrationService.js');
 
-  // Verificar se o atleta já tem uma inscrição ativa neste evento
-  // Organizadores também devem respeitar a regra de uma inscrição por corredor por evento
-  const existingRegistration = await query(
-    `SELECT id, status, payment_status FROM registrations 
-     WHERE event_id = $1 AND runner_id = $2 AND status != 'cancelled'`,
-    [event_id, athlete.id]
-    );
-    
-  if (existingRegistration.rows.length > 0) {
+  try {
+    const { registration: regSa, event: eventSa } = await registerStaffSa({
+      actorType: 'super_admin',
+      actorUserId: req.user.id,
+      ignoreEventRegistrationWindow: true,
+      waivePlatformFee: true,
+      cpf: String(cpfSa),
+      runner_data: runnerDataSa,
+      event_id: String(eventIdSa),
+      category_id: String(categoryIdSa),
+      kit_id: kitIdSa,
+      modality_id: modalityIdSa ?? null,
+      product_selections: productSelectionsSa,
+      custom_field_values: customFieldValuesSa,
+    });
+
+    await sendRegistrationNotifications(regSa, eventSa, regSa.runner_id);
+
+    res.status(201).json({
+      success: true,
+      data: { ...regSa, payment: null },
+      message: 'Atleta inscrito com sucesso (sem taxa da plataforma)',
+    });
+  } catch (err: any) {
+    const msg = err?.message || String(err);
+    if (msg === 'CPF_NOT_REGISTERED') {
       res.status(400).json({
         success: false,
-      error: 'Already registered',
-      message: 'Este atleta já possui uma inscrição ativa neste evento. Cada corredor pode se inscrever apenas uma vez por evento.',
+        error: 'CPF not registered',
+        message: 'CPF não cadastrado. Informe os dados do atleta para criar o cadastro.',
       });
       return;
+    }
+    if (msg === 'EVENT_NOT_FOUND') {
+      res.status(404).json({ success: false, error: 'Event not found', message: 'Evento não encontrado' });
+      return;
+    }
+    if (msg === 'CATEGORY_NOT_FOUND') {
+      res.status(404).json({ success: false, error: 'Category not found', message: 'Categoria não encontrada' });
+      return;
+    }
+    if (msg === 'Category does not belong to this event') {
+      res.status(400).json({
+        success: false,
+        error: 'Category does not belong to this event',
+        message: 'A categoria não pertence a este evento',
+      });
+      return;
+    }
+    if (msg === 'ALREADY_REGISTERED') {
+      res.status(400).json({
+        success: false,
+        error: 'Already registered',
+        message:
+          'Este atleta já possui uma inscrição ativa neste evento. Cada corredor pode se inscrever apenas uma vez por evento.',
+      });
+      return;
+    }
+    if (msg.includes('CPF deve conter')) {
+      res.status(400).json({ success: false, error: 'Invalid CPF', message: msg });
+      return;
+    }
+    console.error('createRegistrationBySuperAdminController:', err);
+    res.status(400).json({
+      success: false,
+      error: 'Error creating registration',
+      message: msg || 'Erro ao inscrever atleta',
+    });
   }
-
-  // When organizer creates registration, the value should be zero
-  // because the organizer already received the payment directly from the athlete
-  // This prevents the value from being included in the organizer's withdrawal calculation
-  // since they already received it outside the platform
-  const totalAmount = 0;
-
-  // Create registration data
-  // When organizer creates registration, set as 'confirmed' with 'convidado' status
-  // and 'free_bonus' payment method to indicate it's a free registration created by organizer
-  const registrationData = {
-    event_id,
-    category_id,
-    kit_id: kit_id || undefined,
-    modality_id: modality_id || undefined,
-    runner_id: athlete.id,
-    registered_by: req.user.id,
-    total_amount: totalAmount, // Always 0 for organizer-created registrations
-    payment_method: 'free_bonus' as const, // Mark as free bonus (invitation) to exclude from revenue
-    status: 'confirmed' as const, // Inscrições criadas por organizador vêm como confirmadas
-    payment_status: 'convidado' as const, // Mark as 'convidado' to exclude from revenue calculation
-    product_selections: product_selections || undefined,
-    custom_field_values: custom_field_values || undefined,
-  };
-
-  console.log('📝 Organizador criando inscrição para atleta:', {
-    organizer_id: req.user.id,
-    athlete_id: athlete.id,
-    event_id,
-    category_id,
-    kit_id,
-    modality_id,
-    total_amount: totalAmount,
-  });
-
-  // Create registration
-  const registration = await createRegistration(registrationData);
-
-  console.log('✅ Inscrição criada pelo organizador:', {
-    id: registration.id,
-    total_amount: registration.total_amount,
-    payment_method: registration.payment_method,
-    payment_status: registration.payment_status,
-    note: 'Valor zerado pois organizador já recebeu pagamento diretamente do atleta',
-  });
-
-  // No payment needed - organizer already received payment directly from athlete
-  // Registration is marked as 'free_bonus' with 'convidado' status to exclude from revenue calculation
-  const paymentData: any = null;
-
-  // Send notifications
-  await sendRegistrationNotifications(registration, event, registration.runner_id);
-
-  res.status(201).json({
-    success: true,
-    data: {
-      ...registration,
-      payment: paymentData,
-    },
-    message: 'Atleta inscrito com sucesso',
-  });
 });
 
 // Get payment status by registration ID

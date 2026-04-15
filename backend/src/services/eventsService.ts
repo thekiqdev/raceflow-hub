@@ -1,6 +1,13 @@
 import { query, getClient } from '../config/database.js';
 import { EventStatus, EventRegistrationStatus, Event, CronogramaItem } from '../types/index.js';
 import { generateSlug } from '../utils/slug.js';
+import {
+  getLiquidRegistrationValue,
+  getPlatformFeeTotal,
+  isLegacyWithoutFeeFields,
+  getReportableRevenue,
+  type FinancialRegistrationLike,
+} from './financialReportingService.js';
 
 /** Formato HH:mm para horário em cronograma_items */
 const TIME_HHMM_REGEX = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/;
@@ -170,6 +177,24 @@ export function calculateRegistrationStatus(event: Partial<Event>): EventRegistr
   } else {
     return 'closed';
   }
+}
+
+/**
+ * Status efetivo de inscrições (datas automáticas ou manual em registration_status).
+ * Retorna null quando não há regra explícita (fluxo legado por event.status).
+ */
+export function getEffectiveRegistrationStatus(event: Event): EventRegistrationStatus | null {
+  if (event.registration_auto_mode && event.registration_start_date && event.registration_end_date) {
+    const calculatedStatus = calculateRegistrationStatus({
+      registration_auto_mode: event.registration_auto_mode,
+      registration_start_date: event.registration_start_date,
+      registration_end_date: event.registration_end_date,
+    });
+    if (calculatedStatus) {
+      return calculatedStatus;
+    }
+  }
+  return event.registration_status || null;
 }
 
 // Cache para verificar se coluna slug existe (evita múltiplas queries)
@@ -347,6 +372,54 @@ export const getEvents = async (filters?: {
     }
   }
   
+  // Canonical revenue aggregation by event (backend source of truth).
+  const revenueByEvent = new Map<string, { revenue: number; avg_ticket: number; platform_fee_revenue: number }>();
+  const eventIds = result.rows.map((row: any) => row.id);
+  if (eventIds.length > 0) {
+    const { getSystemSettings } = await import('./systemSettingsService.js');
+    const settings = await getSystemSettings();
+    const fallback = {
+      platformFee: settings.platform_fee || 0,
+      platformFeeType: (settings.platform_fee_type || 'fixed') as 'fixed' | 'percentage',
+      platformFeeMin: settings.platform_fee_min ?? 0,
+    };
+
+    const registrationsResult = await query(
+      `SELECT event_id, payment_status, payment_method, total_amount, platform_fee_amount, registration_edit_fee_amount
+       FROM registrations
+       WHERE event_id = ANY($1::uuid[])`,
+      [eventIds]
+    );
+
+    const rowsByEvent = new Map<string, FinancialRegistrationLike[]>();
+    for (const reg of registrationsResult.rows) {
+      const rows = rowsByEvent.get(reg.event_id) || [];
+      rows.push(reg);
+      rowsByEvent.set(reg.event_id, rows);
+    }
+
+    for (const eventId of eventIds) {
+      const rows = rowsByEvent.get(eventId) || [];
+      const paidRows = rows.filter((r) => r.payment_status === 'paid');
+      const revenue = getReportableRevenue(paidRows, fallback);
+      const avg_ticket = paidRows.length > 0 ? Math.round((revenue / paidRows.length) * 100) / 100 : 0;
+
+      let platform_fee_revenue = 0;
+      for (const reg of paidRows) {
+        if (isLegacyWithoutFeeFields(reg)) {
+          const total = Number(reg.total_amount) || 0;
+          const liquid = getLiquidRegistrationValue(reg, fallback);
+          platform_fee_revenue += Math.max(0, total - liquid);
+        } else {
+          platform_fee_revenue += getPlatformFeeTotal(reg);
+        }
+      }
+      platform_fee_revenue = Math.round(platform_fee_revenue * 100) / 100;
+
+      revenueByEvent.set(eventId, { revenue, avg_ticket, platform_fee_revenue });
+    }
+  }
+
   // Import getFileUrl to convert file paths to URLs
   const { getFileUrl } = await import('../middleware/upload.js');
   
@@ -364,6 +437,7 @@ export const getEvents = async (filters?: {
       }
     }
 
+    const canonical = revenueByEvent.get(row.id);
     return {
       ...row,
       banner_url: row.banner_url ? getFileUrl(row.banner_url) : null,
@@ -371,9 +445,9 @@ export const getEvents = async (filters?: {
       registration_status: effectiveRegistrationStatus,
       registration_count: parseInt(row.registration_count) || 0,
       confirmed_registrations: parseInt(row.confirmed_registrations) || 0,
-      revenue: parseFloat(row.revenue) || 0,
-      avg_ticket: parseFloat(row.avg_ticket) || 0,
-      platform_fee_revenue: parseFloat(row.platform_fee_revenue) || 0,
+      revenue: canonical ? canonical.revenue : parseFloat(row.revenue) || 0,
+      avg_ticket: canonical ? canonical.avg_ticket : parseFloat(row.avg_ticket) || 0,
+      platform_fee_revenue: canonical ? canonical.platform_fee_revenue : parseFloat(row.platform_fee_revenue) || 0,
     };
   });
 };
