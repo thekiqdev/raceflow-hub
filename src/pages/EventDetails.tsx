@@ -332,6 +332,146 @@ const EventDetails = () => {
     };
   }, [event]);
 
+  const renderCategoryCard = (category: Category) => {
+    const isFull = category.max_participants !== null && category.max_participants <= 0;
+    const now = new Date();
+
+    const getBatchesStatus = (cat: Category) => {
+      if (!cat.batches || cat.batches.length === 0) {
+        return { active: [], future: [], expired: [] };
+      }
+
+      const active: CategoryBatch[] = [];
+      const future: CategoryBatch[] = [];
+      const expired: CategoryBatch[] = [];
+
+      cat.batches.forEach((batch) => {
+        if (!batch.valid_from) return;
+
+        const startDate = new Date(batch.valid_from);
+        if (isNaN(startDate.getTime())) return;
+
+        const endDate = batch.valid_to ? new Date(batch.valid_to) : null;
+
+        if (startDate > now) future.push(batch);
+        else if (endDate && endDate < now) expired.push(batch);
+        else active.push(batch);
+      });
+
+      active.sort((a, b) => new Date(b.valid_from!).getTime() - new Date(a.valid_from!).getTime());
+      return { active, future, expired };
+    };
+
+    const { active, future, expired } = getBatchesStatus(category);
+    const activeBatch = active.length > 0 ? active[0] : null;
+    const displayPrice = activeBatch ? activeBatch.price : category.price;
+
+    return (
+      <div
+        key={category.id}
+        className={`p-4 border rounded-lg ${isFull ? "opacity-60" : ""} ${category.is_default ? "border-primary border-2" : ""}`}
+      >
+        <div className="flex items-start justify-between">
+          <div className="flex-1">
+            <div className="flex items-center gap-2">
+              <h3 className="font-semibold">{category.name}</h3>
+              {category.is_default && <Badge variant="default" className="text-xs">Padrão</Badge>}
+              {isFull && <Badge variant="destructive" className="text-xs">Esgotada</Badge>}
+            </div>
+            <div className="flex flex-wrap gap-2 mt-1">
+              <p className="text-xs text-muted-foreground capitalize">Tipo: {category.category_type}</p>
+              {category.gender !== "ambos" && (
+                <p className="text-xs text-muted-foreground capitalize">• Gênero: {category.gender}</p>
+              )}
+              {category.min_age !== null && (
+                <p className="text-xs text-muted-foreground">• Idade mínima: {category.min_age} anos</p>
+              )}
+            </div>
+            {category.max_participants !== null && (
+              <p className="text-xs text-muted-foreground flex items-center gap-1 mt-1">
+                <Users className="h-3 w-3" />
+                Máximo: {category.max_participants} participantes
+              </p>
+            )}
+          </div>
+          <div className="text-right ml-4">
+            <p className="text-2xl font-bold text-primary">{formatPrice(displayPrice)}</p>
+            {activeBatch?.name && <p className="text-xs text-muted-foreground mt-1">{activeBatch.name}</p>}
+          </div>
+        </div>
+
+        {(active.length > 0 || future.length > 0 || expired.length > 0) && (
+          <Collapsible
+            className="mt-4 pt-4 border-t"
+            open={expandedCategories.has(category.id)}
+            onOpenChange={(open) => {
+              setExpandedCategories((prev) => {
+                const next = new Set(prev);
+                if (open) next.add(category.id);
+                else next.delete(category.id);
+                return next;
+              });
+            }}
+          >
+            <CollapsibleTrigger asChild>
+              <Button variant="ghost" size="sm" className="w-full justify-between p-0 h-auto hover:bg-transparent">
+                <span className="text-xs font-semibold text-muted-foreground">
+                  Ver todos os lotes ({active.length + future.length + expired.length})
+                </span>
+                {expandedCategories.has(category.id) ? (
+                  <ChevronUp className="h-4 w-4 text-muted-foreground transition-transform duration-200" />
+                ) : (
+                  <ChevronDown className="h-4 w-4 text-muted-foreground transition-transform duration-200" />
+                )}
+              </Button>
+            </CollapsibleTrigger>
+            <CollapsibleContent className="space-y-2 mt-2">
+              {active.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold text-muted-foreground mb-1">Lotes Disponíveis:</p>
+                  <div className="space-y-1">
+                    {active.map((batch) => (
+                      <div key={batch.id} className="flex items-center justify-between text-xs bg-green-50 dark:bg-green-950/20 p-2 rounded">
+                        <span className="font-medium">{batch.name || "Lote Ativo"}</span>
+                        <span className="font-bold text-green-700 dark:text-green-400">{formatPrice(batch.price)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {future.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold text-muted-foreground mb-1">Lotes Futuros:</p>
+                  <div className="space-y-1">
+                    {future.map((batch) => (
+                      <div key={batch.id} className="flex items-center justify-between text-xs bg-blue-50 dark:bg-blue-950/20 p-2 rounded opacity-75">
+                        <span>{batch.name || "Lote Futuro"} - {formatDateUTC(batch.valid_from)}</span>
+                        <span className="font-bold text-blue-700 dark:text-blue-400">{formatPrice(batch.price)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {expired.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold text-muted-foreground mb-1">Lotes Expirados:</p>
+                  <div className="space-y-1">
+                    {expired.map((batch) => (
+                      <div key={batch.id} className="flex items-center justify-between text-xs bg-gray-50 dark:bg-gray-950/20 p-2 rounded opacity-50 line-through">
+                        <span>{batch.name || "Lote Expirado"}</span>
+                        <span className="font-bold text-gray-500">{formatPrice(batch.price)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </CollapsibleContent>
+          </Collapsible>
+        )}
+      </div>
+    );
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -606,207 +746,42 @@ const EventDetails = () => {
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-4">
-                    {categories.length === 0 ? (
-                      <p className="text-muted-foreground text-center py-4">
-                        Nenhuma categoria disponível para este evento.
-                      </p>
-                    ) : (
-                      categories.map((category) => {
-                        const isFull = category.max_participants !== null && 
-                                      category.max_participants <= 0;
+                    {(() => {
+                      const categoriesWithModality = categories.filter(
+                        (category) => Array.isArray(category.modality_ids) && category.modality_ids.length > 0
+                      );
 
-                        // Encontrar lotes ativos, futuros e expirados
-                        const now = new Date();
-                        const getBatchesStatus = (cat: Category) => {
-                          if (!cat.batches || cat.batches.length === 0) {
-                            return { active: [], future: [], expired: [] };
-                          }
+                      const groupedByModality = modalities
+                        .map((modality) => ({
+                          modality,
+                          categories: categoriesWithModality.filter((category) =>
+                            category.modality_ids?.includes(modality.id)
+                          ),
+                        }))
+                        .filter((group) => group.categories.length > 0);
 
-                          const active: CategoryBatch[] = [];
-                          const future: CategoryBatch[] = [];
-                          const expired: CategoryBatch[] = [];
-
-                          cat.batches.forEach(batch => {
-                            if (!batch.valid_from) return;
-
-                            const startDate = new Date(batch.valid_from);
-                            if (isNaN(startDate.getTime())) return;
-
-                            const endDate = batch.valid_to ? new Date(batch.valid_to) : null;
-
-                            if (startDate > now) {
-                              future.push(batch);
-                            } else if (endDate && endDate < now) {
-                              expired.push(batch);
-                            } else {
-                              active.push(batch);
-                            }
-                          });
-
-                          // Ordenar por data de início (mais recente primeiro)
-                          active.sort((a, b) => {
-                            const dateA = new Date(a.valid_from!);
-                            const dateB = new Date(b.valid_from!);
-                            return dateB.getTime() - dateA.getTime();
-                          });
-
-                          return { active, future, expired };
-                        };
-
-                        const { active, future, expired } = getBatchesStatus(category);
-                        const activeBatch = active.length > 0 ? active[0] : null;
-                        const displayPrice = activeBatch ? activeBatch.price : category.price;
-
+                      if (groupedByModality.length === 0) {
                         return (
-                          <div
-                            key={category.id}
-                            className={`p-4 border rounded-lg ${
-                              isFull ? 'opacity-60' : ''
-                            } ${category.is_default ? 'border-primary border-2' : ''}`}
-                          >
-                            <div className="flex items-start justify-between">
-                              <div className="flex-1">
-                                <div className="flex items-center gap-2">
-                                  <h3 className="font-semibold">{category.name}</h3>
-                                  {category.is_default && (
-                                    <Badge variant="default" className="text-xs">Padrão</Badge>
-                                  )}
-                                  {isFull && (
-                                    <Badge variant="destructive" className="text-xs">Esgotada</Badge>
-                                  )}
-                                </div>
-                                <div className="flex flex-wrap gap-2 mt-1">
-                                  <p className="text-xs text-muted-foreground capitalize">
-                                    Tipo: {category.category_type}
-                                  </p>
-                                  {category.gender !== 'ambos' && (
-                                    <p className="text-xs text-muted-foreground capitalize">
-                                      • Gênero: {category.gender}
-                                    </p>
-                                  )}
-                                  {category.min_age !== null && (
-                                    <p className="text-xs text-muted-foreground">
-                                      • Idade mínima: {category.min_age} anos
-                                    </p>
-                                  )}
-                                </div>
-                                {category.max_participants !== null && (
-                                  <p className="text-xs text-muted-foreground flex items-center gap-1 mt-1">
-                                    <Users className="h-3 w-3" />
-                                    Máximo: {category.max_participants} participantes
-                                  </p>
-                                )}
-                              </div>
-                              <div className="text-right ml-4">
-                                <p className="text-2xl font-bold text-primary">
-                                  {formatPrice(displayPrice)}
-                                </p>
-                                {activeBatch?.name && (
-                                  <p className="text-xs text-muted-foreground mt-1">
-                                    {activeBatch.name}
-                                  </p>
-                                )}
-                              </div>
-                            </div>
-
-                            {/* Mostrar lotes disponíveis e expirados - Colapsável */}
-                            {(active.length > 0 || future.length > 0 || expired.length > 0) && (
-                              <Collapsible 
-                                className="mt-4 pt-4 border-t"
-                                open={expandedCategories.has(category.id)}
-                                onOpenChange={(open) => {
-                                  setExpandedCategories(prev => {
-                                    const next = new Set(prev);
-                                    if (open) {
-                                      next.add(category.id);
-                                    } else {
-                                      next.delete(category.id);
-                                    }
-                                    return next;
-                                  });
-                                }}
-                              >
-                                <CollapsibleTrigger asChild>
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    className="w-full justify-between p-0 h-auto hover:bg-transparent"
-                                  >
-                                    <span className="text-xs font-semibold text-muted-foreground">
-                                      Ver todos os lotes ({active.length + future.length + expired.length})
-                                    </span>
-                                    {expandedCategories.has(category.id) ? (
-                                      <ChevronUp className="h-4 w-4 text-muted-foreground transition-transform duration-200" />
-                                    ) : (
-                                      <ChevronDown className="h-4 w-4 text-muted-foreground transition-transform duration-200" />
-                                    )}
-                                  </Button>
-                                </CollapsibleTrigger>
-                                <CollapsibleContent className="space-y-2 mt-2">
-                                  {active.length > 0 && (
-                                    <div>
-                                      <p className="text-xs font-semibold text-muted-foreground mb-1">
-                                        Lotes Disponíveis:
-                                      </p>
-                                      <div className="space-y-1">
-                                        {active.map((batch) => (
-                                          <div key={batch.id} className="flex items-center justify-between text-xs bg-green-50 dark:bg-green-950/20 p-2 rounded">
-                                            <span className="font-medium">
-                                              {batch.name || "Lote Ativo"}
-                                            </span>
-                                            <span className="font-bold text-green-700 dark:text-green-400">
-                                              {formatPrice(batch.price)}
-                                            </span>
-                                          </div>
-                                        ))}
-                                      </div>
-                                    </div>
-                                  )}
-                                  {future.length > 0 && (
-                                    <div>
-                                      <p className="text-xs font-semibold text-muted-foreground mb-1">
-                                        Lotes Futuros:
-                                      </p>
-                                      <div className="space-y-1">
-                                        {future.map((batch) => (
-                                          <div key={batch.id} className="flex items-center justify-between text-xs bg-blue-50 dark:bg-blue-950/20 p-2 rounded opacity-75">
-                                            <span>
-                                              {batch.name || "Lote Futuro"} - {formatDateUTC(batch.valid_from)}
-                                            </span>
-                                            <span className="font-bold text-blue-700 dark:text-blue-400">
-                                              {formatPrice(batch.price)}
-                                            </span>
-                                          </div>
-                                        ))}
-                                      </div>
-                                    </div>
-                                  )}
-                                  {expired.length > 0 && (
-                                    <div>
-                                      <p className="text-xs font-semibold text-muted-foreground mb-1">
-                                        Lotes Expirados:
-                                      </p>
-                                      <div className="space-y-1">
-                                        {expired.map((batch) => (
-                                          <div key={batch.id} className="flex items-center justify-between text-xs bg-gray-50 dark:bg-gray-950/20 p-2 rounded opacity-50 line-through">
-                                            <span>
-                                              {batch.name || "Lote Expirado"}
-                                            </span>
-                                            <span className="font-bold text-gray-500">
-                                              {formatPrice(batch.price)}
-                                            </span>
-                                          </div>
-                                        ))}
-                                      </div>
-                                    </div>
-                                  )}
-                                </CollapsibleContent>
-                              </Collapsible>
-                            )}
-                          </div>
+                          <p className="text-muted-foreground text-center py-4">
+                            Nenhuma categoria disponível para este evento.
+                          </p>
                         );
-                      })
-                    )}
+                      }
+
+                      return groupedByModality.map(({ modality, categories: modalityCategories }) => (
+                        <div key={modality.id} className="space-y-3">
+                          <div className="pb-2 border-b">
+                            <h3 className="font-semibold">
+                              {modality.name}
+                              {modality.distance ? ` - ${modality.distance}` : ""}
+                            </h3>
+                          </div>
+                          <div className="space-y-3">
+                            {modalityCategories.map((category) => renderCategoryCard(category))}
+                          </div>
+                        </div>
+                      ));
+                    })()}
                   </div>
                 </CardContent>
               </Card>
