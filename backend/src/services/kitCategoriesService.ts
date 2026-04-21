@@ -39,7 +39,7 @@ export const getCategoryKits = async (categoryId: string): Promise<string[]> => 
 
 /**
  * Associate a kit to categories (replaces existing associations)
- * If categoryIds is empty or null, removes all associations (kit becomes available for all categories)
+ * Se categoryIds for vazio ou null, remove todas as associações (o kit deixa de aparecer na vitrine/inscrição até ser vinculado de novo)
  * 
  * @param kitId - ID of the kit
  * @param categoryIds - Array of category IDs to associate with the kit

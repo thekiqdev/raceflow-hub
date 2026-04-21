@@ -224,17 +224,33 @@ export function RegisterAthleteStaffDialog({
 
   const loadKits = async () => {
     if (!selectedEventId) return;
+    if (!selectedCategoryId) {
+      setKits([]);
+      setSelectedKitId("");
+      return;
+    }
     try {
       setLoadingKits(true);
-      const response = await getEventKits(selectedEventId, selectedCategoryId || undefined);
+      const response = await getEventKits(selectedEventId, selectedCategoryId);
       if (response.success && response.data) {
-        setKits(response.data);
-        if (response.data.length === 1) {
-          setSelectedKitId(response.data[0].id);
-          setExpandedKits((prev) => new Set(prev).add(response.data![0].id));
+        const linkedOnly = response.data.filter(
+          (kit) =>
+            Array.isArray(kit.category_ids) &&
+            kit.category_ids.length > 0 &&
+            kit.category_ids.includes(selectedCategoryId)
+        );
+        setKits(linkedOnly);
+        setSelectedKitId((prev) => {
+          if (linkedOnly.length === 1) return linkedOnly[0].id;
+          if (prev && linkedOnly.some((k) => k.id === prev)) return prev;
+          return "";
+        });
+        if (linkedOnly.length === 1) {
+          setExpandedKits((prev) => new Set(prev).add(linkedOnly[0].id));
         }
       } else {
         setKits([]);
+        setSelectedKitId("");
       }
     } catch (error) {
       console.error("Error loading kits:", error);

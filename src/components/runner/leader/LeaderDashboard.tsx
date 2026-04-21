@@ -197,12 +197,11 @@ export function LeaderDashboard() {
     }).format(value);
   };
 
-  // Load modalities, categories and kits when event is selected
+  // Load modalities and categories when event is selected (kits dependem da categoria)
   useEffect(() => {
     if (selectedEventForRegistration) {
       loadModalities();
       loadCategories();
-      loadKits();
     } else {
       setModalities([]);
       setCategories([]);
@@ -212,6 +211,47 @@ export function LeaderDashboard() {
       setSelectedKitId("");
     }
   }, [selectedEventForRegistration]);
+
+  useEffect(() => {
+    if (!selectedEventForRegistration) return;
+    if (!selectedCategoryId) {
+      setKits([]);
+      setSelectedKitId("");
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        setLoadingKits(true);
+        const response = await getEventKits(selectedEventForRegistration, selectedCategoryId);
+        if (cancelled) return;
+        if (response.success && response.data) {
+          const linkedOnly = response.data.filter(
+            (kit) =>
+              Array.isArray(kit.category_ids) &&
+              kit.category_ids.length > 0 &&
+              kit.category_ids.includes(selectedCategoryId)
+          );
+          setKits(linkedOnly);
+          setSelectedKitId((prev) => (prev && linkedOnly.some((k) => k.id === prev) ? prev : ""));
+        } else {
+          setKits([]);
+          setSelectedKitId("");
+        }
+      } catch (error) {
+        console.error("Error loading kits:", error);
+        if (!cancelled) {
+          setKits([]);
+          toast.error("Erro ao carregar kits");
+        }
+      } finally {
+        if (!cancelled) setLoadingKits(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedEventForRegistration, selectedCategoryId]);
 
   // Load categories when modality is selected
   useEffect(() => {
@@ -236,15 +276,14 @@ export function LeaderDashboard() {
     const load = async () => {
       setLoadingInviteOptions(true);
       try {
-        const [catRes, modRes, kitsRes] = await Promise.all([
+        const [catRes, modRes] = await Promise.all([
           getCategories(eventId),
           getModalities(eventId),
-          getEventKits(eventId),
         ]);
         if (cancelled) return;
         if (catRes.success && catRes.data) setInviteCategories(catRes.data);
         if (modRes.success && modRes.data) setInviteModalities(modRes.data);
-        if (kitsRes.success && kitsRes.data) setInviteKits(kitsRes.data);
+        setInviteKits([]);
       } catch (e) {
         if (!cancelled) toast.error("Erro ao carregar opções do evento.");
       } finally {
@@ -261,10 +300,23 @@ export function LeaderDashboard() {
     const eventId = selectedInvitation.event_id;
     let cancelled = false;
     const loadKitsForInvite = async () => {
+      if (!inviteCategoryId?.trim()) {
+        if (!cancelled) setInviteKits([]);
+        return;
+      }
       try {
-        const res = await getEventKits(eventId, inviteCategoryId || undefined);
+        const res = await getEventKits(eventId, inviteCategoryId);
         if (cancelled) return;
-        if (res.success && res.data) setInviteKits(res.data);
+        if (res.success && res.data) {
+          setInviteKits(
+            res.data.filter(
+              (kit) =>
+                Array.isArray(kit.category_ids) &&
+                kit.category_ids.length > 0 &&
+                kit.category_ids.includes(inviteCategoryId)
+            )
+          );
+        } else if (!cancelled) setInviteKits([]);
       } catch {
         if (!cancelled) setInviteKits([]);
       }
@@ -322,23 +374,6 @@ export function LeaderDashboard() {
       toast.error("Erro ao carregar categorias");
     } finally {
       setLoadingCategories(false);
-    }
-  };
-
-  const loadKits = async () => {
-    if (!selectedEventForRegistration) return;
-    
-    try {
-      setLoadingKits(true);
-      const response = await getEventKits(selectedEventForRegistration);
-      if (response.success && response.data) {
-        setKits(response.data);
-      }
-    } catch (error) {
-      console.error("Error loading kits:", error);
-      toast.error("Erro ao carregar kits");
-    } finally {
-      setLoadingKits(false);
     }
   };
 
@@ -2348,6 +2383,7 @@ export function LeaderDashboard() {
                   value={selectedCategoryId} 
                   onValueChange={(v) => {
                     setSelectedCategoryId(v);
+                    setSelectedKitId("");
                     setCustomFieldValues({});
                   }}
                   disabled={loadingCategories}

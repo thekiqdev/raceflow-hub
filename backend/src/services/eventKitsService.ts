@@ -54,7 +54,7 @@ async function getEventIdFromSlugOrId(eventIdOrSlug: string): Promise<string | n
 /**
  * Get all kits for an event with products and variants
  * @param eventIdOrSlug - ID or slug of the event
- * @param categoryId - Optional category ID to filter kits (only kits associated with this category or not associated with any category)
+ * @param categoryId - Optional category ID to filter kits (somente kits explicitamente vinculados a essa categoria em kit_categories)
  */
 export const getEventKits = async (eventIdOrSlug: string, categoryId?: string): Promise<EventKit[]> => {
   // Convert slug to UUID if necessary
@@ -66,21 +66,12 @@ export const getEventKits = async (eventIdOrSlug: string, categoryId?: string): 
   let queryParams: any[];
 
   if (categoryId) {
-    // Filter kits that are either:
-    // 1. Associated with this category, OR
-    // 2. Not associated with any category (available for all categories)
+    // Somente kits com vínculo explícito à categoria (sem "fallback" para kits sem associação)
     queryText = `
       SELECT DISTINCT k.*
       FROM event_kits k
+      INNER JOIN kit_categories kc ON kc.kit_id = k.id AND kc.category_id = $2::uuid
       WHERE k.event_id = $1
-        AND (
-          k.id IN (
-            SELECT kit_id FROM kit_categories WHERE category_id = $2
-          )
-          OR k.id NOT IN (
-            SELECT DISTINCT kit_id FROM kit_categories
-          )
-        )
       ORDER BY k.display_order ASC
     `;
     queryParams = [eventId, categoryId];

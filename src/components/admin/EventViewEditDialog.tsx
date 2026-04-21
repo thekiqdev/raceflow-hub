@@ -2840,7 +2840,7 @@ export function EventViewEditDialog({
                               Categorias Disponíveis
                             </label>
                             <p className="text-xs text-muted-foreground mb-3">
-                              Selecione as categorias em que este kit estará disponível. Se nenhuma for selecionada, o kit aparecerá em todas as categorias.
+                              Selecione as categorias em que este kit estará disponível. Sem nenhuma categoria, o kit não aparece na página do evento nem na inscrição.
                             </p>
                             {categories.length === 0 ? (
                               <p className="text-sm text-muted-foreground text-center py-2">

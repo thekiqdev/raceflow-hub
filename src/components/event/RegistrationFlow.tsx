@@ -115,7 +115,7 @@ export function RegistrationFlow({
   const [modalities, setModalities] = useState<Modality[]>([]);
   const [availableCategories, setAvailableCategories] = useState<NewCategory[]>([]);
   const [loadingModalities, setLoadingModalities] = useState(false);
-  const [filteredKits, setFilteredKits] = useState<Kit[]>(kits);
+  const [filteredKits, setFilteredKits] = useState<Kit[]>([]);
   const [loadingKits, setLoadingKits] = useState(false);
   const [selectedKit, setSelectedKit] = useState<Kit | null>(null);
   const [expandedKits, setExpandedKits] = useState<Set<string>>(new Set());
@@ -666,7 +666,13 @@ export function RegistrationFlow({
         try {
           const response = await getEventKits(event.id, selectedCategory.id);
           if (response.success && response.data) {
-            setFilteredKits(response.data);
+            const linkedOnly = response.data.filter(
+              (kit) =>
+                Array.isArray(kit.category_ids) &&
+                kit.category_ids.length > 0 &&
+                kit.category_ids.includes(selectedCategory.id)
+            );
+            setFilteredKits(linkedOnly);
           } else {
             setFilteredKits([]);
           }
@@ -677,8 +683,7 @@ export function RegistrationFlow({
           setLoadingKits(false);
         }
       } else {
-        // If no category selected, show all kits
-        setFilteredKits(kits);
+        setFilteredKits([]);
       }
     };
     
@@ -806,6 +811,10 @@ export function RegistrationFlow({
     setSelectedModality(modality);
     setSelectedCategory(null);
     setSelectedBatch(null);
+    setSelectedKit(null);
+    setExpandedKits(new Set());
+    setSelectedProducts(new Map());
+    setVariantSelections(new Map());
   };
 
   const handleCategorySelect = (category: NewCategory) => {
@@ -823,6 +832,10 @@ export function RegistrationFlow({
     setCustomFieldValues({});
     // Reset batch selection when changing category
     setSelectedBatch(null);
+    setSelectedKit(null);
+    setExpandedKits(new Set());
+    setSelectedProducts(new Map());
+    setVariantSelections(new Map());
     
     // If category has valid batches, select the first one automatically
     if (category.batches && category.batches.length > 0) {

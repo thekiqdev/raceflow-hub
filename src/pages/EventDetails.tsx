@@ -19,7 +19,7 @@ import { Header } from "@/components/Header";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { formatDateOnlyBrasilia, formatTimeBrasilia, formatDateBrasilia } from "@/lib/utils";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import heroImage from "@/assets/hero-running.jpg";
 import { RegistrationFlow } from "@/components/event/RegistrationFlow";
 import { FlipCountdown } from "@/components/event/FlipCountdown";
@@ -112,6 +112,8 @@ interface Kit {
   name: string;
   description: string | null;
   price: number;
+  /** Quando vazio/ausente, o kit não é exibido na página pública (desvinculado de categorias). */
+  category_ids?: string[];
   products?: Array<{
     id: string;
     kit_id: string;
@@ -282,6 +284,26 @@ const EventDetails = () => {
 
     loadEventData();
   }, [eventIdOrSlug]);
+
+  /** Categorias que aparecem na página (com ao menos uma modalidade), alinhado ao bloco "Categorias Disponíveis". */
+  const publicCategoryIdSet = useMemo(() => {
+    const ids = new Set<string>();
+    for (const c of categories) {
+      if (Array.isArray(c.modality_ids) && c.modality_ids.length > 0) {
+        ids.add(c.id);
+      }
+    }
+    return ids;
+  }, [categories]);
+
+  /** Kits só na vitrine pública se estiverem vinculados a alguma dessas categorias. */
+  const visibleKitsForPublicPage = useMemo(() => {
+    return kits.filter((kit) => {
+      const ids = kit.category_ids;
+      if (!Array.isArray(ids) || ids.length === 0) return false;
+      return ids.some((id) => publicCategoryIdSet.has(id));
+    });
+  }, [kits, publicCategoryIdSet]);
 
   // Cache de cupom/ref da URL para reutilizar ao abrir inscrição depois (ver docs/PLANO_APLICACAO_CACHE_CUPOM.md)
   useEffect(() => {
@@ -849,13 +871,13 @@ const EventDetails = () => {
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  {kits.length === 0 ? (
+                  {visibleKitsForPublicPage.length === 0 ? (
                     <p className="text-muted-foreground text-center py-4">
                       Nenhum kit disponível para este evento.
                     </p>
                   ) : (
                     <div className="grid md:grid-cols-3 gap-4">
-                      {kits.map((kit) => (
+                      {visibleKitsForPublicPage.map((kit) => (
                         <Card key={kit.id} className="border-2">
                           <CardHeader>
                             <CardTitle className="text-lg">{kit.name}</CardTitle>

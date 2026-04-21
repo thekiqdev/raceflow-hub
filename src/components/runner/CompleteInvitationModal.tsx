@@ -87,10 +87,23 @@ export function CompleteInvitationModal({
     if (!open || !eventId) return;
     let cancelled = false;
     const loadKits = async () => {
+      if (!categoryId?.trim()) {
+        if (!cancelled) setKits([]);
+        return;
+      }
       try {
-        const res = await getEventKits(eventId, categoryId || undefined);
+        const res = await getEventKits(eventId, categoryId);
         if (cancelled) return;
-        if (res.success && res.data) setKits(res.data);
+        if (res.success && res.data) {
+          setKits(
+            res.data.filter(
+              (kit) =>
+                Array.isArray(kit.category_ids) &&
+                kit.category_ids.length > 0 &&
+                kit.category_ids.includes(categoryId)
+            )
+          );
+        } else if (!cancelled) setKits([]);
       } catch {
         if (!cancelled) setKits([]);
       }
