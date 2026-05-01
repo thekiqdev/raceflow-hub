@@ -29,7 +29,7 @@ import { Search, MoreVertical, Eye, FileDown, Loader2, Edit2, Save, X, Trash2, L
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { useNavigate } from "react-router-dom";
-import { getRegistrations, exportRegistrations, getRegistrationById, updateRegistration, previewRegistrationEdit, confirmDifferencePayment, completeRegistrationAttributes, removeRegistrationAttributes, attachRegistrationToCommission, getRegistrationCommission as getRegistrationCommissionForAttach, detachCommission, type Registration, type RegistrationCommissionInfo, type PreviewRegistrationEditResponse } from "@/lib/api/registrations";
+import { getRegistrations, exportRegistrations, getRegistrationById, getRegistrationEditableKitContext, updateRegistration, previewRegistrationEdit, confirmDifferencePayment, completeRegistrationAttributes, removeRegistrationAttributes, attachRegistrationToCommission, getRegistrationCommission as getRegistrationCommissionForAttach, detachCommission, type Registration, type RegistrationCommissionInfo, type PreviewRegistrationEditResponse, type EditableKitIssue } from "@/lib/api/registrations";
 import { getEventCommissionsByEvent, type EventCommissionOption } from "@/lib/api/leaderEventCommissions";
 import { getRegistrationCommission, removeCommission, type LeaderCommissionRecord } from "@/lib/api/admin";
 import { getEvents, type Event } from "@/lib/api/events";
@@ -43,8 +43,16 @@ import { useDebounce } from "@/hooks/useDebounce";
 import { getEnabledModules } from "@/lib/api/systemSettings";
 import { calculateValueWithoutFee } from "@/lib/utils/feeCalculations";
 import { Label } from "@/components/ui/label";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { EventSelect } from "@/components/ui/event-select";
 import { RegisterAthleteStaffDialog } from "@/components/registration/RegisterAthleteStaffDialog";
+import { groupRegistrationProductSelections } from "@/lib/utils/groupRegistrationProductSelections";
+import { buildProductSelectionsForVariableKit } from "@/lib/utils/kitVariableProductSelectionUtils";
+import { KitVariableProductSelectors } from "@/components/event-registrations/KitVariableProductSelectors";
+import {
+  ensureKitProductsForEdit,
+  loadKitsForCategoryWithKitFallback,
+} from "@/lib/utils/loadEventKitsWithKitFallback";
 
 const AdminRegistrations = () => {
   const navigate = useNavigate();
@@ -89,6 +97,7 @@ const AdminRegistrations = () => {
   const [eventModalitiesList, setEventModalitiesList] = useState<Modality[]>([]);
   const [editingProductAttributes, setEditingProductAttributes] = useState<Record<string, Record<string, string>>>({});
   const [kitProducts, setKitProducts] = useState<KitProduct[]>([]);
+  const [editableKitContextIssues, setEditableKitContextIssues] = useState<EditableKitIssue[]>([]);
   const [loadingKit, setLoadingKit] = useState(false);
   const [saving, setSaving] = useState(false);
   const [categoryBatchesList, setCategoryBatchesList] = useState<CategoryBatch[]>([]);
@@ -164,10 +173,13 @@ const AdminRegistrations = () => {
 
   const loadPlatformFeeSettings = async () => {
     try {
-      const modules = await getEnabledModules();
-      if (modules.platformFee) {
-        setPlatformFee(modules.platformFee);
-        setPlatformFeeType(modules.platformFeeType || 'fixed');
+      const res = await getEnabledModules();
+      if (res.success && res.data) {
+        const pf = res.data.platform_fee;
+        if (typeof pf === "number") {
+          setPlatformFee(pf);
+        }
+        setPlatformFeeType(res.data.platform_fee_type ?? "fixed");
       }
     } catch (error) {
       console.error("Error loading platform fee settings:", error);
@@ -412,33 +424,38 @@ const AdminRegistrations = () => {
         setEventCategoriesList([]);
       }
 
-      const kitsResponse = await getEventKits(
-        registrationDetails.event_id,
-        registrationDetails.category_id || undefined
-      );
-      if (kitsResponse.success && kitsResponse.data) {
-        setEventKitsList(kitsResponse.data);
-        const kit = kitsResponse.data.find((k) => k.id === registrationDetails.kit_id);
-        if (kit?.products) {
-          setKitProducts(kit.products);
-          const currentAttributes: Record<string, Record<string, string>> = {};
-          if (registrationDetails.product_selections) {
-            registrationDetails.product_selections.forEach((selection: any) => {
-              if (!currentAttributes[selection.product_id]) {
-                currentAttributes[selection.product_id] = {};
-              }
-              if (selection.attribute_name && selection.attribute_value) {
-                currentAttributes[selection.product_id][selection.attribute_name] = selection.attribute_value;
-              }
-            });
-          }
-          setEditingProductAttributes(currentAttributes);
-        } else {
-          setKitProducts([]);
-          setEditingProductAttributes({});
+      const [fallback, ctxRes] = await Promise.all([
+        loadKitsForCategoryWithKitFallback({
+          eventId: registrationDetails.event_id,
+          categoryId: registrationDetails.category_id || undefined,
+          registrationKitId: registrationDetails.kit_id,
+        }),
+        getRegistrationEditableKitContext(registrationDetails.id),
+      ]);
+
+      setEventKitsList(fallback.kitsForDropdown);
+
+      const ctx = ctxRes.success ? ctxRes.data : null;
+      setEditableKitContextIssues(ctx?.issues ?? []);
+
+      const productsForEditor =
+        ctx?.products && ctx.products.length > 0 ? ctx.products : fallback.kitProducts;
+
+      if (productsForEditor.length > 0) {
+        setKitProducts(productsForEditor);
+        const currentAttributes: Record<string, Record<string, string>> = {};
+        if (registrationDetails.product_selections) {
+          registrationDetails.product_selections.forEach((selection: any) => {
+            if (!currentAttributes[selection.product_id]) {
+              currentAttributes[selection.product_id] = {};
+            }
+            if (selection.attribute_name && selection.attribute_value) {
+              currentAttributes[selection.product_id][selection.attribute_name] = selection.attribute_value;
+            }
+          });
         }
+        setEditingProductAttributes(currentAttributes);
       } else {
-        setEventKitsList([]);
         setKitProducts([]);
         setEditingProductAttributes({});
       }
@@ -465,6 +482,7 @@ const AdminRegistrations = () => {
   const handleCancelEdit = () => {
     setIsEditMode(false);
     setEditingProductAttributes({});
+    setEditableKitContextIssues([]);
     setEditingCategoryId("");
     setEditingKitId("");
     setEditingModalityId("");
@@ -517,8 +535,16 @@ const AdminRegistrations = () => {
             if (kitExists && currentKitId) {
               setEditingKitId(currentKitId);
               const kit = kitsRes.data.find((k: EventKit) => k.id === currentKitId);
-              if (kit?.products?.length) {
-                setKitProducts(kit.products);
+              let productList = kit?.products?.length ? kit.products : [];
+              if (productList.length === 0 && registrationDetails?.event_id) {
+                productList = await ensureKitProductsForEdit(
+                  registrationDetails.event_id,
+                  currentKitId,
+                  kit
+                );
+              }
+              if (productList.length > 0) {
+                setKitProducts(productList);
                 const attrs: Record<string, Record<string, string>> = {};
                 if (registrationDetails?.product_selections?.length) {
                   registrationDetails.product_selections.forEach((selection: any) => {
@@ -578,8 +604,16 @@ const AdminRegistrations = () => {
         if (kitExists && currentKitId) {
           setEditingKitId(currentKitId);
           const kit = kits.find((k: EventKit) => k.id === currentKitId);
-          if (kit?.products?.length) {
-            setKitProducts(kit.products);
+          let productList = kit?.products?.length ? kit.products : [];
+          if (productList.length === 0) {
+            productList = await ensureKitProductsForEdit(
+              registrationDetails.event_id,
+              currentKitId,
+              kit
+            );
+          }
+          if (productList.length > 0) {
+            setKitProducts(productList);
             setEditingProductAttributes(currentAttrs);
           } else {
             setEditingProductAttributes({});
@@ -612,16 +646,25 @@ const AdminRegistrations = () => {
     }
   };
 
-  const handleEditingKitChange = (newKitId: string) => {
+  const handleEditingKitChange = async (newKitId: string) => {
     setEditingKitId(newKitId);
     if (!newKitId) {
       setKitProducts([]);
       setEditingProductAttributes({});
       return;
     }
+    if (!registrationDetails?.event_id) {
+      setKitProducts([]);
+      setEditingProductAttributes({});
+      return;
+    }
     const kit = eventKitsList.find((k) => k.id === newKitId);
-    if (kit?.products) {
-      setKitProducts(kit.products);
+    let productList = kit?.products?.length ? kit.products : [];
+    if (productList.length === 0) {
+      productList = await ensureKitProductsForEdit(registrationDetails.event_id, newKitId, kit);
+    }
+    if (productList.length > 0) {
+      setKitProducts(productList);
       setEditingProductAttributes({});
     } else {
       setKitProducts([]);
@@ -671,73 +714,73 @@ const AdminRegistrations = () => {
         updateData.custom_field_values = effectiveCategory.custom_fields?.length ? editingCustomFieldValues : {};
       }
 
+      let productSelectionsForVariableKit: Array<{
+        product_id: string;
+        variant_id?: string;
+        attribute_selections: Record<string, string>;
+      }> | null = null;
+
+      if (editingKitId && kitProducts.length > 0) {
+        const built = buildProductSelectionsForVariableKit(kitProducts, editingProductAttributes, {
+          requireAll: false,
+        });
+        if (built.length > 0) productSelectionsForVariableKit = built;
+      }
+
+      const categoryOrKitChanging =
+        (!!updateData.category_id && updateData.category_id !== registrationDetails.category_id) ||
+        (updateData.kit_id !== undefined &&
+          (updateData.kit_id || null) !== (registrationDetails.kit_id || null));
+
+      if (categoryOrKitChanging && productSelectionsForVariableKit?.length) {
+        updateData.product_selections = productSelectionsForVariableKit;
+      }
+
+      let updateResponse: {
+        success: boolean;
+        error?: string;
+        details?: unknown;
+        selection_sync?: {
+          kept_existing?: boolean;
+          selections_replaced?: boolean;
+          remapped_from_kit_change?: boolean;
+        };
+      } | null = null;
+
       if (Object.keys(updateData).length > 0) {
-        const updateResponse = await updateRegistration(registrationDetails.id, updateData);
+        updateResponse = await updateRegistration(registrationDetails.id, updateData);
         if (!updateResponse.success) {
-          toast.error(updateResponse.error || "Erro ao atualizar inscrição");
+          const det = updateResponse.details as {
+            requires_product_reselection?: boolean;
+            reasons?: string[];
+          } | null;
+          if (det?.requires_product_reselection && Array.isArray(det.reasons) && det.reasons.length > 0) {
+            toast.error(det.reasons.join("\n"));
+          } else {
+            toast.error(updateResponse.error || "Erro ao atualizar inscrição");
+          }
           setSaving(false);
           return;
         }
+        if (updateResponse.selection_sync?.remapped_from_kit_change) {
+          toast.success("Variantes realinhadas automaticamente para o novo kit.");
+        } else if (categoryOrKitChanging && updateResponse.selection_sync?.kept_existing) {
+          toast.success("Seleções do kit mantidas (compatíveis com a alteração).");
+        }
       }
 
-      // Update product attributes if kit is selected and has variable products
-      if (editingKitId && kitProducts.length > 0) {
-        const variableProducts = kitProducts.filter((p) => p.type === "variable" && p.variant_attributes && p.variant_attributes.length > 0);
-        
-        if (variableProducts.length > 0) {
-          const productSelections = variableProducts
-            .map((product) => {
-              const attributes = editingProductAttributes[product.id] || {};
-              
-              // Only include products that have at least one attribute selected
-              const hasAttributes = Object.keys(attributes).length > 0 && 
-                Object.values(attributes).some((val) => val && val.trim() !== "");
-              
-              if (!hasAttributes) {
-                return null; // Skip products without attributes
-              }
-              
-              // Find matching variant if all attributes are selected
-              let variantId: string | undefined;
-              if (product.variants && product.variant_attributes) {
-                const selectedValues = product.variant_attributes.map((attr) => attributes[attr] || "").filter(Boolean);
-                if (selectedValues.length === product.variant_attributes.length) {
-                  const variant = product.variants.find((v) => {
-                    const variantValues = v.name.split(" - ").map((v) => v.trim());
-                    return product.variant_attributes!.every((attr, idx) => variantValues[idx] === attributes[attr]);
-                  });
-                  if (variant) {
-                    variantId = variant.id;
-                  }
-                }
-              }
+      const skipAttributeFollowUp =
+        !!updateData.product_selections ||
+        !!(updateResponse && updateResponse.selection_sync?.selections_replaced);
 
-              return {
-                product_id: product.id,
-                variant_id: variantId,
-                attribute_selections: attributes,
-              };
-            })
-            .filter((selection) => selection !== null) as Array<{
-              product_id: string;
-              variant_id?: string;
-              attribute_selections: Record<string, string>;
-            }>;
-
-          // Only update if there are products with attributes selected
-          if (productSelections.length > 0) {
-            const attributesResponse = await completeRegistrationAttributes(
-              registrationDetails.id,
-              {
-                product_selections: productSelections,
-              }
-            );
-            if (!attributesResponse.success) {
-              toast.error(attributesResponse.error || "Erro ao atualizar atributos");
-              setSaving(false);
-              return;
-            }
-          }
+      if (!skipAttributeFollowUp && productSelectionsForVariableKit?.length) {
+        const attributesResponse = await completeRegistrationAttributes(registrationDetails.id, {
+          product_selections: productSelectionsForVariableKit,
+        });
+        if (!attributesResponse.success) {
+          toast.error(attributesResponse.error || "Erro ao atualizar atributos");
+          setSaving(false);
+          return;
         }
       }
 
@@ -1514,7 +1557,10 @@ const AdminRegistrations = () => {
                   <div>
                     <Label className="text-sm text-muted-foreground">Kit</Label>
                     {isEditMode ? (
-                      <Select value={editingKitId || "none"} onValueChange={(v) => handleEditingKitChange(v === "none" ? "" : v)}>
+                      <Select
+                        value={editingKitId || "none"}
+                        onValueChange={(v) => void handleEditingKitChange(v === "none" ? "" : v)}
+                      >
                         <SelectTrigger className="mt-1">
                           <SelectValue placeholder="Selecione o kit (opcional)" />
                         </SelectTrigger>
@@ -1808,91 +1854,36 @@ const AdminRegistrations = () => {
               {isEditMode && editingKitId && (
                 <div className="space-y-3">
                   <h3 className="text-lg font-semibold border-b pb-2">Editar Atributos dos Produtos</h3>
+                  {editableKitContextIssues.length > 0 && (
+                    <Alert variant="destructive">
+                      <AlertTitle>Inconsistências nos dados do kit</AlertTitle>
+                      <AlertDescription>
+                        <ul className="list-disc pl-4 text-sm space-y-1 mt-1">
+                          {editableKitContextIssues.map((issue, i) => (
+                            <li key={`${issue.code}-${i}`}>{issue.message}</li>
+                          ))}
+                        </ul>
+                      </AlertDescription>
+                    </Alert>
+                  )}
                   {loadingKit ? (
                     <div className="flex items-center justify-center py-4">
                       <Loader2 className="h-6 w-6 animate-spin text-primary" />
                     </div>
                   ) : (
-                    <div className="space-y-4">
-                      {kitProducts
-                        .filter((p) => p.type === "variable" && p.variant_attributes && p.variant_attributes.length > 0)
-                        .map((product) => {
-                          const currentAttributes = editingProductAttributes[product.id] || {};
-                          const attributeNames = product.variant_attributes || [];
-
-                          const hasSelectedAttributes = Object.keys(currentAttributes).length > 0 && 
-                            attributeNames.some((attr) => currentAttributes[attr]);
-
-                          return (
-                            <div key={product.id} className="border rounded-lg p-4 bg-muted/50">
-                              <div className="flex items-center justify-between mb-3">
-                                <h4 className="font-semibold text-base">{product.name}</h4>
-                                {hasSelectedAttributes && (
-                                  <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => handleRemoveAttributes(product.id)}
-                                    disabled={saving}
-                                    className="text-destructive hover:text-destructive"
-                                  >
-                                    <Trash2 className="w-4 h-4 mr-1" />
-                                    Remover Atributos
-                                  </Button>
-                                )}
-                              </div>
-                              <div className="space-y-3">
-                                {attributeNames.map((attrName) => {
-                                  // Get available values for this attribute from variants
-                                  const availableValues = new Set<string>();
-                                  if (product.variants) {
-                                    product.variants.forEach((variant) => {
-                                      const variantValues = variant.name.split(" - ").map((v) => v.trim());
-                                      const attrIndex = attributeNames.indexOf(attrName);
-                                      if (attrIndex >= 0 && attrIndex < variantValues.length) {
-                                        availableValues.add(variantValues[attrIndex]);
-                                      }
-                                    });
-                                  }
-
-                                  return (
-                                    <div key={attrName} className="space-y-1">
-                                      <Label className="text-sm">{attrName}</Label>
-                                      <Select
-                                        value={currentAttributes[attrName] || ""}
-                                        onValueChange={(value) => {
-                                          setEditingProductAttributes((prev) => ({
-                                            ...prev,
-                                            [product.id]: {
-                                              ...prev[product.id],
-                                              [attrName]: value,
-                                            },
-                                          }));
-                                        }}
-                                      >
-                                        <SelectTrigger>
-                                          <SelectValue placeholder={`Selecione ${attrName}`} />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                          {Array.from(availableValues).map((value) => (
-                                            <SelectItem key={value} value={value}>
-                                              {value}
-                                            </SelectItem>
-                                          ))}
-                                        </SelectContent>
-                                      </Select>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      {kitProducts.filter((p) => p.type === "variable" && p.variant_attributes && p.variant_attributes.length > 0).length === 0 && (
-                        <p className="text-sm text-muted-foreground text-center py-4">
-                          Nenhum produto com variações encontrado neste kit.
-                        </p>
-                      )}
-                    </div>
+                    <KitVariableProductSelectors
+                      kitProducts={kitProducts}
+                      value={editingProductAttributes}
+                      onChange={(productId, attrName, attrValue) =>
+                        setEditingProductAttributes((prev) => ({
+                          ...prev,
+                          [productId]: { ...prev[productId], [attrName]: attrValue },
+                        }))
+                      }
+                      disabled={saving}
+                      onRemoveProductAttributes={(productId) => void handleRemoveAttributes(productId)}
+                      emptyMessage="Nenhum produto com variações encontrado neste kit."
+                    />
                   )}
                 </div>
               )}
@@ -1914,60 +1905,28 @@ const AdminRegistrations = () => {
                     </Button>
                   </div>
                   <div className="space-y-4">
-                    {(() => {
-                      // Group selections by product
-                      const productGroups = new Map<string, {
-                        product_id: string;
-                        variant_id: string | null;
-                        variant_name: string | null;
-                        attributes: Array<{
-                          attribute_name: string;
-                          attribute_value: string;
-                        }>;
-                      }>();
-                      
-                      registrationDetails.product_selections.forEach((selection: any) => {
-                        const key = selection.product_id;
-                        if (!productGroups.has(key)) {
-                          productGroups.set(key, {
-                            product_id: selection.product_id,
-                            variant_id: selection.variant_id,
-                            variant_name: selection.variant_name,
-                            attributes: [],
-                          });
-                        }
-                        productGroups.get(key)!.attributes.push({
-                          attribute_name: selection.attribute_name,
-                          attribute_value: selection.attribute_value,
-                        });
-                      });
-                      
-                      return Array.from(productGroups.entries()).map(([productId, productData]) => {
-                        const productName = registrationDetails.product_selections.find(
-                          (s: any) => s.product_id === productId
-                        )?.product_name || 'Produto';
-                        
-                        return (
-                          <div key={productId} className="border rounded-lg p-4 bg-muted/50">
-                            <h4 className="font-semibold mb-3 text-base">{productName}</h4>
-                            <div className="space-y-2">
-                              {productData.attributes.map((attr, index) => (
-                                <div key={index} className="flex items-center gap-2">
-                                  <span className="text-sm text-muted-foreground min-w-[100px]">{attr.attribute_name}:</span>
-                                  <span className="font-medium">{attr.attribute_value}</span>
-                                </div>
-                              ))}
-                              {productData.variant_name && (
-                                <div className="mt-3 pt-3 border-t">
-                                  <span className="text-sm text-muted-foreground">Variação completa: </span>
-                                  <span className="font-medium">{productData.variant_name}</span>
-                                </div>
-                              )}
+                    {groupRegistrationProductSelections(registrationDetails.product_selections).map((g) => (
+                      <div key={g.product_id} className="border rounded-lg p-4 bg-muted/50">
+                        <h4 className="font-semibold mb-3 text-base">{g.product_name}</h4>
+                        <div className="space-y-2">
+                          {g.variation_labels.length > 0 && (
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm text-muted-foreground min-w-[100px]">Variação:</span>
+                              <span className="font-medium">{g.variation_labels.join(" · ")}</span>
                             </div>
-                          </div>
-                        );
-                      });
-                    })()}
+                          )}
+                          {g.other_attributes.map((attr, index) => (
+                            <div key={index} className="flex items-center gap-2">
+                              <span className="text-sm text-muted-foreground min-w-[100px]">{attr.attribute_name}:</span>
+                              <span className="font-medium">{attr.attribute_value}</span>
+                            </div>
+                          ))}
+                          {g.variation_labels.length === 0 && g.other_attributes.length === 0 && (
+                            <p className="text-sm text-muted-foreground">Sem detalhes adicionais.</p>
+                          )}
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}
