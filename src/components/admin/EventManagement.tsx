@@ -20,7 +20,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Search, Download, Edit, Eye, CheckCircle, XCircle, Ban, ExternalLink, BarChart, Loader2, Award, Filter, Trash2, Plus, MoreVertical, UserCog } from "lucide-react";
+import { Search, Download, Edit, Eye, CheckCircle, XCircle, Ban, ExternalLink, BarChart, Loader2, Award, Filter, Trash2, Plus, MoreVertical, UserCog, Users } from "lucide-react";
 import { getEvents, getEventById, updateEvent, deleteEvent } from "@/lib/api/events";
 import { useToast } from "@/hooks/use-toast";
 import { EventViewEditDialog } from "./EventViewEditDialog";
@@ -30,6 +30,7 @@ import { ChangeOrganizerModal } from "./ChangeOrganizerModal";
 import { RegisterAthleteStaffDialog } from "@/components/registration/RegisterAthleteStaffDialog";
 import { useNavigate } from "react-router-dom";
 import { getEffectiveRegistrationStatus, getRegistrationStatusLabel, getRegistrationStatusVariant } from "@/lib/utils/eventRegistration";
+import { getAdminEventRegistrationsPath } from "@/lib/utils/navigation";
 
 const EventManagement = () => {
   const navigate = useNavigate();
@@ -502,6 +503,10 @@ const EventManagement = () => {
                                   <Eye className="mr-2 h-4 w-4" />
                                   Visualizar Detalhes
                                 </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => navigate(getAdminEventRegistrationsPath(event.id))}>
+                                  <Users className="mr-2 h-4 w-4" />
+                                  Visualizar inscritos
+                                </DropdownMenuItem>
                                 <DropdownMenuItem onClick={() => handleEditEvent(event.id)}>
                                   <Edit className="mr-2 h-4 w-4" />
                                   Editar
@@ -596,6 +601,10 @@ const EventManagement = () => {
                                   <DropdownMenuItem onClick={() => handleViewEvent(event.id)}>
                                     <Eye className="mr-2 h-4 w-4" />
                                     Visualizar
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem onClick={() => navigate(getAdminEventRegistrationsPath(event.id))}>
+                                    <Users className="mr-2 h-4 w-4" />
+                                    Inscritos
                                   </DropdownMenuItem>
                                   <DropdownMenuItem onClick={() => handleEditEvent(event.id)}>
                                     <Edit className="mr-2 h-4 w-4" />

@@ -2209,11 +2209,16 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
             display_order: index,
             category_ids: validCategoryIds(kit.category_ids),
             products: kit.products.map((product) => {
-              // Extract variant_attributes from product if available
-              const variantAttributeNames = product.variant_attributes || 
-                                           (product.variantAttributes?.map(attr => attr.name)) || 
-                                           null;
-              
+              /* Não usar product.variant_attributes quando for [] — em JS [] é truthy e o sync gravava array vazio no PG.
+               * Preferir nomes não vazios do estado da UI (variantAttributes), depois variant_attributes persistido. */
+              const fromStored = Array.isArray(product.variant_attributes)
+                ? product.variant_attributes.map((s) => String(s).trim()).filter(Boolean)
+                : [];
+              const fromUi =
+                product.variantAttributes?.map((attr) => attr.name.trim()).filter(Boolean) ?? [];
+              const variantAttributeNames =
+                fromStored.length > 0 ? fromStored : fromUi.length > 0 ? fromUi : null;
+
               return {
                 id: product.id,
                 name: product.name,

@@ -1,4 +1,5 @@
 import { query } from '../config/database.js';
+import { registrationConsumesVariantStockSql } from './variantStockPolicyService.js';
 
 export interface AttributeSelectionStats {
   kit_id: string;
@@ -41,7 +42,7 @@ export const getAttributeSelectionStats = async (eventId: string): Promise<Attri
     INNER JOIN event_kits k ON p.kit_id = k.id
     LEFT JOIN product_variants pv ON rps.variant_id = pv.id
     WHERE r.event_id = $1
-      AND r.status != 'cancelled'
+      AND ${registrationConsumesVariantStockSql('r')}
     GROUP BY k.id, k.name, p.id, p.name, rps.attribute_name, rps.attribute_value
     ORDER BY k.name, p.name, rps.attribute_name, rps.attribute_value`,
     [eventId]

@@ -27,7 +27,7 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Search, MoreVertical, Edit, Eye, Trash2, BarChart3, Calendar, Loader2, ExternalLink, ArrowRightLeft } from "lucide-react";
+import { Plus, Search, MoreVertical, Edit, Eye, Trash2, BarChart3, Calendar, Loader2, ExternalLink, ArrowRightLeft, Users } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { formatDateShortBrasilia } from "@/lib/utils";
@@ -38,6 +38,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import { getEffectiveRegistrationStatus, getRegistrationStatusLabel, getRegistrationStatusVariant } from "@/lib/utils/eventRegistration";
+import { getOrganizerEventRegistrationsPath } from "@/lib/utils/navigation";
 
 const OrganizerEvents = () => {
   const navigate = useNavigate();
@@ -370,6 +371,10 @@ const OrganizerEvents = () => {
                             }}>
                               <Edit className="mr-2 h-4 w-4" />
                               Editar
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => navigate(getOrganizerEventRegistrationsPath(event.id))}>
+                              <Users className="mr-2 h-4 w-4" />
+                              Visualizar inscritos
                             </DropdownMenuItem>
                             <DropdownMenuItem onClick={() => setSelectedEventIdForReport(event.id)}>
                               <BarChart3 className="mr-2 h-4 w-4" />

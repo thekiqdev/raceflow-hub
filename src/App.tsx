@@ -12,6 +12,8 @@ import EventDetails from "./pages/EventDetails";
 import OrganizerDashboard from "./pages/OrganizerDashboard";
 import RunnerDashboard from "./pages/RunnerDashboard";
 import AdminDashboard from "./pages/AdminDashboard";
+import AdminEventRegistrationsPage from "./pages/AdminEventRegistrationsPage";
+import OrganizerEventRegistrationsPage from "./pages/OrganizerEventRegistrationsPage";
 import Quote from "./pages/Quote";
 import FAQ from "./pages/FAQ";
 import RegistrationQRCode from "./pages/RegistrationQRCode";
@@ -69,6 +71,14 @@ const App = () => (
             } 
           />
           <Route 
+            path="/admin/evento/:eventId/inscritos" 
+            element={
+              <ProtectedRoute requiredRole="admin">
+                <AdminEventRegistrationsPage />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
             path="/admin/:section" 
             element={
               <ProtectedRoute requiredRole="admin">
@@ -84,6 +94,14 @@ const App = () => (
             element={
               <ProtectedRoute requiredRole="organizer">
                 <OrganizerDashboard />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/organizador/evento/:eventId/inscritos" 
+            element={
+              <ProtectedRoute requiredRole="organizer">
+                <OrganizerEventRegistrationsPage />
               </ProtectedRoute>
             } 
           />

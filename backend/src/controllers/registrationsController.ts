@@ -5,6 +5,7 @@ import {
   getRegistrationById,
   createRegistration,
   updateRegistration,
+  replaceRegistrationProductSelectionsForEdit,
   findUserByCpfOrEmail,
   findUserByEmail,
   transferRegistration,
@@ -13,6 +14,7 @@ import {
   completeRegistrationAttributes,
   removeRegistrationAttributes,
   completeInvitationRegistration,
+  type ProductSelection,
 } from '../services/registrationsService.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { hasRole } from '../services/userRolesService.js';
@@ -22,7 +24,7 @@ import { getCategoryById } from '../services/categoriesService.js';
 import { createCustomer, createPayment, createCreditCardPayment, getPaymentByRegistrationId, getTotalPaidForRegistration, getAmountPaidForOrganizer, getPendingPaymentsForRegistration, getPaymentStatus as getAsaasPaymentStatus, markPaymentAsManualConfirmed, deletePaymentInAsaasOnly, syncRegistrationPaymentStatus, cancelPayment, validateOrRecreateCustomer } from '../services/asaasService.js';
 import { getAsaasPaymentStatusWithPollCache } from '../services/asaasPaymentStatusPollCache.js';
 import { getProfileByUserId } from '../services/profilesService.js';
-import { query } from '../config/database.js';
+import { query, getClient } from '../config/database.js';
 import { sendNotificationSafely, getUserEmail, getUserName, getOrganizerEmail } from '../services/notificationService.js';
 import { getLeaderEventCommissionById } from '../services/leaderEventCommissionsService.js';
 import { getCouponByEventCommission, getCouponByCodeOnly } from '../services/couponsService.js';
@@ -32,6 +34,9 @@ import { executeInvitationBonusDomainCommand } from '../services/invitationBonus
 import { z } from 'zod';
 import { EventRegistrationStatus, Event } from '../types/index.js';
 import { calculateRegistrationStatus } from '../services/eventsService.js';
+import { findRegistrationsMissingKitProductSelections } from '../services/registrationKitSelectionAuditService.js';
+import { planRegistrationKitCategorySelectionSync } from '../services/registrationKitCategorySelectionService.js';
+import { getRegistrationEditableKitContext } from '../services/registrationEditableKitContextService.js';
 
 /**
  * Obtém o status efetivo de inscrições do evento
@@ -266,6 +271,24 @@ export const getAllRegistrations = asyncHandler(async (req: AuthRequest, res: Re
     if (req.query.search) {
       filters.search = req.query.search;
     }
+    if (req.query.category_id) {
+      filters.category_id = req.query.category_id as string;
+    }
+    if (req.query.modality_id) {
+      filters.modality_id = req.query.modality_id as string;
+    }
+    if (req.query.kit_id) {
+      filters.kit_id = req.query.kit_id as string;
+    }
+    if (req.query.created_at_from) {
+      filters.created_at_from = req.query.created_at_from as string;
+    }
+    if (req.query.created_at_to) {
+      filters.created_at_to = req.query.created_at_to as string;
+    }
+    if (req.query.registration_kind) {
+      filters.registration_kind = req.query.registration_kind as string;
+    }
   }
 
   const pageRaw = req.query.page;
@@ -341,6 +364,61 @@ export const getRegistrationsWithMissingAttributesController = asyncHandler(asyn
       message: error.message || 'Erro ao buscar inscrições com atributos pendentes',
     });
   }
+});
+
+/**
+ * GET /api/registrations/audit/missing-kit-product-selections?event_id=&limit=
+ * Somente admin. Read-only: inscrições não canceladas com kit que tem produto variável
+ * e zero linhas em registration_product_selections.
+ */
+export const auditMissingKitProductSelectionsController = asyncHandler(async (req: AuthRequest, res: Response) => {
+  if (!req.user) {
+    res.status(401).json({ success: false, error: 'Not authenticated' });
+    return;
+  }
+  const isAdmin = await hasRole(req.user.id, 'admin');
+  if (!isAdmin) {
+    res.status(403).json({
+      success: false,
+      error: 'Forbidden',
+      message: 'Apenas administradores podem executar esta auditoria.',
+    });
+    return;
+  }
+
+  const eventIdRaw = req.query.event_id;
+  const limitRaw = req.query.limit;
+  let event_id: string | undefined;
+  if (eventIdRaw !== undefined && eventIdRaw !== '') {
+    if (
+      typeof eventIdRaw !== 'string' ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(eventIdRaw)
+    ) {
+      res.status(400).json({ success: false, error: 'event_id inválido' });
+      return;
+    }
+    event_id = eventIdRaw;
+  }
+  let limit = 2000;
+  if (limitRaw !== undefined && limitRaw !== '') {
+    const n = parseInt(String(limitRaw), 10);
+    if (!Number.isFinite(n) || n < 1) {
+      res.status(400).json({ success: false, error: 'limit inválido' });
+      return;
+    }
+    limit = Math.min(n, 5000);
+  }
+
+  const items = await findRegistrationsMissingKitProductSelections({ event_id, limit });
+  res.json({
+    success: true,
+    data: {
+      items,
+      count: items.length,
+      criteria:
+        'Inscrição não cancelada, com kit_id, kit possui produto variable com variant_attributes preenchido, e não existe linha em registration_product_selections.',
+    },
+  });
 });
 
 // Complete registration attributes
@@ -845,6 +923,61 @@ export const getRegistration = asyncHandler(async (req: AuthRequest, res: Respon
       ...registration,
       product_selections: productSelections || [],
     },
+  });
+});
+
+/** GET /registrations/:id/editable-kit-context — produtos/variantes do kit efetivo da inscrição (edição). */
+export const getRegistrationEditableKitContextController = asyncHandler(async (req: AuthRequest, res: Response) => {
+  if (!req.user) {
+    res.status(401).json({
+      success: false,
+      error: 'Not authenticated',
+    });
+    return;
+  }
+
+  const { id } = req.params;
+  const registration = await getRegistrationById(id, req.user.id);
+
+  if (!registration) {
+    res.status(404).json({
+      success: false,
+      error: 'Registration not found',
+    });
+    return;
+  }
+
+  const isAdmin = await hasRole(req.user.id, 'admin');
+  const isOrganizer = await hasRole(req.user.id, 'organizer');
+  const isOwner = registration.runner_id === req.user.id || registration.registered_by === req.user.id;
+
+  let isEventOrganizer = false;
+  if (isOrganizer) {
+    const event = await getEventById(registration.event_id);
+    isEventOrganizer = event?.organizer_id === req.user.id;
+  }
+
+  if (!isAdmin && !isEventOrganizer && !isOwner) {
+    res.status(403).json({
+      success: false,
+      error: 'Forbidden',
+      message: 'You do not have permission to view this registration',
+    });
+    return;
+  }
+
+  const data = await getRegistrationEditableKitContext(id);
+  if (!data) {
+    res.status(404).json({
+      success: false,
+      error: 'Registration not found',
+    });
+    return;
+  }
+
+  res.json({
+    success: true,
+    data,
   });
 });
 
@@ -2458,7 +2591,102 @@ export const updateRegistrationController = asyncHandler(async (req: AuthRequest
     }
   }
 
-  if (Object.keys(updatePayload).length === 0) {
+  const categoryChanging =
+    updatePayload.category_id !== undefined && updatePayload.category_id !== registration.category_id;
+  const kitChanging = updatePayload.kit_id !== undefined && updatePayload.kit_id !== registration.kit_id;
+  const explicitKitRemoval =
+    Object.prototype.hasOwnProperty.call(req.body, 'kit_id') && req.body.kit_id === null;
+
+  let selectionPlan: Awaited<ReturnType<typeof planRegistrationKitCategorySelectionSync>> | null = null;
+
+  if (categoryChanging || kitChanging) {
+    let incomingSelections:
+      | { product_id: string; variant_id?: string; attribute_selections?: Record<string, string> }[]
+      | undefined;
+    if (Object.prototype.hasOwnProperty.call(req.body, 'product_selections')) {
+      const parsed = z.array(productSelectionSchema).safeParse(req.body.product_selections);
+      if (!parsed.success) {
+        res.status(400).json({
+          success: false,
+          error: 'product_selections inválido',
+          message: parsed.error.issues.map((i) => i.message).join('; ') || 'Payload inválido',
+        });
+        return;
+      }
+      incomingSelections = parsed.data;
+    }
+
+    const effectiveNewCategoryIdForPlan =
+      (updatePayload.category_id as string | undefined) ?? registration.category_id;
+    const effectiveNewKitIdForPlan =
+      updatePayload.kit_id !== undefined ? (updatePayload.kit_id as string | null) : registration.kit_id;
+
+    selectionPlan = await planRegistrationKitCategorySelectionSync({
+      registrationId: id,
+      eventId: registration.event_id,
+      oldCategoryId: registration.category_id,
+      newCategoryId: effectiveNewCategoryIdForPlan,
+      oldKitId: registration.kit_id ?? null,
+      newKitId: effectiveNewKitIdForPlan,
+      explicitKitRemoval,
+      incomingProductSelections: incomingSelections,
+    });
+
+    if (selectionPlan.kind === 'reject') {
+      res.status(409).json({
+        success: false,
+        error: 'PRODUCT_RESELECTION_REQUIRED',
+        requires_product_reselection: true,
+        reasons: selectionPlan.reasons,
+        message: selectionPlan.reasons.join(' '),
+      });
+      return;
+    }
+  }
+
+  /** Produto/variação sem mudar categoria nem kit: planRegistrationKitCategorySelectionSync retorna noop; substituir seleções aqui. */
+  let selectionsOnlyReplace: ProductSelection[] | null = null;
+  if (!categoryChanging && !kitChanging && Object.prototype.hasOwnProperty.call(req.body, 'product_selections')) {
+    const parsedOnly = z.array(productSelectionSchema).safeParse(req.body.product_selections);
+    if (!parsedOnly.success) {
+      res.status(400).json({
+        success: false,
+        error: 'product_selections inválido',
+        message: parsedOnly.error.issues.map((i) => i.message).join('; ') || 'Payload inválido',
+      });
+      return;
+    }
+    if (parsedOnly.data.length === 0) {
+      res.status(400).json({
+        success: false,
+        error: 'product_selections não pode ser vazio quando enviado.',
+      });
+      return;
+    }
+    if (!registration.kit_id) {
+      res.status(400).json({
+        success: false,
+        error: 'Inscrição sem kit; não é possível atualizar seleções de produto.',
+      });
+      return;
+    }
+    const kitProductsCheck = await query(`SELECT id FROM kit_products WHERE kit_id = $1`, [registration.kit_id]);
+    const allowedProductIds = new Set(kitProductsCheck.rows.map((r: { id: string }) => String(r.id)));
+    for (const s of parsedOnly.data) {
+      if (!allowedProductIds.has(s.product_id)) {
+        res.status(400).json({
+          success: false,
+          error: 'Uma ou mais seleções não pertencem ao kit desta inscrição.',
+        });
+        return;
+      }
+    }
+    selectionsOnlyReplace = parsedOnly.data;
+  }
+
+  const hasSelectionReplace =
+    selectionPlan?.kind === 'replace' || selectionsOnlyReplace !== null;
+  if (Object.keys(updatePayload).length === 0 && !hasSelectionReplace) {
     res.status(400).json({
       success: false,
       error: 'Nenhum campo válido para atualização.',
@@ -2466,7 +2694,46 @@ export const updateRegistrationController = asyncHandler(async (req: AuthRequest
     return;
   }
 
-  const updatedRegistration = await updateRegistration(id, updatePayload as any);
+  let updatedRegistration;
+  if (selectionPlan?.kind === 'replace') {
+    const client = await getClient();
+    try {
+      await client.query('BEGIN');
+      updatedRegistration = await updateRegistration(id, updatePayload as any, client);
+      await replaceRegistrationProductSelectionsForEdit(
+        client,
+        id,
+        registration.event_id,
+        selectionPlan.selections
+      );
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  } else if (selectionsOnlyReplace) {
+    const client = await getClient();
+    try {
+      await client.query('BEGIN');
+      updatedRegistration = await updateRegistration(id, updatePayload as any, client);
+      await replaceRegistrationProductSelectionsForEdit(
+        client,
+        id,
+        registration.event_id,
+        selectionsOnlyReplace
+      );
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  } else {
+    updatedRegistration = await updateRegistration(id, updatePayload as any);
+  }
 
   // Ao confirmar pagamento manualmente (admin marca como pago), marcar cobranças pendentes como MANUAL_CONFIRMED
   // para que pending_difference_amount fique 0 e não apareça "Pagamento da diferença pendente" indevidamente
@@ -2713,10 +2980,21 @@ export const updateRegistrationController = asyncHandler(async (req: AuthRequest
     }
   }
 
+  const selectionSyncPayload =
+    categoryChanging || kitChanging
+      ? {
+          kept_existing: selectionPlan?.kind === 'noop',
+          selections_replaced: selectionPlan?.kind === 'replace',
+          remapped_from_kit_change:
+            selectionPlan?.kind === 'replace' ? selectionPlan.remapped : false,
+        }
+      : undefined;
+
   res.json({
     success: true,
     data: updatedRegistration,
     message: 'Registration updated successfully',
+    ...(selectionSyncPayload ? { selection_sync: selectionSyncPayload } : {}),
   });
 });
 
@@ -3440,6 +3718,24 @@ export const exportRegistrationsController = asyncHandler(async (req: AuthReques
     if (req.query.search) {
       filters.search = req.query.search;
     }
+    if (req.query.category_id) {
+      filters.category_id = req.query.category_id as string;
+    }
+    if (req.query.modality_id) {
+      filters.modality_id = req.query.modality_id as string;
+    }
+    if (req.query.kit_id) {
+      filters.kit_id = req.query.kit_id as string;
+    }
+    if (req.query.created_at_from) {
+      filters.created_at_from = req.query.created_at_from as string;
+    }
+    if (req.query.created_at_to) {
+      filters.created_at_to = req.query.created_at_to as string;
+    }
+    if (req.query.registration_kind) {
+      filters.registration_kind = req.query.registration_kind as string;
+    }
   }
 
   const registrations = await getRegistrations(filters);
@@ -3582,12 +3878,50 @@ export const exportRegistrationsController = asyncHandler(async (req: AuthReques
     return reg.kit_name || '';
   };
 
-  // Helper function to get kit variation (if available, otherwise empty)
-  const getKitVariation = (_reg: any): string => {
-    // If there's a kit variant stored, return it
-    // For now, return empty as it's not stored in the current schema
-    // TODO: Add variant storage when implementing variant selection in registration
-    return '';
+  /**
+   * Coluna VARIAÇÃO: resumo por produto a partir de registration_product_selections
+   * (variant_name canônico ou fallback linha attribute_name = "Variante").
+   * Complementa a coluna ATRIBUTO (detalhe por atributo).
+   */
+  const getProductVariationsSummary = async (registrationId: string): Promise<string> => {
+    try {
+      const selections = await getRegistrationProductSelections(registrationId);
+      if (!selections || selections.length === 0) {
+        return '';
+      }
+      const byProduct = new Map<
+        string,
+        { product_name: string; variant_labels: Set<string> }
+      >();
+      for (const sel of selections) {
+        if (!byProduct.has(sel.product_id)) {
+          byProduct.set(sel.product_id, {
+            product_name: sel.product_name || 'Produto',
+            variant_labels: new Set<string>(),
+          });
+        }
+        const g = byProduct.get(sel.product_id)!;
+        const vn = sel.variant_name?.trim();
+        if (vn) {
+          g.variant_labels.add(vn);
+        } else if (sel.attribute_name === 'Variante' && sel.attribute_value?.trim()) {
+          g.variant_labels.add(sel.attribute_value.trim());
+        }
+      }
+      const parts: string[] = [];
+      for (const [, v] of byProduct) {
+        if (v.variant_labels.size === 0) continue;
+        const label = [...v.variant_labels].join(' / ');
+        parts.push(`${v.product_name}: ${label}`);
+      }
+      return parts.join(' | ');
+    } catch (error: any) {
+      console.error(
+        `❌ Error building variations summary for registration ${registrationId}:`,
+        error?.message || error
+      );
+      return '';
+    }
   };
 
   // Helper function to calculate value without platform fee
@@ -3656,33 +3990,12 @@ export const exportRegistrationsController = asyncHandler(async (req: AuthReques
     const runnerEmail = reg.runner_email || '';
     const runnerPhone = reg.runner_phone ?? '';
     const runnerTeam = reg.runner_team || '';
-    // Debug: logar o valor do gênero para as primeiras 3 inscrições
-    if (index < 3) {
-      console.log(`🔍 CSV Export - Inscrição ${index + 1}:`, {
-        runner_name: runnerName,
-        runner_cpf: runnerCpf,
-        runner_email: runnerEmail,
-        runner_team: runnerTeam,
-        runner_gender_raw: reg.runner_gender,
-        runner_gender_type: typeof reg.runner_gender,
-        runner_gender_formatted: formatGender(reg.runner_gender),
-      });
-    }
     const gender = formatGender(reg.runner_gender);
     const birthDate = formatDate(reg.runner_birth_date);
     const categoryName = reg.category_name || '';
     const kitName = getKitName(reg);
-    const kitVariation = getKitVariation(reg);
+    const kitVariation = await getProductVariationsSummary(reg.id);
     const attributes = await getProductAttributes(reg.id);
-    
-    // Debug: logar atributos para as primeiras 3 inscrições
-    if (index < 3) {
-      console.log(`🔍 CSV Export - Atributos Inscrição ${index + 1} (${reg.id}):`, {
-        registration_id: reg.id,
-        attributes_result: attributes,
-        attributes_length: attributes.length,
-      });
-    }
     
     const modality = getModalityName(reg);
     const registrationDateTime = formatDateTime(reg.created_at);

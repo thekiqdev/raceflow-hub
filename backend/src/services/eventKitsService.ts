@@ -1,6 +1,8 @@
 import { query } from '../config/database.js';
+import { registrationConsumesVariantStockSql } from './variantStockPolicyService.js';
 import { getKitCategories, associateKitToCategories } from './kitCategoriesService.js';
 import { getEventById } from './eventsService.js';
+import { resolveVariantAttributesForKitProductSync } from './kitProductVariantAttributesInference.js';
 
 export interface ProductVariant {
   id: string;
@@ -97,7 +99,7 @@ export const getEventKits = async (eventIdOrSlug: string, categoryId?: string): 
   const usageResult = await query(
     `SELECT rps.variant_id, COUNT(DISTINCT rps.registration_id)::int AS usage_count
      FROM registration_product_selections rps
-     INNER JOIN registrations r ON r.id = rps.registration_id AND r.status != 'cancelled'
+     INNER JOIN registrations r ON r.id = rps.registration_id AND ${registrationConsumesVariantStockSql('r')}
      WHERE r.event_id = $1 AND rps.variant_id IS NOT NULL
      GROUP BY rps.variant_id`,
     [eventId]
@@ -160,6 +162,84 @@ export const getEventKits = async (eventIdOrSlug: string, categoryId?: string): 
   }
 
   return kits;
+};
+
+/**
+ * Carrega produtos e variantes de um kit no contexto do evento (mesma regra de estoque que getEventKits).
+ * Valida que o kit pertence ao evento. Não aplica filtro por categoria — base para edição de inscrição.
+ */
+export const loadKitProductsWithStockForEvent = async (
+  kitId: string,
+  eventId: string
+): Promise<{ kit: EventKit; products: KitProduct[] } | null> => {
+  const kitResult = await query(`SELECT * FROM event_kits WHERE id = $1 AND event_id = $2`, [kitId, eventId]);
+  if (kitResult.rows.length === 0) {
+    return null;
+  }
+
+  const row = kitResult.rows[0];
+  const kit: EventKit = {
+    id: row.id,
+    event_id: row.event_id,
+    name: row.name,
+    description: row.description,
+    price: parseFloat(row.price) || 0,
+    display_order: row.display_order,
+    created_at: row.created_at,
+  };
+
+  const usageResult = await query(
+    `SELECT rps.variant_id, COUNT(DISTINCT rps.registration_id)::int AS usage_count
+     FROM registration_product_selections rps
+     INNER JOIN registrations r ON r.id = rps.registration_id AND ${registrationConsumesVariantStockSql('r')}
+     WHERE r.event_id = $1 AND rps.variant_id IS NOT NULL
+     GROUP BY rps.variant_id`,
+    [eventId]
+  );
+  const usageByVariant = new Map<string, number>(
+    usageResult.rows.map((r: any) => [r.variant_id, parseInt(r.usage_count) || 0])
+  );
+
+  const productsResult = await query(`SELECT * FROM kit_products WHERE kit_id = $1 ORDER BY name ASC`, [kitId]);
+
+  const products: KitProduct[] = productsResult.rows.map((r) => ({
+    id: r.id,
+    kit_id: r.kit_id,
+    name: r.name,
+    description: r.description,
+    type: r.type as 'variable' | 'unique',
+    image_url: r.image_url,
+    variant_attributes: r.variant_attributes ? JSON.parse(JSON.stringify(r.variant_attributes)) : null,
+    created_at: r.created_at,
+  }));
+
+  for (const product of products) {
+    if (product.type === 'variable') {
+      const variantsResult = await query(
+        `SELECT * FROM product_variants WHERE product_id = $1 ORDER BY created_at ASC`,
+        [product.id]
+      );
+
+      product.variants = variantsResult.rows.map((vr) => {
+        const baseQty = vr.available_quantity != null ? parseInt(vr.available_quantity) : null;
+        const usage = usageByVariant.get(vr.id) || 0;
+        const remaining = baseQty === null ? null : Math.max(0, baseQty - usage);
+        return {
+          id: vr.id,
+          product_id: vr.product_id,
+          name: vr.name,
+          variant_group_name: vr.variant_group_name || null,
+          available_quantity: remaining,
+          sku: vr.sku || null,
+          price: vr.price ? parseFloat(vr.price) : null,
+          created_at: vr.created_at,
+        };
+      });
+    }
+  }
+
+  kit.products = products;
+  return { kit, products };
 };
 
 /**
@@ -408,6 +488,8 @@ export const syncEventKits = async (
       for (const productData of kitData.products) {
         let product: KitProduct;
         
+        const resolvedVariantAttributes = resolveVariantAttributesForKitProductSync(productData);
+
         if (productData.id && existingProductIds.has(productData.id)) {
           // Update existing product
           const updated = await updateKitProduct(productData.id, {
@@ -415,7 +497,7 @@ export const syncEventKits = async (
             description: productData.description,
             type: productData.type,
             image_url: productData.image_url,
-            variant_attributes: productData.variant_attributes || null,
+            variant_attributes: resolvedVariantAttributes,
           });
           if (!updated) continue;
           product = updated;
@@ -427,7 +509,7 @@ export const syncEventKits = async (
             description: productData.description,
             type: productData.type,
             image_url: productData.image_url,
-            variant_attributes: productData.variant_attributes || null,
+            variant_attributes: resolvedVariantAttributes,
           });
         }
 
@@ -525,7 +607,9 @@ export const createKitProduct = async (data: {
       data.description || null,
       data.type,
       data.image_url || null,
-      data.variant_attributes ? JSON.stringify(data.variant_attributes) : null,
+      data.variant_attributes && data.variant_attributes.length > 0
+        ? JSON.stringify(data.variant_attributes)
+        : null,
     ]
   );
 
@@ -580,7 +664,11 @@ export const updateKitProduct = async (
   }
   if (data.variant_attributes !== undefined) {
     fields.push(`variant_attributes = $${paramIndex}`);
-    values.push(data.variant_attributes ? JSON.stringify(data.variant_attributes) : null);
+    values.push(
+      data.variant_attributes && data.variant_attributes.length > 0
+        ? JSON.stringify(data.variant_attributes)
+        : null
+    );
     paramIndex++;
   }
 

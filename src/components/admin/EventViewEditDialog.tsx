@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,7 +11,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { getEventById, updateEvent, type CronogramaItemInput } from "@/lib/api/events";
-import { getRegistrations, updateRegistration, cancelRegistration, deleteRegistration } from "@/lib/api/registrations";
+import { getRegistrations } from "@/lib/api/registrations";
 import { getModalities, createModality, updateModality, deleteModality, reorderModalities } from "@/lib/api/modalities";
 import { getCategories, createCategory, updateCategory, deleteCategory, reorderCategories, type CategoryType as CategoryTypeEnum, type CategoryGender, type CategoryBatch } from "@/lib/api/categories";
 import { getCategoryBatches, createCategoryBatch, updateCategoryBatch, deleteCategoryBatch } from "@/lib/api/categoryBatches";
@@ -20,12 +21,13 @@ import { getEventKits, syncEventKits } from "@/lib/api/eventKits";
 import { getEventPickupLocations, createPickupLocation, updatePickupLocation, deletePickupLocation } from "@/lib/api/kitPickup";
 import { getOrganizers } from "@/lib/api/userManagement";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, MapPin, Calendar, Users, DollarSign, Search, CheckCircle, Package, MapPin as MapPinIcon, Plus, Trash2, ChevronUp, ChevronDown, X, Ban, AlertTriangle } from "lucide-react";
+import { Loader2, MapPin, Calendar, Users, DollarSign, Package, MapPin as MapPinIcon, Plus, Trash2, ChevronUp, ChevronDown, X, AlertTriangle, ArrowRight } from "lucide-react";
 import { FileUpload } from "@/components/ui/file-upload";
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { isoToDatetimeLocal, processDatetimeLocalForSave, datetimeLocalToISO } from "@/lib/utils";
 import { RegisterAthleteStaffDialog } from "@/components/registration/RegisterAthleteStaffDialog";
+import { getAdminEventRegistrationsPath } from "@/lib/utils/navigation";
 
 interface EventViewEditDialogProps {
   eventId: string | null;
@@ -42,6 +44,7 @@ export function EventViewEditDialog({
   onOpenChange,
   onSuccess,
 }: EventViewEditDialogProps) {
+  const navigate = useNavigate();
   const [mode, setMode] = useState(initialMode);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -52,13 +55,7 @@ export function EventViewEditDialog({
   const [categories, setCategories] = useState<any[]>([]);
   const [kits, setKits] = useState<any[]>([]);
   const [pickupLocations, setPickupLocations] = useState<any[]>([]);
-  const [registrations, setRegistrations] = useState<any[]>([]);
-  const [allRegistrations, setAllRegistrations] = useState<any[]>([]);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [statusFilter, setStatusFilter] = useState<string>("all");
-  const [confirmingRegistration, setConfirmingRegistration] = useState<string | null>(null);
-  const [cancellingRegistration, setCancellingRegistration] = useState<string | null>(null);
-  const [deletingRegistration, setDeletingRegistration] = useState<string | null>(null);
+  const [registrationTotalCount, setRegistrationTotalCount] = useState(0);
   const [selectedOrganizerId, setSelectedOrganizerId] = useState<string>("");
   const [organizers, setOrganizers] = useState<any[]>([]);
   const [loadingOrganizers, setLoadingOrganizers] = useState(false);
@@ -136,60 +133,6 @@ export function EventViewEditDialog({
     }
   }, [open]);
 
-  const applyFilters = (term: string, status: string) => {
-    let filtered = allRegistrations;
-
-    // Aplicar filtro de status
-    if (status !== "all") {
-      filtered = filtered.filter((reg) => {
-        if (status === "confirmed") {
-          // Concluída: status = 'confirmed' e payment_status = 'paid' ou 'convidado'
-          return reg.status === "confirmed" && (reg.payment_status === "paid" || reg.payment_status === "convidado");
-        } else if (status === "pending") {
-          // Pendente: status = 'pending' ou null, e payment_status = 'pending'
-          return (reg.status === "pending" || !reg.status) && reg.payment_status === "pending";
-        } else if (status === "cancelled") {
-          // Cancelada: status = 'cancelled'
-          return reg.status === "cancelled";
-        }
-        return true;
-      });
-    }
-
-    // Aplicar filtro de busca (nome ou CPF)
-    if (term.trim()) {
-      const searchTermLower = term.toLowerCase().trim();
-      const searchTermNumbers = term.replace(/\D/g, ""); // Remove tudo que não é número para busca de CPF
-
-      filtered = filtered.filter((reg) => {
-        // Buscar por nome (case-insensitive)
-        const runnerName = (reg.runner_name || reg.profiles?.full_name || "").toLowerCase().trim();
-        const nameMatch = runnerName.length > 0 && runnerName.includes(searchTermLower);
-        
-        // Buscar por CPF (apenas números) - só busca se houver números no termo
-        let cpfMatch = false;
-        if (searchTermNumbers.length > 0) {
-          const runnerCpf = (reg.runner_cpf || "").replace(/\D/g, "");
-          cpfMatch = runnerCpf.length > 0 && runnerCpf.includes(searchTermNumbers);
-        }
-        
-        return nameMatch || cpfMatch;
-      });
-    }
-    
-    setRegistrations(filtered);
-  };
-
-  const handleSearch = (term: string) => {
-    setSearchTerm(term);
-    applyFilters(term, statusFilter);
-  };
-
-  const handleStatusFilter = (status: string) => {
-    setStatusFilter(status);
-    applyFilters(searchTerm, status);
-  };
-
   const loadEventData = async () => {
     if (!eventId) return;
 
@@ -246,66 +189,11 @@ export function EventViewEditDialog({
       }));
       setCronogramaItems(items);
 
-      // Get registrations
-      const registrationsResponse = await getRegistrations({ event_id: eventId });
-      
-      if (registrationsResponse.success && registrationsResponse.data) {
-        // Transform API response to match expected format
-        const regs = registrationsResponse.data.map((reg: any) => ({
-          id: reg.id,
-          event_id: reg.event_id,
-          runner_id: reg.runner_id,
-          total_amount: reg.total_amount,
-          payment_status: reg.payment_status,
-          status: reg.status,
-          created_at: reg.created_at,
-          runner_name: reg.runner_name,
-          runner_cpf: reg.runner_cpf,
-          profiles: reg.runner_name ? {
-            full_name: reg.runner_name,
-          } : undefined,
-        }));
-        setAllRegistrations(regs);
-        // Aplicar filtros iniciais - usar regs diretamente
-        let filtered = regs;
-        
-        // Aplicar filtro de status
-        if (statusFilter !== "all") {
-          filtered = filtered.filter((reg) => {
-            if (statusFilter === "confirmed") {
-              return reg.status === "confirmed" && (reg.payment_status === "paid" || reg.payment_status === "convidado");
-            } else if (statusFilter === "pending") {
-              return (reg.status === "pending" || !reg.status) && reg.payment_status === "pending";
-            } else if (statusFilter === "cancelled") {
-              return reg.status === "cancelled";
-            }
-            return true;
-          });
-        }
-        
-        // Aplicar filtro de busca
-        if (searchTerm.trim()) {
-          const searchTermLower = searchTerm.toLowerCase().trim();
-          const searchTermNumbers = searchTerm.replace(/\D/g, "");
-          filtered = filtered.filter((reg) => {
-            const runnerName = (reg.runner_name || reg.profiles?.full_name || "").toLowerCase().trim();
-            const nameMatch = runnerName.length > 0 && runnerName.includes(searchTermLower);
-            let cpfMatch = false;
-            if (searchTermNumbers.length > 0) {
-              const runnerCpf = (reg.runner_cpf || "").replace(/\D/g, "");
-              cpfMatch = runnerCpf.length > 0 && runnerCpf.includes(searchTermNumbers);
-            }
-            return nameMatch || cpfMatch;
-          });
-        }
-        
-        setRegistrations(filtered);
+      const regCountRes = await getRegistrations({ event_id: eventId }, { page: 1, page_size: 30 });
+      if (regCountRes.success && regCountRes.data && typeof regCountRes.data === "object" && "total" in regCountRes.data) {
+        setRegistrationTotalCount(regCountRes.data.total);
       } else {
-        setAllRegistrations([]);
-        setRegistrations([]);
-        // Resetar filtros quando não há inscrições
-        setSearchTerm("");
-        setStatusFilter("all");
+        setRegistrationTotalCount(0);
       }
 
       // Load modalities
@@ -1337,118 +1225,6 @@ export function EventViewEditDialog({
       cancelled: "destructive",
     };
     return <Badge variant={variants[status] || "secondary"}>{status}</Badge>;
-  };
-
-  const handleConfirmRegistration = async (registrationId: string) => {
-    if (!confirm("Deseja confirmar esta inscrição e o pagamento manualmente?")) {
-      return;
-    }
-
-    setConfirmingRegistration(registrationId);
-    try {
-      const response = await updateRegistration(registrationId, {
-        status: "confirmed",
-        payment_status: "paid",
-      });
-
-      if (response.success) {
-        toast({
-          title: "Inscrição e pagamento confirmados",
-          description: "A inscrição e o pagamento foram confirmados com sucesso!",
-        });
-        // Reload registrations
-        await loadEventData();
-      } else {
-        toast({
-          title: "Erro ao confirmar inscrição",
-          description: response.error || "Ocorreu um erro ao confirmar a inscrição",
-          variant: "destructive",
-        });
-      }
-    } catch (error: any) {
-      console.error("Error confirming registration:", error);
-      toast({
-        title: "Erro ao confirmar inscrição",
-        description: error.message || "Ocorreu um erro ao confirmar a inscrição",
-        variant: "destructive",
-      });
-    } finally {
-      setConfirmingRegistration(null);
-    }
-  };
-
-  const handleCancelRegistration = async (registrationId: string) => {
-    if (!confirm("Deseja cancelar esta inscrição? Esta ação pode ser revertida.")) {
-      return;
-    }
-
-    setCancellingRegistration(registrationId);
-    try {
-      const response = await cancelRegistration(registrationId);
-
-      if (response.success) {
-        toast({
-          title: "Inscrição cancelada",
-          description: "A inscrição foi cancelada com sucesso!",
-        });
-        // Reload registrations
-        await loadEventData();
-      } else {
-        toast({
-          title: "Erro ao cancelar inscrição",
-          description: response.error || "Ocorreu um erro ao cancelar a inscrição",
-          variant: "destructive",
-        });
-      }
-    } catch (error: any) {
-      console.error("Error cancelling registration:", error);
-      toast({
-        title: "Erro ao cancelar inscrição",
-        description: error.message || "Ocorreu um erro ao cancelar a inscrição",
-        variant: "destructive",
-      });
-    } finally {
-      setCancellingRegistration(null);
-    }
-  };
-
-  const handleDeleteRegistration = async (registrationId: string) => {
-    if (!confirm("ATENÇÃO: Deseja excluir permanentemente esta inscrição? Esta ação não pode ser desfeita!")) {
-      return;
-    }
-
-    if (!confirm("Tem certeza? Esta ação irá excluir permanentemente a inscrição e todos os dados relacionados.")) {
-      return;
-    }
-
-    setDeletingRegistration(registrationId);
-    try {
-      const response = await deleteRegistration(registrationId);
-
-      if (response.success) {
-        toast({
-          title: "Inscrição excluída",
-          description: "A inscrição foi excluída permanentemente com sucesso!",
-        });
-        // Reload registrations
-        await loadEventData();
-      } else {
-        toast({
-          title: "Erro ao excluir inscrição",
-          description: response.error || "Ocorreu um erro ao excluir a inscrição",
-          variant: "destructive",
-        });
-      }
-    } catch (error: any) {
-      console.error("Error deleting registration:", error);
-      toast({
-        title: "Erro ao excluir inscrição",
-        description: error.message || "Ocorreu um erro ao excluir a inscrição",
-        variant: "destructive",
-      });
-    } finally {
-      setDeletingRegistration(null);
-    }
   };
 
   if (loading) {
@@ -3864,134 +3640,35 @@ export function EventViewEditDialog({
           </TabsContent>
 
           <TabsContent value="registrations" className="space-y-4">
-            <div className="grid gap-4">
-              <div className="flex items-center justify-between gap-2 flex-wrap">
-                <h3 className="text-lg font-semibold">
-                  Total: {allRegistrations.length} inscrições
-                  {(searchTerm || statusFilter !== "all") && ` (${registrations.length} encontradas)`}
-                </h3>
-                <Button type="button" size="sm" onClick={() => setAdminRegisterAthleteOpen(true)}>
-                  <Plus className="mr-2 h-4 w-4" />
-                  Inscrever atleta
-                </Button>
-              </div>
-              
-              {/* Search and filter bar */}
-              <div className="flex gap-4">
-                <div className="relative flex-1">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    placeholder="Buscar por nome ou CPF..."
-                    value={searchTerm}
-                    onChange={(e) => handleSearch(e.target.value)}
-                    className="pl-10"
-                  />
-                </div>
-                <Select value={statusFilter} onValueChange={handleStatusFilter}>
-                  <SelectTrigger className="w-[180px]">
-                    <SelectValue placeholder="Filtrar por status" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Todas</SelectItem>
-                    <SelectItem value="confirmed">Concluída</SelectItem>
-                    <SelectItem value="pending">Pendente</SelectItem>
-                    <SelectItem value="cancelled">Cancelada</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {registrations.length === 0 ? (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Inscrições deste evento</CardTitle>
+                <CardDescription>
+                  A gestão operacional (filtros, exportação CSV, listagem e ações) foi movida para uma tela dedicada.
+                  Aqui você encontra um resumo e atalhos.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
                 <p className="text-sm text-muted-foreground">
-                  {searchTerm ? "Nenhuma inscrição encontrada" : "Nenhuma inscrição"}
+                  Total aproximado de inscrições:{" "}
+                  <span className="font-semibold text-foreground">{registrationTotalCount}</span>
                 </p>
-              ) : (
-                <div className="space-y-2">
-                  {registrations.map((reg) => (
-                    <Card key={reg.id}>
-                      <CardContent className="p-6">
-                        <div className="flex items-center justify-between">
-                          <div className="flex-1">
-                            <p className="font-medium">{reg.runner_name || reg.profiles?.full_name || "Sem nome"}</p>
-                            <div className="flex items-center gap-4 mt-1">
-                              {reg.runner_cpf && (
-                                <p className="text-sm text-muted-foreground">
-                                  CPF: {reg.runner_cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4")}
-                                </p>
-                              )}
-                            <p className="text-sm text-muted-foreground">
-                              {new Date(reg.created_at).toLocaleDateString("pt-BR")}
-                            </p>
-                          </div>
-                          </div>
-                          <div className="flex items-center gap-4">
-                          <div className="text-right">
-                              <p className="font-medium">R$ {Number(reg.total_amount).toFixed(2).replace('.', ',')}</p>
-                              <div className="flex items-center gap-2 mt-1">
-                                <Badge variant={reg.payment_status === "paid" || reg.payment_status === "convidado" ? "default" : "secondary"}>
-                                  {reg.payment_status === "paid" ? "Pago" : reg.payment_status === "convidado" ? "Convite" : reg.payment_status === "pending" ? "Pendente" : reg.payment_status}
-                            </Badge>
-                                {reg.status && (
-                                  <Badge variant={reg.status === "confirmed" ? "default" : "outline"}>
-                                    {reg.status === "confirmed" ? "Confirmado" : reg.status === "pending" ? "Pendente" : reg.status}
-                                  </Badge>
-                                )}
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-2">
-                            {reg.status !== "confirmed" && (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => handleConfirmRegistration(reg.id)}
-                                disabled={confirmingRegistration === reg.id}
-                                title="Confirmar inscrição manualmente"
-                              >
-                                {confirmingRegistration === reg.id ? (
-                                  <Loader2 className="h-4 w-4 animate-spin" />
-                                ) : (
-                                  <CheckCircle className="h-4 w-4" />
-                                )}
-                              </Button>
-                            )}
-                              {reg.status !== "cancelled" && (
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => handleCancelRegistration(reg.id)}
-                                  disabled={cancellingRegistration === reg.id}
-                                  title="Cancelar inscrição"
-                                  className="text-orange-600 hover:text-orange-700"
-                                >
-                                  {cancellingRegistration === reg.id ? (
-                                    <Loader2 className="h-4 w-4 animate-spin" />
-                                  ) : (
-                                    <Ban className="h-4 w-4" />
-                                  )}
-                                </Button>
-                              )}
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => handleDeleteRegistration(reg.id)}
-                                disabled={deletingRegistration === reg.id}
-                                title="Excluir inscrição permanentemente"
-                                className="text-destructive hover:text-destructive"
-                              >
-                                {deletingRegistration === reg.id ? (
-                                  <Loader2 className="h-4 w-4 animate-spin" />
-                                ) : (
-                                  <Trash2 className="h-4 w-4" />
-                                )}
-                              </Button>
-                            </div>
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    onClick={() => eventId && navigate(getAdminEventRegistrationsPath(eventId))}
+                    disabled={!eventId}
+                  >
+                    <ArrowRight className="mr-2 h-4 w-4" />
+                    Visualizar inscritos
+                  </Button>
+                  <Button type="button" variant="outline" size="sm" onClick={() => setAdminRegisterAthleteOpen(true)}>
+                    <Plus className="mr-2 h-4 w-4" />
+                    Inscrever atleta
+                  </Button>
                 </div>
-              )}
-            </div>
+              </CardContent>
+            </Card>
           </TabsContent>
         </Tabs>
       </DialogContent>

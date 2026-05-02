@@ -155,12 +155,30 @@ export function getCorredorTabLabel(tabId: string): string {
  * Retorna { area, sectionLabel } para breadcrumb a partir do pathname (Etapa 5).
  * Ex.: /admin/configuracoes → { area: 'Admin', sectionLabel: 'Configurações' }
  */
+/** Tela dedicada de inscrições por evento (super admin). */
+export function getAdminEventRegistrationsPath(eventId: string): string {
+  return `/admin/evento/${eventId}/inscritos`;
+}
+
+/** Tela dedicada de inscrições por evento (organizador). */
+export function getOrganizerEventRegistrationsPath(eventId: string): string {
+  return `/organizador/evento/${eventId}/inscritos`;
+}
+
 export function getBreadcrumbForPath(pathname: string): { area: string; sectionLabel: string } | null {
   if (pathname.startsWith('/admin')) {
+    const eventInsc = pathname.match(/^\/admin\/evento\/([^/]+)\/inscritos\/?$/);
+    if (eventInsc) {
+      return { area: 'Admin', sectionLabel: 'Inscrições do evento' };
+    }
     const sectionId = getAdminSectionFromPath(pathname);
     return { area: 'Admin', sectionLabel: getAdminSectionLabel(sectionId) };
   }
   if (pathname.startsWith('/organizador')) {
+    const eventInsc = pathname.match(/^\/organizador\/evento\/([^/]+)\/inscritos\/?$/);
+    if (eventInsc) {
+      return { area: 'Organizador', sectionLabel: 'Inscrições do evento' };
+    }
     const sectionId = getOrganizerSectionFromPath(pathname);
     return { area: 'Organizador', sectionLabel: getOrganizerSectionLabel(sectionId) };
   }

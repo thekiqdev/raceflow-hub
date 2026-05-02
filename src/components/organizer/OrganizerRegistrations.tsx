@@ -43,6 +43,7 @@ import { getEnabledModules } from "@/lib/api/systemSettings";
 import { calculateValueWithoutFee } from "@/lib/utils/feeCalculations";
 import { EventSelect } from "@/components/ui/event-select";
 import { RegisterAthleteStaffDialog } from "@/components/registration/RegisterAthleteStaffDialog";
+import { groupRegistrationProductSelections } from "@/lib/utils/groupRegistrationProductSelections";
 
 const OrganizerRegistrations = () => {
   const navigate = useNavigate();
@@ -1205,60 +1206,28 @@ const OrganizerRegistrations = () => {
                     )}
                   </div>
                   <div className="space-y-4">
-                    {(() => {
-                      // Group selections by product
-                      const productGroups = new Map<string, {
-                        product_id: string;
-                        variant_id: string | null;
-                        variant_name: string | null;
-                        attributes: Array<{
-                          attribute_name: string;
-                          attribute_value: string;
-                        }>;
-                      }>();
-                      
-                      registrationDetails.product_selections.forEach((selection: any) => {
-                        const key = selection.product_id;
-                        if (!productGroups.has(key)) {
-                          productGroups.set(key, {
-                            product_id: selection.product_id,
-                            variant_id: selection.variant_id,
-                            variant_name: selection.variant_name,
-                            attributes: [],
-                          });
-                        }
-                        productGroups.get(key)!.attributes.push({
-                          attribute_name: selection.attribute_name,
-                          attribute_value: selection.attribute_value,
-                        });
-                      });
-                      
-                      return Array.from(productGroups.entries()).map(([productId, productData]) => {
-                        const productName = registrationDetails.product_selections.find(
-                          (s: any) => s.product_id === productId
-                        )?.product_name || 'Produto';
-                        
-                        return (
-                          <div key={productId} className="border rounded-lg p-4 bg-muted/50">
-                            <h4 className="font-semibold mb-3 text-base">{productName}</h4>
-                            <div className="space-y-2">
-                              {productData.attributes.map((attr, index) => (
-                                <div key={index} className="flex items-center gap-2">
-                                  <span className="text-sm text-muted-foreground min-w-[100px]">{attr.attribute_name}:</span>
-                                  <span className="font-medium">{attr.attribute_value}</span>
-                                </div>
-                              ))}
-                              {productData.variant_name && (
-                                <div className="mt-3 pt-3 border-t">
-                                  <span className="text-sm text-muted-foreground">Variação completa: </span>
-                                  <span className="font-medium">{productData.variant_name}</span>
-                                </div>
-                              )}
+                    {groupRegistrationProductSelections(registrationDetails.product_selections).map((g) => (
+                      <div key={g.product_id} className="border rounded-lg p-4 bg-muted/50">
+                        <h4 className="font-semibold mb-3 text-base">{g.product_name}</h4>
+                        <div className="space-y-2">
+                          {g.variation_labels.length > 0 && (
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm text-muted-foreground min-w-[100px]">Variação:</span>
+                              <span className="font-medium">{g.variation_labels.join(" · ")}</span>
                             </div>
-                          </div>
-                        );
-                      });
-                    })()}
+                          )}
+                          {g.other_attributes.map((attr, index) => (
+                            <div key={index} className="flex items-center gap-2">
+                              <span className="text-sm text-muted-foreground min-w-[100px]">{attr.attribute_name}:</span>
+                              <span className="font-medium">{attr.attribute_value}</span>
+                            </div>
+                          ))}
+                          {g.variation_labels.length === 0 && g.other_attributes.length === 0 && (
+                            <p className="text-sm text-muted-foreground">Sem detalhes adicionais.</p>
+                          )}
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}

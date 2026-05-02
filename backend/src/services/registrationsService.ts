@@ -1,10 +1,18 @@
 import { randomBytes } from 'crypto';
+import type { PoolClient } from 'pg';
 import { query, getClient } from '../config/database.js';
+import { registrationConsumesVariantStockSql } from './variantStockPolicyService.js';
+import {
+  isStrictKitSelectionsEnabled,
+  kitRequiresPersistedProductSelections,
+  validateCreateRegistrationKitSelectionsStrict,
+  countRegistrationProductSelectionRows,
+} from './kitSelectionPolicyService.js';
 import { RegistrationStatus, PaymentStatus, PaymentMethod } from '../types/index.js';
 import { hashPassword } from './authService.js';
 
 /**
- * Estoque restante da variante no evento (considera todas as inscrições não canceladas).
+ * Estoque restante da variante no evento (consumo derivado por inscrições em status que consomem estoque).
  * @param excludeRegistrationId - se informado, não conta essa inscrição (útil ao atualizar atributos).
  */
 export async function getVariantRemainingStock(
@@ -23,12 +31,102 @@ export async function getVariantRemainingStock(
   const usageRow = await query(
     `SELECT COUNT(DISTINCT rps.registration_id)::int AS cnt
      FROM registration_product_selections rps
-     INNER JOIN registrations r ON r.id = rps.registration_id AND r.status != 'cancelled' AND r.event_id = $2
+     INNER JOIN registrations r ON r.id = rps.registration_id AND ${registrationConsumesVariantStockSql('r')} AND r.event_id = $2
      WHERE rps.variant_id = $1 AND ($3::uuid IS NULL OR rps.registration_id != $3)`,
     [variantId, eventId, excludeRegistrationId ?? null]
   );
   const usage = parseInt(usageRow.rows[0]?.cnt) || 0;
   return Math.max(0, parseInt(base) - usage);
+}
+
+type QueryExecutor = Pick<PoolClient, 'query'>;
+
+/**
+ * Substitui todas as seleções canônicas da inscrição (edição de kit/categoria).
+ * Valida estoque antes de persistir. Usar dentro de transação quando combinado com UPDATE da inscrição.
+ */
+export async function replaceRegistrationProductSelectionsForEdit(
+  executor: QueryExecutor,
+  registrationId: string,
+  eventId: string,
+  productSelections: ProductSelection[]
+): Promise<void> {
+  const run = (text: string, params?: unknown[]) => executor.query(text, params);
+
+  for (const selection of productSelections) {
+    const variantIdToCheck = selection.variant_id;
+    if (variantIdToCheck) {
+      const remaining = await getVariantRemainingStock(variantIdToCheck, eventId, registrationId);
+      if (remaining !== null && remaining <= 0) {
+        throw new Error('Estoque desta variante chegou a zero; não é possível selecioná-la.');
+      }
+    }
+  }
+
+  await run(`DELETE FROM registration_product_selections WHERE registration_id = $1`, [registrationId]);
+
+  for (const selection of productSelections) {
+    if (selection.attribute_selections && Object.keys(selection.attribute_selections).length > 0) {
+      for (const [attributeName, attributeValue] of Object.entries(selection.attribute_selections)) {
+        await run(
+          `INSERT INTO registration_product_selections 
+           (registration_id, product_id, variant_id, attribute_name, attribute_value)
+           VALUES ($1, $2, $3, $4, $5)`,
+          [
+            registrationId,
+            selection.product_id,
+            selection.variant_id || null,
+            attributeName,
+            attributeValue,
+          ]
+        );
+      }
+    } else if (selection.variant_id) {
+      const variantResult = await run(`SELECT name, product_id FROM product_variants WHERE id = $1`, [
+        selection.variant_id,
+      ]);
+
+      if (variantResult.rows.length > 0) {
+        const variant = variantResult.rows[0] as { name: string; product_id: string };
+        let inserted = false;
+        const productResult = await run(`SELECT variant_attributes FROM kit_products WHERE id = $1`, [
+          selection.product_id,
+        ]);
+
+        if (productResult.rows.length > 0) {
+          const variantAttributes = productResult.rows[0].variant_attributes as string[] | null;
+
+          if (variantAttributes && variantAttributes.length > 0) {
+            const variantValues = variant.name.split(' - ').map((v: string) => v.trim());
+
+            for (let i = 0; i < variantAttributes.length && i < variantValues.length; i++) {
+              await run(
+                `INSERT INTO registration_product_selections 
+                 (registration_id, product_id, variant_id, attribute_name, attribute_value)
+                 VALUES ($1, $2, $3, $4, $5)`,
+                [
+                  registrationId,
+                  selection.product_id,
+                  selection.variant_id,
+                  variantAttributes[i],
+                  variantValues[i],
+                ]
+              );
+              inserted = true;
+            }
+          }
+        }
+        if (!inserted) {
+          await run(
+            `INSERT INTO registration_product_selections 
+             (registration_id, product_id, variant_id, attribute_name, attribute_value)
+             VALUES ($1, $2, $3, 'Variante', $4)`,
+            [registrationId, selection.product_id, selection.variant_id, variant.name || selection.variant_id]
+          );
+        }
+      }
+    }
+  }
 }
 
 // Credit Card Data Types
@@ -161,6 +259,13 @@ function buildRegistrationListWhereClause(filters?: {
   status?: RegistrationStatus;
   payment_status?: PaymentStatus;
   search?: string;
+  category_id?: string;
+  modality_id?: string;
+  kit_id?: string;
+  created_at_from?: string;
+  created_at_to?: string;
+  /** commercial | courtesy | leader_coupon */
+  registration_kind?: string;
 }): { conditions: string[]; params: any[] } {
   const conditions: string[] = [];
   const params: any[] = [];
@@ -206,11 +311,47 @@ function buildRegistrationListWhereClause(filters?: {
     params.push(filters.payment_status);
   }
 
+  if (filters?.category_id) {
+    conditions.push(`r.category_id = $${params.length + 1}`);
+    params.push(filters.category_id);
+  }
+
+  if (filters?.modality_id) {
+    conditions.push(`r.modality_id = $${params.length + 1}`);
+    params.push(filters.modality_id);
+  }
+
+  if (filters?.kit_id) {
+    conditions.push(`r.kit_id = $${params.length + 1}`);
+    params.push(filters.kit_id);
+  }
+
+  if (filters?.created_at_from) {
+    conditions.push(`r.created_at >= $${params.length + 1}::date`);
+    params.push(filters.created_at_from);
+  }
+
+  if (filters?.created_at_to) {
+    conditions.push(`r.created_at < ($${params.length + 1}::date + interval '1 day')`);
+    params.push(filters.created_at_to);
+  }
+
+  if (filters?.registration_kind === 'courtesy') {
+    conditions.push(`(r.payment_method = 'free_bonus' OR r.payment_status = 'convidado')`);
+  } else if (filters?.registration_kind === 'commercial') {
+    conditions.push(
+      `(COALESCE(r.payment_method::text, '') != 'free_bonus' AND COALESCE(r.payment_status::text, '') != 'convidado')`
+    );
+  } else if (filters?.registration_kind === 'leader_coupon') {
+    conditions.push(`cp.leader_id IS NOT NULL`);
+  }
+
   if (filters?.search) {
     conditions.push(`(
       p.full_name ILIKE $${params.length + 1} OR
       p.cpf ILIKE $${params.length + 1} OR
-      e.title ILIKE $${params.length + 1}
+      e.title ILIKE $${params.length + 1} OR
+      u.email ILIKE $${params.length + 1}
     )`);
     params.push(`%${filters.search}%`);
   }
@@ -278,6 +419,25 @@ async function mapRegistrationRows(
   });
 }
 
+export type RegistrationListSummary = {
+  total_registrations: number;
+  confirmed_payments: number;
+  pending_payments: number;
+  refunds: number;
+};
+
+/** Contagens operacionais com os mesmos filtros “estruturais” (sem status/pagamento/tipo), para cards de atalho. */
+export type RegistrationSegmentTotals = {
+  total: number;
+  paid: number;
+  pending: number;
+  partially_paid: number;
+  courtesy: number;
+  cancelled: number;
+  refunded: number;
+  transferred: number;
+};
+
 export type PaginatedRegistrationsResult = {
   items: Awaited<ReturnType<typeof mapRegistrationRows>>;
   page: number;
@@ -285,13 +445,7 @@ export type PaginatedRegistrationsResult = {
   total: number;
   total_pages: number;
   summary: RegistrationListSummary;
-};
-
-export type RegistrationListSummary = {
-  total_registrations: number;
-  confirmed_payments: number;
-  pending_payments: number;
-  refunds: number;
+  segment_totals: RegistrationSegmentTotals;
 };
 
 type RegistrationListFilters = {
@@ -302,7 +456,19 @@ type RegistrationListFilters = {
   status?: RegistrationStatus;
   payment_status?: PaymentStatus;
   search?: string;
+  category_id?: string;
+  modality_id?: string;
+  kit_id?: string;
+  created_at_from?: string;
+  created_at_to?: string;
+  registration_kind?: string;
 };
+
+function stripSegmentFilters(filters?: RegistrationListFilters): RegistrationListFilters | undefined {
+  if (!filters) return undefined;
+  const { status: _s, payment_status: _p, registration_kind: _k, ...rest } = filters;
+  return Object.keys(rest).length > 0 ? (rest as RegistrationListFilters) : undefined;
+}
 
 // Get registrations with filters
 export async function getRegistrations(
@@ -424,6 +590,40 @@ export async function getRegistrations(
       refunds: parseInt(String(summaryRes.rows[0]?.refunds ?? '0'), 10) || 0,
     };
 
+    const { conditions: segConditions, params: segParams } = buildRegistrationListWhereClause(
+      stripSegmentFilters(filters)
+    );
+    const segWhereSql = segConditions.length > 0 ? ' WHERE ' + segConditions.join(' AND ') : '';
+    const segmentSql = `
+      SELECT
+        COUNT(DISTINCT r.id)::bigint AS total,
+        COUNT(DISTINCT r.id) FILTER (WHERE r.payment_status = 'paid')::bigint AS paid,
+        COUNT(DISTINCT r.id) FILTER (WHERE r.payment_status = 'pending')::bigint AS pending,
+        COUNT(DISTINCT r.id) FILTER (WHERE r.payment_status = 'partially_paid')::bigint AS partially_paid,
+        COUNT(DISTINCT r.id) FILTER (
+          WHERE r.payment_method = 'free_bonus' OR r.payment_status = 'convidado'
+        )::bigint AS courtesy,
+        COUNT(DISTINCT r.id) FILTER (WHERE r.status = 'cancelled')::bigint AS cancelled,
+        COUNT(DISTINCT r.id) FILTER (
+          WHERE r.payment_status = 'refunded' OR r.status = 'refunded'
+        )::bigint AS refunded,
+        COUNT(DISTINCT r.id) FILTER (WHERE r.status = 'transferred')::bigint AS transferred
+      ${REGISTRATIONS_LIST_JOINS}
+      ${segWhereSql}
+    `;
+    const segmentRes = await query(segmentSql, segParams);
+    const segRow = segmentRes.rows[0] || {};
+    const segment_totals: RegistrationSegmentTotals = {
+      total: parseInt(String(segRow.total ?? '0'), 10) || 0,
+      paid: parseInt(String(segRow.paid ?? '0'), 10) || 0,
+      pending: parseInt(String(segRow.pending ?? '0'), 10) || 0,
+      partially_paid: parseInt(String(segRow.partially_paid ?? '0'), 10) || 0,
+      courtesy: parseInt(String(segRow.courtesy ?? '0'), 10) || 0,
+      cancelled: parseInt(String(segRow.cancelled ?? '0'), 10) || 0,
+      refunded: parseInt(String(segRow.refunded ?? '0'), 10) || 0,
+      transferred: parseInt(String(segRow.transferred ?? '0'), 10) || 0,
+    };
+
     const offset = (page - 1) * pageSize;
     queryText += ` LIMIT $${queryParams.length + 1} OFFSET $${queryParams.length + 2}`;
     queryParams = [...queryParams, pageSize, offset];
@@ -438,6 +638,7 @@ export async function getRegistrations(
       total,
       total_pages,
       summary,
+      segment_totals,
     };
   }
 
@@ -662,6 +863,9 @@ export const createRegistration = async (data: CreateRegistrationData) => {
     }
   }
 
+  /** Modo estrito (STRICT_KIT_SELECTIONS): exige payload completo antes de criar a linha da inscrição. */
+  await validateCreateRegistrationKitSelectionsStrict(data);
+
   // Generate confirmation code
   const confirmationCode = `REG-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
 
@@ -829,8 +1033,67 @@ export const createRegistration = async (data: CreateRegistrationData) => {
       }
       console.log(`✅ Seleções de produtos/variantes salvas para inscrição ${registration.id}`);
     } catch (error: any) {
-      // Log error but don't fail registration if product selection save fails
-      console.error('⚠️ Erro ao salvar seleções de produtos/variantes (não bloqueia inscrição):', error.message);
+      if (isStrictKitSelectionsEnabled()) {
+        const msg = error?.message || String(error);
+        console.error(
+          '⚠️ Erro ao salvar seleções de produtos/variantes (modo estrito):',
+          msg
+        );
+        const isInviteSlot = data.payment_method === 'free_bonus';
+        if (!isInviteSlot) {
+          try {
+            await query('DELETE FROM registrations WHERE id = $1', [registration.id]);
+          } catch (delErr: any) {
+            console.error(
+              '❌ Falha ao remover inscrição após erro nas seleções:',
+              delErr?.message || delErr
+            );
+          }
+        } else {
+          console.error(
+            '❌ Modo estrito: falha ao persistir seleções em inscrição convite/free_bonus — possível inconsistência:',
+            registration.id
+          );
+        }
+        throw new Error(
+          msg.startsWith('Estoque')
+            ? msg
+            : 'Não foi possível registrar as escolhas do kit. Tente novamente ou escolha outra variante.'
+        );
+      }
+      console.error(
+        '⚠️ Erro ao salvar seleções de produtos/variantes (não bloqueia inscrição):',
+        error.message
+      );
+    }
+  }
+
+  if (
+    isStrictKitSelectionsEnabled() &&
+    data.kit_id &&
+    (await kitRequiresPersistedProductSelections(data.kit_id))
+  ) {
+    const persistedCount = await countRegistrationProductSelectionRows(registration.id);
+    if (persistedCount === 0) {
+      const isInviteSlot = data.payment_method === 'free_bonus';
+      if (!isInviteSlot) {
+        try {
+          await query('DELETE FROM registrations WHERE id = $1', [registration.id]);
+        } catch (delErr: any) {
+          console.error(
+            '❌ Falha ao remover inscrição sem seleções persistidas:',
+            delErr?.message || delErr
+          );
+        }
+      } else {
+        console.error(
+          '❌ Modo estrito: inscrição convite sem linhas em registration_product_selections:',
+          registration.id
+        );
+      }
+      throw new Error(
+        'As escolhas do kit não foram gravadas corretamente. Verifique as variantes e tente novamente.'
+      );
     }
   }
 
@@ -940,8 +1203,12 @@ export const createRegistration = async (data: CreateRegistrationData) => {
 // Update registration
 export const updateRegistration = async (
   registrationId: string,
-  data: UpdateRegistrationData
+  data: UpdateRegistrationData,
+  dbClient?: PoolClient
 ) => {
+  const run = (text: string, params?: unknown[]) =>
+    dbClient ? dbClient.query(text, params as any) : query(text, params as any);
+
   const customFieldValues = data.custom_field_values;
   const updatePayload = { ...data };
   delete (updatePayload as any).custom_field_values;
@@ -962,7 +1229,7 @@ export const updateRegistration = async (
       throw new Error('No fields to update');
     }
     values.push(registrationId);
-    result = await query(
+    result = await run(
       `UPDATE registrations 
        SET ${fields.join(', ')}
        WHERE id = $${paramIndex}
@@ -970,10 +1237,7 @@ export const updateRegistration = async (
       values
     );
   } else {
-    const current = await query(
-      `SELECT * FROM registrations WHERE id = $1`,
-      [registrationId]
-    );
+    const current = await run(`SELECT * FROM registrations WHERE id = $1`, [registrationId]);
     if (current.rows.length === 0) return null;
     result = current;
   }
@@ -990,16 +1254,13 @@ export const updateRegistration = async (
     const { getByCategoryId } = await import('./categoryCustomFieldsService.js');
     const categoryFields = await getByCategoryId(effectiveCategoryId);
     const validFieldIds = new Set(categoryFields.map((f) => f.id));
-    await query(
-      `DELETE FROM registration_custom_field_values WHERE registration_id = $1`,
-      [registrationId]
-    );
+    await run(`DELETE FROM registration_custom_field_values WHERE registration_id = $1`, [registrationId]);
     for (const [fieldId, value] of Object.entries(customFieldValues)) {
       if (!validFieldIds.has(fieldId)) {
         throw new Error(`Campo personalizado inválido ou não pertence à categoria: ${fieldId}`);
       }
       const valueStr = value != null ? String(value).trim() : '';
-      await query(
+      await run(
         `INSERT INTO registration_custom_field_values (registration_id, category_custom_field_id, value)
          VALUES ($1, $2, $3)`,
         [registrationId, fieldId, valueStr || null]
@@ -1937,7 +2198,7 @@ export const cancelRegistration = async (registrationId: string) => {
     throw new Error('Registration is already cancelled');
   }
 
-  // Update status to cancelled (estoque é calculado por contagem; inscrições canceladas não entram na contagem)
+  // Update status to cancelled (estoque derivado: cancelled não consome — ver variantStockPolicyService)
   const result = await query(
     `UPDATE registrations 
      SET status = 'cancelled', updated_at = NOW()
