@@ -1,4 +1,5 @@
 import { apiClient, type ApiResponse } from './client.js';
+import type { KitProduct } from './eventKits.js';
 
 export interface Registration {
   id: string;
@@ -7,7 +8,7 @@ export interface Registration {
   registered_by: string;
   category_id: string;
   kit_id?: string;
-  status?: 'pending' | 'confirmed' | 'cancelled' | 'refund_requested' | 'refunded';
+  status?: 'pending' | 'confirmed' | 'cancelled' | 'refund_requested' | 'refunded' | 'transferred';
   payment_status?: 'pending' | 'paid' | 'partially_paid' | 'refunded' | 'failed' | 'convidado';
   payment_method?: 'pix' | 'credit_card' | 'boleto' | 'free_bonus';
   total_amount: number;
@@ -50,6 +51,12 @@ export interface Registration {
   invitation_runner_chooses_category_modality_kit?: boolean | null;
   /** Valores dos campos personalizados da categoria (category_custom_field_id -> value). */
   custom_field_values?: Record<string, string>;
+  coupon_code?: string | null;
+  leader_id?: string | null;
+  leader_name?: string | null;
+  runner_email?: string | null;
+  /** Lote de preço da categoria (quando houver lotes). */
+  category_batch_id?: string | null;
 }
 
 // Credit Card Data Types
@@ -96,7 +103,7 @@ export interface CreateRegistrationData {
 }
 
 export interface UpdateRegistrationData {
-  status?: 'pending' | 'confirmed' | 'cancelled' | 'refund_requested' | 'refunded';
+  status?: 'pending' | 'confirmed' | 'cancelled' | 'refund_requested' | 'refunded' | 'transferred';
   payment_status?: 'pending' | 'paid' | 'partially_paid' | 'refunded' | 'failed' | 'convidado';
   payment_method?: 'pix' | 'credit_card' | 'boleto' | 'free_bonus';
   /** Categoria da inscrição (admin pode alterar) */
@@ -109,6 +116,17 @@ export interface UpdateRegistrationData {
   batch_id?: string | null;
   /** Valores dos campos personalizados da categoria (category_custom_field_id -> value). Substitui todos ao editar. */
   custom_field_values?: Record<string, string>;
+  /** Cupom (código). Null para remover vínculo, se permitido pelo backend. */
+  coupon_code?: string | null;
+  /**
+   * Opcional ao mudar categoria/kit: novas seleções canônicas (mesmo formato da criação).
+   * Obrigatório quando o backend retorna PRODUCT_RESELECTION_REQUIRED (409).
+   */
+  product_selections?: Array<{
+    product_id: string;
+    variant_id?: string;
+    attribute_selections?: Record<string, string>;
+  }>;
 }
 
 export interface PreviewRegistrationEditBody {
@@ -136,6 +154,18 @@ export const previewRegistrationEdit = async (
   return apiClient.post<PreviewRegistrationEditResponse>(`/registrations/${id}/preview-edit`, body);
 };
 
+/** Totais por segmento (mesmos filtros estruturais da listagem; sem status/pagamento/tipo). */
+export interface RegistrationSegmentTotals {
+  total: number;
+  paid: number;
+  pending: number;
+  partially_paid: number;
+  courtesy: number;
+  cancelled: number;
+  refunded: number;
+  transferred: number;
+}
+
 /** Resposta paginada de GET /registrations (quando page e page_size são enviados). */
 export interface PaginatedRegistrationsData {
   items: Registration[];
@@ -149,15 +179,24 @@ export interface PaginatedRegistrationsData {
     pending_payments: number;
     refunds: number;
   };
+  /** Presente nas APIs recentes; usado nos cards de atalho operacional. */
+  segment_totals?: RegistrationSegmentTotals;
 }
 
-type GetRegistrationsFilters = {
+export type GetRegistrationsFilters = {
   event_id?: string;
   runner_id?: string;
   organizer_id?: string;
   status?: string;
   payment_status?: string;
   search?: string;
+  category_id?: string;
+  modality_id?: string;
+  kit_id?: string;
+  created_at_from?: string;
+  created_at_to?: string;
+  /** commercial | courtesy | leader_coupon */
+  registration_kind?: string;
 };
 
 export async function getRegistrations(
@@ -179,6 +218,12 @@ export async function getRegistrations(
   if (filters?.status) queryParams.append('status', filters.status);
   if (filters?.payment_status) queryParams.append('payment_status', filters.payment_status);
   if (filters?.search) queryParams.append('search', filters.search);
+  if (filters?.category_id) queryParams.append('category_id', filters.category_id);
+  if (filters?.modality_id) queryParams.append('modality_id', filters.modality_id);
+  if (filters?.kit_id) queryParams.append('kit_id', filters.kit_id);
+  if (filters?.created_at_from) queryParams.append('created_at_from', filters.created_at_from);
+  if (filters?.created_at_to) queryParams.append('created_at_to', filters.created_at_to);
+  if (filters?.registration_kind) queryParams.append('registration_kind', filters.registration_kind);
   if (pagination) {
     queryParams.append('page', String(pagination.page));
     queryParams.append('page_size', String(pagination.page_size));
@@ -202,6 +247,87 @@ export const checkExistingRegistration = async (eventId: string) => {
 export const getRegistrationById = async (id: string) => {
   return apiClient.get<Registration>(`/registrations/${id}`);
 };
+
+/** Contexto editável do kit da inscrição (produtos/variantes/atributos + inconsistências). Backend: registrations/:id/editable-kit-context */
+export type EditableKitIssueCode =
+  | 'NO_KIT_ASSIGNED'
+  | 'KIT_NOT_FOUND_OR_WRONG_EVENT'
+  | 'KIT_CATEGORY_MISMATCH'
+  | 'SELECTION_PRODUCT_NOT_IN_KIT'
+  | 'INVALID_VARIANT'
+  | 'MISSING_VARIANT_ATTRIBUTES'
+  | 'VARIANT_ATTRIBUTES_INFERRED';
+
+export interface EditableKitIssue {
+  code: EditableKitIssueCode;
+  message: string;
+  detail?: Record<string, unknown>;
+}
+
+export interface EditableCanonicalSelectionRow {
+  product_id: string;
+  product_name: string | null;
+  variant_id: string | null;
+  variant_name: string | null;
+  attribute_name: string;
+  attribute_value: string;
+  product_unlinked?: boolean;
+}
+
+export interface RegistrationEditableKitContext {
+  registration_id: string;
+  event_id: string;
+  category_id: string | null;
+  kit_id: string | null;
+  kit_category_ids: string[];
+  kit_category_consistent: boolean;
+  kit: {
+    id: string;
+    event_id: string;
+    name: string;
+    description: string | null;
+    price: number;
+    display_order: number;
+    created_at: string | null;
+  } | null;
+  products: KitProduct[];
+  canonical_selections: EditableCanonicalSelectionRow[];
+  issues: EditableKitIssue[];
+}
+
+export const getRegistrationEditableKitContext = async (registrationId: string) => {
+  return apiClient.get<RegistrationEditableKitContext>(`/registrations/${registrationId}/editable-kit-context`);
+};
+
+/** Admin read-only: inscrições com kit variável configurado e sem registration_product_selections. */
+export type MissingKitProductSelectionAuditItem = {
+  registration_id: string;
+  event_id: string;
+  kit_id: string;
+  status: string;
+  runner_name: string | null;
+  confirmation_code: string | null;
+  created_at: string;
+};
+
+export type MissingKitProductSelectionAuditPayload = {
+  items: MissingKitProductSelectionAuditItem[];
+  count: number;
+  criteria: string;
+};
+
+export async function getAuditMissingKitProductSelections(params?: {
+  event_id?: string;
+  limit?: number;
+}) {
+  const queryParams = new URLSearchParams();
+  if (params?.event_id) queryParams.append('event_id', params.event_id);
+  if (params?.limit != null) queryParams.append('limit', String(params.limit));
+  const qs = queryParams.toString();
+  return apiClient.get<MissingKitProductSelectionAuditPayload>(
+    `/registrations/audit/missing-kit-product-selections${qs ? `?${qs}` : ''}`
+  );
+}
 
 // Get registration by ID for validation (public - no authentication required)
 export const getRegistrationForValidation = async (id: string) => {
@@ -468,16 +594,21 @@ export const completeInvitation = async (
   );
 };
 
-// Export registrations
-export const exportRegistrations = async (filters?: {
-  event_id?: string;
-  status?: string;
-  payment_status?: string;
-}) => {
+export type ExportRegistrationsFilters = GetRegistrationsFilters;
+
+// Export registrations (mesmos filtros da listagem, quando suportados pelo backend)
+export const exportRegistrations = async (filters?: ExportRegistrationsFilters, downloadFilename?: string) => {
   const queryParams = new URLSearchParams();
   if (filters?.event_id) queryParams.append('event_id', filters.event_id);
   if (filters?.status) queryParams.append('status', filters.status);
   if (filters?.payment_status) queryParams.append('payment_status', filters.payment_status);
+  if (filters?.search) queryParams.append('search', filters.search);
+  if (filters?.category_id) queryParams.append('category_id', filters.category_id);
+  if (filters?.modality_id) queryParams.append('modality_id', filters.modality_id);
+  if (filters?.kit_id) queryParams.append('kit_id', filters.kit_id);
+  if (filters?.created_at_from) queryParams.append('created_at_from', filters.created_at_from);
+  if (filters?.created_at_to) queryParams.append('created_at_to', filters.created_at_to);
+  if (filters?.registration_kind) queryParams.append('registration_kind', filters.registration_kind);
 
   const queryString = queryParams.toString();
   const endpoint = `/registrations/export${queryString ? `?${queryString}` : ''}`;
@@ -497,7 +628,7 @@ export const exportRegistrations = async (filters?: {
   const url = window.URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `inscricoes_${new Date().toISOString().split('T')[0]}.csv`;
+  a.download = downloadFilename || `inscricoes_${new Date().toISOString().split('T')[0]}.csv`;
   document.body.appendChild(a);
   a.click();
   window.URL.revokeObjectURL(url);
