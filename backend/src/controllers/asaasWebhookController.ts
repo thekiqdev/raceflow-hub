@@ -236,7 +236,9 @@ export const handleWebhook = asyncHandler(async (req: Request, res: Response) =>
           const registrationData = registrationResult.rows[0];
           
           // Transfer the registration (this updates status to 'transferred')
-          await transferRegistration(transferRequest.registration_id, newRunnerId);
+          await transferRegistration(transferRequest.registration_id, newRunnerId, {
+            finalizeRunnerTransfer: true,
+          });
           
           // Mark transfer request as completed (this will also set processed_at)
           await updateTransferRequest(transferRequestId, {

@@ -1,10 +1,23 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Search, UserPlus, Edit, Eye, Loader2, CheckCircle, XCircle, Copy, ExternalLink, Trash2 } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Search,
+  UserPlus,
+  Edit,
+  Eye,
+  Loader2,
+  CheckCircle,
+  XCircle,
+  Copy,
+  Trash2,
+  ChevronLeft,
+  ChevronRight,
+} from "lucide-react";
 import { toast } from "sonner";
 import {
   getAllGroupLeaders,
@@ -14,57 +27,79 @@ import {
   activateGroupLeader,
   deleteGroupLeader,
   type GroupLeader,
+  type GroupLeadersAdminSummary,
 } from "@/lib/api/groupLeaders";
 import { GroupLeaderDialog } from "./GroupLeaderDialog";
 import { GroupLeaderDetails } from "./GroupLeaderDetails";
-import { getAthletes, type UserWithStats } from "@/lib/api/userManagement";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { useDebounce } from "@/hooks/useDebounce";
+
+const defaultSummary: GroupLeadersAdminSummary = {
+  total_leaders: 0,
+  active_leaders: 0,
+  total_referrals: 0,
+  total_earnings: 0,
+};
 
 export function GroupLeadersManagement() {
   const [leaders, setLeaders] = useState<GroupLeader[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
+  const debouncedSearch = useDebounce(searchTerm, 400);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState<30 | 50>(30);
+  const [listTotal, setListTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(0);
+  const [summary, setSummary] = useState<GroupLeadersAdminSummary>(defaultSummary);
+  const filterKeyRef = useRef<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [selectedLeader, setSelectedLeader] = useState<GroupLeader | null>(null);
   const [editingLeader, setEditingLeader] = useState<GroupLeader | null>(null);
-  const [availableUsers, setAvailableUsers] = useState<UserWithStats[]>([]);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [leaderToDelete, setLeaderToDelete] = useState<GroupLeader | null>(null);
   const [deleting, setDeleting] = useState(false);
 
+  const listFilterKey = useMemo(
+    () => `${debouncedSearch}|${pageSize}`,
+    [debouncedSearch, pageSize]
+  );
+
+  const loadLeadersWithPage = useCallback(
+    async (effectivePage: number) => {
+      setLoading(true);
+      try {
+        const response = await getAllGroupLeaders(debouncedSearch || undefined, {
+          page: effectivePage,
+          page_size: pageSize,
+        });
+        if (response.success && response.data && "items" in response.data) {
+          setLeaders(response.data.items);
+          setListTotal(response.data.total);
+          setTotalPages(response.data.total_pages);
+          setSummary(response.data.summary);
+        } else {
+          toast.error(response.error || "Erro ao carregar líderes");
+        }
+      } catch (error) {
+        console.error("Erro ao carregar líderes:", error);
+        toast.error("Erro ao carregar líderes");
+      } finally {
+        setLoading(false);
+      }
+    },
+    [debouncedSearch, pageSize]
+  );
+
   useEffect(() => {
-    loadLeaders();
-    loadAvailableUsers();
-  }, []);
-
-  const loadLeaders = async () => {
-    setLoading(true);
-    try {
-      const response = await getAllGroupLeaders();
-      if (response.success && response.data) {
-        setLeaders(response.data);
-      } else {
-        toast.error(response.error || "Erro ao carregar líderes");
-      }
-    } catch (error) {
-      console.error("Erro ao carregar líderes:", error);
-      toast.error("Erro ao carregar líderes");
-    } finally {
-      setLoading(false);
+    const filtersChanged = filterKeyRef.current !== null && filterKeyRef.current !== listFilterKey;
+    if (filtersChanged) {
+      setPage(1);
     }
-  };
-
-  const loadAvailableUsers = async () => {
-    try {
-      const response = await getAthletes();
-      if (response.success && response.data) {
-        setAvailableUsers(response.data);
-      }
-    } catch (error) {
-      console.error("Erro ao carregar usuários:", error);
-    }
-  };
+    filterKeyRef.current = listFilterKey;
+    const effectivePage = filtersChanged ? 1 : page;
+    void loadLeadersWithPage(effectivePage);
+  }, [page, listFilterKey, loadLeadersWithPage]);
 
   const handleCreateLeader = () => {
     setEditingLeader(null);
@@ -87,7 +122,7 @@ export function GroupLeadersManagement() {
         const response = await updateGroupLeader(editingLeader.id, {});
         if (response.success) {
           toast.success("Líder atualizado com sucesso!");
-          loadLeaders();
+          void loadLeadersWithPage(page);
           setDialogOpen(false);
         } else {
           toast.error(response.error || "Erro ao atualizar líder");
@@ -96,7 +131,8 @@ export function GroupLeadersManagement() {
         const response = await createGroupLeader(data);
         if (response.success) {
           toast.success("Líder criado com sucesso!");
-          loadLeaders();
+          setPage(1);
+          void loadLeadersWithPage(1);
           setDialogOpen(false);
         } else {
           toast.error(response.error || "Erro ao criar líder");
@@ -115,7 +151,7 @@ export function GroupLeadersManagement() {
 
       if (response.success) {
         toast.success(`Líder ${leader.is_active ? "desativado" : "ativado"} com sucesso!`);
-        loadLeaders();
+        void loadLeadersWithPage(page);
       } else {
         toast.error(response.error || "Erro ao alterar status do líder");
       }
@@ -148,7 +184,9 @@ export function GroupLeadersManagement() {
       const response = await deleteGroupLeader(leaderToDelete.id);
       if (response.success) {
         toast.success("Líder excluído permanentemente!");
-        loadLeaders();
+        const nextPage = leaders.length === 1 && page > 1 ? page - 1 : page;
+        setPage(nextPage);
+        void loadLeadersWithPage(nextPage);
         setDeleteDialogOpen(false);
         setLeaderToDelete(null);
       } else {
@@ -160,17 +198,6 @@ export function GroupLeadersManagement() {
       setDeleting(false);
     }
   };
-
-  const filteredLeaders = leaders.filter((leader) => {
-    const searchLower = searchTerm.toLowerCase().trim();
-    if (!searchLower) return true;
-    return (
-      leader.referral_code?.toLowerCase().includes(searchLower) ||
-      leader.user_id?.toLowerCase().includes(searchLower) ||
-      (leader.user_name && leader.user_name.toLowerCase().includes(searchLower)) ||
-      (leader.user_email && leader.user_email.toLowerCase().includes(searchLower))
-    );
-  });
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat("pt-BR", {
@@ -186,14 +213,13 @@ export function GroupLeadersManagement() {
         <p className="text-muted-foreground">Gerenciar líderes de grupo e afiliados</p>
       </div>
 
-      {/* Estatísticas */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card>
           <CardHeader className="pb-2">
             <CardDescription>Total de Líderes</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{leaders.length}</div>
+            <div className="text-2xl font-bold">{summary.total_leaders}</div>
           </CardContent>
         </Card>
         <Card>
@@ -201,9 +227,7 @@ export function GroupLeadersManagement() {
             <CardDescription>Líderes Ativos</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">
-              {leaders.filter((l) => l.is_active).length}
-            </div>
+            <div className="text-2xl font-bold">{summary.active_leaders}</div>
           </CardContent>
         </Card>
         <Card>
@@ -211,9 +235,7 @@ export function GroupLeadersManagement() {
             <CardDescription>Total de Referências</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">
-              {leaders.reduce((sum, l) => sum + l.total_referrals, 0)}
-            </div>
+            <div className="text-2xl font-bold">{summary.total_referrals}</div>
           </CardContent>
         </Card>
         <Card>
@@ -221,14 +243,11 @@ export function GroupLeadersManagement() {
             <CardDescription>Total de Comissões</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">
-              {formatCurrency(leaders.reduce((sum, l) => sum + l.total_earnings, 0))}
-            </div>
+            <div className="text-2xl font-bold">{formatCurrency(summary.total_earnings)}</div>
           </CardContent>
         </Card>
       </div>
 
-      {/* Lista de Líderes */}
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
@@ -272,106 +291,99 @@ export function GroupLeadersManagement() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredLeaders.length === 0 ? (
+                {leaders.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
                       Nenhum líder encontrado
                     </TableCell>
                   </TableRow>
                 ) : (
-                  filteredLeaders.map((leader) => {
-                    const user = availableUsers.find((u) => u.id === leader.user_id);
-                    return (
-                      <TableRow key={leader.id}>
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            <code className="text-sm font-mono bg-muted px-2 py-1 rounded">
-                              {leader.referral_code}
-                            </code>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-6 w-6"
-                              onClick={() => handleCopyCode(leader.referral_code)}
-                              title="Copiar código"
-                            >
-                              <Copy className="h-3 w-3" />
-                            </Button>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          {user ? (
-                            <div>
-                              <div className="font-medium">{user.name || "N/A"}</div>
-                              <div className="text-sm text-muted-foreground">{user.email}</div>
-                            </div>
+                  leaders.map((leader) => (
+                    <TableRow key={leader.id}>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <code className="text-sm font-mono bg-muted px-2 py-1 rounded">
+                            {leader.referral_code}
+                          </code>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6"
+                            onClick={() => handleCopyCode(leader.referral_code)}
+                            title="Copiar código"
+                          >
+                            <Copy className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div>
+                          <div className="font-medium">{leader.user_name || "N/A"}</div>
+                          <div className="text-sm text-muted-foreground">{leader.user_email || "N/A"}</div>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={leader.is_active ? "default" : "secondary"}>
+                          {leader.is_active ? (
+                            <>
+                              <CheckCircle className="mr-1 h-3 w-3" />
+                              Ativo
+                            </>
                           ) : (
-                            <span className="text-muted-foreground">Carregando...</span>
+                            <>
+                              <XCircle className="mr-1 h-3 w-3" />
+                              Inativo
+                            </>
                           )}
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant={leader.is_active ? "default" : "secondary"}>
+                        </Badge>
+                      </TableCell>
+                      <TableCell>{leader.total_referrals}</TableCell>
+                      <TableCell>{formatCurrency(leader.total_earnings)}</TableCell>
+                      <TableCell>
+                        {new Date(leader.created_at).toLocaleDateString("pt-BR")}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleViewDetails(leader)}
+                            title="Ver detalhes"
+                          >
+                            <Eye className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleEditLeader(leader)}
+                            title="Editar"
+                          >
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleToggleActive(leader)}
+                            title={leader.is_active ? "Desativar" : "Ativar"}
+                          >
                             {leader.is_active ? (
-                              <>
-                                <CheckCircle className="mr-1 h-3 w-3" />
-                                Ativo
-                              </>
+                              <XCircle className="h-4 w-4 text-destructive" />
                             ) : (
-                              <>
-                                <XCircle className="mr-1 h-3 w-3" />
-                                Inativo
-                              </>
+                              <CheckCircle className="h-4 w-4 text-green-600" />
                             )}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>{leader.total_referrals}</TableCell>
-                        <TableCell>{formatCurrency(leader.total_earnings)}</TableCell>
-                        <TableCell>
-                          {new Date(leader.created_at).toLocaleDateString("pt-BR")}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex items-center justify-end gap-2">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => handleViewDetails(leader)}
-                              title="Ver detalhes"
-                            >
-                              <Eye className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => handleEditLeader(leader)}
-                              title="Editar"
-                            >
-                              <Edit className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => handleToggleActive(leader)}
-                              title={leader.is_active ? "Desativar" : "Ativar"}
-                            >
-                              {leader.is_active ? (
-                                <XCircle className="h-4 w-4 text-destructive" />
-                              ) : (
-                                <CheckCircle className="h-4 w-4 text-green-600" />
-                              )}
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => handleDeleteClick(leader)}
-                              title="Excluir permanentemente"
-                            >
-                              <Trash2 className="h-4 w-4 text-destructive" />
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleDeleteClick(leader)}
+                            title="Excluir permanentemente"
+                          >
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))
                 )}
               </TableBody>
             </Table>
@@ -379,12 +391,52 @@ export function GroupLeadersManagement() {
         </CardContent>
       </Card>
 
-      {/* Dialogs */}
+      {!loading && listTotal > 0 && (
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 rounded-lg border bg-card p-4">
+          <p className="text-sm text-muted-foreground">
+            Página {page} de {Math.max(1, totalPages || 1)}
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <Select
+              value={String(pageSize)}
+              onValueChange={(value) => setPageSize(Number(value) as 30 | 50)}
+            >
+              <SelectTrigger className="w-[160px]">
+                <SelectValue placeholder="Por página" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="30">30 por página</SelectItem>
+                <SelectItem value="50">50 por página</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={page <= 1}
+              onClick={() => setPage((current) => Math.max(1, current - 1))}
+              aria-label="Página anterior"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={page >= totalPages || totalPages === 0}
+              onClick={() => setPage((current) => current + 1)}
+              aria-label="Próxima página"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+      )}
+
       <GroupLeaderDialog
         open={dialogOpen}
         onOpenChange={setDialogOpen}
         leader={editingLeader}
-        availableUsers={availableUsers}
         onSave={handleSaveLeader}
       />
 
@@ -396,7 +448,6 @@ export function GroupLeadersManagement() {
         onCopyLink={handleCopyLink}
       />
 
-      {/* Dialog de confirmação de exclusão */}
       <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <DialogContent>
           <DialogHeader>
@@ -449,4 +500,3 @@ export function GroupLeadersManagement() {
     </div>
   );
 }
-

@@ -1,4 +1,4 @@
-import { apiClient } from './client.js';
+import { apiClient, type ApiResponse } from './client.js';
 
 export interface GroupLeader {
   id: string;
@@ -66,6 +66,36 @@ export interface ReferralStats {
   paid_commissions: number;
 }
 
+export interface GroupLeadersAdminSummary {
+  total_leaders: number;
+  active_leaders: number;
+  total_referrals: number;
+  total_earnings: number;
+}
+
+export interface PaginatedGroupLeadersData {
+  items: GroupLeader[];
+  page: number;
+  page_size: number;
+  total: number;
+  total_pages: number;
+  summary: GroupLeadersAdminSummary;
+}
+
+function buildGroupLeadersQuery(
+  searchTerm: string | undefined,
+  pagination: { page: number; page_size: 30 | 50 } | undefined
+): string {
+  const q = new URLSearchParams();
+  if (searchTerm) q.set('search', searchTerm);
+  if (pagination) {
+    q.set('page', String(pagination.page));
+    q.set('page_size', String(pagination.page_size));
+  }
+  const qs = q.toString();
+  return `/admin/group-leaders${qs ? `?${qs}` : ''}`;
+}
+
 // Get my group leader data
 export const getMyGroupLeader = async () => {
   return apiClient.get<GroupLeader>('/group-leaders/me');
@@ -105,9 +135,21 @@ export const createGroupLeader = async (data: CreateGroupLeaderData) => {
   return apiClient.post<GroupLeader>('/admin/group-leaders', data);
 };
 
-export const getAllGroupLeaders = async () => {
-  return apiClient.get<GroupLeader[]>('/admin/group-leaders');
-};
+export async function getAllGroupLeaders(): Promise<ApiResponse<GroupLeader[]>>;
+export async function getAllGroupLeaders(
+  searchTerm: string | undefined,
+  pagination: { page: number; page_size: 30 | 50 }
+): Promise<ApiResponse<PaginatedGroupLeadersData>>;
+export async function getAllGroupLeaders(
+  searchTerm?: string,
+  pagination?: { page: number; page_size: 30 | 50 }
+) {
+  const path = buildGroupLeadersQuery(searchTerm, pagination);
+  if (pagination) {
+    return apiClient.get<PaginatedGroupLeadersData>(path);
+  }
+  return apiClient.get<GroupLeader[]>(path);
+}
 
 export const getGroupLeaderById = async (id: string) => {
   return apiClient.get<GroupLeader>(`/admin/group-leaders/${id}`);

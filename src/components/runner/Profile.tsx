@@ -212,7 +212,7 @@ export function Profile() {
               </Avatar>
               <div className="flex-1">
                 <h2 className="font-semibold text-lg">{profile.full_name}</h2>
-                <p className="text-sm text-muted-foreground">{user?.email}</p>
+                <p className="text-sm text-muted-foreground">{profile.email || user?.email}</p>
               </div>
               <Button 
                 variant="ghost" 

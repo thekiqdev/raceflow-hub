@@ -46,7 +46,7 @@ export const updateOwnProfile = asyncHandler(async (req: AuthRequest, res: Respo
     });
   }
 
-  const { password, ...profileData } = req.body;
+  const { password, email, ...profileData } = req.body;
 
   /** Atleta (não admin) não pode alterar identidade validada na fonte — só admin. */
   const isAdmin = await hasRole(req.user.id, 'admin');
@@ -55,6 +55,44 @@ export const updateOwnProfile = asyncHandler(async (req: AuthRequest, res: Respo
     delete profileData.birth_date;
     delete profileData.gender;
     delete profileData.cpf;
+  }
+
+  if (email !== undefined && email !== null) {
+    const newEmail = String(email).trim().toLowerCase();
+    if (!newEmail) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid email',
+        message: 'Informe um e-mail válido',
+      });
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(newEmail)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid email',
+        message: 'Informe um e-mail válido',
+      });
+    }
+
+    const existingEmail = await query(
+      'SELECT id FROM users WHERE LOWER(TRIM(email)) = $1 AND id != $2',
+      [newEmail, req.user.id]
+    );
+    if (existingEmail.rows.length > 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'E-mail já cadastrado',
+        message:
+          'Este e-mail já está em uso em outra conta. Informe outro endereço ou recupere o acesso à conta existente.',
+      });
+    }
+
+    await query('UPDATE users SET email = $1, updated_at = NOW() WHERE id = $2', [
+      newEmail,
+      req.user.id,
+    ]);
   }
 
   // Check if user is trying to update CPF (apenas admin chega aqui com cpf no body)
@@ -98,9 +136,23 @@ export const updateOwnProfile = asyncHandler(async (req: AuthRequest, res: Respo
     }
   }
 
-  const updatedProfile = await updateProfile(req.user.id, profileData);
+  const hasProfileFields = Object.entries(profileData).some(
+    ([, value]) => value !== undefined
+  );
 
-  if (!updatedProfile) {
+  if (hasProfileFields) {
+    await updateProfile(req.user.id, profileData);
+  } else if (email === undefined) {
+    return res.status(400).json({
+      success: false,
+      error: 'No fields to update',
+      message: 'Nenhum campo válido para atualização.',
+    });
+  }
+
+  const profileWithEmail = await getProfileByUserId(req.user.id);
+
+  if (!profileWithEmail) {
     return res.status(404).json({
       success: false,
       error: 'Profile not found',
@@ -109,7 +161,7 @@ export const updateOwnProfile = asyncHandler(async (req: AuthRequest, res: Respo
 
   res.json({
     success: true,
-    data: updatedProfile,
+    data: profileWithEmail,
     message: 'Profile updated successfully',
   });
   return;

@@ -395,7 +395,8 @@ export function MyRegistrations() {
     r.status === "confirmed" &&
     (r.payment_status === "paid" ||
       r.payment_status === "partially_paid" ||
-      r.payment_status === "convidado")
+      r.payment_status === "convidado" ||
+      r.payment_status === "transferred")
   );
   const pendingRegistrations = registrations.filter((r) => 
     r.status !== "cancelled" && r.status !== "transferred" && (r.status === "pending" || r.payment_status === "pending")
@@ -419,6 +420,9 @@ export function MyRegistrations() {
     }
     // Verificar confirmado e pago
     if (status === "confirmed" && paymentStatus === "paid") {
+      return <Badge className="bg-accent">Confirmada</Badge>;
+    }
+    if (status === "confirmed" && paymentStatus === "transferred") {
       return <Badge className="bg-accent">Confirmada</Badge>;
     }
     if (status === "confirmed" && paymentStatus === "partially_paid") {

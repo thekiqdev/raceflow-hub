@@ -402,6 +402,18 @@ async function mapRegistrationRows(
     if (filters?.runner_id && row.is_transferred && row.registered_by === filters.runner_id) {
       finalStatus = 'transferred';
     }
+    let finalPaymentStatus = row.payment_status;
+    if (
+      row.is_transferred &&
+      row.runner_id !== row.registered_by &&
+      filters?.runner_id
+    ) {
+      if (row.registered_by === filters.runner_id) {
+        finalPaymentStatus = 'paid';
+      } else if (row.runner_id === filters.runner_id) {
+        finalPaymentStatus = 'transferred';
+      }
+    }
     const pendingDifferenceAmount = pendingMap[row.id] ?? 0;
     const amountPaid = totalPaidMap[row.id] ?? 0;
     const modalityName = row.modality_name || (row.modality_names && row.modality_names[0]) || null;
@@ -409,6 +421,7 @@ async function mapRegistrationRows(
       ...row,
       modality_name: modalityName,
       status: finalStatus,
+      payment_status: finalPaymentStatus,
       event_banner_url: row.event_banner_url ? getFileUrl(row.event_banner_url) : null,
       pending_difference_amount: pendingDifferenceAmount,
       has_pending_difference: pendingDifferenceAmount > 0.005,
@@ -739,10 +752,23 @@ export const getRegistrationById = async (registrationId: string, viewerId?: str
   ]);
   // Fallback: inscrições antigas sem modality_id mostram a primeira modalidade da categoria
   const modalityName = row.modality_name || (row.modality_names && row.modality_names[0]) || null;
+  let finalPaymentStatus = row.payment_status;
+  if (
+    row.status === 'transferred' &&
+    row.runner_id !== row.registered_by &&
+    viewerId
+  ) {
+    if (row.runner_id === viewerId) {
+      finalPaymentStatus = 'transferred';
+    } else if (row.registered_by === viewerId) {
+      finalPaymentStatus = 'paid';
+    }
+  }
   return {
     ...row,
     modality_name: modalityName,
     status: row.display_status || row.status,
+    payment_status: finalPaymentStatus,
     event_banner_url: row.event_banner_url ? getFileUrl(row.event_banner_url) : null,
     pending_difference_amount: pendingDifferenceAmount,
     has_pending_difference: pendingDifferenceAmount > 0.005,
@@ -2087,10 +2113,16 @@ export const completeInvitationRegistration = async (
   return getRegistrationById(registrationId);
 };
 
+export type TransferRegistrationOptions = {
+  /** Finaliza transferência iniciada pelo runner (taxa paga / solicitação aprovada). */
+  finalizeRunnerTransfer?: boolean;
+};
+
 // Transfer registration to another runner
 export const transferRegistration = async (
   registrationId: string,
-  newRunnerId: string
+  newRunnerId: string,
+  options?: TransferRegistrationOptions
 ) => {
   // Check if registration exists
   const registration = await getRegistrationById(registrationId);
@@ -2101,10 +2133,14 @@ export const transferRegistration = async (
   // Get old runner ID before transfer
   const oldRunnerId = registration.runner_id;
 
+  const paymentStatusClause = options?.finalizeRunnerTransfer
+    ? `, payment_status = 'transferred'`
+    : '';
+
   // Update runner_id and set status to transferred
   const result = await query(
     `UPDATE registrations 
-     SET runner_id = $1, status = 'transferred', updated_at = NOW()
+     SET runner_id = $1, status = 'transferred'${paymentStatusClause}, updated_at = NOW()
      WHERE id = $2
      RETURNING *`,
     [newRunnerId, registrationId]

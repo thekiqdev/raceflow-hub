@@ -18,7 +18,7 @@ interface ProfileEditDialogProps {
 }
 
 export function ProfileEditDialog({ open, onOpenChange, profile }: ProfileEditDialogProps) {
-  const { user } = useAuth();
+  const { user, refreshUser } = useAuth();
   const isAdmin = user?.roles?.includes("admin") ?? false;
   /** Nome, CPF, nascimento e sexo só alteram pelo admin; atleta vê bloqueado. */
   const identityLocked = !isAdmin;
@@ -26,6 +26,7 @@ export function ProfileEditDialog({ open, onOpenChange, profile }: ProfileEditDi
   const [formData, setFormData] = useState({
     full_name: profile.full_name || "",
     preferred_name: profile.preferred_name || "",
+    email: profile.email || user?.email || "",
     cpf: profile.cpf || "",
     phone: profile.phone || "",
     birth_date: profile.birth_date || "",
@@ -45,12 +46,14 @@ export function ProfileEditDialog({ open, onOpenChange, profile }: ProfileEditDi
   const [saving, setSaving] = useState(false);
   const [loadingCep, setLoadingCep] = useState(false);
   const [originalCpf, setOriginalCpf] = useState(profile.cpf || "");
+  const [originalEmail, setOriginalEmail] = useState(profile.email || user?.email || "");
   
   useEffect(() => {
     if (open && profile) {
       setOriginalCpf(profile.cpf || "");
+      setOriginalEmail(profile.email || user?.email || "");
     }
-  }, [open, profile]);
+  }, [open, profile, user?.email]);
   
   const cpfChanged =
     !identityLocked && unmask(formData.cpf) !== unmask(originalCpf);
@@ -66,6 +69,7 @@ export function ProfileEditDialog({ open, onOpenChange, profile }: ProfileEditDi
       setFormData({
         full_name: profile.full_name || "",
         preferred_name: profile.preferred_name || "",
+        email: profile.email || user?.email || "",
         cpf: formattedCpf,
         phone: formattedPhone,
         birth_date: profile.birth_date ? profile.birth_date.split('T')[0] : "",
@@ -83,7 +87,9 @@ export function ProfileEditDialog({ open, onOpenChange, profile }: ProfileEditDi
       });
       setPassword("");
     }
-  }, [open, profile]);
+  }, [open, profile, user?.email]);
+
+  const emailChanged = formData.email.trim().toLowerCase() !== originalEmail.trim().toLowerCase();
 
   // Buscar endereço por CEP
   const handleCepChange = async (cep: string) => {
@@ -125,6 +131,19 @@ export function ProfileEditDialog({ open, onOpenChange, profile }: ProfileEditDi
         }
       }
 
+      const normalizedEmail = formData.email.trim().toLowerCase();
+      if (emailChanged) {
+        if (!normalizedEmail) {
+          toast.error("Informe um e-mail válido");
+          return;
+        }
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(normalizedEmail)) {
+          toast.error("Informe um e-mail válido");
+          return;
+        }
+      }
+
       setSaving(true);
       const updateData: Record<string, unknown> = {
         preferred_name: formData.preferred_name || undefined,
@@ -140,6 +159,10 @@ export function ProfileEditDialog({ open, onOpenChange, profile }: ProfileEditDi
         city: formData.city || undefined,
         state: formData.state || undefined,
       };
+
+      if (emailChanged) {
+        updateData.email = normalizedEmail;
+      }
 
       if (!identityLocked) {
         updateData.full_name = formData.full_name;
@@ -157,12 +180,15 @@ export function ProfileEditDialog({ open, onOpenChange, profile }: ProfileEditDi
 
       if (response.success) {
         toast.success("Dados atualizados com sucesso!");
+        if (emailChanged) {
+          await refreshUser();
+        }
         onOpenChange(false);
         setPassword("");
         // Disparar evento para recarregar dados do perfil
         window.dispatchEvent(new CustomEvent('profile:updated'));
       } else {
-        toast.error(response.error || response.message || "Erro ao atualizar dados");
+        toast.error(response.message || response.error || "Erro ao atualizar dados");
       }
     } catch (error: any) {
       console.error("Error updating profile:", error);
@@ -238,6 +264,17 @@ export function ProfileEditDialog({ open, onOpenChange, profile }: ProfileEditDi
                 placeholder="João"
                 value={formData.preferred_name}
                 onChange={(e) => setFormData({ ...formData, preferred_name: e.target.value })}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="email">E-mail *</Label>
+              <Input
+                id="email"
+                type="email"
+                value={formData.email}
+                onChange={(e) => setFormData({ ...formData, email: e.target.value.trim().toLowerCase() })}
+                placeholder="seu@email.com"
               />
             </div>
 

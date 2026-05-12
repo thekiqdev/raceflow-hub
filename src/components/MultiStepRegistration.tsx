@@ -450,7 +450,11 @@ export function MultiStepRegistration({ open, onOpenChange }: MultiStepRegistrat
       console.error('Erro ao cadastrar:', error);
       
       // Tratar erros específicos do backend
-      if (error.message?.includes('Email already registered') || error.message?.includes('email')) {
+      if (
+        error.message?.includes('Email already registered') ||
+        error.message?.includes('E-mail já cadastrado') ||
+        error.message?.includes('já está em uso')
+      ) {
         toast.error('Este e-mail já está cadastrado. Tente fazer login.');
         setCurrentStep(3);
         setErrors({ email: 'Este e-mail já está cadastrado' });

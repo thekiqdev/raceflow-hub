@@ -575,8 +575,9 @@ export const updateUserProfileController = async (
       if (existingEmail.rows.length > 0) {
         res.status(400).json({
           success: false,
-          error: 'Email already registered',
-          message: 'Este e-mail já está cadastrado para outro usuário',
+          error: 'E-mail já cadastrado',
+          message:
+            'Este e-mail já está em uso em outra conta. Informe outro endereço ou recupere o acesso à conta existente.',
         });
         return;
       }

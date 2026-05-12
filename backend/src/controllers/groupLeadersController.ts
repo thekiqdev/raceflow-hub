@@ -21,7 +21,6 @@ import { getLeaderInvitationProgress } from '../services/leaderBonusService.js';
 // Note: Admin role verification is handled by requireRole('admin') middleware in adminRoutes.ts
 import { z } from 'zod';
 
-// Validation schemas
 const createGroupLeaderSchema = z.object({
   user_id: z.string().uuid('Invalid user ID'),
   // commission_percentage removed - now using event-specific commissions only
@@ -114,8 +113,38 @@ export const getMyGroupLeaderController = asyncHandler(
  * Get all group leaders (admin only), com nome e email para busca
  * Note: Admin role is already verified by requireRole('admin') middleware in adminRoutes.ts
  */
+function parseGroupLeadersListPagination(
+  query: Record<string, unknown>
+): { page: number; page_size: 30 | 50 } | undefined {
+  const pageRaw = query.page;
+  const pageSizeRaw = query.page_size ?? query.limit;
+  const usePagination =
+    (pageRaw !== undefined && pageRaw !== '') ||
+    (pageSizeRaw !== undefined && pageSizeRaw !== '');
+  if (!usePagination) return undefined;
+  const page = Math.max(1, parseInt(String(pageRaw ?? '1'), 10) || 1);
+  let rawSize = parseInt(String(pageSizeRaw ?? '30'), 10);
+  if (![30, 50].includes(rawSize)) rawSize = 30;
+  return { page, page_size: rawSize as 30 | 50 };
+}
+
 export const getAllGroupLeadersController = asyncHandler(
-  async (_req: AuthRequest, res: Response) => {
+  async (req: AuthRequest, res: Response) => {
+    const search =
+      typeof req.query.search === 'string' ? req.query.search.trim() : undefined;
+    const pagination = parseGroupLeadersListPagination(
+      req.query as Record<string, unknown>
+    );
+
+    if (pagination) {
+      const result = await getAllGroupLeadersWithUserInfo(search, pagination);
+      res.json({
+        success: true,
+        data: result,
+      });
+      return;
+    }
+
     const leaders = await getAllGroupLeadersWithUserInfo();
 
     res.json({

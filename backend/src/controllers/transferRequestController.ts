@@ -310,7 +310,9 @@ export const getTransferRequestByIdController = asyncHandler(async (req: AuthReq
           if (newRunnerId) {
             console.log(`🔄 Realizando transferência da inscrição ${updatedRequest.registration_id} para runner ${newRunnerId}`);
             const { transferRegistration } = await import('../services/registrationsService.js');
-            await transferRegistration(updatedRequest.registration_id, newRunnerId);
+            await transferRegistration(updatedRequest.registration_id, newRunnerId, {
+              finalizeRunnerTransfer: true,
+            });
             
             // Mark transfer request as completed
             await updateTransferRequest(id, {
@@ -521,7 +523,9 @@ export const updateTransferRequestController = asyncHandler(async (req: AuthRequ
   // If approved, actually transfer the registration
   if (status === 'approved' && finalNewRunnerId) {
     try {
-      await transferRegistration(transferRequest.registration_id, finalNewRunnerId);
+      await transferRegistration(transferRequest.registration_id, finalNewRunnerId, {
+        finalizeRunnerTransfer: true,
+      });
       
       // Mark as completed
       await updateTransferRequest(id, { status: 'completed' });

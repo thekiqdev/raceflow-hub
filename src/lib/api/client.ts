@@ -91,16 +91,20 @@ class ApiClient {
         try {
           const errorData = await response.json();
           console.error('❌ [apiClient] Erro do servidor:', errorData);
-          errorMessage = errorData.error || errorData.message || errorMessage;
+          errorMessage = errorData.message || errorData.error || errorMessage;
           errorDetails = errorData.details || errorData;
         } catch (e) {
           // If JSON parsing fails, use status text
           console.error('❌ [apiClient] Erro ao parsear resposta de erro:', e);
         }
+        const userMessage =
+          (errorDetails as { message?: string })?.message ||
+          errorMessage ||
+          `Request failed with status ${response.status}`;
         return {
           success: false,
-          error: errorMessage,
-          message: (errorDetails as { message?: string })?.message || errorMessage || `Request failed with status ${response.status}`,
+          error: userMessage,
+          message: userMessage,
           details: errorDetails,
           code: (errorDetails as { code?: string })?.code,
         };

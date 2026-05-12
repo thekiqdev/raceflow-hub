@@ -12,6 +12,63 @@ export interface UpdateGroupLeaderData {
   referral_code?: string;
 }
 
+export type GroupLeadersListPagination = {
+  page: number;
+  page_size: 30 | 50;
+};
+
+export type GroupLeadersAdminSummary = {
+  total_leaders: number;
+  active_leaders: number;
+  total_referrals: number;
+  total_earnings: number;
+};
+
+export type PaginatedGroupLeadersResult = {
+  items: ReturnType<typeof mapGroupLeaderWithUserInfoRow>[];
+  page: number;
+  page_size: number;
+  total: number;
+  total_pages: number;
+  summary: GroupLeadersAdminSummary;
+};
+
+function mapGroupLeaderWithUserInfoRow(row: any) {
+  return {
+    id: row.id,
+    user_id: row.user_id,
+    referral_code: row.referral_code,
+    is_active: row.is_active,
+    commission_percentage: row.commission_percentage,
+    total_earnings: parseFloat(row.total_earnings) || 0,
+    total_referrals: parseInt(row.total_referrals, 10) || 0,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+    user_name: row.user_name || null,
+    user_email: row.user_email || null,
+    user_cpf: row.user_cpf || null,
+    user_phone: row.user_phone || null,
+  };
+}
+
+async function getGroupLeadersAdminSummary(): Promise<GroupLeadersAdminSummary> {
+  const summaryResult = await query(
+    `SELECT
+      COUNT(*)::bigint AS total_leaders,
+      COUNT(*) FILTER (WHERE gl.is_active)::bigint AS active_leaders,
+      COALESCE(SUM(gl.total_referrals), 0)::bigint AS total_referrals,
+      COALESCE(SUM(gl.total_earnings), 0)::numeric AS total_earnings
+    FROM group_leaders gl`
+  );
+  const summaryRow = summaryResult.rows[0];
+  return {
+    total_leaders: parseInt(String(summaryRow?.total_leaders ?? '0'), 10) || 0,
+    active_leaders: parseInt(String(summaryRow?.active_leaders ?? '0'), 10) || 0,
+    total_referrals: parseInt(String(summaryRow?.total_referrals ?? '0'), 10) || 0,
+    total_earnings: parseFloat(String(summaryRow?.total_earnings ?? '0')) || 0,
+  };
+}
+
 /**
  * Generate unique referral code
  * Format: 3 letras + 3 números (ex: ABC123)
@@ -266,39 +323,78 @@ export const getAllGroupLeaders = async (): Promise<GroupLeader[]> => {
 };
 
 /**
- * Get all group leaders with user information (for organizer)
- * Returns all leaders created by admin with user details
+ * Get all group leaders with user information (for admin / legacy callers).
+ * With pagination + search, returns a paginated payload for the Super Admin list.
  */
-export const getAllGroupLeadersWithUserInfo = async (): Promise<any[]> => {
-  const result = await query(
-    `SELECT 
+export async function getAllGroupLeadersWithUserInfo(): Promise<
+  ReturnType<typeof mapGroupLeaderWithUserInfoRow>[]
+>;
+export async function getAllGroupLeadersWithUserInfo(
+  searchTerm: string | undefined,
+  pagination: GroupLeadersListPagination
+): Promise<PaginatedGroupLeadersResult>;
+export async function getAllGroupLeadersWithUserInfo(
+  searchTerm?: string,
+  pagination?: GroupLeadersListPagination
+): Promise<ReturnType<typeof mapGroupLeaderWithUserInfoRow>[] | PaginatedGroupLeadersResult> {
+  const params: unknown[] = [];
+  let searchSql = '';
+  if (searchTerm) {
+    searchSql = ` AND (
+      gl.referral_code ILIKE $${params.length + 1} OR
+      p.full_name ILIKE $${params.length + 1} OR
+      u.email ILIKE $${params.length + 1}
+    )`;
+    params.push(`%${searchTerm}%`);
+  }
+
+  const baseFrom = `
+    FROM group_leaders gl
+    LEFT JOIN profiles p ON gl.user_id = p.id
+    LEFT JOIN users u ON gl.user_id = u.id
+    WHERE 1=1
+    ${searchSql}`;
+
+  const selectSql = `
+    SELECT
       gl.*,
       p.full_name as user_name,
       u.email as user_email,
       p.cpf as user_cpf,
       p.phone as user_phone
-    FROM group_leaders gl
-    LEFT JOIN profiles p ON gl.user_id = p.id
-    LEFT JOIN users u ON gl.user_id = u.id
-    ORDER BY gl.created_at DESC`
-  );
-  
-  return result.rows.map(row => ({
-    id: row.id,
-    user_id: row.user_id,
-    referral_code: row.referral_code,
-    is_active: row.is_active,
-    commission_percentage: row.commission_percentage,
-    total_earnings: parseFloat(row.total_earnings) || 0,
-    total_referrals: parseInt(row.total_referrals) || 0,
-    created_at: row.created_at,
-    updated_at: row.updated_at,
-    user_name: row.user_name || null,
-    user_email: row.user_email || null,
-    user_cpf: row.user_cpf || null,
-    user_phone: row.user_phone || null,
-  }));
-};
+    ${baseFrom}
+    ORDER BY gl.created_at DESC`;
+
+  if (!pagination) {
+    const result = await query(selectSql, params);
+    return result.rows.map(mapGroupLeaderWithUserInfoRow);
+  }
+
+  const pageSize = pagination.page_size === 50 ? 50 : 30;
+  const offset = (pagination.page - 1) * pageSize;
+  const countSql = `SELECT COUNT(*)::bigint AS total ${baseFrom}`;
+  const [countResult, summary, listResult] = await Promise.all([
+    query(countSql, params),
+    getGroupLeadersAdminSummary(),
+    query(`${selectSql} LIMIT $${params.length + 1} OFFSET $${params.length + 2}`, [
+      ...params,
+      pageSize,
+      offset,
+    ]),
+  ]);
+
+  const total = parseInt(String(countResult.rows[0]?.total ?? '0'), 10) || 0;
+  const total_pages = total === 0 ? 0 : Math.ceil(total / pageSize);
+
+  return {
+    items: listResult.rows.map(mapGroupLeaderWithUserInfoRow),
+    page: pagination.page,
+    page_size: pageSize,
+    total,
+    total_pages,
+    summary,
+  };
+}
 
 /**
  * Get total earnings for a leader from a specific organizer's events

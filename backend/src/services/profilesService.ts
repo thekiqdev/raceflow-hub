@@ -31,7 +31,10 @@ export interface UpdateProfileData {
 // Get profile by user ID
 export const getProfileByUserId = async (userId: string) => {
   const result = await query(
-    'SELECT * FROM profiles WHERE id = $1',
+    `SELECT p.*, u.email
+     FROM profiles p
+     JOIN users u ON p.id = u.id
+     WHERE p.id = $1`,
     [userId]
   );
 
@@ -39,7 +42,7 @@ export const getProfileByUserId = async (userId: string) => {
     return null;
   }
 
-  return result.rows[0] as Profile;
+  return result.rows[0] as Profile & { email?: string };
 };
 
 // Verify user password

@@ -44,6 +44,7 @@ export interface UpdateProfileData {
   is_public?: boolean;
   cpf?: string;
   password?: string; // Required when runner updates CPF
+  email?: string;
 }
 
 // Get own profile

@@ -136,6 +136,7 @@ const migrations = [
   '106_invitation_bonus_assisted_audit_resolution.sql',
   '107_profiles_cpf_lookup_metadata.sql',
   '108_cpf_lookup_metrics_daily.sql',
+  '109_add_transferred_payment_status.sql',
 ];
 
 // Create migrations tracking table
@@ -193,6 +194,13 @@ function isDriftRepairableError(err: unknown): boolean {
   return false;
 }
 
+function splitSqlStatements(sql: string): string[] {
+  return sql
+    .split(';')
+    .map((statement) => statement.trim())
+    .filter((statement) => statement.length > 0 && !/^--/.test(statement));
+}
+
 // Execute a single migration
 async function executeMigration(client: pg.PoolClient, migrationName: string) {
   const migrationPath = join(__dirname, '..', 'migrations', migrationName);
@@ -209,7 +217,9 @@ async function executeMigration(client: pg.PoolClient, migrationName: string) {
 
     try {
       if (needsNonTransactional) {
-        await client.query(sql);
+        for (const statement of splitSqlStatements(sql)) {
+          await client.query(statement);
+        }
         await markMigrationExecuted(client, migrationName);
       } else {
         await client.query('BEGIN');

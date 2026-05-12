@@ -9,7 +9,7 @@ export interface Registration {
   category_id: string;
   kit_id?: string;
   status?: 'pending' | 'confirmed' | 'cancelled' | 'refund_requested' | 'refunded' | 'transferred';
-  payment_status?: 'pending' | 'paid' | 'partially_paid' | 'refunded' | 'failed' | 'convidado';
+  payment_status?: 'pending' | 'paid' | 'partially_paid' | 'refunded' | 'failed' | 'convidado' | 'transferred';
   payment_method?: 'pix' | 'credit_card' | 'boleto' | 'free_bonus';
   total_amount: number;
   confirmation_code?: string;
@@ -104,7 +104,7 @@ export interface CreateRegistrationData {
 
 export interface UpdateRegistrationData {
   status?: 'pending' | 'confirmed' | 'cancelled' | 'refund_requested' | 'refunded' | 'transferred';
-  payment_status?: 'pending' | 'paid' | 'partially_paid' | 'refunded' | 'failed' | 'convidado';
+  payment_status?: 'pending' | 'paid' | 'partially_paid' | 'refunded' | 'failed' | 'convidado' | 'transferred';
   payment_method?: 'pix' | 'credit_card' | 'boleto' | 'free_bonus';
   /** Categoria da inscrição (admin pode alterar) */
   category_id?: string;

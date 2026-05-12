@@ -35,11 +35,19 @@ export const registerUser = asyncHandler(async (req: AuthRequest, res: Response)
       message: 'User registered successfully',
     });
   } catch (error: any) {
-    if (error.message === 'Email already registered' || error.message === 'CPF already registered') {
+    if (error.message === 'Email already registered') {
       res.status(409).json({
         success: false,
-        error: error.message,
-        message: error.message,
+        error: 'E-mail já cadastrado',
+        message: 'Este e-mail já está em uso. Faça login ou utilize outro endereço para o cadastro.',
+      });
+      return;
+    }
+    if (error.message === 'CPF already registered') {
+      res.status(409).json({
+        success: false,
+        error: 'CPF já cadastrado',
+        message: 'Este CPF já está cadastrado na plataforma.',
       });
       return;
     }
