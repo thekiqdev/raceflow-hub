@@ -23,6 +23,7 @@ import { getOrganizers } from "@/lib/api/userManagement";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, MapPin, Calendar, Users, DollarSign, Package, MapPin as MapPinIcon, Plus, Trash2, ChevronUp, ChevronDown, X, AlertTriangle, ArrowRight } from "lucide-react";
 import { FileUpload } from "@/components/ui/file-upload";
+import { Switch } from "@/components/ui/switch";
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { isoToDatetimeLocal, processDatetimeLocalForSave, datetimeLocalToISO } from "@/lib/utils";
@@ -87,6 +88,8 @@ export function EventViewEditDialog({
     pix_disabled_at: null as string | null,
     credit_card_enabled: true,
     credit_card_disabled_at: null as string | null,
+    transfers_enabled: true,
+    transfer_until: "",
   });
   const [registrationAutoMode, setRegistrationAutoMode] = useState(false);
   const [premiacaoHtml, setPremiacaoHtml] = useState<string>("");
@@ -177,6 +180,10 @@ export function EventViewEditDialog({
         pix_disabled_at: eventData.pix_disabled_at || null,
         credit_card_enabled: eventData.credit_card_enabled !== null && eventData.credit_card_enabled !== undefined ? eventData.credit_card_enabled : true,
         credit_card_disabled_at: eventData.credit_card_disabled_at || null,
+        transfers_enabled: eventData.transfers_enabled !== false,
+        transfer_until: eventData.transfer_until
+          ? String(eventData.transfer_until).slice(0, 10)
+          : "",
       });
       setRegistrationAutoMode(autoMode);
       setPremiacaoHtml(eventData.premiacao ?? "");
@@ -774,12 +781,15 @@ export function EventViewEditDialog({
         }));
 
       // Prepare event data with organizer_id if changed
+      const transferUntilTrimmed = (formData.transfer_until ?? "").trim();
       const eventUpdateData: any = {
         ...formData,
         event_date: eventDateISO || undefined,
         premiacao: premiacaoHtml?.trim() || null,
         cronograma: cronogramaHtml?.trim() || null,
         cronograma_items: normalizedCronogramaItems,
+        transfers_enabled: formData.transfers_enabled !== false,
+        transfer_until: transferUntilTrimmed ? transferUntilTrimmed.slice(0, 10) : null,
       };
       
       // Remover event_time do objeto antes de enviar (não é um campo do backend)
@@ -1507,6 +1517,59 @@ export function EventViewEditDialog({
                     maxSize={10}
                     description="Arquivo PDF do regulamento do evento. Você pode fazer upload de um arquivo PDF ou inserir uma URL."
                   />
+                )}
+              </div>
+
+              <div className="rounded-lg border p-4 space-y-4">
+                <div className="space-y-1">
+                  <Label className="text-base">Transferências de inscrição</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Define até que dia os corredores poderão solicitar transferência pelo site. O Super Admin continua
+                    podendo transferir administrativamente.
+                  </p>
+                </div>
+                {mode === "view" ? (
+                  <div className="space-y-2 text-sm">
+                    <p>
+                      <span className="text-muted-foreground">Transferências: </span>
+                      {formData.transfers_enabled !== false ? "Ativadas" : "Desativadas"}
+                    </p>
+                    <p>
+                      <span className="text-muted-foreground">Permitidas até: </span>
+                      {formData.transfer_until
+                        ? new Date(`${formData.transfer_until}T12:00:00`).toLocaleDateString("pt-BR")
+                        : "Sem data limite"}
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex flex-row items-center justify-between gap-4">
+                      <span className="text-sm font-medium">Permitir transferências</span>
+                      <Switch
+                        checked={formData.transfers_enabled !== false}
+                        onCheckedChange={(checked) =>
+                          setFormData((prev) => ({ ...prev, transfers_enabled: checked }))
+                        }
+                      />
+                    </div>
+                    <div className="grid gap-2">
+                      <Label htmlFor="admin-transfer-until">Transferências permitidas até</Label>
+                      <Input
+                        id="admin-transfer-until"
+                        type="date"
+                        value={formData.transfer_until || ""}
+                        disabled={formData.transfers_enabled === false}
+                        onChange={(e) =>
+                          setFormData((prev) => ({ ...prev, transfer_until: e.target.value || "" }))
+                        }
+                        className="max-w-xs"
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Opcional. Em branco = sem limite de data. Desativar transferências não remove a data salva;
+                        ela permanece para quando reativar.
+                      </p>
+                    </div>
+                  </>
                 )}
               </div>
             </div>
