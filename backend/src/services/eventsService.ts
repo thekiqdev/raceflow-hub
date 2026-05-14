@@ -44,6 +44,8 @@ export interface CreateEventData {
   credit_card_enabled?: boolean;
   credit_card_disabled_at?: string | null;
   transfers_enabled?: boolean;
+  /** YYYY-MM-DD ou null — sem limite de data para transferência pública. */
+  transfer_until?: string | null;
   premiacao?: string | null;
   cronograma?: string | null;
 }
@@ -70,6 +72,7 @@ export interface UpdateEventData {
   credit_card_enabled?: boolean;
   credit_card_disabled_at?: string | null;
   transfers_enabled?: boolean;
+  transfer_until?: string | null;
   premiacao?: string | null;
   cronograma?: string | null;
   cronograma_items?: CronogramaItemInput[];
@@ -263,6 +266,7 @@ export const getEvents = async (filters?: {
       e.credit_card_enabled,
       e.credit_card_disabled_at,
       e.transfers_enabled,
+      e.transfer_until,
       e.created_at,
       e.updated_at,
       p.full_name as organizer_name,
@@ -502,6 +506,7 @@ export const getEventById = async (eventIdOrSlug: string) => {
       e.credit_card_enabled,
       e.credit_card_disabled_at,
       e.transfers_enabled,
+      e.transfer_until,
       e.created_at,
       e.updated_at,
       e.premiacao,
@@ -606,6 +611,7 @@ export const createEvent = async (data: CreateEventData) => {
     'registration_status', 'registration_start_date', 'registration_end_date', 'registration_auto_mode',
     'pix_enabled', 'pix_disabled_at', 'credit_card_enabled', 'credit_card_disabled_at',
     'transfers_enabled',
+    'transfer_until',
     'premiacao', 'cronograma',
   ];
   const values = [
@@ -630,6 +636,7 @@ export const createEvent = async (data: CreateEventData) => {
     data.credit_card_enabled !== undefined ? data.credit_card_enabled : true,
     data.credit_card_disabled_at || null,
     data.transfers_enabled !== undefined ? data.transfers_enabled : true,
+    data.transfer_until ?? null,
     data.premiacao ?? null,
     data.cronograma ?? null,
   ];

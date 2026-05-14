@@ -43,6 +43,8 @@ export interface Event {
   credit_card_enabled?: boolean | null;
   credit_card_disabled_at?: string | null;
   transfers_enabled?: boolean | null;
+  /** Último dia (AAAA-MM-DD) para transferência pública; null = sem limite. */
+  transfer_until?: string | null;
   created_at?: string;
   updated_at?: string;
   organizer_name?: string;
@@ -86,6 +88,7 @@ export interface CreateEventData {
   credit_card_enabled?: boolean;
   credit_card_disabled_at?: string | null;
   transfers_enabled?: boolean;
+  transfer_until?: string | null;
   premiacao?: string | null;
   cronograma?: string | null;
   cronograma_items?: CronogramaItemInput[];
@@ -112,6 +115,7 @@ export interface UpdateEventData {
   credit_card_enabled?: boolean;
   credit_card_disabled_at?: string | null;
   transfers_enabled?: boolean;
+  transfer_until?: string | null;
   premiacao?: string | null;
   cronograma?: string | null;
   cronograma_items?: CronogramaItemInput[];

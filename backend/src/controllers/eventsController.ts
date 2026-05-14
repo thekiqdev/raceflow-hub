@@ -43,6 +43,9 @@ const createEventSchema = z.object({
   credit_card_enabled: z.boolean().optional(),
   credit_card_disabled_at: z.string().datetime('Data de desabilitação do cartão de crédito inválida').nullable().optional(),
   transfers_enabled: z.boolean().optional(),
+  transfer_until: z
+    .union([z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Data inválida (use AAAA-MM-DD)'), z.null()])
+    .optional(),
   premiacao: z.string().max(50000, 'Premiação deve ter no máximo 50.000 caracteres').nullable().optional(),
   cronograma: z.string().max(50000, 'Cronograma deve ter no máximo 50.000 caracteres').nullable().optional(),
 }).refine((data) => {
@@ -102,6 +105,9 @@ const updateEventSchema = z.object({
   credit_card_enabled: z.boolean().optional(),
   credit_card_disabled_at: z.string().datetime('Data de desabilitação do cartão de crédito inválida').nullable().optional(),
   transfers_enabled: z.boolean().optional(),
+  transfer_until: z
+    .union([z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Data inválida (use AAAA-MM-DD)'), z.null()])
+    .optional(),
   premiacao: z.string().max(50000, 'Premiação deve ter no máximo 50.000 caracteres').nullable().optional(),
   cronograma: z.string().max(50000, 'Cronograma deve ter no máximo 50.000 caracteres').nullable().optional(),
   cronograma_items: z.array(cronogramaItemSchema).max(50, 'Máximo de 50 itens de cronograma por evento').optional(),

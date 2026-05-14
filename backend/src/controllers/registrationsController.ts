@@ -33,6 +33,10 @@ import { createCommission, getCommissionByRegistrationId, adminCancelCommission 
 import { recalculateAndRevokeExcessInvitations } from '../services/leaderBonusService.js';
 import { executeInvitationBonusDomainCommand } from '../services/invitationBonusDomainOrchestrator.js';
 import { z } from 'zod';
+import {
+  formatTransferDeadlineClosedMessagePtBr,
+  isPublicTransferDeadlinePassed,
+} from '../utils/eventTransferDeadline.js';
 import { EventRegistrationStatus, Event } from '../types/index.js';
 import { calculateRegistrationStatus } from '../services/eventsService.js';
 import { findRegistrationsMissingKitProductSelections } from '../services/registrationKitSelectionAuditService.js';
@@ -4109,6 +4113,15 @@ export const transferRegistrationController = asyncHandler(async (req: AuthReque
       success: false,
       error: 'Transfers disabled',
       message: 'As transferências de inscrições estão desabilitadas para este evento',
+    });
+    return;
+  }
+
+  if (!isAdmin && isPublicTransferDeadlinePassed(event.transfer_until)) {
+    res.status(403).json({
+      success: false,
+      error: 'Transfer deadline passed',
+      message: formatTransferDeadlineClosedMessagePtBr(event.transfer_until),
     });
     return;
   }

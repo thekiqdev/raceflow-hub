@@ -15,6 +15,10 @@ import { getSystemSettings } from '../services/systemSettingsService.js';
 import { getProfileByUserId } from '../services/profilesService.js';
 import { createCustomer, getCustomerByUserId, createTransferPayment } from '../services/asaasService.js';
 import { query } from '../config/database.js';
+import {
+  formatTransferDeadlineClosedMessagePtBr,
+  isPublicTransferDeadlinePassed,
+} from '../utils/eventTransferDeadline.js';
 
 /**
  * Create a new transfer request
@@ -92,6 +96,15 @@ export const createTransferRequestController = asyncHandler(async (req: AuthRequ
       success: false,
       error: 'Transfers disabled',
       message: 'As transferências de inscrições estão desabilitadas para este evento',
+    });
+    return;
+  }
+
+  if (!isAdmin && isPublicTransferDeadlinePassed(event.transfer_until)) {
+    res.status(403).json({
+      success: false,
+      error: 'Transfer deadline passed',
+      message: formatTransferDeadlineClosedMessagePtBr(event.transfer_until),
     });
     return;
   }

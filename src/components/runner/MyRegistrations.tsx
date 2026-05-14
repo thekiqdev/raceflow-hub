@@ -26,6 +26,11 @@ import { toast } from "sonner";
 import { PixQrCode } from "@/components/payment/PixQrCode";
 import { MissingAttributesModal } from "@/components/runner/MissingAttributesModal";
 import { CompleteInvitationModal } from "@/components/runner/CompleteInvitationModal";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import {
+  formatTransferDeadlineClosedMessagePtBr,
+  isPublicTransferDeadlinePassed,
+} from "@/lib/utils/eventTransferDeadline";
 
 export function MyRegistrations() {
   const navigate = useNavigate();
@@ -459,8 +464,13 @@ export function MyRegistrations() {
   const RegistrationCard = ({ registration }: { registration: Registration }) => {
     const isUpcoming = registration.event_date && isFuture(new Date(registration.event_date));
     const eventAllowsTransfers = registration.event_transfers_enabled !== false; // Default to true if null/undefined
+    const transferDeadlinePassed =
+      eventAllowsTransfers &&
+      !!registration.event_transfer_until &&
+      isPublicTransferDeadlinePassed(registration.event_transfer_until);
     const canTransfer = transfersEnabled &&
                        eventAllowsTransfers &&
+                       !transferDeadlinePassed &&
                        registration.status === "confirmed" &&
                        (registration.payment_status === "paid" || registration.payment_status === "convidado") &&
                        registration.status !== "transferred" &&
@@ -725,6 +735,19 @@ export function MyRegistrations() {
               </>
             )}
           </div>
+          {transfersEnabled &&
+            transferDeadlinePassed &&
+            isUpcoming &&
+            registration.status === "confirmed" &&
+            (registration.payment_status === "paid" || registration.payment_status === "convidado") &&
+            registration.event_transfer_until && (
+              <Alert className="mt-3 border-muted-foreground/30 bg-muted/30">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription className="text-xs">
+                  {formatTransferDeadlineClosedMessagePtBr(registration.event_transfer_until)}
+                </AlertDescription>
+              </Alert>
+            )}
         </CardContent>
       </Card>
     );

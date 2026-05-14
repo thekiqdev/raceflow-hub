@@ -27,6 +27,7 @@ export interface Registration {
   kit_name?: string;
   event_organizer_id?: string;
   event_transfers_enabled?: boolean | null;
+  event_transfer_until?: string | null;
   product_selections?: Array<{
     product_id: string;
     product_name: string;

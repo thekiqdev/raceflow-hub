@@ -42,6 +42,7 @@ import { createCategoryCustomField, updateCategoryCustomField, deleteCategoryCus
 import { getCategoryBatches, createCategoryBatch, updateCategoryBatch, deleteCategoryBatch } from "@/lib/api/categoryBatches";
 import { reorderEventKits } from "@/lib/api/eventKits";
 import { FileUpload } from "@/components/ui/file-upload";
+import { Switch } from "@/components/ui/switch";
 import { deleteUploadedFile } from "@/lib/api/upload";
 import { getOrganizers } from "@/lib/api/userManagement";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -69,6 +70,8 @@ const eventFormSchema = z.object({
   pix_disabled_at: z.string().nullable().optional(),
   credit_card_enabled: z.boolean().optional(),
   credit_card_disabled_at: z.string().nullable().optional(),
+  transfers_enabled: z.boolean().optional(),
+  transfer_until: z.string().optional().nullable(),
 }).refine((data) => {
   // Se modo automático está ativado, datas são obrigatórias
   if (data.registration_auto_mode === true) {
@@ -295,8 +298,12 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
       pix_disabled_at: null,
       credit_card_enabled: true,
       credit_card_disabled_at: null,
+      transfers_enabled: true,
+      transfer_until: "",
     },
   });
+
+  const transfersEnabled = form.watch("transfers_enabled");
 
   // Load event data when editing
   useEffect(() => {
@@ -322,6 +329,8 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
           pix_disabled_at: null,
           credit_card_enabled: true,
           credit_card_disabled_at: null,
+          transfers_enabled: true,
+          transfer_until: "",
         });
         setRegistrationAutoMode(false);
         setModalities([]);
@@ -373,6 +382,10 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
               pix_disabled_at: eventData.pix_disabled_at || null,
               credit_card_enabled: eventData.credit_card_enabled !== null && eventData.credit_card_enabled !== undefined ? eventData.credit_card_enabled : true,
               credit_card_disabled_at: eventData.credit_card_disabled_at || null,
+              transfers_enabled: eventData.transfers_enabled !== false,
+              transfer_until: eventData.transfer_until
+                ? String(eventData.transfer_until).slice(0, 10)
+                : "",
             });
             setRegistrationAutoMode(autoMode);
             setPremiacaoHtml(eventData.premiacao ?? "");
@@ -1638,6 +1651,13 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
         pix_disabled_at: values.pix_disabled_at || null,
         credit_card_enabled: values.credit_card_enabled ?? true,
         credit_card_disabled_at: values.credit_card_disabled_at || null,
+        transfers_enabled: values.transfers_enabled ?? true,
+        transfer_until:
+          (values.transfers_enabled ?? true) &&
+          values.transfer_until &&
+          String(values.transfer_until).trim() !== ""
+            ? String(values.transfer_until).trim().slice(0, 10)
+            : null,
         premiacao: premiacaoHtml?.trim() || null,
         cronograma: cronogramaHtml?.trim() || null,
       };
@@ -2633,6 +2653,57 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
                     </FormItem>
                   )}
                 />
+
+                <div className="space-y-4 border-t pt-4 mt-2">
+                  <FormField
+                    control={form.control}
+                    name="transfers_enabled"
+                    render={({ field }) => (
+                      <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+                        <div className="space-y-0.5 pr-4">
+                          <FormLabel>Transferências de inscrição</FormLabel>
+                          <FormDescription>
+                            Permite que corredores com inscrição confirmada solicitem transferência (conforme regras da plataforma).
+                          </FormDescription>
+                        </div>
+                        <FormControl>
+                          <Switch
+                            checked={field.value !== false}
+                            onCheckedChange={(v) => {
+                              field.onChange(v);
+                              if (!v) {
+                                form.setValue("transfer_until", "");
+                              }
+                            }}
+                          />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
+                  {transfersEnabled !== false && (
+                    <FormField
+                      control={form.control}
+                      name="transfer_until"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Transferências permitidas até</FormLabel>
+                          <FormControl>
+                            <Input
+                              type="date"
+                              value={field.value || ""}
+                              onChange={(e) => field.onChange(e.target.value || "")}
+                              className="w-full max-w-xs"
+                            />
+                          </FormControl>
+                          <FormDescription>
+                            Opcional. Em branco = sem limite de data (enquanto as transferências estiverem ativas).
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  )}
+                </div>
               </TabsContent>
 
               {/* Tab Premiação */}
