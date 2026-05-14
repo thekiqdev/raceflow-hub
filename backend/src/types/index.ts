@@ -4,7 +4,7 @@ export type EventStatus = 'draft' | 'published' | 'ongoing' | 'finished' | 'canc
 export type RegistrationStatus = 'pending' | 'confirmed' | 'cancelled' | 'refund_requested' | 'refunded' | 'transferred';
 export type EventRegistrationStatus = 'not_open' | 'open' | 'closed'; // Status das inscrições do evento
 export type PaymentStatus = 'pending' | 'paid' | 'partially_paid' | 'refunded' | 'failed' | 'convidado' | 'transferred';
-export type PaymentMethod = 'pix' | 'credit_card' | 'boleto' | 'free_bonus';
+export type PaymentMethod = 'pix' | 'credit_card' | 'boleto' | 'free_bonus' | 'admin_transfer';
 
 // User types
 export interface User {

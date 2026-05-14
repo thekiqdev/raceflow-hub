@@ -137,6 +137,7 @@ const migrations = [
   '107_profiles_cpf_lookup_metadata.sql',
   '108_cpf_lookup_metrics_daily.sql',
   '109_add_transferred_payment_status.sql',
+  '110_admin_registration_transfer_split.sql',
 ];
 
 // Create migrations tracking table

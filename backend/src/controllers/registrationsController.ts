@@ -9,6 +9,7 @@ import {
   findUserByCpfOrEmail,
   findUserByEmail,
   transferRegistration,
+  performAdminRegistrationSplitTransfer,
   cancelRegistration,
   getRegistrationsWithMissingAttributes,
   completeRegistrationAttributes,
@@ -4204,6 +4205,164 @@ export const transferRegistrationController = asyncHandler(async (req: AuthReque
     success: true,
     data: transferredRegistration,
     message: `Inscrição transferida para ${newRunner.full_name}`,
+  });
+});
+
+/**
+ * POST /api/admin/registrations/:registrationId/transfer
+ * Super admin: split — nova inscrição para o recebedor; original permanece como casca transferida (paid + vínculo).
+ */
+const adminTransferRegistrationBodySchema = z
+  .object({
+    cpf: z.string().optional(),
+    email: z.union([z.string().email('E-mail inválido'), z.literal('')]).optional(),
+    confirm: z.boolean().refine((v) => v === true, {
+      message: 'É necessário confirmar a transferência',
+    }),
+    reason: z.string().max(2000).optional().nullable(),
+  })
+  .refine(
+    (d) => {
+      const digits = (d.cpf || '').replace(/\D/g, '');
+      const hasCpf = digits.length === 11;
+      const hasEmail = Boolean(d.email && d.email.trim().length > 0);
+      return hasCpf || hasEmail;
+    },
+    { message: 'Informe CPF (11 dígitos) ou e-mail do novo titular' }
+  );
+
+export const adminTransferRegistrationController = asyncHandler(async (req: AuthRequest, res: Response) => {
+  if (!req.user) {
+    res.status(401).json({
+      success: false,
+      error: 'Not authenticated',
+    });
+    return;
+  }
+
+  const { registrationId } = req.params;
+  if (!registrationId) {
+    res.status(400).json({
+      success: false,
+      error: 'Missing registration id',
+      message: 'ID da inscrição é obrigatório',
+    });
+    return;
+  }
+
+  const parsed = adminTransferRegistrationBodySchema.safeParse(req.body);
+  if (!parsed.success) {
+    const msg = parsed.error.errors[0]?.message || 'Dados inválidos';
+    res.status(400).json({
+      success: false,
+      error: 'Validation Error',
+      message: msg,
+    });
+    return;
+  }
+
+  const { cpf, email, reason } = parsed.data;
+  const digits = (cpf || '').replace(/\D/g, '');
+  const cpfArg = digits.length === 11 ? digits : undefined;
+  const emailArg = email && email.trim() ? email.trim().toLowerCase() : undefined;
+
+  const rowResult = await query(
+    `SELECT id, status, payment_status, runner_id, registered_by, event_id, confirmation_code
+     FROM registrations WHERE id = $1`,
+    [registrationId]
+  );
+
+  if (rowResult.rows.length === 0) {
+    res.status(404).json({
+      success: false,
+      error: 'Registration not found',
+      message: 'Inscrição não encontrada',
+    });
+    return;
+  }
+
+  const reg = rowResult.rows[0] as {
+    id: string;
+    status: string;
+    payment_status: string | null;
+    runner_id: string;
+    registered_by: string;
+    event_id: string;
+    confirmation_code: string | null;
+  };
+
+  if (reg.status === 'cancelled' || reg.status === 'refunded') {
+    res.status(400).json({
+      success: false,
+      error: 'Invalid status',
+      message: 'Esta inscrição não pode ser transferida (cancelada ou reembolsada).',
+    });
+    return;
+  }
+
+  if (reg.status === 'transferred') {
+    res.status(400).json({
+      success: false,
+      error: 'Invalid status',
+      message: 'Esta inscrição já está marcada como transferida.',
+    });
+    return;
+  }
+
+  if (reg.payment_status !== 'paid') {
+    res.status(400).json({
+      success: false,
+      error: 'Invalid payment status',
+      message: 'Somente inscrições com pagamento confirmado (paid) podem ser transferidas neste fluxo.',
+    });
+    return;
+  }
+
+  const newRunner = await findUserByCpfOrEmail(cpfArg, emailArg);
+  if (!newRunner) {
+    res.status(404).json({
+      success: false,
+      error: 'User not found',
+      message: 'Não foi encontrado atleta com o CPF ou e-mail informado.',
+    });
+    return;
+  }
+
+  if (newRunner.id === reg.runner_id) {
+    res.status(400).json({
+      success: false,
+      error: 'Invalid transfer',
+      message: 'A inscrição já está neste atleta.',
+    });
+    return;
+  }
+
+  let split: { previousRegistrationId: string; newRegistrationId: string };
+  try {
+    split = await performAdminRegistrationSplitTransfer(registrationId, newRunner.id, {
+      adminUserId: req.user.id,
+      reason: reason?.trim() || null,
+    });
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : 'Falha na transferência';
+    res.status(400).json({
+      success: false,
+      error: 'Transfer failed',
+      message: msg,
+    });
+    return;
+  }
+
+  const data = await getRegistrationById(split.newRegistrationId, req.user.id);
+
+  res.json({
+    success: true,
+    data,
+    meta: {
+      previous_registration_id: split.previousRegistrationId,
+      new_registration_id: split.newRegistrationId,
+    },
+    message: `Nova inscrição criada para ${newRunner.full_name} (titular anterior preservado na inscrição original).`,
   });
 });
 

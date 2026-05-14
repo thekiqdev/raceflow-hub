@@ -2,6 +2,7 @@ import { query } from '../config/database.js';
 import {
   getLiquidRegistrationValue,
   getReportableRevenue,
+  isTransferredOutShellRegistration,
   type FinancialRegistrationLike,
 } from './financialReportingService.js';
 
@@ -162,6 +163,8 @@ export const getOrganizerFinancialSummary = async (organizerId: string): Promise
   const result = await query(
     `SELECT 
       r.id,
+      r.status,
+      r.transferred_to_registration_id,
       r.payment_status,
       r.total_amount,
       r.payment_method,
@@ -179,11 +182,11 @@ export const getOrganizerFinancialSummary = async (organizerId: string): Promise
   let creditCardRevenue = 0;
   let boletoRevenue = 0;
   let kitRevenue = 0;
-  let totalRegistrations = result.rows.length;
+  let totalRegistrations = result.rows.filter((row) => !isTransferredOutShellRegistration(row)).length;
   let paidRegistrations = 0;
 
   result.rows.forEach((row) => {
-    if (row.payment_status === 'paid') {
+    if (row.payment_status === 'paid' && !isTransferredOutShellRegistration(row)) {
       paidRegistrations++;
       const valorLiquido = getLiquidRegistrationValue(row as FinancialRegistrationLike, {
         platformFee,
@@ -245,6 +248,8 @@ export const getOrganizerEventRevenues = async (organizerId: string): Promise<Or
       e.title as event_title,
       e.event_date,
       r.id as registration_id,
+      r.status,
+      r.transferred_to_registration_id,
       r.payment_status,
       r.total_amount,
       r.platform_fee_amount,
@@ -288,8 +293,10 @@ export const getOrganizerEventRevenues = async (organizerId: string): Promise<Or
 
     const event = eventMap.get(eventId)!;
     if (row.registration_id) {
-      event.registrations++;
-      if (row.payment_status === 'paid') {
+      if (!isTransferredOutShellRegistration(row)) {
+        event.registrations++;
+      }
+      if (row.payment_status === 'paid' && !isTransferredOutShellRegistration(row)) {
         event.paidRegistrations++;
       }
     }

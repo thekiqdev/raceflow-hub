@@ -1,4 +1,5 @@
 import { apiClient } from './client.js';
+import type { Registration } from './registrations.js';
 
 export interface DashboardStats {
   active_events: number;
@@ -128,4 +129,19 @@ export const getRegistrationCommission = async (registrationId: string) => {
  */
 export const removeCommission = async (commissionId: string) => {
   return apiClient.delete<LeaderCommissionRecord>(`/admin/commissions/${commissionId}`);
+};
+
+export type AdminTransferRegistrationBody = {
+  cpf?: string;
+  email?: string;
+  confirm: true;
+  reason?: string;
+};
+
+/** Transferência direta (super admin): sem taxa nem solicitação de pagamento. */
+export const adminTransferRegistration = async (
+  registrationId: string,
+  body: AdminTransferRegistrationBody
+) => {
+  return apiClient.post<Registration>(`/admin/registrations/${registrationId}/transfer`, body);
 };

@@ -139,7 +139,8 @@ export async function registerAthleteByStaff(params: RegisterAthleteByStaffParam
 
   const existingRegistration = await query(
     `SELECT id, status, payment_status FROM registrations 
-     WHERE event_id = $1 AND runner_id = $2 AND status != 'cancelled'`,
+     WHERE event_id = $1 AND runner_id = $2 AND status != 'cancelled'
+     AND NOT (status = 'transferred' AND transferred_to_registration_id IS NOT NULL)`,
     [event_id, athlete.id]
   );
 

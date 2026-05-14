@@ -10,7 +10,7 @@ export interface Registration {
   kit_id?: string;
   status?: 'pending' | 'confirmed' | 'cancelled' | 'refund_requested' | 'refunded' | 'transferred';
   payment_status?: 'pending' | 'paid' | 'partially_paid' | 'refunded' | 'failed' | 'convidado' | 'transferred';
-  payment_method?: 'pix' | 'credit_card' | 'boleto' | 'free_bonus';
+  payment_method?: 'pix' | 'credit_card' | 'boleto' | 'free_bonus' | 'admin_transfer';
   total_amount: number;
   confirmation_code?: string;
   created_at?: string;
@@ -55,8 +55,9 @@ export interface Registration {
   leader_id?: string | null;
   leader_name?: string | null;
   runner_email?: string | null;
-  /** Lote de preço da categoria (quando houver lotes). */
-  category_batch_id?: string | null;
+  /** Inscrição substituída por split de transferência admin (casca; não contar como ativa). */
+  transferred_to_registration_id?: string | null;
+  transferred_from_registration_id?: string | null;
 }
 
 // Credit Card Data Types
@@ -92,9 +93,6 @@ export interface CreateRegistrationData {
   kit_id?: string;
   modality_id?: string | null;
   payment_method?: 'pix' | 'credit_card' | 'boleto' | 'free_bonus';
-  total_amount: number;
-  coupon_code?: string;
-  product_selections?: ProductSelection[];
   // Credit card data (only when payment_method is 'credit_card')
   credit_card?: CreditCardData;
   credit_card_holder_info?: CreditCardHolderInfo;
@@ -105,7 +103,7 @@ export interface CreateRegistrationData {
 export interface UpdateRegistrationData {
   status?: 'pending' | 'confirmed' | 'cancelled' | 'refund_requested' | 'refunded' | 'transferred';
   payment_status?: 'pending' | 'paid' | 'partially_paid' | 'refunded' | 'failed' | 'convidado' | 'transferred';
-  payment_method?: 'pix' | 'credit_card' | 'boleto' | 'free_bonus';
+  payment_method?: 'pix' | 'credit_card' | 'boleto' | 'free_bonus' | 'admin_transfer';
   /** Categoria da inscrição (admin pode alterar) */
   category_id?: string;
   /** Kit da inscrição (admin pode alterar; null = sem kit) */

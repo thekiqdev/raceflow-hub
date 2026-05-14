@@ -35,6 +35,8 @@ interface RegistrationDetail {
   runner_id: string;
   category_id: string;
   kit_id?: string | null;
+  status?: string | null;
+  transferred_to_registration_id?: string | null;
   payment_method?: string | null;
   payment_status?: string | null;
   total_amount: number;
@@ -71,6 +73,18 @@ interface RegistrationDetail {
   event_kits?: {
     name: string;
   } | null;
+}
+
+function isTransferredOutShellForReport(reg: {
+  status?: string | null;
+  transferred_to_registration_id?: string | null;
+}): boolean {
+  return reg.status === "transferred" && Boolean(reg.transferred_to_registration_id);
+}
+
+/** Inscrição paga que entra em receita / contagem ativa (exclui casca de split admin). */
+function countsAsPaidForReport(reg: RegistrationDetail): boolean {
+  return reg.payment_status === "paid" && !isTransferredOutShellForReport(reg);
 }
 
 interface CategoryRevenue {
@@ -195,6 +209,8 @@ const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
         runner_id: reg.runner_id,
         category_id: reg.category_id,
         kit_id: reg.kit_id || null,
+        status: reg.status ?? null,
+        transferred_to_registration_id: reg.transferred_to_registration_id ?? null,
         payment_method: reg.payment_method || null,
         payment_status: reg.payment_status || null,
         total_amount: reg.total_amount,
@@ -257,7 +273,7 @@ const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
         const entry = leaderMap.get(leaderId)!;
         entry.coupons_total_codes.add(couponCode);
 
-        if (reg.payment_status === "paid") {
+        if (countsAsPaidForReport(reg)) {
           entry.sales_paid_count += 1;
           entry.coupons_sent_codes.add(couponCode);
         }
@@ -316,7 +332,7 @@ const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
       const kitMap = new Map<string, { count: number; revenue: number }>();
 
       regs?.forEach((reg) => {
-        const isPaid = reg.payment_status === "paid";
+        const isPaid = countsAsPaidForReport(reg);
         const regAmount = Number(reg.total_amount) || 0;
 
         if (isPaid && regAmount > 0) {
@@ -377,6 +393,7 @@ const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
       // Calculate state statistics
       const stateMap = new Map<string, number>();
       regs.forEach((reg) => {
+        if (isTransferredOutShellForReport(reg)) return;
         if (reg.runner_state) {
           const count = stateMap.get(reg.runner_state) || 0;
           stateMap.set(reg.runner_state, count + 1);
@@ -387,6 +404,7 @@ const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
       // Calculate city statistics
       const cityMap = new Map<string, number>();
       regs.forEach((reg) => {
+        if (isTransferredOutShellForReport(reg)) return;
         if (reg.runner_city) {
           const count = cityMap.get(reg.runner_city) || 0;
           cityMap.set(reg.runner_city, count + 1);
@@ -397,6 +415,7 @@ const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
       // Calculate age statistics
       const ages: number[] = [];
       regs.forEach((reg) => {
+        if (isTransferredOutShellForReport(reg)) return;
         if (reg.runner_birth_date) {
           const birthDate = new Date(reg.runner_birth_date);
           const today = new Date();
@@ -446,7 +465,9 @@ const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
           const modalityRegs = regs.filter((reg) => reg.modality_id === modality.id);
           
           // OK Etapa 3: só "paid"; valor líquido (convidado não entra na receita)
-          const paidRegs = modalityRegs.filter((reg) => reg.payment_status === "paid" && (Number(reg.total_amount) || 0) > 0);
+          const paidRegs = modalityRegs.filter(
+            (reg) => countsAsPaidForReport(reg) && (Number(reg.total_amount) || 0) > 0
+          );
           const count = paidRegs.length;
           const revenue = paidRegs.reduce(
             (sum, reg) => sum + getCanonicalDisplayValue(reg, currentPlatformFee, currentPlatformFeeType),
@@ -549,7 +570,9 @@ const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
               <p className="text-sm font-medium text-muted-foreground">
                 Total de Inscrições
               </p>
-              <p className="text-3xl font-bold">{registrations.length}</p>
+              <p className="text-3xl font-bold">
+                {registrations.filter((r) => !isTransferredOutShellForReport(r)).length}
+              </p>
               <p className="text-xs text-muted-foreground mt-1">
                 {paidCount} pagas
               </p>

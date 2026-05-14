@@ -25,7 +25,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Search, MoreVertical, Eye, FileDown, Loader2, Edit2, Save, X, Trash2, Link2, ChevronLeft, ChevronRight, Plus } from "lucide-react";
+import { Search, MoreVertical, Eye, FileDown, Loader2, Edit2, Save, X, Trash2, Link2, ChevronLeft, ChevronRight, Plus, ArrowRightLeft } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { useNavigate } from "react-router-dom";
@@ -41,6 +41,7 @@ import { getModalities, type Modality } from "@/lib/api/modalities";
 import { toast } from "sonner";
 import { useDebounce } from "@/hooks/useDebounce";
 import { getEnabledModules } from "@/lib/api/systemSettings";
+import { TransferRegistrationAdminDialog, canAdminTransferRegistration } from "@/components/admin/TransferRegistrationAdminDialog";
 import { calculateValueWithoutFee } from "@/lib/utils/feeCalculations";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -123,6 +124,8 @@ const AdminRegistrations = () => {
   const [registrationCommission, setRegistrationCommission] = useState<LeaderCommissionRecord | null>(null);
   const [removingCommission, setRemovingCommission] = useState(false);
   const [isRegisterAthleteDialogOpen, setIsRegisterAthleteDialogOpen] = useState(false);
+  const [transferDialogOpen, setTransferDialogOpen] = useState(false);
+  const [registrationToTransfer, setRegistrationToTransfer] = useState<Registration | null>(null);
 
   const debouncedSearch = useDebounce(searchQuery, 500);
 
@@ -1218,6 +1221,17 @@ const AdminRegistrations = () => {
                                 <Eye className="mr-2 h-4 w-4" />
                                 Ver Detalhes
                               </DropdownMenuItem>
+                              {canAdminTransferRegistration(registration) && (
+                                <DropdownMenuItem
+                                  onClick={() => {
+                                    setRegistrationToTransfer(registration);
+                                    setTransferDialogOpen(true);
+                                  }}
+                                >
+                                  <ArrowRightLeft className="mr-2 h-4 w-4" />
+                                  Transferir inscrição
+                                </DropdownMenuItem>
+                              )}
                               {registration.payment_status === "paid" && (
                                 <DropdownMenuItem onClick={() => handleOpenAttachCommission(registration)}>
                                   <Link2 className="mr-2 h-4 w-4" />
@@ -2002,6 +2016,21 @@ const AdminRegistrations = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <TransferRegistrationAdminDialog
+        open={transferDialogOpen}
+        onOpenChange={(open) => {
+          setTransferDialogOpen(open);
+          if (!open) setRegistrationToTransfer(null);
+        }}
+        registrationId={registrationToTransfer?.id ?? null}
+        subtitle={
+          registrationToTransfer
+            ? `${registrationToTransfer.runner_name || "—"} • ${registrationToTransfer.confirmation_code || registrationToTransfer.id}`
+            : undefined
+        }
+        onSuccess={() => void loadRegistrations()}
+      />
 
       <RegisterAthleteStaffDialog
         mode="super_admin"

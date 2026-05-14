@@ -16,6 +16,7 @@ import {
   Pencil,
   X,
   ClipboardList,
+  ArrowRightLeft,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -74,6 +75,7 @@ import { maskCpf } from "@/lib/utils/masks";
 import { getRegistrationListTypeBadge } from "@/lib/utils/registrationOrigin";
 import { getAdminPath, getOrganizerPath } from "@/lib/utils/navigation";
 import { EventRegistrationDetailSheet } from "./EventRegistrationDetailSheet";
+import { TransferRegistrationAdminDialog, canAdminTransferRegistration } from "@/components/admin/TransferRegistrationAdminDialog";
 import { cn } from "@/lib/utils";
 
 export type EventRegistrationsRolePage = "admin" | "organizer";
@@ -184,6 +186,9 @@ export function EventRegistrationsPanel({ eventId, rolePage, backPath }: EventRe
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  const [transferDialogOpen, setTransferDialogOpen] = useState(false);
+  const [registrationToTransfer, setRegistrationToTransfer] = useState<Registration | null>(null);
 
   const [kitAuditOpen, setKitAuditOpen] = useState(false);
   const [kitAuditLoading, setKitAuditLoading] = useState(false);
@@ -958,6 +963,17 @@ export function EventRegistrationsPanel({ eventId, rolePage, backPath }: EventRe
                                 <Eye className="mr-2 h-4 w-4" />
                                 Ver detalhes
                               </DropdownMenuItem>
+                              {rolePage === "admin" && canAdminTransferRegistration(reg) && (
+                                <DropdownMenuItem
+                                  onClick={() => {
+                                    setRegistrationToTransfer(reg);
+                                    setTransferDialogOpen(true);
+                                  }}
+                                >
+                                  <ArrowRightLeft className="mr-2 h-4 w-4" />
+                                  Transferir inscrição
+                                </DropdownMenuItem>
+                              )}
                               <DropdownMenuItem
                                 onClick={() => {
                                   openDetail(reg.id);
@@ -1036,6 +1052,24 @@ export function EventRegistrationsPanel({ eventId, rolePage, backPath }: EventRe
           )}
         </CardContent>
       </Card>
+
+      <TransferRegistrationAdminDialog
+        open={transferDialogOpen}
+        onOpenChange={(open) => {
+          setTransferDialogOpen(open);
+          if (!open) setRegistrationToTransfer(null);
+        }}
+        registrationId={registrationToTransfer?.id ?? null}
+        subtitle={
+          registrationToTransfer
+            ? `${registrationToTransfer.runner_name || "—"} • ${registrationToTransfer.confirmation_code || registrationToTransfer.id}`
+            : undefined
+        }
+        onSuccess={() => {
+          setDetailRefreshToken((t) => t + 1);
+          void loadList();
+        }}
+      />
 
       <RegisterAthleteStaffDialog
         mode={rolePage === "admin" ? "super_admin" : "organizer"}

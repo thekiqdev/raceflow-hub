@@ -6,6 +6,7 @@ import {
   getPlatformFeeTotal,
   isLegacyWithoutFeeFields,
   getReportableRevenue,
+  isTransferredOutShellRegistration,
   type FinancialRegistrationLike,
 } from './financialReportingService.js';
 
@@ -275,10 +276,15 @@ export const getEvents = async (filters?: {
     LEFT JOIN (
       SELECT 
         event_id,
-        COUNT(DISTINCT id) as registration_count,
-        COUNT(DISTINCT CASE WHEN payment_status = 'paid' THEN id END) as confirmed_registrations,
+        COUNT(DISTINCT id) FILTER (
+          WHERE NOT (status = 'transferred' AND transferred_to_registration_id IS NOT NULL)
+        ) as registration_count,
+        COUNT(DISTINCT CASE WHEN payment_status = 'paid'
+          AND NOT (status = 'transferred' AND transferred_to_registration_id IS NOT NULL)
+          THEN id END) as confirmed_registrations,
         COALESCE(SUM(
-          CASE WHEN payment_status = 'paid' THEN
+          CASE WHEN payment_status = 'paid'
+            AND NOT (status = 'transferred' AND transferred_to_registration_id IS NOT NULL) THEN
             CASE WHEN (COALESCE(platform_fee_amount, 0) + COALESCE(registration_edit_fee_amount, 0)) > 0
               THEN (total_amount - COALESCE(platform_fee_amount, 0) - COALESCE(registration_edit_fee_amount, 0))
               ELSE calculate_value_without_platform_fee(total_amount, get_platform_fee(), get_platform_fee_type())
@@ -286,7 +292,8 @@ export const getEvents = async (filters?: {
           ELSE 0 END
         ), 0) as revenue,
         COALESCE(AVG(
-          CASE WHEN payment_status = 'paid' THEN
+          CASE WHEN payment_status = 'paid'
+            AND NOT (status = 'transferred' AND transferred_to_registration_id IS NOT NULL) THEN
             CASE WHEN (COALESCE(platform_fee_amount, 0) + COALESCE(registration_edit_fee_amount, 0)) > 0
               THEN (total_amount - COALESCE(platform_fee_amount, 0) - COALESCE(registration_edit_fee_amount, 0))
               ELSE calculate_value_without_platform_fee(total_amount, get_platform_fee(), get_platform_fee_type())
@@ -294,7 +301,8 @@ export const getEvents = async (filters?: {
           END
         ), 0) as avg_ticket,
         COALESCE(SUM(
-          CASE WHEN payment_status = 'paid' THEN
+          CASE WHEN payment_status = 'paid'
+            AND NOT (status = 'transferred' AND transferred_to_registration_id IS NOT NULL) THEN
             CASE WHEN (COALESCE(platform_fee_amount, 0) + COALESCE(registration_edit_fee_amount, 0)) > 0
               THEN (COALESCE(platform_fee_amount, 0) + COALESCE(registration_edit_fee_amount, 0))
               ELSE (total_amount - calculate_value_without_platform_fee(total_amount, get_platform_fee(), get_platform_fee_type()))
@@ -385,7 +393,7 @@ export const getEvents = async (filters?: {
     };
 
     const registrationsResult = await query(
-      `SELECT event_id, payment_status, payment_method, total_amount, platform_fee_amount, registration_edit_fee_amount
+      `SELECT event_id, status, transferred_to_registration_id, payment_status, payment_method, total_amount, platform_fee_amount, registration_edit_fee_amount
        FROM registrations
        WHERE event_id = ANY($1::uuid[])`,
       [eventIds]
@@ -400,7 +408,9 @@ export const getEvents = async (filters?: {
 
     for (const eventId of eventIds) {
       const rows = rowsByEvent.get(eventId) || [];
-      const paidRows = rows.filter((r) => r.payment_status === 'paid');
+      const paidRows = rows.filter(
+        (r) => r.payment_status === 'paid' && !isTransferredOutShellRegistration(r)
+      );
       const revenue = getReportableRevenue(paidRows, fallback);
       const avg_ticket = paidRows.length > 0 ? Math.round((revenue / paidRows.length) * 100) / 100 : 0;
 

@@ -3,9 +3,23 @@ import { calculateValueWithoutFee } from '../utils/feeCalculations.js';
 export interface FinancialRegistrationLike {
   payment_method?: string | null;
   payment_status?: string | null;
+  status?: string | null;
+  transferred_to_registration_id?: string | null;
   total_amount?: number | string | null;
   platform_fee_amount?: number | string | null;
   registration_edit_fee_amount?: number | string | null;
+}
+
+/** Casca após split super admin: ainda "paid" no DB, mas não deve gerar receita nem contagem ativa. */
+export function isTransferredOutShellRegistration(reg: {
+  status?: string | null;
+  transferred_to_registration_id?: string | null;
+}): boolean {
+  return (
+    reg.status === 'transferred' &&
+    reg.transferred_to_registration_id != null &&
+    String(reg.transferred_to_registration_id).length > 0
+  );
 }
 
 export interface LegacyFallbackConfig {
@@ -34,6 +48,9 @@ export function getLiquidRegistrationValue(
   reg: FinancialRegistrationLike,
   fallback: LegacyFallbackConfig
 ): number {
+  if (isTransferredOutShellRegistration(reg)) {
+    return 0;
+  }
   if (reg.payment_method === 'free_bonus' || reg.payment_status === 'convidado') {
     return 0;
   }
@@ -61,6 +78,7 @@ export function getReportableRevenue(
 ): number {
   const total = registrations.reduce((sum, reg) => {
     if (reg.payment_status !== 'paid') return sum;
+    if (isTransferredOutShellRegistration(reg)) return sum;
     return sum + getLiquidRegistrationValue(reg, fallback);
   }, 0);
 

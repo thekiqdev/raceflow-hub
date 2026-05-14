@@ -297,7 +297,8 @@ function buildRegistrationListWhereClause(filters?: {
     if (filters.status === 'confirmed') {
       conditions.push(`(
         r.status = $${params.length + 1} OR 
-        (r.status = 'transferred' AND r.runner_id != r.registered_by)
+        (r.status = 'transferred' AND r.runner_id != r.registered_by
+          AND r.transferred_to_registration_id IS NULL)
       )`);
       params.push(filters.status);
     } else {
@@ -542,16 +543,15 @@ export async function getRegistrations(
         LEFT JOIN modalities m2 ON cm2.modality_id = m2.id
         WHERE cm2.category_id = c.id
       ) as modality_names,
-      -- Se a inscrição foi transferida:
-      -- - Se o runner_id atual é diferente do registered_by, mostrar como 'confirmed' para o novo titular
-      -- - Se o registered_by está visualizando (será calculado no map), mostrar como 'transferred'
-      -- - Caso contrário, manter o status original
+      -- Transferência legado (uma linha, runner trocado): exibir "confirmed" ao titular atual.
+      -- Split super admin: casca transferred + transferred_to permanece "transferred".
       CASE 
+        WHEN r.status = 'transferred' AND r.transferred_to_registration_id IS NOT NULL THEN r.status
         WHEN r.status = 'transferred' AND r.runner_id != r.registered_by THEN 'confirmed'
         ELSE r.status
       END as display_status,
-      -- Flag para identificar se esta é uma inscrição transferida visualizada pelo antigo titular
-      (r.status = 'transferred' AND r.runner_id != r.registered_by) as is_transferred,
+      (r.status = 'transferred' AND r.runner_id != r.registered_by
+        AND r.transferred_to_registration_id IS NULL) as is_transferred,
       -- Informações do cupom (se houver)
       cp.code as coupon_code,
       cp.leader_id as coupon_leader_id,
@@ -584,7 +584,10 @@ export async function getRegistrations(
     const summarySql = `
       SELECT
         COUNT(DISTINCT r.id)::bigint AS total_registrations,
-        COUNT(DISTINCT r.id) FILTER (WHERE r.payment_status = 'paid')::bigint AS confirmed_payments,
+        COUNT(DISTINCT r.id) FILTER (
+          WHERE r.payment_status = 'paid'
+            AND NOT (r.status = 'transferred' AND r.transferred_to_registration_id IS NOT NULL)
+        )::bigint AS confirmed_payments,
         COUNT(DISTINCT r.id) FILTER (WHERE r.payment_status = 'pending')::bigint AS pending_payments,
         COUNT(DISTINCT r.id) FILTER (
           WHERE r.payment_status = 'refunded' OR r.status = 'refunded'
@@ -610,7 +613,10 @@ export async function getRegistrations(
     const segmentSql = `
       SELECT
         COUNT(DISTINCT r.id)::bigint AS total,
-        COUNT(DISTINCT r.id) FILTER (WHERE r.payment_status = 'paid')::bigint AS paid,
+        COUNT(DISTINCT r.id) FILTER (
+          WHERE r.payment_status = 'paid'
+            AND NOT (r.status = 'transferred' AND r.transferred_to_registration_id IS NOT NULL)
+        )::bigint AS paid,
         COUNT(DISTINCT r.id) FILTER (WHERE r.payment_status = 'pending')::bigint AS pending,
         COUNT(DISTINCT r.id) FILTER (WHERE r.payment_status = 'partially_paid')::bigint AS partially_paid,
         COUNT(DISTINCT r.id) FILTER (
@@ -709,6 +715,7 @@ export const getRegistrationById = async (registrationId: string, viewerId?: str
       -- - Se o viewer é o antigo titular (registered_by), mostrar como 'transferred'
       -- - Caso contrário, manter o status original
       CASE 
+        WHEN r.status = 'transferred' AND r.transferred_to_registration_id IS NOT NULL THEN r.status
         WHEN r.status = 'transferred' AND r.runner_id != r.registered_by THEN
           CASE 
             WHEN $2::uuid IS NOT NULL AND r.runner_id = $2::uuid THEN 'confirmed'
@@ -756,6 +763,7 @@ export const getRegistrationById = async (registrationId: string, viewerId?: str
   if (
     row.status === 'transferred' &&
     row.runner_id !== row.registered_by &&
+    !row.transferred_to_registration_id &&
     viewerId
   ) {
     if (row.runner_id === viewerId) {
@@ -866,7 +874,8 @@ export const createRegistration = async (data: CreateRegistrationData) => {
   if (!isInviteSlot) {
     const existingRegistration = await query(
       `SELECT id, status, payment_status FROM registrations 
-       WHERE event_id = $1 AND runner_id = $2 AND status != 'cancelled'`,
+       WHERE event_id = $1 AND runner_id = $2 AND status != 'cancelled'
+       AND NOT (status = 'transferred' AND transferred_to_registration_id IS NOT NULL)`,
       [data.event_id, data.runner_id]
     );
 
@@ -879,7 +888,8 @@ export const createRegistration = async (data: CreateRegistrationData) => {
   if (!isInviteSlot && category.max_participants !== null && category.max_participants > 0) {
     const currentRegistrations = await query(
       `SELECT COUNT(*) as count FROM registrations 
-       WHERE category_id = $1 AND status != 'cancelled'`,
+       WHERE category_id = $1 AND status != 'cancelled'
+       AND NOT (status = 'transferred' AND transferred_to_registration_id IS NOT NULL)`,
       [data.category_id]
     );
     
@@ -2111,6 +2121,179 @@ export const completeInvitationRegistration = async (
   }
 
   return getRegistrationById(registrationId);
+};
+
+export type AdminRegistrationSplitTransferMeta = {
+  adminUserId: string;
+  reason?: string | null;
+};
+
+/**
+ * Super admin (split): nova linha `registrations` para o recebedor; a original permanece com o mesmo
+ * `runner_id`, `payment_status = paid`, `status = transferred` e `transferred_to_registration_id`.
+ * Pagamentos e ajustes financeiros apontam para a nova inscrição (receita única na contagem ativa).
+ */
+export const performAdminRegistrationSplitTransfer = async (
+  registrationId: string,
+  newRunnerId: string,
+  meta: AdminRegistrationSplitTransferMeta
+): Promise<{ previousRegistrationId: string; newRegistrationId: string }> => {
+  const client = await getClient();
+  try {
+    await client.query('BEGIN');
+
+    const lockRes = await client.query(`SELECT * FROM registrations WHERE id = $1 FOR UPDATE`, [registrationId]);
+    if (lockRes.rows.length === 0) {
+      throw new Error('Registration not found');
+    }
+    const reg = lockRes.rows[0] as Record<string, unknown>;
+
+    if (reg.status === 'cancelled' || reg.status === 'refunded') {
+      throw new Error('Esta inscrição não pode ser transferida (cancelada ou reembolsada).');
+    }
+    if (reg.status === 'transferred') {
+      throw new Error('Inscrição já está marcada como transferida.');
+    }
+    if (reg.transferred_to_registration_id) {
+      throw new Error('Esta inscrição já foi substituída por transferência administrativa.');
+    }
+    if (reg.payment_status === 'refunded') {
+      throw new Error('Não é possível transferir inscrição com pagamento reembolsado.');
+    }
+    if (reg.payment_status !== 'paid') {
+      throw new Error('Somente inscrições com pagamento confirmado (paid) podem ser transferidas neste fluxo.');
+    }
+    if (reg.runner_id === newRunnerId) {
+      throw new Error('A inscrição já está neste atleta.');
+    }
+
+    const dup = await client.query(
+      `SELECT id FROM registrations 
+       WHERE event_id = $1 AND runner_id = $2 
+       AND status NOT IN ('cancelled', 'refunded')
+       AND NOT (status = 'transferred' AND transferred_to_registration_id IS NOT NULL)`,
+      [reg.event_id, newRunnerId]
+    );
+    if (dup.rows.length > 0) {
+      throw new Error('O atleta recebedor já possui inscrição ativa neste evento.');
+    }
+
+    const confirmationCode = `REG-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
+
+    const insertRes = await client.query(
+      `INSERT INTO registrations (
+        event_id, runner_id, registered_by, category_id, kit_id, modality_id, category_batch_id,
+        payment_method, total_amount, platform_fee_amount, registration_edit_fee_amount,
+        platform_fee_backfilled,
+        confirmation_code, status, payment_status, coupon_code, asaas_payment_id,
+        transferred_from_registration_id
+      )
+      SELECT
+        r.event_id,
+        $1::uuid,
+        $1::uuid,
+        r.category_id,
+        r.kit_id,
+        r.modality_id,
+        r.category_batch_id,
+        'admin_transfer'::payment_method,
+        r.total_amount::numeric,
+        COALESCE(r.platform_fee_amount, 0)::numeric,
+        COALESCE(r.registration_edit_fee_amount, 0)::numeric,
+        false,
+        $2::text,
+        'confirmed'::registration_status,
+        'paid'::payment_status,
+        r.coupon_code,
+        NULL::text,
+        $3::uuid
+      FROM registrations r
+      WHERE r.id = $4
+      RETURNING id`,
+      [newRunnerId, confirmationCode, registrationId, registrationId]
+    );
+
+    const newId = insertRes.rows[0].id as string;
+
+    await client.query(
+      `INSERT INTO registration_product_selections (registration_id, product_id, variant_id, attribute_name, attribute_value)
+       SELECT $1, product_id, variant_id, attribute_name, attribute_value
+       FROM registration_product_selections WHERE registration_id = $2`,
+      [newId, registrationId]
+    );
+
+    await client.query(
+      `INSERT INTO registration_custom_field_values (registration_id, category_custom_field_id, value)
+       SELECT $1, category_custom_field_id, value
+       FROM registration_custom_field_values WHERE registration_id = $2`,
+      [newId, registrationId]
+    );
+
+    await client.query(
+      `UPDATE registration_amount_adjustments SET registration_id = $1 WHERE registration_id = $2`,
+      [newId, registrationId]
+    );
+
+    await client.query(`UPDATE asaas_payments SET registration_id = $1 WHERE registration_id = $2`, [
+      newId,
+      registrationId,
+    ]);
+
+    await client.query(`UPDATE asaas_webhook_events SET registration_id = $1 WHERE registration_id = $2`, [
+      newId,
+      registrationId,
+    ]);
+
+    await client.query(`UPDATE leader_commissions SET registration_id = $1 WHERE registration_id = $2`, [
+      newId,
+      registrationId,
+    ]);
+
+    await client.query(
+      `UPDATE leader_invitations SET bonus_registration_id = $1 WHERE bonus_registration_id = $2`,
+      [newId, registrationId]
+    );
+
+    await client.query(
+      `UPDATE leader_event_commissions SET bonus_registration_id = $1 WHERE bonus_registration_id = $2`,
+      [newId, registrationId]
+    );
+
+    await client.query(`UPDATE user_referrals SET registration_id = $1 WHERE registration_id = $2`, [
+      newId,
+      registrationId,
+    ]);
+
+    await client.query(
+      `UPDATE registrations 
+       SET status = 'transferred',
+           payment_status = 'paid',
+           transferred_to_registration_id = $1,
+           updated_at = NOW()
+       WHERE id = $2`,
+      [newId, registrationId]
+    );
+
+    await client.query('COMMIT');
+
+    console.log(
+      JSON.stringify({
+        type: 'admin_registration_transfer_split',
+        from_registration_id: registrationId,
+        to_registration_id: newId,
+        admin_user_id: meta.adminUserId,
+        reason: meta.reason?.trim() || null,
+        at: new Date().toISOString(),
+      })
+    );
+
+    return { previousRegistrationId: registrationId, newRegistrationId: newId };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
 };
 
 export type TransferRegistrationOptions = {

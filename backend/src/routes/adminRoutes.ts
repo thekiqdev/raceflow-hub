@@ -109,6 +109,7 @@ import {
   updateAllRegistrationStatusesController,
   updateEventRegistrationStatusController,
 } from '../controllers/registrationStatusController.js';
+import { adminTransferRegistrationController } from '../controllers/registrationsController.js';
 import {
   getAllDocumentsController,
   getPendingDocumentsController,
@@ -266,6 +267,7 @@ router.get('/group-leaders/:id/invitation-progress', getLeaderInvitationProgress
 router.get('/group-leaders/:id/coupon-registrations', getLeaderCouponRegistrationsController);
 router.delete('/commissions/:commissionId', removeCommissionController);
 router.get('/registrations/:registrationId/commission', getRegistrationCommissionController);
+router.post('/registrations/:registrationId/transfer', adminTransferRegistrationController);
 router.get('/events/:eventId/event-commissions', getEventCommissionsByEventController);
 
 // Leader Event Commissions endpoints (admin)
