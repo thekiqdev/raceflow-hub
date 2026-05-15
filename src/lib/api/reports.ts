@@ -81,6 +81,40 @@ export interface LeadersInvitationsGrantedRow {
   invitations_granted: number;
 }
 
+/** Estatísticas agregadas de convites do evento (base leader_invitations). */
+/** Resumo geral do evento (agregados de inscrições). */
+export interface EventGeneralStats {
+  total_registrations: number;
+  confirmed_registrations: number;
+  transferred_registrations: number;
+  cancelled_registrations: number;
+  paid_registrations: number;
+  pix_count: number;
+  card_count: number;
+  free_bonus_count: number;
+  invited_count: number;
+  from_invitation_count: number;
+  free_bonus_admin_count: number;
+  normal_paid_count: number;
+}
+
+export interface EventInvitationStats {
+  event_id: string;
+  total_invitations: number;
+  available_invitations: number;
+  sent_invitations: number;
+  used_invitations: number;
+  expired_invitations: number;
+  conversion_rate: number | null;
+  revenue_from_invitations: number;
+  paid_registrations_from_invitations: number;
+  valid_invitations: number;
+  orphan_free_bonus_count: number;
+  inconsistent_invitations: number;
+  computed_at: string;
+  rules_version: string;
+}
+
 /**
  * Get registrations by period
  */
@@ -240,6 +274,54 @@ export const getOrganizerLeadersInvitationsGrantedByEvent = async (
   return apiClient.get<LeadersInvitationsGrantedRow[]>(
     `/organizer/reports/leaders-invitations-granted/${eventId}`
   );
+};
+
+/**
+ * GET /api/admin/reports/events/:eventId/invitation-stats
+ */
+export const getEventInvitationStats = async (eventId: string): Promise<{
+  success: boolean;
+  data?: EventInvitationStats;
+  error?: string;
+  message?: string;
+}> => {
+  return apiClient.get<EventInvitationStats>(`/admin/reports/events/${eventId}/invitation-stats`);
+};
+
+/**
+ * GET /api/organizer/reports/events/:eventId/invitation-stats
+ */
+export const getOrganizerEventInvitationStats = async (eventId: string): Promise<{
+  success: boolean;
+  data?: EventInvitationStats;
+  error?: string;
+  message?: string;
+}> => {
+  return apiClient.get<EventInvitationStats>(`/organizer/reports/events/${eventId}/invitation-stats`);
+};
+
+/**
+ * GET /api/admin/reports/events/:eventId/general-stats
+ */
+export const getEventGeneralStats = async (eventId: string): Promise<{
+  success: boolean;
+  data?: EventGeneralStats;
+  error?: string;
+  message?: string;
+}> => {
+  return apiClient.get<EventGeneralStats>(`/admin/reports/events/${eventId}/general-stats`);
+};
+
+/**
+ * GET /api/organizer/reports/events/:eventId/general-stats
+ */
+export const getOrganizerEventGeneralStats = async (eventId: string): Promise<{
+  success: boolean;
+  data?: EventGeneralStats;
+  error?: string;
+  message?: string;
+}> => {
+  return apiClient.get<EventGeneralStats>(`/organizer/reports/events/${eventId}/general-stats`);
 };
 
 

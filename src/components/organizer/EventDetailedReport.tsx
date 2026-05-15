@@ -1,6 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, type ReactNode } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { getEventById, getAttributeSelectionStats, AttributeSelectionStats } from "@/lib/api/events";
 import { getRegistrations } from "@/lib/api/registrations";
 import { getModalities, type Modality } from "@/lib/api/modalities";
@@ -8,9 +9,16 @@ import { getEnabledModules } from "@/lib/api/systemSettings";
 import {
   getLeadersInvitationsGrantedByEvent,
   getOrganizerLeadersInvitationsGrantedByEvent,
+  getEventInvitationStats,
+  getOrganizerEventInvitationStats,
+  getEventGeneralStats,
+  getOrganizerEventGeneralStats,
+  type EventInvitationStats,
+  type EventGeneralStats,
 } from "@/lib/api/reports";
 import { calculateValueWithoutFee } from "@/lib/utils/feeCalculations";
-import { ArrowLeft, Users, DollarSign, Package, CreditCard, Smartphone, MapPin } from "lucide-react";
+import { ArrowLeft, Users, DollarSign, Package, CreditCard, Smartphone, Gift, AlertTriangle, LayoutGrid } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { toast } from "sonner";
 import {
   Table,
@@ -118,6 +126,97 @@ interface AttributeSelectionInfo {
   variantPrice?: number | null;
 }
 
+type RegistrationTableFilter = "all" | "paid" | "convidado" | "transferred" | "free_bonus";
+
+const pillBadgeBase = "px-2 py-1 rounded-full text-xs font-medium inline-block";
+
+function matchesRegistrationFilter(
+  reg: RegistrationDetail,
+  filter: RegistrationTableFilter
+): boolean {
+  switch (filter) {
+    case "paid":
+      return reg.payment_status === "paid";
+    case "convidado":
+      return reg.payment_status === "convidado";
+    case "transferred":
+      return reg.status === "transferred";
+    case "free_bonus":
+      return reg.payment_method === "free_bonus";
+    default:
+      return true;
+  }
+}
+
+function KpiCard({
+  label,
+  value,
+  sublabel,
+  icon: Icon,
+  iconWrapClass,
+  iconClass,
+  valueClassName,
+}: {
+  label: string;
+  value: ReactNode;
+  sublabel?: string;
+  icon: typeof Users;
+  iconWrapClass: string;
+  iconClass: string;
+  valueClassName?: string;
+}) {
+  return (
+    <div className="bg-white rounded-2xl border shadow-sm p-5 md:p-6">
+      <div className="flex items-center justify-between gap-2 mb-3">
+        <p className="text-xs font-medium text-gray-500 uppercase tracking-wide leading-tight min-w-0 pr-1">
+          {label}
+        </p>
+        <div
+          className={cn(
+            "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg",
+            iconWrapClass
+          )}
+        >
+          <Icon className={cn("h-4 w-4", iconClass)} />
+        </div>
+      </div>
+      <p
+        className={cn(
+          "text-2xl lg:text-3xl font-bold tabular-nums leading-tight break-words",
+          valueClassName
+        )}
+      >
+        {value}
+      </p>
+      {sublabel ? (
+        <p className="text-xs text-gray-500 mt-2 leading-snug">{sublabel}</p>
+      ) : null}
+    </div>
+  );
+}
+
+function SummaryStatCard({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <div className="bg-white rounded-2xl border p-5 shadow-sm">
+      <h4 className="text-sm font-semibold text-gray-600 mb-3">{title}</h4>
+      <div className="space-y-0">{children}</div>
+    </div>
+  );
+}
+
+function StatRow({ label, value }: { label: string; value: ReactNode }) {
+  return (
+    <div className="flex justify-between text-sm py-1 gap-4">
+      <span className="text-gray-600">{label}</span>
+      <span className="font-semibold tabular-nums text-gray-900">{value}</span>
+    </div>
+  );
+}
+
+function SectionHeading({ children }: { children: ReactNode }) {
+  return <h2 className="text-lg font-semibold text-gray-900 mb-3 mt-6 first:mt-0">{children}</h2>;
+}
+
 const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
   const [loading, setLoading] = useState(true);
   const { user } = useAuth();
@@ -141,6 +240,19 @@ const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
   const [platformFeeType, setPlatformFeeType] = useState<'fixed' | 'percentage'>('fixed');
   const [leaderCouponSales, setLeaderCouponSales] = useState<LeaderCouponSalesRow[]>([]);
   const [leaderInvitationsGranted, setLeaderInvitationsGranted] = useState<Record<string, number>>({});
+  const [invitationStats, setInvitationStats] = useState<EventInvitationStats | null>(null);
+  const [generalStats, setGeneralStats] = useState<EventGeneralStats | null>(null);
+  const [registrationFilter, setRegistrationFilter] = useState<RegistrationTableFilter>("all");
+  const registrationsSectionRef = useRef<HTMLDivElement>(null);
+
+  const scrollToRegistrations = (filter?: RegistrationTableFilter) => {
+    if (filter) setRegistrationFilter(filter);
+    registrationsSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
+  const filteredRegistrations = registrations.filter((reg) =>
+    matchesRegistrationFilter(reg, registrationFilter)
+  );
 
   const getCanonicalDisplayValue = (
     reg: RegistrationDetail,
@@ -305,6 +417,21 @@ const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
       // Para /admin/eventos, isso deve estar disponível via endpoint read-only.
       if (isAdmin || isOrganizer) {
         try {
+          const generalRes = isAdmin
+            ? await getEventGeneralStats(eventId)
+            : await getOrganizerEventGeneralStats(eventId);
+          if (generalRes?.success && generalRes.data) {
+            setGeneralStats(generalRes.data);
+          } else {
+            setGeneralStats(null);
+            toast.error(generalRes?.message || generalRes?.error || "Erro ao carregar resumo geral do evento");
+          }
+        } catch {
+          setGeneralStats(null);
+          toast.error("Erro ao carregar resumo geral do evento");
+        }
+
+        try {
           const invRes = isAdmin
             ? await getLeadersInvitationsGrantedByEvent(eventId)
             : await getOrganizerLeadersInvitationsGrantedByEvent(eventId);
@@ -320,8 +447,25 @@ const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
         } catch (e) {
           setLeaderInvitationsGranted({});
         }
+
+        try {
+          const statsRes = isAdmin
+            ? await getEventInvitationStats(eventId)
+            : await getOrganizerEventInvitationStats(eventId);
+          if (statsRes?.success && statsRes.data) {
+            setInvitationStats(statsRes.data);
+          } else {
+            setInvitationStats(null);
+            toast.error(statsRes?.message || statsRes?.error || "Erro ao carregar estatísticas de convites");
+          }
+        } catch {
+          setInvitationStats(null);
+          toast.error("Erro ao carregar estatísticas de convites");
+        }
       } else {
         setLeaderInvitationsGranted({});
+        setInvitationStats(null);
+        setGeneralStats(null);
       }
 
       let total = 0;
@@ -518,28 +662,42 @@ const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
     return age > 0 && age < 150 ? age : null;
   };
 
-  const getPaymentStatusBadge = (status: string | null) => {
-    const variants: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
-      paid: "default",
-      convidado: "default",
-      pending: "secondary",
-      failed: "destructive",
-    };
+  const getRegistrationStatusPill = (reg: RegistrationDetail) => {
+    if (reg.status === "transferred") {
+      return (
+        <span className={cn(pillBadgeBase, "bg-blue-100 text-blue-700")}>Transferido</span>
+      );
+    }
+    if (reg.payment_method === "free_bonus") {
+      return (
+        <span className={cn(pillBadgeBase, "bg-gray-100 text-gray-700")}>Free bonus</span>
+      );
+    }
+    if (reg.payment_status === "convidado") {
+      return (
+        <span className={cn(pillBadgeBase, "bg-yellow-100 text-yellow-700")}>Convidado</span>
+      );
+    }
+    if (reg.payment_status === "paid") {
+      return <span className={cn(pillBadgeBase, "bg-green-100 text-green-700")}>Pago</span>;
+    }
     const labels: Record<string, string> = {
-      paid: "Pago",
-      convidado: "Convite",
       pending: "Pendente",
       failed: "Falhou",
     };
+    const label = labels[reg.payment_status || ""] || reg.payment_status || "Pendente";
     return (
-      <Badge 
-        variant={variants[status || "pending"] || "outline"}
-        className={status === "convidado" ? "bg-blue-500" : ""}
-      >
-        {labels[status || ""] || status || "Pendente"}
-      </Badge>
+      <span className={cn(pillBadgeBase, "bg-gray-100 text-gray-600")}>{label}</span>
     );
   };
+
+  const registrationFilterButtons: { id: RegistrationTableFilter; label: string }[] = [
+    { id: "all", label: "Todos" },
+    { id: "paid", label: "Pagos" },
+    { id: "convidado", label: "Convidado" },
+    { id: "transferred", label: "Transferido" },
+    { id: "free_bonus", label: "Free bonus" },
+  ];
 
   if (loading) {
     return (
@@ -549,170 +707,134 @@ const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
     );
   }
 
+  const activeRegistrationCount = registrations.filter(
+    (r) => !isTransferredOutShellForReport(r)
+  ).length;
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 bg-gray-50 rounded-2xl p-4 md:p-6">
       <div className="flex items-center gap-4">
         <Button variant="ghost" size="sm" onClick={onBack}>
           <ArrowLeft className="h-4 w-4 mr-2" />
           Voltar
         </Button>
         <div>
-          <h2 className="text-2xl font-bold">{eventTitle}</h2>
-          <p className="text-muted-foreground">Relatório Detalhado</p>
+          <h2 className="text-2xl font-bold text-gray-900">{eventTitle}</h2>
+          <p className="text-sm text-gray-500">Relatório detalhado · dashboard do evento</p>
         </div>
       </div>
 
-      {/* Summary Cards */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
-        <Card className="p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-muted-foreground">
-                Total de Inscrições
-              </p>
-              <p className="text-3xl font-bold">
-                {registrations.filter((r) => !isTransferredOutShellForReport(r)).length}
-              </p>
-              <p className="text-xs text-muted-foreground mt-1">
-                {paidCount} pagas
-              </p>
-            </div>
-            <Users className="h-8 w-8 text-primary" />
-          </div>
-        </Card>
-
-        <Card className="p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-muted-foreground">
-                Receita Total
-              </p>
-              <p className="text-3xl font-bold text-green-600">
-                {formatCurrency(totalRevenue)}
-              </p>
-              <p className="text-xs text-muted-foreground mt-1">
-                Ticket médio: {formatCurrency(paidCount > 0 ? totalRevenue / paidCount : 0)}
-              </p>
-            </div>
-            <DollarSign className="h-8 w-8 text-green-600" />
-          </div>
-        </Card>
-
-        <Card className="p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-muted-foreground">
-                Inscrições com Kit
-              </p>
-              <p className="text-3xl font-bold text-orange-600">
-                {kitRevenues.reduce((sum, k) => sum + k.count, 0)}
-              </p>
-              <p className="text-xs text-muted-foreground mt-1">
-                {formatCurrency(kitRevenues.reduce((sum, k) => sum + k.revenue, 0))}
-              </p>
-            </div>
-            <Package className="h-8 w-8 text-orange-600" />
-          </div>
-        </Card>
-
-        <Card className="p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-muted-foreground">
-                Receita PIX
-              </p>
-              <p className="text-3xl font-bold text-blue-600">
-                {formatCurrency(pixRevenue)}
-              </p>
-              <p className="text-xs text-muted-foreground mt-1">
-                {pixRevenue > 0 ? `${((pixRevenue / totalRevenue) * 100).toFixed(1)}% do total` : '-'}
-              </p>
-            </div>
-            <Smartphone className="h-8 w-8 text-blue-600" />
-          </div>
-        </Card>
-
-        <Card className="p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-muted-foreground">
-                Receita Cartão
-              </p>
-              <p className="text-3xl font-bold text-purple-600">
-                {formatCurrency(creditCardRevenue)}
-              </p>
-              <p className="text-xs text-muted-foreground mt-1">
-                {creditCardRevenue > 0 ? `${((creditCardRevenue / totalRevenue) * 100).toFixed(1)}% do total` : '-'}
-              </p>
-            </div>
-            <CreditCard className="h-8 w-8 text-purple-600" />
-          </div>
-        </Card>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+        <KpiCard
+          label="Total de Inscrições"
+          value={activeRegistrationCount}
+          sublabel={`${paidCount} pagas`}
+          icon={Users}
+          iconWrapClass="bg-primary/10"
+          iconClass="text-primary"
+        />
+        <KpiCard
+          label="Receita Total"
+          value={formatCurrency(totalRevenue) || "—"}
+          sublabel={`Ticket médio: ${formatCurrency(paidCount > 0 ? totalRevenue / paidCount : 0) || "—"}`}
+          icon={DollarSign}
+          iconWrapClass="bg-green-100"
+          iconClass="text-green-600"
+          valueClassName="text-green-600"
+        />
+        <KpiCard
+          label="Inscrições com Kit"
+          value={kitRevenues.reduce((sum, k) => sum + k.count, 0)}
+          sublabel={formatCurrency(kitRevenues.reduce((sum, k) => sum + k.revenue, 0)) || "Receita de kits"}
+          icon={Package}
+          iconWrapClass="bg-orange-100"
+          iconClass="text-orange-600"
+          valueClassName="text-orange-600"
+        />
+        <KpiCard
+          label="Receita PIX"
+          value={formatCurrency(pixRevenue) || "—"}
+          sublabel={
+            pixRevenue > 0 && totalRevenue > 0
+              ? `${((pixRevenue / totalRevenue) * 100).toFixed(1)}% do total`
+              : "—"
+          }
+          icon={Smartphone}
+          iconWrapClass="bg-blue-100"
+          iconClass="text-blue-600"
+          valueClassName="text-blue-600"
+        />
+        <KpiCard
+          label="Receita Cartão"
+          value={formatCurrency(creditCardRevenue) || "—"}
+          sublabel={
+            creditCardRevenue > 0 && totalRevenue > 0
+              ? `${((creditCardRevenue / totalRevenue) * 100).toFixed(1)}% do total`
+              : "—"
+          }
+          icon={CreditCard}
+          iconWrapClass="bg-purple-100"
+          iconClass="text-purple-600"
+          valueClassName="text-purple-600"
+        />
       </div>
 
-      {/* Relatório de líderes */}
-      {leaderCouponSales.length > 0 && (
-        <Card className="p-6">
-          <h3 className="text-lg font-semibold mb-4">Relatório de líderes (vendas e cupons)</h3>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Líder</TableHead>
-                <TableHead className="text-right tabular-nums">Vendas (pagas)</TableHead>
-                <TableHead className="text-right tabular-nums">Cupons (tem)</TableHead>
-                <TableHead className="text-right tabular-nums">Cupons (enviou/usou)</TableHead>
-                <TableHead className="text-right tabular-nums">Convites ganhos</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {leaderCouponSales.map((row) => (
-                <TableRow key={row.leader_id}>
-                  <TableCell className="font-medium">{row.leader_name || row.leader_id}</TableCell>
-                  <TableCell className="text-right tabular-nums">{row.sales_paid_count}</TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex flex-col items-end">
-                      <span className="tabular-nums">{row.coupons_total_count}</span>
-                      <span className="text-[11px] text-muted-foreground">
-                        {row.coupons_total_codes.length === 0
-                          ? "—"
-                          : `${row.coupons_total_codes.slice(0, 3).join(", ")}${
-                              row.coupons_total_codes.length > 3
-                                ? ` +${row.coupons_total_codes.length - 3}`
-                                : ""
-                            }`}
-                      </span>
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex flex-col items-end">
-                      <span className="tabular-nums">{row.coupons_sent_count}</span>
-                      <span className="text-[11px] text-muted-foreground">
-                        {row.coupons_sent_codes.length === 0
-                          ? "—"
-                          : `${row.coupons_sent_codes.slice(0, 3).join(", ")}${
-                              row.coupons_sent_codes.length > 3
-                                ? ` +${row.coupons_sent_codes.length - 3}`
-                                : ""
-                            }`}
-                      </span>
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {isAdmin || isOrganizer ? leaderInvitationsGranted[row.leader_id] ?? 0 : "—"}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-          <p className="mt-3 text-xs text-muted-foreground">
-            “Cupons (tem)” e “Cupons (enviou/usou)” são derivados dos cupons presentes nas inscrições do evento
-            (sem consulta independente à tabela de cupons).
-          </p>
-        </Card>
+      {generalStats && (
+        <section className="mb-6 space-y-4">
+          <div className="flex items-center gap-2">
+            <LayoutGrid className="h-5 w-5 text-primary" />
+            <h3 className="text-lg font-semibold text-gray-900">Resumo Geral do Evento</h3>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+            <SummaryStatCard title="Inscrições">
+              <StatRow label="Total" value={generalStats.total_registrations} />
+              <StatRow label="Confirmadas" value={generalStats.confirmed_registrations} />
+              <StatRow label="Transferidas" value={generalStats.transferred_registrations} />
+              <StatRow label="Canceladas" value={generalStats.cancelled_registrations} />
+            </SummaryStatCard>
+
+            <SummaryStatCard title="Pagamentos">
+              <StatRow label="Pagas" value={generalStats.paid_registrations} />
+              <StatRow label="PIX" value={generalStats.pix_count} />
+              <StatRow label="Cartão" value={generalStats.card_count} />
+              <StatRow label="Free bonus" value={generalStats.free_bonus_count} />
+              <StatRow label="Convidado" value={generalStats.invited_count} />
+            </SummaryStatCard>
+
+            <SummaryStatCard title="Convites">
+              {invitationStats ? (
+                <>
+                  <StatRow label="Total concedidos" value={invitationStats.total_invitations} />
+                  <StatRow label="Disponíveis" value={invitationStats.available_invitations} />
+                  <StatRow label="Enviados" value={invitationStats.sent_invitations} />
+                  <StatRow label="Usados" value={invitationStats.used_invitations} />
+                  <StatRow
+                    label="Taxa de conversão"
+                    value={
+                      invitationStats.conversion_rate != null
+                        ? `${(invitationStats.conversion_rate * 100).toFixed(1)}%`
+                        : "—"
+                    }
+                  />
+                </>
+              ) : (
+                <p className="text-sm text-gray-500 py-2">Carregando estatísticas de convites…</p>
+              )}
+            </SummaryStatCard>
+
+            <SummaryStatCard title="Origem das inscrições">
+              <StatRow label="Pagas normais" value={generalStats.normal_paid_count} />
+              <StatRow label="Via convite" value={generalStats.from_invitation_count} />
+              <StatRow label="Free bonus admin" value={generalStats.free_bonus_admin_count} />
+            </SummaryStatCard>
+          </div>
+        </section>
       )}
 
-      {/* Revenue by Category */}
-      <Card className="p-6">
+      <section className="mb-6 space-y-4">
+        <SectionHeading>Financeiro</SectionHeading>
+        <Card className="bg-white rounded-2xl p-6 shadow-sm border-0">
         <h3 className="text-lg font-semibold mb-4">Receita por Categoria</h3>
         <Table>
           <TableHeader>
@@ -742,7 +864,7 @@ const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
 
       {/* Revenue by Kit */}
       {kitRevenues.length > 0 && (
-        <Card className="p-6">
+        <Card className="bg-white rounded-2xl p-6 shadow-sm border-0">
           <h3 className="text-lg font-semibold mb-4">Receita por Kit</h3>
           <Table>
             <TableHeader>
@@ -771,9 +893,14 @@ const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
         </Card>
       )}
 
+      </section>
+
+      <section className="mb-6 space-y-4">
+        <SectionHeading>Participação</SectionHeading>
+
       {/* Modalidades */}
       {modalities.length > 0 && (
-        <Card className="p-6">
+        <Card className="bg-white rounded-2xl p-6 shadow-sm border-0">
           <h3 className="text-lg font-semibold mb-4">Modalidades</h3>
           <Table>
             <TableHeader>
@@ -836,7 +963,7 @@ const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
 
       {/* Estatísticas de Seleção de Atributos */}
       {attributeSelections.length > 0 && (
-        <Card className="p-6">
+        <Card className="bg-white rounded-2xl p-6 shadow-sm border-0">
           <h3 className="text-lg font-semibold mb-4">Estatísticas de Seleção de Atributos</h3>
           <Table>
             <TableHeader>
@@ -874,7 +1001,7 @@ const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Statistics by State */}
           {stateStats.size > 0 && (
-            <Card className="p-6">
+            <Card className="bg-white rounded-2xl p-6 shadow-sm border-0">
               <h3 className="text-lg font-semibold mb-4">Participantes por Estado</h3>
               <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                 {Array.from(stateStats.entries())
@@ -891,7 +1018,7 @@ const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
 
           {/* Statistics by City */}
           {cityStats.size > 0 && (
-            <Card className="p-6">
+            <Card className="bg-white rounded-2xl p-6 shadow-sm border-0">
               <h3 className="text-lg font-semibold mb-4">Participantes por Cidade</h3>
               <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                 {Array.from(cityStats.entries())
@@ -916,7 +1043,7 @@ const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
 
       {/* Age Statistics */}
       {ageStats && (
-        <Card className="p-6">
+        <Card className="bg-white rounded-2xl p-6 shadow-sm border-0">
           <h3 className="text-lg font-semibold mb-4">Estatísticas de Idade dos Participantes</h3>
           <div className="grid grid-cols-3 gap-4">
             <div className="text-center p-4 border rounded-lg">
@@ -935,9 +1062,216 @@ const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
         </Card>
       )}
 
-      {/* All Registrations */}
-      <Card className="p-6">
-        <h3 className="text-lg font-semibold mb-4">Todas as Inscrições</h3>
+      </section>
+
+      <section className="mb-6 space-y-4">
+        <SectionHeading>Operacional</SectionHeading>
+        {/* Relatório de líderes */}
+        {leaderCouponSales.length > 0 && (
+          <Card className="bg-white rounded-2xl p-6 shadow-sm border-0">
+            <h3 className="text-lg font-semibold mb-4">Relatório de líderes (vendas e cupons)</h3>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Líder</TableHead>
+                  <TableHead className="text-right tabular-nums">Vendas (pagas)</TableHead>
+                  <TableHead className="text-right tabular-nums">Cupons (tem)</TableHead>
+                  <TableHead className="text-right tabular-nums">Cupons (enviou/usou)</TableHead>
+                  <TableHead className="text-right tabular-nums">Convites ganhos</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {leaderCouponSales.map((row) => (
+                  <TableRow key={row.leader_id}>
+                    <TableCell className="font-medium">{row.leader_name || row.leader_id}</TableCell>
+                    <TableCell className="text-right tabular-nums">{row.sales_paid_count}</TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex flex-col items-end">
+                        <span className="tabular-nums">{row.coupons_total_count}</span>
+                        <span className="text-[11px] text-muted-foreground">
+                          {row.coupons_total_codes.length === 0
+                            ? "—"
+                            : `${row.coupons_total_codes.slice(0, 3).join(", ")}${
+                                row.coupons_total_codes.length > 3
+                                  ? ` +${row.coupons_total_codes.length - 3}`
+                                  : ""
+                              }`}
+                        </span>
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex flex-col items-end">
+                        <span className="tabular-nums">{row.coupons_sent_count}</span>
+                        <span className="text-[11px] text-muted-foreground">
+                          {row.coupons_sent_codes.length === 0
+                            ? "—"
+                            : `${row.coupons_sent_codes.slice(0, 3).join(", ")}${
+                                row.coupons_sent_codes.length > 3
+                                  ? ` +${row.coupons_sent_codes.length - 3}`
+                                  : ""
+                              }`}
+                        </span>
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {isAdmin || isOrganizer ? leaderInvitationsGranted[row.leader_id] ?? 0 : "—"}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+            <p className="mt-3 text-xs text-muted-foreground">
+              “Cupons (tem)” e “Cupons (enviou/usou)” são derivados dos cupons presentes nas inscrições do evento
+              (sem consulta independente à tabela de cupons).
+            </p>
+          </Card>
+        )}
+
+        {(isAdmin || isOrganizer) && invitationStats && (
+          <Card className="bg-white rounded-2xl p-6 shadow-sm border-0">
+            <div className="flex items-center gap-2 mb-4">
+              <Gift className="h-5 w-5 text-primary" />
+              <h3 className="text-lg font-semibold">Convites</h3>
+            </div>
+            <p className="text-xs text-gray-500 mb-3">
+              Convites gerados a partir de metas de líderes. Receita considera apenas inscrições pagas.
+            </p>
+
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5 mb-6">
+              <div className="bg-gray-50 rounded-xl p-4">
+                <p className="text-sm text-muted-foreground">Total de convites</p>
+                <p className="text-2xl font-bold tabular-nums">{invitationStats.total_invitations}</p>
+              </div>
+              <div className="bg-gray-50 rounded-xl p-4">
+                <p className="text-sm text-muted-foreground">Disponíveis</p>
+                <p className="text-2xl font-bold tabular-nums">{invitationStats.available_invitations}</p>
+              </div>
+              <div className="bg-gray-50 rounded-xl p-4">
+                <p className="text-sm text-muted-foreground">Enviados</p>
+                <p className="text-2xl font-bold tabular-nums">{invitationStats.sent_invitations}</p>
+              </div>
+              <div className="bg-gray-50 rounded-xl p-4">
+                <p className="text-sm text-muted-foreground">Usados</p>
+                <p className="text-2xl font-bold tabular-nums">{invitationStats.used_invitations}</p>
+              </div>
+              <div className="bg-gray-50 rounded-xl p-4">
+                <p className="text-sm text-muted-foreground">Taxa de conversão</p>
+                <p className="text-2xl font-bold tabular-nums">
+                  {invitationStats.conversion_rate != null
+                    ? `${(invitationStats.conversion_rate * 100).toFixed(1)}%`
+                    : "—"}
+                </p>
+              </div>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2 mb-4">
+              <div className="bg-gray-50 rounded-xl p-4">
+                <p className="text-sm text-muted-foreground">Receita (apenas pagas)</p>
+                <p className="text-xl font-semibold text-green-600 tabular-nums">
+                  {new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(
+                    invitationStats.revenue_from_invitations
+                  )}
+                </p>
+              </div>
+              <div className="bg-gray-50 rounded-xl p-4">
+                <p className="text-sm text-muted-foreground">Inscrições pagas via convite</p>
+                <p className="text-xl font-semibold tabular-nums">
+                  {invitationStats.paid_registrations_from_invitations}
+                </p>
+              </div>
+            </div>
+
+            {invitationStats.expired_invitations > 0 && (
+              <p className="text-xs text-muted-foreground mb-3">
+                Expirados (fora do total): {invitationStats.expired_invitations}
+              </p>
+            )}
+
+            {invitationStats.orphan_free_bonus_count > 0 && (
+              <div className="mb-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-lg border border-yellow-200 bg-yellow-50 px-4 py-3 text-yellow-800">
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5 text-yellow-700" />
+                  <p className="text-sm">
+                    Existem inscrições bônus sem convite associado ({invitationStats.orphan_free_bonus_count}).
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="shrink-0 border-yellow-300 bg-white hover:bg-yellow-100 text-yellow-900"
+                  onClick={() => scrollToRegistrations("free_bonus")}
+                >
+                  Ver inscrições
+                </Button>
+              </div>
+            )}
+
+            {invitationStats.inconsistent_invitations > 0 && (
+              <Alert className="border-destructive/50 bg-destructive/5">
+                <AlertTriangle className="h-4 w-4 text-destructive" />
+                <AlertDescription>
+                  Existem inconsistências nos convites ({invitationStats.inconsistent_invitations} convite(s) sem
+                  inscrição lastro).
+                </AlertDescription>
+              </Alert>
+            )}
+          </Card>
+        )}
+
+
+        {generalStats && (
+          <Card className="bg-white rounded-2xl p-6 shadow-sm border-0">
+            <h3 className="text-base font-semibold text-gray-900 mb-3">Transferências</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="bg-gray-50 rounded-xl p-4">
+                <p className="text-xs text-gray-500">Transferidas</p>
+                <p className="text-2xl font-bold tabular-nums text-blue-600">
+                  {generalStats.transferred_registrations}
+                </p>
+              </div>
+              <div className="bg-gray-50 rounded-xl p-4">
+                <p className="text-xs text-gray-500">Confirmadas</p>
+                <p className="text-2xl font-bold tabular-nums">{generalStats.confirmed_registrations}</p>
+              </div>
+              <div className="bg-gray-50 rounded-xl p-4">
+                <p className="text-xs text-gray-500">Canceladas</p>
+                <p className="text-2xl font-bold tabular-nums text-gray-700">
+                  {generalStats.cancelled_registrations}
+                </p>
+              </div>
+            </div>
+          </Card>
+        )}
+      </section>
+
+      <section ref={registrationsSectionRef} className="mb-6">
+        <Card className="bg-white rounded-2xl p-6 shadow-sm border-0">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-4">
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900">Todas as Inscrições</h3>
+              <p className="text-xs text-gray-500 mt-1">
+                {filteredRegistrations.length} de {registrations.length} exibidas
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {registrationFilterButtons.map((btn) => (
+                <button
+                  key={btn.id}
+                  type="button"
+                  onClick={() => setRegistrationFilter(btn.id)}
+                  className={cn(
+                    "px-3 py-1.5 rounded-lg border text-sm transition-colors",
+                    registrationFilter === btn.id
+                      ? "bg-black text-white border-black"
+                      : "bg-white text-gray-700 border-gray-200 hover:bg-gray-50"
+                  )}
+                >
+                  {btn.label}
+                </button>
+              ))}
+            </div>
+          </div>
         <div className="overflow-x-auto">
           <Table>
             <TableHeader>
@@ -956,7 +1290,7 @@ const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {registrations.map((reg) => {
+              {filteredRegistrations.map((reg) => {
                 const age = calculateAge(reg.runner_birth_date);
                 return (
                 <TableRow key={reg.id}>
@@ -1000,7 +1334,7 @@ const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
                       <Badge variant="outline">Boleto</Badge>
                     )}
                   </TableCell>
-                  <TableCell>{getPaymentStatusBadge(reg.payment_status)}</TableCell>
+                  <TableCell>{getRegistrationStatusPill(reg)}</TableCell>
                   <TableCell className="text-right font-semibold">
                     {(() => {
                       if (reg.payment_status === "convidado") return "R$ 0,00";
@@ -1020,6 +1354,7 @@ const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
           </Table>
         </div>
       </Card>
+      </section>
     </div>
   );
 };

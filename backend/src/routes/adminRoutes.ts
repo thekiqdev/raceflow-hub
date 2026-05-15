@@ -69,6 +69,8 @@ import {
   getCpfLookupMetricsController,
 } from '../controllers/reportsController.js';
 import { getLeadersInvitationsGrantedByEventController } from '../controllers/leadersInvitationsReportController.js';
+import { getEventInvitationStatsController } from '../controllers/eventInvitationStatsController.js';
+import { getEventGeneralStatsController } from '../controllers/reportsController.js';
 import {
   getSupportTicketsController,
   getTicketByIdController,
@@ -233,6 +235,14 @@ router.get('/reports/cpf-lookup-metrics', getCpfLookupMetricsController);
 router.get(
   '/reports/leaders-invitations-granted/:eventId',
   getLeadersInvitationsGrantedByEventController
+);
+router.get(
+  '/reports/events/:eventId/invitation-stats',
+  getEventInvitationStatsController
+);
+router.get(
+  '/reports/events/:eventId/general-stats',
+  getEventGeneralStatsController
 );
 
 // Support
