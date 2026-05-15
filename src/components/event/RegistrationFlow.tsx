@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -60,6 +60,90 @@ interface NewCategory extends CategoryType {
   custom_fields?: Array<{ id: string; label: string; field_type: 'text' | 'number' }>;
 }
 
+interface CategoryUserContext {
+  gender?: string | null;
+  birth_date?: string | null;
+}
+
+function normalizeUserGender(userGender?: string | null): CategoryGender | null {
+  if (!userGender) return null;
+  const genderMap: Record<string, CategoryGender> = {
+    m: "masculino",
+    masculino: "masculino",
+    f: "feminino",
+    feminino: "feminino",
+    o: "ambos",
+    outro: "ambos",
+  };
+  return genderMap[userGender.toLowerCase()] ?? "ambos";
+}
+
+function isCategoryValidForUser(category: NewCategory, ctx: CategoryUserContext): boolean {
+  const normalizedGender = normalizeUserGender(ctx.gender);
+
+  if (normalizedGender) {
+    if (category.gender !== "ambos" && category.gender !== normalizedGender) {
+      return false;
+    }
+  } else if (category.gender !== "ambos") {
+    return false;
+  }
+
+  if (ctx.birth_date) {
+    const age = calculateAge(ctx.birth_date);
+    if (category.min_age !== null && category.min_age > 0 && age < category.min_age) {
+      return false;
+    }
+    if (category.max_age !== null && category.max_age > 0 && age > category.max_age) {
+      return false;
+    }
+  } else {
+    const hasAgeRequirement =
+      (category.min_age !== null && category.min_age > 0) ||
+      (category.max_age !== null && category.max_age > 0);
+    if (hasAgeRequirement) return false;
+  }
+
+  const isFull =
+    category.max_participants !== null &&
+    category.available_spots !== null &&
+    category.available_spots <= 0;
+  if (isFull) return false;
+
+  return true;
+}
+
+function getActiveBatches(category: NewCategory): CategoryBatch[] {
+  if (!category.batches || category.batches.length === 0) return [];
+
+  const now = new Date();
+  return category.batches
+    .filter((batch) => {
+      if (!batch.valid_from) return false;
+      const startDate = new Date(batch.valid_from);
+      if (isNaN(startDate.getTime()) || startDate > now) return false;
+      if (batch.valid_to) {
+        const endDate = new Date(batch.valid_to);
+        if (!isNaN(endDate.getTime()) && endDate < now) return false;
+      }
+      return true;
+    })
+    .sort((a, b) => {
+      const dateA = new Date(a.valid_from!);
+      const dateB = new Date(b.valid_from!);
+      return dateB.getTime() - dateA.getTime();
+    });
+}
+
+function getActiveBatch(category: NewCategory): CategoryBatch | null {
+  const activeBatches = getActiveBatches(category);
+  return activeBatches.length > 0 ? activeBatches[0] : null;
+}
+
+function categoryRequiresActiveBatch(category: NewCategory): boolean {
+  return getActiveBatches(category).length > 0;
+}
+
 interface Kit extends EventKit {
   products?: KitProduct[];
 }
@@ -110,10 +194,10 @@ export function RegistrationFlow({
   const { user, login, register } = useAuth();
   const [step, setStep] = useState(1);
   const [selectedModality, setSelectedModality] = useState<Modality | null>(null);
-  const [selectedCategory, setSelectedCategory] = useState<NewCategory | null>(null);
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
   const [selectedBatch, setSelectedBatch] = useState<CategoryBatch | null>(null);
   const [modalities, setModalities] = useState<Modality[]>([]);
-  const [availableCategories, setAvailableCategories] = useState<NewCategory[]>([]);
+  const [validCategories, setValidCategories] = useState<NewCategory[]>([]);
   const [loadingModalities, setLoadingModalities] = useState(false);
   const [filteredKits, setFilteredKits] = useState<Kit[]>([]);
   const [loadingKits, setLoadingKits] = useState(false);
@@ -238,7 +322,13 @@ export function RegistrationFlow({
   const [searchCpf, setSearchCpf] = useState("");
   const [isSearchingProfile, setIsSearchingProfile] = useState(false);
   const [otherPersonId, setOtherPersonId] = useState<string | null>(null);
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<{
+    fullName: string;
+    email: string;
+    phone: string;
+    cpf: string;
+    gender?: string;
+  }>({
     fullName: "",
     email: "",
     phone: "",
@@ -258,6 +348,40 @@ export function RegistrationFlow({
   const [loginCpfOnly, setLoginCpfOnly] = useState(false);
   const [userProfile, setUserProfile] = useState<{ birth_date?: string } | null>(null);
   const [otherPersonProfile, setOtherPersonProfile] = useState<{ birth_date?: string } | null>(null);
+
+  const registrationUserContext = useMemo((): CategoryUserContext => {
+    const profileToCheck = otherPersonId ? otherPersonProfile : userProfile;
+    const gender = otherPersonId
+      ? formData.gender?.toLowerCase()
+      : user?.profile?.gender?.toLowerCase();
+    return {
+      gender: gender ?? null,
+      birth_date: profileToCheck?.birth_date ?? null,
+    };
+  }, [otherPersonId, otherPersonProfile, userProfile, formData.gender, user?.profile?.gender]);
+
+  const selectedCategory = useMemo(
+    () => validCategories.find((c) => c.id === selectedCategoryId) ?? null,
+    [validCategories, selectedCategoryId]
+  );
+
+  useEffect(() => {
+    if (
+      selectedCategoryId &&
+      !validCategories.some((c) => c.id === selectedCategoryId)
+    ) {
+      setSelectedCategoryId(null);
+      setSelectedBatch(null);
+    }
+  }, [validCategories, selectedCategoryId]);
+
+  useEffect(() => {
+    if (process.env.NODE_ENV === "development") {
+      console.log("Categoria selecionada:", selectedCategory);
+      console.log("Categorias válidas:", validCategories);
+      console.log("SELECTED:", selectedCategory);
+    }
+  }, [selectedCategory, validCategories]);
 
   // Platform fee state
   const [platformFee, setPlatformFee] = useState<number>(0);
@@ -501,9 +625,9 @@ export function RegistrationFlow({
       }
       setIsPollingPayment(false);
       setSelectedModality(null);
-      setSelectedCategory(null);
+      setSelectedCategoryId(null);
       setSelectedBatch(null);
-      setAvailableCategories([]);
+      setValidCategories([]);
       setStep(1);
     }
   }, [open, user, event.id, searchParams]);
@@ -698,77 +822,11 @@ export function RegistrationFlow({
         try {
           const response = await getCategoriesByModality(selectedModality.id);
           if (response.success && response.data) {
-            // Filter categories based on user profile (gender, age, type)
-            const profileToCheck = otherPersonId ? otherPersonProfile : userProfile;
-            const userGender = otherPersonId 
-              ? formData.gender?.toLowerCase() 
-              : user?.profile?.gender?.toLowerCase();
-            
-            let filteredCategories = response.data;
-            
-            // Filter by gender
-            if (userGender) {
-              const genderMap: { [key: string]: CategoryGender } = {
-                'm': 'masculino',
-                'masculino': 'masculino',
-                'f': 'feminino',
-                'feminino': 'feminino',
-                'o': 'ambos',
-                'outro': 'ambos',
-              };
-              const normalizedGender = genderMap[userGender] || 'ambos';
-              
-              filteredCategories = filteredCategories.filter(cat => {
-                if (cat.gender === 'ambos') return true;
-                const matchesGender = cat.gender === normalizedGender;
-                if (!matchesGender) {
-                  console.log(`⚠️ Categoria ${cat.name} é para ${cat.gender}, mas o usuário é ${normalizedGender}`);
-                }
-                return matchesGender;
-              });
-            } else {
-              // If no gender, filter out gender-specific categories
-              filteredCategories = filteredCategories.filter(cat => {
-                if (cat.gender === 'ambos') return true;
-                console.log(`⚠️ Categoria ${cat.name} é para ${cat.gender}, mas gênero do usuário não está disponível`);
-                return false;
-              });
-            }
-            
-            // Filter by age (min_age and max_age)
-            if (profileToCheck?.birth_date) {
-              const age = calculateAge(profileToCheck.birth_date);
-              filteredCategories = filteredCategories.filter(cat => {
-                // Check min_age
-                if (cat.min_age !== null && cat.min_age > 0) {
-                  if (age < cat.min_age) {
-                    console.log(`⚠️ Categoria ${cat.name} requer idade mínima de ${cat.min_age} anos, mas o usuário tem ${age} anos`);
-                    return false;
-                  }
-                }
-                
-                // Check max_age
-                if (cat.max_age !== null && cat.max_age > 0) {
-                  if (age > cat.max_age) {
-                    console.log(`⚠️ Categoria ${cat.name} requer idade máxima de ${cat.max_age} anos, mas o usuário tem ${age} anos`);
-                    return false;
-                  }
-                }
-                
-                return true;
-              });
-            } else {
-              // If no birth date, filter out categories with age requirements
-              filteredCategories = filteredCategories.filter(cat => {
-                const hasAgeRequirement = (cat.min_age !== null && cat.min_age > 0) || (cat.max_age !== null && cat.max_age > 0);
-                if (hasAgeRequirement) {
-                  console.log(`⚠️ Categoria ${cat.name} requer restrição de idade, mas data de nascimento não está disponível`);
-                  return false;
-                }
-                return true;
-              });
-            }
-            
+            const ctx = registrationUserContext;
+            const filteredCategories = response.data.filter((cat) =>
+              isCategoryValidForUser(cat as NewCategory, ctx)
+            );
+
             // Add available_spots calculation (if max_participants is set)
             const categoriesWithSpots = await Promise.all(
               filteredCategories.map(async (cat) => {
@@ -787,29 +845,29 @@ export function RegistrationFlow({
               })
             );
             
-            setAvailableCategories(categoriesWithSpots);
-            console.log('✅ Categorias carregadas para modalidade:', categoriesWithSpots.length);
+            setValidCategories(categoriesWithSpots);
+            console.log("✅ Categorias válidas para modalidade:", categoriesWithSpots.length);
           } else {
             console.error('Erro ao carregar categorias:', response.error);
-            setAvailableCategories([]);
+            setValidCategories([]);
           }
         } catch (error) {
           console.error('Erro ao carregar categorias:', error);
-          setAvailableCategories([]);
+          setValidCategories([]);
         } finally {
           setLoadingCategories(false);
         }
       } else {
-        setAvailableCategories([]);
+        setValidCategories([]);
       }
     };
     
     loadCategoriesForModality();
-  }, [selectedModality, userProfile, otherPersonProfile, otherPersonId, formData.gender]);
+  }, [selectedModality, registrationUserContext]);
 
   const handleModalitySelect = (modality: Modality) => {
     setSelectedModality(modality);
-    setSelectedCategory(null);
+    setSelectedCategoryId(null);
     setSelectedBatch(null);
     setSelectedKit(null);
     setExpandedKits(new Set());
@@ -828,51 +886,22 @@ export function RegistrationFlow({
       return;
     }
     
-    setSelectedCategory(category);
+    if (!isCategoryValidForUser(category, registrationUserContext)) {
+      toast.error("Esta categoria não está disponível para o seu perfil.");
+      return;
+    }
+
+    setSelectedCategoryId(category.id);
     setCustomFieldValues({});
-    // Reset batch selection when changing category
     setSelectedBatch(null);
     setSelectedKit(null);
     setExpandedKits(new Set());
     setSelectedProducts(new Map());
     setVariantSelections(new Map());
-    
-    // If category has valid batches, select the first one automatically
-    if (category.batches && category.batches.length > 0) {
-      const now = new Date();
-      // Filtrar lotes ativos considerando valid_from e valid_to
-      const activeBatches = category.batches
-        .filter(batch => {
-          // Se não tem valid_from, não está ativo (precisa de data de início)
-          if (!batch.valid_from) return false;
-          
-          const startDate = new Date(batch.valid_from);
-          if (isNaN(startDate.getTime())) return false;
-          
-          // Se a data de início ainda não chegou, não está ativo
-          if (startDate > now) return false;
-          
-          // Se tem valid_to, verificar se ainda não passou
-          if (batch.valid_to) {
-            const endDate = new Date(batch.valid_to);
-            if (!isNaN(endDate.getTime()) && endDate < now) {
-              return false; // Lote já expirou
-            }
-          }
-          
-          return true; // Lote está ativo
-        })
-        .sort((a, b) => {
-          // Ordenar por data de início (mais recente primeiro)
-          const dateA = new Date(a.valid_from!);
-          const dateB = new Date(b.valid_from!);
-          return dateB.getTime() - dateA.getTime();
-        });
-      
-      if (activeBatches.length > 0) {
-        // Auto-select o lote mais recente ativo
-        setSelectedBatch(activeBatches[0]);
-      }
+
+    const activeBatch = getActiveBatch(category);
+    if (activeBatch) {
+      setSelectedBatch(activeBatch);
     }
   };
 
@@ -1122,9 +1151,48 @@ export function RegistrationFlow({
   };
 
   const handleNextStep = () => {
+    if (step === 2 && !selectedModality) {
+      toast.error("Selecione uma modalidade");
+      return;
+    }
+
+    if (step === 3) {
+      if (!selectedCategory) {
+        toast.error("Selecione uma categoria válida");
+        return;
+      }
+      if (!isCategoryValidForUser(selectedCategory, registrationUserContext)) {
+        toast.error("Selecione uma categoria válida");
+        return;
+      }
+      if (categoryRequiresActiveBatch(selectedCategory) && !selectedBatch) {
+        toast.error("Selecione um lote ativo para esta categoria");
+        return;
+      }
+    }
+
+    if (step === 4) {
+      if (!selectedKit) {
+        toast.error("Selecione um kit");
+        return;
+      }
+      if (selectedKit.products && selectedKit.products.length > 0) {
+        const variableProducts = selectedKit.products.filter(
+          (p) => p.type === "variable" && p.variants && p.variants.length > 0
+        );
+        if (variableProducts.length > 0) {
+          const selectedProduct = selectedProducts.get(selectedKit.id);
+          if (!selectedProduct?.variantId) {
+            toast.error("Selecione as opções do kit");
+            return;
+          }
+        }
+      }
+    }
+
     setStep((prev) => {
       let nextStep = prev + 1;
-      
+
       console.log(`🔄 handleNextStep chamado:`, {
         prevStep: prev,
         nextStep: nextStep,
@@ -1132,19 +1200,20 @@ export function RegistrationFlow({
         categoryPrice,
         kitPrice,
         subtotal,
+        selectedCategoryId,
+        selectedCategory,
       });
-      
-      // If moving from step 5 (summary) and totalPrice is 0 (free event),
-      // skip step 6 (payment method selection) and go directly to step 7 (confirmation)
+
       if (prev === 5 && totalPrice === 0) {
-        nextStep = 7; // Skip payment method selection for free events
-        // Set default payment method to pix for free events
-        setSelectedPaymentMethod('pix');
-        console.log(`🔄 Navegando do step ${prev} para step ${nextStep} (pulando seleção de método de pagamento - evento gratuito)`);
+        nextStep = 7;
+        setSelectedPaymentMethod("pix");
+        console.log(
+          `🔄 Navegando do step ${prev} para step ${nextStep} (pulando seleção de método de pagamento - evento gratuito)`
+        );
       } else {
         console.log(`🔄 Navegando do step ${prev} para step ${nextStep}`);
       }
-      
+
       return nextStep;
     });
   };
@@ -1624,7 +1693,7 @@ export function RegistrationFlow({
 
   const handleReset = () => {
     setStep(1);
-    setSelectedCategory(null);
+    setSelectedCategoryId(null);
     setSelectedBatch(null);
     setSelectedKit(null);
     setCouponCode("");
@@ -1648,7 +1717,7 @@ export function RegistrationFlow({
   useEffect(() => {
     if (!open) {
       setStep(1);
-      setSelectedCategory(null);
+      setSelectedCategoryId(null);
       setSelectedBatch(null);
       setSelectedKit(null);
       setExpandedKits(new Set());
@@ -2350,7 +2419,7 @@ export function RegistrationFlow({
                   <p className="text-muted-foreground">Carregando categorias...</p>
                 </CardContent>
               </Card>
-            ) : availableCategories.length === 0 ? (
+            ) : validCategories.length === 0 ? (
               <>
                 <Card>
                   <CardContent className="py-8 text-center">
@@ -2392,40 +2461,15 @@ export function RegistrationFlow({
             ) : (
               <>
                 <div className="grid gap-4">
-                  {availableCategories.map((category) => {
+                  {validCategories.map((category) => {
                     const isFull = category.max_participants !== null && 
                                   category.available_spots !== null && 
                                   category.available_spots <= 0;
-                    
-                    // Encontrar o lote ativo para esta categoria
-                    const getActiveBatch = (cat: NewCategory): CategoryBatch | null => {
-                      if (!cat.batches || cat.batches.length === 0) return null;
-                      
-                      const now = new Date();
-                      const activeBatches = cat.batches
-                        .filter(batch => {
-                          if (!batch.valid_from) return false;
-                          const startDate = new Date(batch.valid_from);
-                          if (isNaN(startDate.getTime()) || startDate > now) return false;
-                          if (batch.valid_to) {
-                            const endDate = new Date(batch.valid_to);
-                            if (!isNaN(endDate.getTime()) && endDate < now) return false;
-                          }
-                          return true;
-                        })
-                        .sort((a, b) => {
-                          const dateA = new Date(a.valid_from!);
-                          const dateB = new Date(b.valid_from!);
-                          return dateB.getTime() - dateA.getTime();
-                        });
-                      
-                      return activeBatches.length > 0 ? activeBatches[0] : null;
-                    };
-                    
+
                     const activeBatch = getActiveBatch(category);
                     const displayPrice = activeBatch ? activeBatch.price : category.price;
                     const batchName = activeBatch?.name || null;
-                    const isSelected = selectedCategory?.id === category.id;
+                    const isSelected = selectedCategoryId === category.id;
                     const categoryCustomFields = (category as NewCategory).custom_fields;
                     const hasCustomFields = categoryCustomFields && categoryCustomFields.length > 0;
 
@@ -2441,7 +2485,9 @@ export function RegistrationFlow({
                               ? "ring-2 ring-primary"
                               : ""
                           }`}
-                          onClick={() => !isFull && handleCategorySelect(category)}
+                          onClick={() => {
+                            if (!isFull) handleCategorySelect(category);
+                          }}
                         >
                           <CardContent className="p-4">
                             <div className="flex justify-between items-start">
@@ -2508,7 +2554,10 @@ export function RegistrationFlow({
                   </Button>
                   <Button
                     onClick={handleNextStep}
-                    disabled={!selectedCategory || (selectedCategory.batches && selectedCategory.batches.length > 0 && !selectedBatch)}
+                    disabled={
+                      !selectedCategory ||
+                      (selectedCategory && categoryRequiresActiveBatch(selectedCategory) && !selectedBatch)
+                    }
                   >
                     Próximo
                   </Button>
