@@ -196,7 +196,30 @@ export function EventRegistrationsPanel({ eventId, rolePage, backPath }: EventRe
   const [kitAuditLoading, setKitAuditLoading] = useState(false);
   const [kitAuditResult, setKitAuditResult] = useState<MissingKitProductSelectionAuditPayload | null>(null);
 
+  const [platformFee, setPlatformFee] = useState(0);
+  const [platformFeeType, setPlatformFeeType] = useState<"fixed" | "percentage">("fixed");
+
   const fullEditHref = rolePage === "admin" ? getAdminPath("registrations") : getOrganizerPath("registrations");
+
+  const displayRegistrationAmount = useCallback(
+    (reg: Registration) => {
+      if (rolePage === "admin") {
+        return Number(reg.total_amount) || 0;
+      }
+      return getCanonicalRegistrationDisplayValue(reg, platformFee, platformFeeType);
+    },
+    [rolePage, platformFee, platformFeeType]
+  );
+
+  useEffect(() => {
+    if (rolePage !== "organizer") return;
+    void getEnabledModules().then((response) => {
+      if (response.success && response.data) {
+        setPlatformFee(response.data.platform_fee || 0);
+        setPlatformFeeType(response.data.platform_fee_type || "fixed");
+      }
+    });
+  }, [rolePage]);
 
   const apiFilters: GetRegistrationsFilters = useMemo(() => {
     const f: GetRegistrationsFilters = { event_id: eventId };
