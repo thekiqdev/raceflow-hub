@@ -581,7 +581,11 @@ export async function getRegistrations(
 
   if (pagination) {
     page = Math.max(1, pagination.page);
-    pageSize = pagination.page_size === 50 ? 50 : 30;
+    const requestedSize = Number(pagination.page_size);
+    pageSize =
+      Number.isFinite(requestedSize) && requestedSize >= 1 && requestedSize <= 100
+        ? Math.floor(requestedSize)
+        : 20;
     const summarySql = `
       SELECT
         COUNT(DISTINCT r.id)::bigint AS total_registrations,

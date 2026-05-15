@@ -297,22 +297,30 @@ export const getAllRegistrations = asyncHandler(async (req: AuthRequest, res: Re
   }
 
   const pageRaw = req.query.page;
-  const pageSizeRaw = req.query.page_size;
+  const pageSizeRaw = req.query.page_size ?? req.query.limit;
   const usePagination =
     (pageRaw !== undefined && pageRaw !== '') ||
     (pageSizeRaw !== undefined && pageSizeRaw !== '');
 
   if (usePagination) {
     const page = Math.max(1, parseInt(String(pageRaw ?? '1'), 10) || 1);
-    let rawSize = parseInt(String(pageSizeRaw ?? '30'), 10);
-    if (![30, 50].includes(rawSize)) {
-      rawSize = 30;
+    let rawSize = parseInt(String(pageSizeRaw ?? '20'), 10);
+    if (rawSize < 1 || rawSize > 100) {
+      rawSize = 20;
     }
-    const page_size = rawSize as 30 | 50;
+    const page_size = rawSize;
     const paginated = await getRegistrations(filters, { page, page_size });
     res.json({
       success: true,
-      data: paginated,
+      data: {
+        ...paginated,
+        pagination: {
+          page: paginated.page,
+          limit: paginated.page_size,
+          total: paginated.total,
+          totalPages: paginated.total_pages,
+        },
+      },
     });
     return;
   }

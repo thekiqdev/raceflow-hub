@@ -165,7 +165,15 @@ export interface RegistrationSegmentTotals {
   transferred: number;
 }
 
-/** Resposta paginada de GET /registrations (quando page e page_size são enviados). */
+/** Metadados de paginação (espelho camelCase do backend). */
+export interface RegistrationsPaginationMeta {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+}
+
+/** Resposta paginada de GET /registrations (quando page e page_size/limit são enviados). */
 export interface PaginatedRegistrationsData {
   items: Registration[];
   page: number;
@@ -180,6 +188,7 @@ export interface PaginatedRegistrationsData {
   };
   /** Presente nas APIs recentes; usado nos cards de atalho operacional. */
   segment_totals?: RegistrationSegmentTotals;
+  pagination?: RegistrationsPaginationMeta;
 }
 
 export type GetRegistrationsFilters = {
@@ -198,17 +207,24 @@ export type GetRegistrationsFilters = {
   registration_kind?: string;
 };
 
+export type GetRegistrationsPagination = {
+  page: number;
+  page_size?: number;
+  /** Alias de page_size (query ?limit=). */
+  limit?: number;
+};
+
 export async function getRegistrations(
   filters?: GetRegistrationsFilters,
   pagination?: undefined
 ): Promise<ApiResponse<Registration[]>>;
 export async function getRegistrations(
   filters: GetRegistrationsFilters | undefined,
-  pagination: { page: number; page_size: 30 | 50 }
+  pagination: GetRegistrationsPagination
 ): Promise<ApiResponse<PaginatedRegistrationsData>>;
 export async function getRegistrations(
   filters?: GetRegistrationsFilters,
-  pagination?: { page: number; page_size: 30 | 50 }
+  pagination?: GetRegistrationsPagination
 ): Promise<ApiResponse<Registration[] | PaginatedRegistrationsData>> {
   const queryParams = new URLSearchParams();
   if (filters?.event_id) queryParams.append('event_id', filters.event_id);
@@ -224,8 +240,10 @@ export async function getRegistrations(
   if (filters?.created_at_to) queryParams.append('created_at_to', filters.created_at_to);
   if (filters?.registration_kind) queryParams.append('registration_kind', filters.registration_kind);
   if (pagination) {
+    const pageSize = pagination.limit ?? pagination.page_size ?? 20;
     queryParams.append('page', String(pagination.page));
-    queryParams.append('page_size', String(pagination.page_size));
+    queryParams.append('limit', String(pageSize));
+    queryParams.append('page_size', String(pageSize));
   }
 
   const queryString = queryParams.toString();

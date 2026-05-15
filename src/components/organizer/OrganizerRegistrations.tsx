@@ -26,12 +26,14 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Plus, Search, MoreVertical, Eye, MessageSquare, FileDown, Loader2, Mail, ChevronDown, ChevronUp, Edit2, Save, X, Trash2, Link2 } from "lucide-react";
+import { Plus, Search, MoreVertical, Eye, MessageSquare, FileDown, Loader2, Mail, ChevronDown, ChevronUp, Edit2, Save, X, Trash2, Link2, ChevronLeft, ChevronRight } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { getRegistrations, exportRegistrations, getRegistrationById, updateRegistration, completeRegistrationAttributes, removeRegistrationAttributes, attachRegistrationToCommission, getRegistrationCommission, detachCommission, type Registration, type RegistrationCommissionInfo } from "@/lib/api/registrations";
+
+const REGISTRATIONS_PAGE_SIZE = 20;
 import { maskCpf, unmask } from "@/lib/utils/masks";
 import { getEventCommissionsByEvent, type EventCommissionOption } from "@/lib/api/leaderEventCommissions";
 import { getEvents, type Event } from "@/lib/api/events";
@@ -50,6 +52,14 @@ const OrganizerRegistrations = () => {
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [registrations, setRegistrations] = useState<Registration[]>([]);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(0);
+  const [summary, setSummary] = useState({
+    total_registrations: 0,
+    confirmed_payments: 0,
+    pending_payments: 0,
+    refunds: 0,
+  });
   const [events, setEvents] = useState<Event[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -93,9 +103,18 @@ const OrganizerRegistrations = () => {
     if (user) {
       loadPlatformFeeSettings();
       loadEvents();
+    }
+  }, [user]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearch, statusFilter, paymentStatusFilter, eventFilter]);
+
+  useEffect(() => {
+    if (user) {
       loadRegistrations();
     }
-  }, [user, debouncedSearch, statusFilter, paymentStatusFilter, eventFilter]);
+  }, [user, page, debouncedSearch, statusFilter, paymentStatusFilter, eventFilter]);
 
   const loadPlatformFeeSettings = async () => {
     try {
@@ -151,10 +170,16 @@ const OrganizerRegistrations = () => {
         filters.search = debouncedSearch;
       }
 
-      const response = await getRegistrations(filters);
+      const response = await getRegistrations(filters, {
+        page,
+        limit: REGISTRATIONS_PAGE_SIZE,
+      });
 
-      if (response.success && response.data) {
-        setRegistrations(response.data);
+      if (response.success && response.data && "items" in response.data) {
+        const d = response.data;
+        setRegistrations(d.items);
+        setTotalPages(d.total_pages);
+        setSummary(d.summary);
       } else {
         toast.error(response.error || "Erro ao carregar inscrições");
       }
@@ -575,11 +600,6 @@ const OrganizerRegistrations = () => {
     }).format(value);
   };
 
-  // Calculate statistics
-  const totalRegistrations = registrations.length;
-  const paidRegistrations = registrations.filter(r => r.payment_status === "paid").length;
-  const pendingRegistrations = registrations.filter(r => r.payment_status === "pending").length;
-  const refundedRegistrations = registrations.filter(r => r.payment_status === "refunded" || r.status === "refunded").length;
 
   return (
     <div className="space-y-6">
@@ -595,7 +615,7 @@ const OrganizerRegistrations = () => {
             <CardTitle className="text-sm font-medium">Total de Inscrições</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{totalRegistrations}</div>
+            <div className="text-2xl font-bold">{summary.total_registrations}</div>
           </CardContent>
         </Card>
 
@@ -605,7 +625,7 @@ const OrganizerRegistrations = () => {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-green-600">
-              {paidRegistrations}
+              {summary.confirmed_payments}
             </div>
           </CardContent>
         </Card>
@@ -616,7 +636,7 @@ const OrganizerRegistrations = () => {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-yellow-600">
-              {pendingRegistrations}
+              {summary.pending_payments}
             </div>
           </CardContent>
         </Card>
@@ -627,7 +647,7 @@ const OrganizerRegistrations = () => {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-red-600">
-              {refundedRegistrations}
+              {summary.refunds}
             </div>
           </CardContent>
         </Card>
@@ -807,6 +827,37 @@ const OrganizerRegistrations = () => {
                   )}
                 </TableBody>
               </Table>
+            </div>
+          )}
+          {!loading && totalPages > 1 && (
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-4 border-t mt-4">
+              <p className="text-sm text-muted-foreground">
+                Página {page} de {totalPages}
+              </p>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={page <= 1}
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  aria-label="Página anterior"
+                >
+                  <ChevronLeft className="h-4 w-4 mr-1" />
+                  Anterior
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={page >= totalPages}
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  aria-label="Próxima página"
+                >
+                  Próxima
+                  <ChevronRight className="h-4 w-4 ml-1" />
+                </Button>
+              </div>
             </div>
           )}
         </CardContent>
