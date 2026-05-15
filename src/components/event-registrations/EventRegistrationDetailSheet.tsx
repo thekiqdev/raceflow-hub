@@ -50,6 +50,8 @@ import {
 } from "@/lib/utils/kitVariableProductSelectionUtils";
 import { KitVariableProductSelectors } from "@/components/event-registrations/KitVariableProductSelectors";
 import { loadKitsForCategoryWithKitFallback } from "@/lib/utils/loadEventKitsWithKitFallback";
+import { getEnabledModules } from "@/lib/api/systemSettings";
+import { getCanonicalRegistrationDisplayValue } from "@/lib/utils/feeCalculations";
 
 function formatMoney(n: number): string {
   return `R$ ${Number(n || 0).toFixed(2).replace(".", ",")}`;
@@ -163,6 +165,26 @@ export function EventRegistrationDetailSheet({
   const kitAttributesSeedKeyRef = useRef<string | null>(null);
 
   const isAdmin = rolePage === "admin";
+  const [platformFee, setPlatformFee] = useState(0);
+  const [platformFeeType, setPlatformFeeType] = useState<"fixed" | "percentage">("fixed");
+
+  useEffect(() => {
+    if (isAdmin) return;
+    void getEnabledModules().then((response) => {
+      if (response.success && response.data) {
+        setPlatformFee(response.data.platform_fee || 0);
+        setPlatformFeeType(response.data.platform_fee_type || "fixed");
+      }
+    });
+  }, [isAdmin]);
+
+  const displayRegistrationAmount = useCallback(
+    (reg: Registration) => {
+      if (isAdmin) return Number(reg.total_amount) || 0;
+      return getCanonicalRegistrationDisplayValue(reg, platformFee, platformFeeType);
+    },
+    [isAdmin, platformFee, platformFeeType]
+  );
 
   const loadDetail = useCallback(async () => {
     if (!registrationId) {
@@ -820,7 +842,7 @@ export function EventRegistrationDetailSheet({
                     </p>
                     <p>
                       <span className="text-muted-foreground">Valor: </span>
-                      {formatMoney(Number(detail.total_amount))}
+                      {formatMoney(displayRegistrationAmount(detail))}
                     </p>
                     {detail.leader_name && (
                       <p>

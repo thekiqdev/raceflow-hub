@@ -40,7 +40,7 @@ import { getEventKits, type EventKit, type KitProduct } from "@/lib/api/eventKit
 import { toast } from "sonner";
 import { useDebounce } from "@/hooks/useDebounce";
 import { getEnabledModules } from "@/lib/api/systemSettings";
-import { calculateValueWithoutFee } from "@/lib/utils/feeCalculations";
+import { getCanonicalRegistrationDisplayValue } from "@/lib/utils/feeCalculations";
 import { EventSelect } from "@/components/ui/event-select";
 import { RegisterAthleteStaffDialog } from "@/components/registration/RegisterAthleteStaffDialog";
 import { groupRegistrationProductSelections } from "@/lib/utils/groupRegistrationProductSelections";
@@ -763,13 +763,11 @@ const OrganizerRegistrations = () => {
                         </TableCell>
                         <TableCell className="text-right font-semibold">
                           {formatCurrency(
-                            (registration.total_amount || 0) > 0
-                              ? calculateValueWithoutFee(
-                                  parseFloat(String(registration.total_amount || 0)),
-                                  platformFee,
-                                  platformFeeType
-                                )
-                              : parseFloat(String(registration.total_amount || 0))
+                            getCanonicalRegistrationDisplayValue(
+                              registration,
+                              platformFee,
+                              platformFeeType
+                            )
                           )}
                         </TableCell>
                         <TableCell>{getStatusBadge(registration.status || "pending")}</TableCell>
@@ -1055,13 +1053,11 @@ const OrganizerRegistrations = () => {
                     <Label className="text-sm text-muted-foreground">Valor Total</Label>
                     <p className="font-medium text-lg">
                       {formatCurrency(
-                        (registrationDetails.total_amount || 0) > 0
-                          ? calculateValueWithoutFee(
-                              parseFloat(String(registrationDetails.total_amount || 0)),
-                              platformFee,
-                              platformFeeType
-                            )
-                          : parseFloat(String(registrationDetails.total_amount || 0))
+                        getCanonicalRegistrationDisplayValue(
+                          registrationDetails,
+                          platformFee,
+                          platformFeeType
+                        )
                       )}
                     </p>
                   </div>

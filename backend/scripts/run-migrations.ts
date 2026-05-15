@@ -139,6 +139,7 @@ const migrations = [
   '109_add_transferred_payment_status.sql',
   '110_admin_registration_transfer_split.sql',
   '111_add_transfer_until_to_events.sql',
+  '112_organizer_liquid_value_canonical.sql',
 ];
 
 // Create migrations tracking table

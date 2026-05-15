@@ -16,7 +16,7 @@ import {
   type EventInvitationStats,
   type EventGeneralStats,
 } from "@/lib/api/reports";
-import { calculateValueWithoutFee } from "@/lib/utils/feeCalculations";
+import { getCanonicalRegistrationDisplayValue } from "@/lib/utils/feeCalculations";
 import { ArrowLeft, Users, DollarSign, Package, CreditCard, Smartphone, Gift, AlertTriangle, LayoutGrid } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { toast } from "sonner";
@@ -258,24 +258,8 @@ const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
     reg: RegistrationDetail,
     currentPlatformFee: number,
     currentPlatformFeeType: 'fixed' | 'percentage'
-  ): number => {
-    if (reg.payment_method === 'free_bonus' || reg.payment_status === 'convidado') {
-      return 0;
-    }
-    const total = Number(reg.total_amount) || 0;
-    const hasPersistedFeeFields =
-      reg.platform_fee_amount != null || reg.registration_edit_fee_amount != null;
-
-    if (hasPersistedFeeFields) {
-      const feeTotal =
-        (reg.platform_fee_amount == null ? 0 : Number(reg.platform_fee_amount) || 0) +
-        (reg.registration_edit_fee_amount == null ? 0 : Number(reg.registration_edit_fee_amount) || 0);
-      return Math.max(0, Math.round((total - feeTotal) * 100) / 100);
-    }
-
-    // Legacy fallback: only when both fee fields are null/undefined in payload.
-    return Math.max(0, calculateValueWithoutFee(total, currentPlatformFee, currentPlatformFeeType));
-  };
+  ): number =>
+    getCanonicalRegistrationDisplayValue(reg, currentPlatformFee, currentPlatformFeeType);
 
   useEffect(() => {
     loadEventDetails();

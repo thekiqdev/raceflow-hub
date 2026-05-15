@@ -289,8 +289,8 @@ export const getEvents = async (filters?: {
         COALESCE(SUM(
           CASE WHEN payment_status = 'paid'
             AND NOT (status = 'transferred' AND transferred_to_registration_id IS NOT NULL) THEN
-            CASE WHEN (COALESCE(platform_fee_amount, 0) + COALESCE(registration_edit_fee_amount, 0)) > 0
-              THEN (total_amount - COALESCE(platform_fee_amount, 0) - COALESCE(registration_edit_fee_amount, 0))
+            CASE WHEN platform_fee_amount IS NOT NULL OR registration_edit_fee_amount IS NOT NULL
+              THEN GREATEST(0, ROUND((total_amount - COALESCE(platform_fee_amount, 0) - COALESCE(registration_edit_fee_amount, 0))::numeric, 2))
               ELSE calculate_value_without_platform_fee(total_amount, get_platform_fee(), get_platform_fee_type())
             END
           ELSE 0 END
@@ -298,8 +298,8 @@ export const getEvents = async (filters?: {
         COALESCE(AVG(
           CASE WHEN payment_status = 'paid'
             AND NOT (status = 'transferred' AND transferred_to_registration_id IS NOT NULL) THEN
-            CASE WHEN (COALESCE(platform_fee_amount, 0) + COALESCE(registration_edit_fee_amount, 0)) > 0
-              THEN (total_amount - COALESCE(platform_fee_amount, 0) - COALESCE(registration_edit_fee_amount, 0))
+            CASE WHEN platform_fee_amount IS NOT NULL OR registration_edit_fee_amount IS NOT NULL
+              THEN GREATEST(0, ROUND((total_amount - COALESCE(platform_fee_amount, 0) - COALESCE(registration_edit_fee_amount, 0))::numeric, 2))
               ELSE calculate_value_without_platform_fee(total_amount, get_platform_fee(), get_platform_fee_type())
             END
           END
@@ -307,7 +307,7 @@ export const getEvents = async (filters?: {
         COALESCE(SUM(
           CASE WHEN payment_status = 'paid'
             AND NOT (status = 'transferred' AND transferred_to_registration_id IS NOT NULL) THEN
-            CASE WHEN (COALESCE(platform_fee_amount, 0) + COALESCE(registration_edit_fee_amount, 0)) > 0
+            CASE WHEN platform_fee_amount IS NOT NULL OR registration_edit_fee_amount IS NOT NULL
               THEN (COALESCE(platform_fee_amount, 0) + COALESCE(registration_edit_fee_amount, 0))
               ELSE (total_amount - calculate_value_without_platform_fee(total_amount, get_platform_fee(), get_platform_fee_type()))
             END

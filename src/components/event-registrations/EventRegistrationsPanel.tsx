@@ -77,6 +77,8 @@ import { getAdminPath, getOrganizerPath } from "@/lib/utils/navigation";
 import { EventRegistrationDetailSheet } from "./EventRegistrationDetailSheet";
 import { TransferRegistrationAdminDialog, canAdminTransferRegistration } from "@/components/admin/TransferRegistrationAdminDialog";
 import { cn } from "@/lib/utils";
+import { getEnabledModules } from "@/lib/api/systemSettings";
+import { getCanonicalRegistrationDisplayValue } from "@/lib/utils/feeCalculations";
 
 export type EventRegistrationsRolePage = "admin" | "organizer";
 
@@ -915,7 +917,9 @@ export function EventRegistrationsPanel({ eventId, rolePage, backPath }: EventRe
                           </span>
                         </TableCell>
                         <TableCell className="whitespace-nowrap text-muted-foreground text-xs">{created}</TableCell>
-                        <TableCell className="whitespace-nowrap font-medium">{formatMoney(Number(reg.total_amount))}</TableCell>
+                        <TableCell className="whitespace-nowrap font-medium">
+                          {formatMoney(displayRegistrationAmount(reg))}
+                        </TableCell>
                         <TableCell>
                           <Badge variant="outline" className="font-normal">
                             {registrationStatusLabel(reg.status)}

@@ -59,6 +59,42 @@ export function calculateValueWithoutFee(
  * // Fixed fee: if base is 100 and fee is 10, total = 100 + 10 = 110
  * calculateValueWithFee(100, 10, 'fixed') // returns 110
  */
+export interface RegistrationFeeFields {
+  total_amount?: number | string | null;
+  platform_fee_amount?: number | string | null;
+  registration_edit_fee_amount?: number | string | null;
+  payment_method?: string | null;
+  payment_status?: string | null;
+}
+
+/**
+ * Valor líquido para exibição do organizador (regra canônica):
+ * - taxas persistidas (incluindo zero) => total - taxas
+ * - ambas taxas NULL => fallback legado calculateValueWithoutFee
+ */
+export function getCanonicalRegistrationDisplayValue(
+  reg: RegistrationFeeFields,
+  platformFee: number,
+  platformFeeType: 'fixed' | 'percentage'
+): number {
+  if (reg.payment_method === 'free_bonus' || reg.payment_status === 'convidado') {
+    return 0;
+  }
+
+  const total = Number(reg.total_amount) || 0;
+  const hasPersistedFee =
+    reg.platform_fee_amount != null || reg.registration_edit_fee_amount != null;
+
+  if (hasPersistedFee) {
+    const fee =
+      (reg.platform_fee_amount == null ? 0 : Number(reg.platform_fee_amount) || 0) +
+      (reg.registration_edit_fee_amount == null ? 0 : Number(reg.registration_edit_fee_amount) || 0);
+    return Math.max(0, Math.round((total - fee) * 100) / 100);
+  }
+
+  return Math.max(0, calculateValueWithoutFee(total, platformFee, platformFeeType));
+}
+
 export function calculateValueWithFee(
   baseAmount: number,
   platformFee: number,
