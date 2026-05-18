@@ -73,6 +73,7 @@ const AdvancedSettings = () => {
 
   // Diagnóstico read-only de inscrições ocultas/inconsistentes após exclusão de kits
   const [integrityEventId, setIntegrityEventId] = useState("");
+  const [integrityEventSearch, setIntegrityEventSearch] = useState("");
   const [integrityEvents, setIntegrityEvents] = useState<Event[]>([]);
   const [loadingIntegrityEvents, setLoadingIntegrityEvents] = useState(false);
   const [isRunningIntegrity, setIsRunningIntegrity] = useState(false);
@@ -749,6 +750,14 @@ const AdvancedSettings = () => {
     return `${event.title} - ${eventDate}${location ? ` - ${location}` : ""}`;
   };
 
+  const normalizedEventSearch = integrityEventSearch.trim().toLowerCase();
+  const filteredIntegrityEvents = normalizedEventSearch
+    ? integrityEvents.filter((event) =>
+        formatIntegrityEventLabel(event).toLowerCase().includes(normalizedEventSearch) ||
+        event.id.toLowerCase().includes(normalizedEventSearch)
+      )
+    : integrityEvents;
+
   return (
     <div className="space-y-6">
       <InvitationBonusAuditPanel />
@@ -1027,24 +1036,49 @@ const AdvancedSettings = () => {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <Select
-              value={integrityEventId || LATEST_EVENT_VALUE}
-              onValueChange={(value) => setIntegrityEventId(value === LATEST_EVENT_VALUE ? "" : value)}
-              disabled={isAnyInvestigationRunning}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder={loadingIntegrityEvents ? "Carregando eventos..." : "Selecione um evento"} />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={LATEST_EVENT_VALUE}>Evento mais recente</SelectItem>
-                {integrityEvents.map((event) => (
-                  <SelectItem key={event.id} value={event.id}>
-                    {formatIntegrityEventLabel(event)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <div className="space-y-4">
+            <div className="grid gap-3 xl:grid-cols-[minmax(260px,360px)_minmax(420px,1fr)]">
+              <div className="space-y-1">
+                <label htmlFor="integrity-event-search" className="text-sm font-medium">
+                  Buscar evento
+                </label>
+                <Input
+                  id="integrity-event-search"
+                  type="search"
+                  value={integrityEventSearch}
+                  onChange={(event) => setIntegrityEventSearch(event.target.value)}
+                  disabled={isAnyInvestigationRunning}
+                  placeholder="Nome, data, cidade ou ID"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-sm font-medium">Selecionar evento</label>
+                <Select
+                  value={integrityEventId || LATEST_EVENT_VALUE}
+                  onValueChange={(value) => setIntegrityEventId(value === LATEST_EVENT_VALUE ? "" : value)}
+                  disabled={isAnyInvestigationRunning}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder={loadingIntegrityEvents ? "Carregando eventos..." : "Selecione um evento"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={LATEST_EVENT_VALUE}>Evento mais recente</SelectItem>
+                    {filteredIntegrityEvents.map((event) => (
+                      <SelectItem key={event.id} value={event.id}>
+                        {formatIntegrityEventLabel(event)}
+                      </SelectItem>
+                    ))}
+                    {filteredIntegrityEvents.length === 0 && (
+                      <div className="px-2 py-2 text-sm text-muted-foreground">
+                        Nenhum evento encontrado.
+                      </div>
+                    )}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
             <Button
               onClick={handleExecuteIntegrityScript}
               disabled={isAnyInvestigationRunning}
@@ -1180,7 +1214,9 @@ const AdvancedSettings = () => {
                 Restaurar faltantes
               </Button>
             )}
-            <div className="grid w-full gap-3 sm:grid-cols-2 lg:w-auto">
+            </div>
+
+            <div className="grid gap-3 rounded-md border bg-muted/20 p-3 sm:grid-cols-2 lg:max-w-xl">
               <div className="space-y-1">
                 <label htmlFor="restore-limit" className="text-sm font-medium">
                   Limite de restauração
@@ -1212,6 +1248,8 @@ const AdvancedSettings = () => {
                 />
               </div>
             </div>
+
+            <div className="flex flex-wrap items-center gap-2">
             {logsIntegrity.length > 0 && (
               <Button
                 onClick={handleDownloadLogIntegrity}
@@ -1282,6 +1320,7 @@ const AdvancedSettings = () => {
                 Baixar log backup
               </Button>
             )}
+            </div>
           </div>
 
           {summaryIntegrity && (
