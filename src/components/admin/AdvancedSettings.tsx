@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
@@ -87,6 +88,8 @@ const AdvancedSettings = () => {
   const [summaryRestoreBackup, setSummaryRestoreBackup] = useState<RestoreRegistrationsFromBackupResult | null>(null);
   const [hasErrorRestoreBackup, setHasErrorRestoreBackup] = useState(false);
   const logsEndRefRestoreBackup = useRef<HTMLDivElement>(null);
+  const [restoreLimit, setRestoreLimit] = useState(10);
+  const [restoreBatchSize, setRestoreBatchSize] = useState(50);
   const [isRunningDeepForensic, setIsRunningDeepForensic] = useState(false);
   const [logsDeepForensic, setLogsDeepForensic] = useState<string[]>([]);
   const [summaryDeepForensic, setSummaryDeepForensic] = useState<DeepForensicRegistrationsInvestigation | null>(null);
@@ -439,6 +442,11 @@ const AdvancedSettings = () => {
       return;
     }
 
+    const safeLimit = Math.max(1, Math.min(Number(restoreLimit) || 10, 5000));
+    const safeBatchSize = Math.max(1, Math.min(Number(restoreBatchSize) || 50, 200));
+    if (safeLimit !== restoreLimit) setRestoreLimit(safeLimit);
+    if (safeBatchSize !== restoreBatchSize) setRestoreBatchSize(safeBatchSize);
+
     if (confirm) {
       const confirmed = window.confirm(
         "Esta ação irá restaurar inscrições faltantes encontradas no backup.\n\nNenhuma inscrição existente será alterada.\n\nInscrições com kit removido serão restauradas com kit nulo. Referências de transferência inexistentes serão zeradas, preservando os demais dados históricos.\n\nDeseja continuar?"
@@ -457,8 +465,8 @@ const AdvancedSettings = () => {
         eventId: selectedEventId,
         confirm,
         mode: confirm ? "restore" : "preview",
-        limit: confirm ? 10 : undefined,
-        batchSize: 10,
+        limit: safeLimit,
+        batchSize: safeBatchSize,
         applyNullKitFallback: true,
         applyNullTransferFallback: true,
       },
@@ -1085,6 +1093,38 @@ const AdvancedSettings = () => {
                 Restaurar faltantes
               </Button>
             )}
+            <div className="grid w-full gap-3 sm:grid-cols-2 lg:w-auto">
+              <div className="space-y-1">
+                <label htmlFor="restore-limit" className="text-sm font-medium">
+                  Limite de restauração
+                </label>
+                <Input
+                  id="restore-limit"
+                  type="number"
+                  min={1}
+                  max={5000}
+                  value={restoreLimit}
+                  onChange={(event) => setRestoreLimit(Number(event.target.value))}
+                  disabled={isAnyInvestigationRunning}
+                  className="w-full sm:w-40"
+                />
+              </div>
+              <div className="space-y-1">
+                <label htmlFor="restore-batch-size" className="text-sm font-medium">
+                  Batch size
+                </label>
+                <Input
+                  id="restore-batch-size"
+                  type="number"
+                  min={1}
+                  max={200}
+                  value={restoreBatchSize}
+                  onChange={(event) => setRestoreBatchSize(Number(event.target.value))}
+                  disabled={isAnyInvestigationRunning}
+                  className="w-full sm:w-40"
+                />
+              </div>
+            </div>
             {logsIntegrity.length > 0 && (
               <Button
                 onClick={handleDownloadLogIntegrity}
@@ -1335,6 +1375,8 @@ const AdvancedSettings = () => {
                       {summaryRestoreBackup.null_transfer_refs_promoted_count}
                     </p>
                     <p>Limite desta execução: {summaryRestoreBackup.requested_limit}</p>
+                    <p>Batch size: {summaryRestoreBackup.batch_size}</p>
+                    <p>Batches executados: {summaryRestoreBackup.batches_executed}</p>
                     <p>Restauradas: {summaryRestoreBackup.restored_count}</p>
                     <p>Restauradas com kit normal: {summaryRestoreBackup.restored_with_normal_kit}</p>
                     <p>Restauradas com kit NULL fallback: {summaryRestoreBackup.restored_with_null_kit}</p>

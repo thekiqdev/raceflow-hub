@@ -34,6 +34,7 @@ type RestoreResult = {
   skipped_count: number;
   requested_limit: number;
   batch_size: number;
+  batches_executed: number;
   restored_count: number;
   restored_with_normal_kit: number;
   restored_with_null_kit: number;
@@ -118,7 +119,9 @@ type RelatedTableCopyResult = {
 };
 
 const DEFAULT_RESTORE_LIMIT = 10;
-const DEFAULT_BATCH_SIZE = 10;
+const DEFAULT_BATCH_SIZE = 50;
+const MAX_RESTORE_LIMIT = 5000;
+const MAX_BATCH_SIZE = 200;
 const LEGACY_KIT_METADATA_COLUMNS = [
   'metadata',
   'meta',
@@ -587,8 +590,8 @@ export default async function run(params: RunParams): Promise<RestoreResult> {
 
   const eventId = params.eventId;
   const mode = params.mode ?? (params.confirm === true ? 'restore' : 'preview');
-  const requestedLimit = Math.max(1, Math.min(Number(params.limit ?? DEFAULT_RESTORE_LIMIT) || DEFAULT_RESTORE_LIMIT, 1000));
-  const batchSize = Math.max(1, Math.min(Number(params.batchSize ?? DEFAULT_BATCH_SIZE) || DEFAULT_BATCH_SIZE, 100));
+  const requestedLimit = Math.max(1, Math.min(Number(params.limit ?? DEFAULT_RESTORE_LIMIT) || DEFAULT_RESTORE_LIMIT, MAX_RESTORE_LIMIT));
+  const batchSize = Math.max(1, Math.min(Number(params.batchSize ?? DEFAULT_BATCH_SIZE) || DEFAULT_BATCH_SIZE, MAX_BATCH_SIZE));
   const applyNullKitFallback = params.applyNullKitFallback !== false;
   const applyNullTransferFallback = params.applyNullTransferFallback !== false;
   const { log, logs } = createStructuredLogger();
@@ -596,6 +599,8 @@ export default async function run(params: RunParams): Promise<RestoreResult> {
 
   try {
     log(`Iniciando restore controlado em modo ${mode} para evento ${eventId}`);
+    log(`Limit recebido/aplicado: ${params.limit ?? DEFAULT_RESTORE_LIMIT} -> ${requestedLimit}`);
+    log(`Batch size recebido/aplicado: ${params.batchSize ?? DEFAULT_BATCH_SIZE} -> ${batchSize}`);
     log(`Flags recebidas: applyNullKitFallback=${applyNullKitFallback}; applyNullTransferFallback=${applyNullTransferFallback}`);
     const [backupRegistrationsResult, currentRegistrationsResult, eventExistsResult, currentColumns, dependencyTargets] =
       await Promise.all([
@@ -683,6 +688,7 @@ export default async function run(params: RunParams): Promise<RestoreResult> {
       );
     }
     log(`Limit aplicado: ${requestedLimit}`);
+    log(`Batch size aplicado: ${batchSize}`);
 
     if (mode !== 'restore' || params.confirm !== true) {
       return {
@@ -695,6 +701,7 @@ export default async function run(params: RunParams): Promise<RestoreResult> {
         skipped_count: skippedCandidates.length,
         requested_limit: requestedLimit,
         batch_size: batchSize,
+        batches_executed: 0,
         restored_count: 0,
         restored_with_normal_kit: 0,
         restored_with_null_kit: 0,
@@ -755,6 +762,7 @@ export default async function run(params: RunParams): Promise<RestoreResult> {
     let restoredWithNullTransferRefs = 0;
     let customFieldValuesRestored = 0;
     let financialPaymentsRestored = 0;
+    let batchesExecuted = 0;
     const restoredIds: string[] = [];
     const failedBatches: RestoreResult['failed_batches'] = [];
 
@@ -762,6 +770,7 @@ export default async function run(params: RunParams): Promise<RestoreResult> {
       const batch = limitedCandidates.slice(start, start + batchSize);
       const batchIndex = Math.floor(start / batchSize) + 1;
       const client = await getClient();
+      batchesExecuted++;
 
       try {
         await client.query('BEGIN');
@@ -816,6 +825,7 @@ export default async function run(params: RunParams): Promise<RestoreResult> {
         client.release();
       }
     }
+    log(`Batches executados: ${batchesExecuted}`);
 
     return {
       eventId,
@@ -827,6 +837,7 @@ export default async function run(params: RunParams): Promise<RestoreResult> {
       skipped_count: skippedCandidates.length,
       requested_limit: requestedLimit,
       batch_size: batchSize,
+      batches_executed: batchesExecuted,
       restored_count: restoredCount,
       restored_with_normal_kit: restoredWithNormalKit,
       restored_with_null_kit: restoredWithNullKit,

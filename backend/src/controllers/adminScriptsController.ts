@@ -628,7 +628,7 @@ export const restoreRegistrationsFromBackupController = asyncHandler(async (req:
     const confirm = req.body?.confirm === true;
     const mode = req.body?.mode === 'restore' ? 'restore' : 'preview';
     const limit = Number(req.body?.limit ?? 10);
-    const batchSize = Number(req.body?.batchSize ?? 10);
+    const batchSize = Number(req.body?.batchSize ?? 50);
     const applyNullKitFallback = req.body?.applyNullKitFallback !== false;
     const applyNullTransferFallback = req.body?.applyNullTransferFallback !== false;
 
@@ -641,6 +641,8 @@ export const restoreRegistrationsFromBackupController = asyncHandler(async (req:
       : 'Iniciando preview de recuperação de inscrições do backup...');
     logMessage(`Evento: ${eventId}`);
     logMessage(confirm && mode === 'restore' ? `Modo: restore (confirm=true, limit=${limit}, batchSize=${batchSize})` : 'Modo: preview (nenhum dado será inserido)');
+    logMessage(`Limit recebido: ${limit}`);
+    logMessage(`Batch size recebido: ${batchSize}`);
     logMessage(`Fallbacks aprovados: kit NULL=${applyNullKitFallback}; transfer refs NULL=${applyNullTransferFallback}`);
 
     const result = await restoreRegistrationsFromBackup({
@@ -656,6 +658,9 @@ export const restoreRegistrationsFromBackupController = asyncHandler(async (req:
     logMessage(`Inscrições no backup: ${result.backup_found}`);
     logMessage(`Inscrições atuais: ${result.current_found}`);
     logMessage(`Inscrições faltantes: ${result.missing_count}`);
+    logMessage(`Limit aplicado: ${result.requested_limit}`);
+    logMessage(`Batch size aplicado: ${result.batch_size}`);
+    logMessage(`Batches executados: ${result.batches_executed}`);
     logMessage(`Elegíveis: ${result.eligible_count}`);
     logMessage(`Ignoradas: ${result.skipped_count}`);
     logMessage(`RESTORABLE_WITH_NULL_KIT promoted to eligible: ${result.null_kit_promoted_count}`);

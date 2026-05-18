@@ -699,6 +699,7 @@ export interface RestoreRegistrationsFromBackupResult {
   skipped_count: number;
   requested_limit: number;
   batch_size: number;
+  batches_executed: number;
   restored_count: number;
   restored_with_normal_kit: number;
   restored_with_null_kit: number;
