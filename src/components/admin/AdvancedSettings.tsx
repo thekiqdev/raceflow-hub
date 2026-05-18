@@ -441,7 +441,7 @@ const AdvancedSettings = () => {
 
     if (confirm) {
       const confirmed = window.confirm(
-        "Confirmar restauração incremental? Apenas inscrições ausentes por ID serão inseridas. Nenhum registro existente será sobrescrito."
+        "Esta ação irá restaurar inscrições faltantes encontradas no backup.\n\nNenhuma inscrição existente será alterada.\n\nInscrições com kit removido serão restauradas com kit nulo, preservando os demais dados históricos.\n\nDeseja continuar?"
       );
       if (!confirmed) return;
     }
@@ -453,7 +453,13 @@ const AdvancedSettings = () => {
     const newLogs: string[] = [];
 
     await executeRestoreRegistrationsFromBackupScript(
-      { eventId: selectedEventId, confirm },
+      {
+        eventId: selectedEventId,
+        confirm,
+        mode: confirm ? "restore" : "preview",
+        limit: confirm ? 10 : undefined,
+        batchSize: 10,
+      },
       (message: string) => {
         newLogs.push(message);
         setLogsRestoreBackup([...newLogs]);
@@ -1067,14 +1073,16 @@ const AdvancedSettings = () => {
                 </>
               )}
             </Button>
-            <Button
-              onClick={() => runRestoreBackupScript(true)}
-              disabled={isAnyInvestigationRunning}
-              variant="destructive"
-              className="flex items-center gap-2 sm:w-auto"
-            >
-              Restaurar faltantes
-            </Button>
+            {summaryBackupAnalyzer && (
+              <Button
+                onClick={() => runRestoreBackupScript(true)}
+                disabled={isAnyInvestigationRunning}
+                variant="destructive"
+                className="flex items-center gap-2 sm:w-auto"
+              >
+                Restaurar faltantes
+              </Button>
+            )}
             {logsIntegrity.length > 0 && (
               <Button
                 onClick={handleDownloadLogIntegrity}
@@ -1307,9 +1315,15 @@ const AdvancedSettings = () => {
                     <p>Inscrições no backup: {summaryRestoreBackup.backup_found}</p>
                     <p>Inscrições atuais: {summaryRestoreBackup.current_found}</p>
                     <p>Faltantes por ID: {summaryRestoreBackup.missing_count}</p>
+                    <p>Elegíveis: {summaryRestoreBackup.eligible_count}</p>
+                    <p>Ignoradas: {summaryRestoreBackup.skipped_count}</p>
+                    <p>Limite desta execução: {summaryRestoreBackup.requested_limit}</p>
                     <p>Restauradas: {summaryRestoreBackup.restored_count}</p>
+                    <p>kit_id NULL aplicado: {summaryRestoreBackup.kit_null_applied}</p>
+                    <p>Campos personalizados restaurados: {summaryRestoreBackup.custom_field_values_restored}</p>
+                    <p>Falhas: {summaryRestoreBackup.failed_count}</p>
                     <p className="text-muted-foreground">
-                      Segurança: sem overwrite, sem delete, insert apenas de registros faltantes por ID.
+                      Segurança: sem overwrite, sem delete, batches com rollback e insert apenas de registros faltantes por ID.
                     </p>
                   </div>
                 </div>

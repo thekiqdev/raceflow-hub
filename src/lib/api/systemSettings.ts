@@ -695,24 +695,60 @@ export interface RestoreRegistrationsFromBackupResult {
   backup_found: number;
   current_found: number;
   missing_count: number;
+  eligible_count: number;
+  skipped_count: number;
+  requested_limit: number;
+  batch_size: number;
   restored_count: number;
+  custom_field_values_restored: number;
+  kit_null_applied: number;
+  failed_count: number;
   sample: Array<Record<string, unknown>>;
   missing_sample: Array<Record<string, unknown>>;
+  skipped_sample: Array<{
+    registration_id: string;
+    reason: string;
+    missing_dependencies: string[];
+  }>;
+  restored_ids: string[];
+  failed_batches: Array<{
+    batch_index: number;
+    registration_ids: string[];
+    error: string;
+  }>;
+  legacy_kit_snapshots: Array<{
+    registration_id: string;
+    original_kit_id: string;
+    legacy_kit_name: string | null;
+    persisted_in_registration: boolean;
+  }>;
+  post_restore_validation: {
+    organizer_registrations_check: number;
+    admin_registrations_check: number;
+    event_detailed_report_base_check: number;
+    checkin_search_base_check: number;
+    transfer_references_check: number;
+    custom_field_values_check: number;
+  } | null;
   safety: {
     backup_database_url_present: boolean;
     event_exists_in_current: boolean;
     confirm_required: boolean;
     inserted_only_missing_by_id: boolean;
+    kit_id_null_when_missing: boolean;
+    limited_restore: boolean;
+    batch_rollback: boolean;
     overwrites_existing_records: false;
     deletes_current_records: false;
   };
+  logs: string[];
 }
 
 /**
  * Preview/restauração incremental de inscrições a partir de BACKUP_DATABASE_URL.
  */
 export const executeRestoreRegistrationsFromBackupScript = async (
-  params: { eventId: string; confirm?: boolean },
+  params: { eventId: string; confirm?: boolean; mode?: 'preview' | 'restore'; limit?: number; batchSize?: number },
   onLog: (message: string) => void,
   onComplete: (data: {
     success: boolean;
@@ -732,10 +768,20 @@ export const executeRestoreRegistrationsFromBackupScript = async (
       return 'http://localhost:3001/api';
     };
 
-    const response = await fetch(`${getApiUrl()}/admin/scripts/restore-registrations-from-backup`, {
+    const endpoint = params.mode === 'restore'
+      ? '/admin/scripts/restore-missing-registrations'
+      : '/admin/scripts/restore-registrations-from-backup';
+
+    const response = await fetch(`${getApiUrl()}${endpoint}`, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ eventId: params.eventId, confirm: params.confirm === true }),
+      body: JSON.stringify({
+        eventId: params.eventId,
+        confirm: params.confirm === true,
+        mode: params.mode ?? 'preview',
+        limit: params.limit,
+        batchSize: params.batchSize,
+      }),
     });
 
     if (!response.ok) {

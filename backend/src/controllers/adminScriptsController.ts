@@ -626,30 +626,37 @@ export const restoreRegistrationsFromBackupController = asyncHandler(async (req:
   try {
     const eventId = typeof req.body?.eventId === 'string' ? req.body.eventId.trim() : '';
     const confirm = req.body?.confirm === true;
+    const mode = req.body?.mode === 'restore' ? 'restore' : 'preview';
+    const limit = Number(req.body?.limit ?? 10);
+    const batchSize = Number(req.body?.batchSize ?? 10);
 
     if (!eventId) {
       throw new Error('eventId é obrigatório para recuperar inscrições do backup');
     }
 
-    logMessage(confirm
+    logMessage(confirm && mode === 'restore'
       ? 'Iniciando restauração incremental de inscrições do backup...'
       : 'Iniciando preview de recuperação de inscrições do backup...');
     logMessage(`Evento: ${eventId}`);
-    logMessage(confirm ? 'Modo: restore (confirm=true)' : 'Modo: preview (nenhum dado será inserido)');
+    logMessage(confirm && mode === 'restore' ? `Modo: restore (confirm=true, limit=${limit}, batchSize=${batchSize})` : 'Modo: preview (nenhum dado será inserido)');
 
-    const result = await restoreRegistrationsFromBackup({ eventId, confirm });
+    const result = await restoreRegistrationsFromBackup({ eventId, confirm, mode, limit, batchSize });
 
     logMessage(`Inscrições no backup: ${result.backup_found}`);
     logMessage(`Inscrições atuais: ${result.current_found}`);
     logMessage(`Inscrições faltantes: ${result.missing_count}`);
+    logMessage(`Elegíveis: ${result.eligible_count}`);
+    logMessage(`Ignoradas: ${result.skipped_count}`);
     logMessage(`Inscrições restauradas: ${result.restored_count}`);
+    logMessage(`kit_id NULL aplicado: ${result.kit_null_applied}`);
+    logMessage(`Falhas: ${result.failed_count}`);
     logMessage('Garantias: sem overwrite, sem delete, insert apenas por ID faltante.');
 
     res.write(`data: ${JSON.stringify({
       type: 'complete',
       success: true,
       summary: result,
-      message: confirm
+      message: confirm && mode === 'restore'
         ? `${result.restored_count} inscrição(ões) restaurada(s)`
         : `Preview concluído: ${result.missing_count} inscrição(ões) faltante(s)`,
     })}\n\n`);
@@ -666,6 +673,8 @@ export const restoreRegistrationsFromBackupController = asyncHandler(async (req:
     return;
   }
 });
+
+export const restoreMissingRegistrationsController = restoreRegistrationsFromBackupController;
 
 /**
  * POST /api/admin/scripts/deep-forensic-registrations-investigation
