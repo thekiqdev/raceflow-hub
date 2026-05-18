@@ -11,6 +11,7 @@ import investigateEventRegistrationsIntegrity from '../scripts/investigateEventR
 import forensicEventRegistrationsInvestigation from '../scripts/forensicEventRegistrationsInvestigation.js';
 import restoreRegistrationsFromBackup from '../scripts/restoreRegistrationsFromBackup.js';
 import deepForensicRegistrationsInvestigation from '../scripts/deepForensicRegistrationsInvestigation.js';
+import analyzeBackupRegistrationDependencies from '../scripts/analyzeBackupRegistrationDependencies.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -735,6 +736,85 @@ export const deepForensicRegistrationsInvestigationController = asyncHandler(asy
     return;
   } catch (error: any) {
     logMessage(`Erro ao executar investigação forense profunda: ${error.message}`);
+    res.write(`data: ${JSON.stringify({
+      type: 'error',
+      success: false,
+      message: error.message,
+    })}\n\n`);
+    res.end();
+    return;
+  }
+});
+
+/**
+ * POST /api/admin/scripts/analyze-backup-registration-dependencies
+ * Analyzer read-only das dependências das inscrições faltantes no backup.
+ */
+export const analyzeBackupRegistrationDependenciesController = asyncHandler(async (req: AuthRequest, res: Response) => {
+  if (!req.user) {
+    return res.status(401).json({
+      success: false,
+      error: 'Not authenticated',
+    });
+  }
+
+  const isAdmin = await hasRole(req.user.id, 'admin');
+  if (!isAdmin) {
+    return res.status(403).json({
+      success: false,
+      error: 'Forbidden',
+      message: 'Apenas administradores podem executar este script',
+    });
+  }
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+
+  const logMessage = (message: string) => {
+    const timestamp = new Date().toISOString();
+    res.write(`data: ${JSON.stringify({ type: 'log', message: `[${timestamp}] ${message}` })}\n\n`);
+  };
+
+  try {
+    const eventId = typeof req.body?.eventId === 'string' ? req.body.eventId.trim() : '';
+    if (!eventId) {
+      throw new Error('eventId é obrigatório para analisar dependências do backup');
+    }
+
+    logMessage('Iniciando Restore Analyzer em modo read-only...');
+    logMessage(`Evento: ${eventId}`);
+    logMessage('Nenhum INSERT/UPDATE/DELETE/ALTER será executado.');
+
+    const analysis = await analyzeBackupRegistrationDependencies({ eventId });
+
+    for (const line of analysis.summary_lines) {
+      logMessage(line);
+    }
+    logMessage(`Dependências verificadas: ${analysis.dependencies_checked.map((item) => item.column).join(', ')}`);
+    logMessage(`Amostra problemática: ${analysis.problematic_sample.length} inscrição(ões)`);
+    for (const item of analysis.problematic_sample.slice(0, 10)) {
+      logMessage(`Registration: ${item.registration_id}`);
+      logMessage(`Runner: ${item.runner_name ?? item.runner_id ?? '-'}`);
+      logMessage(`Kit original: ${item.snapshots.kit?.name ?? item.snapshots.kit?.id ?? '-'}`);
+      logMessage(`Categoria: ${item.snapshots.category?.name ?? item.snapshots.category?.id ?? '-'}`);
+      logMessage(`Modalidade: ${item.snapshots.modality?.name ?? item.snapshots.modality?.id ?? '-'}`);
+      logMessage(`Problemas: ${item.missing_dependencies.map((dep) => `${dep.column} inexistente`).join(', ') || '-'}`);
+      logMessage(`Ação sugerida: ${item.suggested_action}`);
+    }
+    logMessage(`Plano: ${analysis.restore_plan.recommendation}`);
+
+    res.write(`data: ${JSON.stringify({
+      type: 'complete',
+      success: true,
+      summary: analysis,
+      message: analysis.restore_plan.recommendation,
+    })}\n\n`);
+    res.end();
+    return;
+  } catch (error: any) {
+    logMessage(`Erro ao executar Restore Analyzer: ${error.message}`);
     res.write(`data: ${JSON.stringify({
       type: 'error',
       success: false,

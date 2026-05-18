@@ -132,6 +132,7 @@ import {
   forensicEventRegistrationsInvestigationController,
   restoreRegistrationsFromBackupController,
   deepForensicRegistrationsInvestigationController,
+  analyzeBackupRegistrationDependenciesController,
 } from '../controllers/adminScriptsController.js';
 import { removeCommissionController, getRegistrationCommissionController } from '../controllers/adminCommissionsController.js';
 import { getLeaderCouponRegistrationsController } from '../controllers/leaderRegistrationsController.js';
@@ -345,6 +346,7 @@ router.post('/scripts/investigate-event-registrations-integrity', investigateEve
 router.post('/scripts/forensic-event-registrations-investigation', forensicEventRegistrationsInvestigationController);
 router.post('/scripts/restore-registrations-from-backup', restoreRegistrationsFromBackupController);
 router.post('/scripts/deep-forensic-registrations-investigation', deepForensicRegistrationsInvestigationController);
+router.post('/scripts/analyze-backup-registration-dependencies', analyzeBackupRegistrationDependenciesController);
 
 export default router;
 

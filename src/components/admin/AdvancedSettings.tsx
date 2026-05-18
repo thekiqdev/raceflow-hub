@@ -20,10 +20,12 @@ import {
   executeForensicEventRegistrationsInvestigationScript,
   executeRestoreRegistrationsFromBackupScript,
   executeDeepForensicRegistrationsInvestigationScript,
+  executeAnalyzeBackupRegistrationDependenciesScript,
   type EventRegistrationsIntegrityDiagnosis,
   type ForensicEventRegistrationsInvestigation,
   type RestoreRegistrationsFromBackupResult,
   type DeepForensicRegistrationsInvestigation,
+  type AnalyzeBackupRegistrationDependenciesResult,
 } from "@/lib/api/systemSettings";
 import { InvitationBonusAuditPanel } from "@/components/admin/InvitationBonusAuditPanel";
 import { getEvents, type Event } from "@/lib/api/events";
@@ -88,6 +90,11 @@ const AdvancedSettings = () => {
   const [summaryDeepForensic, setSummaryDeepForensic] = useState<DeepForensicRegistrationsInvestigation | null>(null);
   const [hasErrorDeepForensic, setHasErrorDeepForensic] = useState(false);
   const logsEndRefDeepForensic = useRef<HTMLDivElement>(null);
+  const [isRunningBackupAnalyzer, setIsRunningBackupAnalyzer] = useState(false);
+  const [logsBackupAnalyzer, setLogsBackupAnalyzer] = useState<string[]>([]);
+  const [summaryBackupAnalyzer, setSummaryBackupAnalyzer] = useState<AnalyzeBackupRegistrationDependenciesResult | null>(null);
+  const [hasErrorBackupAnalyzer, setHasErrorBackupAnalyzer] = useState(false);
+  const logsEndRefBackupAnalyzer = useRef<HTMLDivElement>(null);
 
   // Auto-scroll para o final dos logs
   useEffect(() => {
@@ -125,6 +132,11 @@ const AdvancedSettings = () => {
       logsEndRefDeepForensic.current.scrollIntoView({ behavior: 'smooth' });
     }
   }, [logsDeepForensic]);
+  useEffect(() => {
+    if (logsEndRefBackupAnalyzer.current) {
+      logsEndRefBackupAnalyzer.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [logsBackupAnalyzer]);
 
   useEffect(() => {
     let cancelled = false;
@@ -518,8 +530,70 @@ const AdvancedSettings = () => {
     toast.success("Log baixado com sucesso!");
   };
 
+  const handleExecuteBackupAnalyzerScript = async () => {
+    if (isRunningBackupAnalyzer) return;
+
+    const selectedEventId = getSelectedEventIdForBackupRestore();
+    if (!selectedEventId) {
+      toast.error("Selecione um evento antes de analisar o backup");
+      return;
+    }
+
+    setIsRunningBackupAnalyzer(true);
+    setLogsBackupAnalyzer([]);
+    setSummaryBackupAnalyzer(null);
+    setHasErrorBackupAnalyzer(false);
+    const newLogs: string[] = [];
+
+    await executeAnalyzeBackupRegistrationDependenciesScript(
+      { eventId: selectedEventId },
+      (message: string) => {
+        newLogs.push(message);
+        setLogsBackupAnalyzer([...newLogs]);
+      },
+      (data) => {
+        setIsRunningBackupAnalyzer(false);
+        if (data.success) {
+          setSummaryBackupAnalyzer(data.summary ?? null);
+          toast.success("Analyzer do backup concluído com sucesso!");
+        } else {
+          setHasErrorBackupAnalyzer(true);
+          toast.error(data.message || "Erro ao executar analyzer do backup");
+        }
+      },
+      (error: string) => {
+        setIsRunningBackupAnalyzer(false);
+        setHasErrorBackupAnalyzer(true);
+        newLogs.push(`❌ Erro: ${error}`);
+        setLogsBackupAnalyzer([...newLogs]);
+        toast.error(error);
+      }
+    );
+  };
+
+  const handleDownloadLogBackupAnalyzer = () => {
+    if (!logsBackupAnalyzer.length) return;
+    const logContent = logsBackupAnalyzer.join('\n');
+    const blob = new Blob([logContent], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `analyze-backup-registration-dependencies-${Date.now()}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast.success("Log baixado com sucesso!");
+  };
+
   const isAnyInvestigationRunning =
-    isRunningIntegrity || isRunningForensic || isRunningRestoreBackup || isRunningDeepForensic || loadingIntegrityEvents;
+    isRunningIntegrity ||
+    isRunningForensic ||
+    isRunningRestoreBackup ||
+    isRunningDeepForensic ||
+    isRunningBackupAnalyzer ||
+    loadingIntegrityEvents;
+
 
   const formatIntegrityEventLabel = (event: Event) => {
     const eventDate = event.event_date
@@ -879,6 +953,24 @@ const AdvancedSettings = () => {
               )}
             </Button>
             <Button
+              onClick={handleExecuteBackupAnalyzerScript}
+              disabled={isAnyInvestigationRunning}
+              variant="outline"
+              className="flex items-center gap-2 sm:w-auto"
+            >
+              {isRunningBackupAnalyzer ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Analisando...
+                </>
+              ) : (
+                <>
+                  <Play className="h-4 w-4" />
+                  Analyzer backup
+                </>
+              )}
+            </Button>
+            <Button
               onClick={() => runRestoreBackupScript(false)}
               disabled={isAnyInvestigationRunning}
               variant="outline"
@@ -932,6 +1024,16 @@ const AdvancedSettings = () => {
               >
                 <Download className="h-4 w-4" />
                 Baixar log profundo
+              </Button>
+            )}
+            {logsBackupAnalyzer.length > 0 && (
+              <Button
+                onClick={handleDownloadLogBackupAnalyzer}
+                variant="outline"
+                className="flex items-center gap-2 sm:w-auto"
+              >
+                <Download className="h-4 w-4" />
+                Baixar log analyzer
               </Button>
             )}
             {logsRestoreBackup.length > 0 && (
@@ -1038,6 +1140,42 @@ const AdvancedSettings = () => {
             </Alert>
           )}
 
+          {summaryBackupAnalyzer && (
+            <Alert>
+              <CheckCircle2 className="h-4 w-4" />
+              <AlertDescription>
+                <div className="space-y-2">
+                  <p className="font-semibold">Analyzer do backup concluído</p>
+                  <div className="text-sm space-y-1">
+                    <p>Evento: {summaryBackupAnalyzer.eventId}</p>
+                    <p>Total no backup: {summaryBackupAnalyzer.totals.backup}</p>
+                    <p>Total atual: {summaryBackupAnalyzer.totals.current}</p>
+                    <p>Faltantes: {summaryBackupAnalyzer.totals.missing}</p>
+                    <p>RESTORABLE_FULL: {summaryBackupAnalyzer.classification_counts.RESTORABLE_FULL}</p>
+                    <p>RESTORABLE_WITH_NULL_KIT: {summaryBackupAnalyzer.classification_counts.RESTORABLE_WITH_NULL_KIT}</p>
+                    <p>RESTORABLE_WITH_MISSING_CATEGORY: {summaryBackupAnalyzer.classification_counts.RESTORABLE_WITH_MISSING_CATEGORY}</p>
+                    <p>RESTORABLE_WITH_MISSING_MODALITY: {summaryBackupAnalyzer.classification_counts.RESTORABLE_WITH_MISSING_MODALITY}</p>
+                    <p>
+                      RESTORABLE_WITH_MULTIPLE_MISSING_DEPENDENCIES:{" "}
+                      {summaryBackupAnalyzer.classification_counts.RESTORABLE_WITH_MULTIPLE_MISSING_DEPENDENCIES}
+                    </p>
+                    <p>ALREADY_EXISTS: {summaryBackupAnalyzer.classification_counts.ALREADY_EXISTS}</p>
+                    <p className="text-muted-foreground">{summaryBackupAnalyzer.restore_plan.recommendation}</p>
+                  </div>
+                </div>
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {hasErrorBackupAnalyzer && (
+            <Alert variant="destructive">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertDescription>
+                Ocorreu um erro ao executar o analyzer do backup. Verifique os logs abaixo.
+              </AlertDescription>
+            </Alert>
+          )}
+
           {summaryRestoreBackup && (
             <Alert variant={summaryRestoreBackup.mode === "restore" ? "destructive" : "default"}>
               <CheckCircle2 className="h-4 w-4" />
@@ -1122,6 +1260,25 @@ const AdvancedSettings = () => {
                       </div>
                     ))}
                     <div ref={logsEndRefDeepForensic} />
+                  </div>
+                </ScrollArea>
+              </CardContent>
+            </Card>
+          )}
+          {logsBackupAnalyzer.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm">Logs – Analyzer do backup</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ScrollArea className="h-[500px] w-full rounded-md border p-4 bg-muted/50 font-mono text-sm">
+                  <div>
+                    {logsBackupAnalyzer.map((log, index) => (
+                      <div key={index} className="mb-1 whitespace-pre-wrap">
+                        {log}
+                      </div>
+                    ))}
+                    <div ref={logsEndRefBackupAnalyzer} />
                   </div>
                 </ScrollArea>
               </CardContent>
