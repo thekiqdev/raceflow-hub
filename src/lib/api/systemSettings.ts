@@ -756,7 +756,15 @@ export interface RestoreRegistrationsFromBackupResult {
  * Preview/restauração incremental de inscrições a partir de BACKUP_DATABASE_URL.
  */
 export const executeRestoreRegistrationsFromBackupScript = async (
-  params: { eventId: string; confirm?: boolean; mode?: 'preview' | 'restore'; limit?: number; batchSize?: number },
+  params: {
+    eventId: string;
+    confirm?: boolean;
+    mode?: 'preview' | 'restore';
+    limit?: number;
+    batchSize?: number;
+    applyNullKitFallback?: boolean;
+    applyNullTransferFallback?: boolean;
+  },
   onLog: (message: string) => void,
   onComplete: (data: {
     success: boolean;
@@ -789,6 +797,8 @@ export const executeRestoreRegistrationsFromBackupScript = async (
         mode: params.mode ?? 'preview',
         limit: params.limit,
         batchSize: params.batchSize,
+        applyNullKitFallback: params.applyNullKitFallback,
+        applyNullTransferFallback: params.applyNullTransferFallback,
       }),
     });
 

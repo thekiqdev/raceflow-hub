@@ -9,6 +9,8 @@ type RunParams = {
   confirm?: boolean;
   limit?: number;
   batchSize?: number;
+  applyNullKitFallback?: boolean;
+  applyNullTransferFallback?: boolean;
 };
 
 type RegistrationRow = Record<string, unknown> & {
@@ -88,16 +90,24 @@ type RestoreResult = {
 type RestoreCandidate = {
   row: RegistrationRow;
   normalizedRow: RegistrationRow;
-  classification: 'RESTORABLE_FULL' | 'RESTORABLE_WITH_NULL_KIT' | 'RESTORABLE_WITH_NULL_TRANSFER_REFS' | 'SKIPPED';
+  classification: 'RESTORABLE_SAFE' | 'RESTORABLE_WITH_NULL_KIT' | 'RESTORABLE_WITH_NULL_TRANSFER_REFS' | 'SKIPPED';
   missingDependencies: string[];
   fallbackApplied: Array<'kit_id' | 'transferred_from_registration_id' | 'transferred_to_registration_id'>;
   legacyKitName: string | null;
 };
 
+type RestoreDependencyTargets = {
+  kitTable: string;
+  categoryTable: string;
+  modalityTable: string;
+  runnerTable: string;
+  registeredByTable: string;
+  registrationTable: string;
+};
+
 const BLOCKING_DEPENDENCY_COLUMNS = new Set([
   'event_id',
   'runner_id',
-  'registered_by',
   'category_id',
   'modality_id',
   'coupon_id',
@@ -185,6 +195,46 @@ const tableExists = async (
 ): Promise<boolean> => {
   const result = await executor.query(`SELECT to_regclass($1) AS table_name`, [`public.${tableName}`]);
   return Boolean(result.rows[0]?.table_name);
+};
+
+const getRegistrationForeignKeyTargets = async (): Promise<Map<string, string>> => {
+  const result = await query(
+    `SELECT
+        kcu.column_name AS source_column,
+        ccu.table_name AS target_table
+       FROM information_schema.table_constraints tc
+       JOIN information_schema.key_column_usage kcu
+         ON tc.constraint_name = kcu.constraint_name
+        AND tc.constraint_schema = kcu.constraint_schema
+       JOIN information_schema.constraint_column_usage ccu
+         ON ccu.constraint_name = tc.constraint_name
+        AND ccu.constraint_schema = tc.constraint_schema
+      WHERE tc.table_schema = 'public'
+        AND tc.table_name = 'registrations'
+        AND tc.constraint_type = 'FOREIGN KEY'`
+  );
+
+  return new Map(result.rows.map((row) => [String(row.source_column), String(row.target_table)]));
+};
+
+const firstExistingTable = async (tableNames: string[]): Promise<string> => {
+  for (const tableName of tableNames) {
+    if (await tableExists({ query }, tableName)) return tableName;
+  }
+  return tableNames[0];
+};
+
+const resolveRestoreDependencyTargets = async (): Promise<RestoreDependencyTargets> => {
+  const fkTargets = await getRegistrationForeignKeyTargets();
+
+  return {
+    kitTable: fkTargets.get('kit_id') ?? await firstExistingTable(['event_kits', 'kits']),
+    categoryTable: fkTargets.get('category_id') ?? await firstExistingTable(['categories', 'event_categories']),
+    modalityTable: fkTargets.get('modality_id') ?? 'modalities',
+    runnerTable: fkTargets.get('runner_id') ?? 'profiles',
+    registeredByTable: fkTargets.get('registered_by') ?? 'profiles',
+    registrationTable: fkTargets.get('transferred_from_registration_id') ?? fkTargets.get('transferred_to_registration_id') ?? 'registrations',
+  };
 };
 
 const filterInsertableColumns = (row: RegistrationRow, currentColumns: string[]): string[] => {
@@ -279,7 +329,12 @@ const loadKitNamesFromBackup = async (backupPool: pg.Pool, kitIds: string[]): Pr
 const buildRestoreCandidates = async (
   backupPool: pg.Pool,
   missingRows: RegistrationRow[],
-  currentColumns: string[]
+  currentColumns: string[],
+  dependencyTargets: RestoreDependencyTargets,
+  options: {
+    applyNullKitFallback: boolean;
+    applyNullTransferFallback: boolean;
+  }
 ): Promise<RestoreCandidate[]> => {
   const kitIds = missingRows.map((row) => toStringOrNull(row.kit_id)).filter((value): value is string => Boolean(value));
   const categoryIds = missingRows.map((row) => toStringOrNull(row.category_id)).filter((value): value is string => Boolean(value));
@@ -303,13 +358,13 @@ const buildRestoreCandidates = async (
     existingTransferredTo,
     kitNames,
   ] = await Promise.all([
-    loadExistingSet((await tableExists({ query }, 'event_kits')) ? 'event_kits' : 'kits', kitIds),
-    loadExistingSet((await tableExists({ query }, 'event_categories')) ? 'event_categories' : 'categories', categoryIds),
-    loadExistingSet('modalities', modalityIds),
-    loadExistingSet('profiles', runnerIds),
-    loadExistingSet('profiles', registeredByIds),
-    loadExistingSet('registrations', transferredFromIds),
-    loadExistingSet('registrations', transferredToIds),
+    loadExistingSet(dependencyTargets.kitTable, kitIds),
+    loadExistingSet(dependencyTargets.categoryTable, categoryIds),
+    loadExistingSet(dependencyTargets.modalityTable, modalityIds),
+    loadExistingSet(dependencyTargets.runnerTable, runnerIds),
+    loadExistingSet(dependencyTargets.registeredByTable, registeredByIds),
+    loadExistingSet(dependencyTargets.registrationTable, transferredFromIds),
+    loadExistingSet(dependencyTargets.registrationTable, transferredToIds),
     loadKitNamesFromBackup(backupPool, kitIds),
   ]);
 
@@ -331,31 +386,41 @@ const buildRestoreCandidates = async (
     }
     const kitMissing = Boolean(originalKitId && !existingKits.has(originalKitId));
     const legacyKitName = originalKitId ? kitNames.get(originalKitId) ?? null : null;
-    const blockingMissingDependencies = missingDependencies.filter((column) => BLOCKING_DEPENDENCY_COLUMNS.has(column));
     const transferredFromId = toStringOrNull(row.transferred_from_registration_id);
     const transferredToId = toStringOrNull(row.transferred_to_registration_id);
     const transferredFromMissing = Boolean(transferredFromId && !existingTransferredFrom.has(transferredFromId));
     const transferredToMissing = Boolean(transferredToId && !existingTransferredTo.has(transferredToId));
     const transferRefsMissing = transferredFromMissing || transferredToMissing;
+    if (kitMissing) missingDependencies.push('kit_id');
+    if (transferredFromMissing) missingDependencies.push('transferred_from_registration_id');
+    if (transferredToMissing) missingDependencies.push('transferred_to_registration_id');
+    const unresolvedFallbackDependencies = missingDependencies.filter((column) => {
+      if (column === 'kit_id') return !options.applyNullKitFallback;
+      if (column === 'transferred_from_registration_id' || column === 'transferred_to_registration_id') {
+        return !options.applyNullTransferFallback;
+      }
+      return false;
+    });
+    const blockingMissingDependencies = missingDependencies.filter((column) => BLOCKING_DEPENDENCY_COLUMNS.has(column));
     const fallbackApplied: RestoreCandidate['fallbackApplied'] = [];
 
-    if (blockingMissingDependencies.length === 0) {
+    if (blockingMissingDependencies.length === 0 && unresolvedFallbackDependencies.length === 0) {
       let normalizedRow: RegistrationRow = { ...row };
-      if (kitMissing) {
+      if (kitMissing && options.applyNullKitFallback) {
         normalizedRow = {
           ...normalizedRow,
           kit_id: null,
         };
         fallbackApplied.push('kit_id');
       }
-      if (transferredFromMissing) {
+      if (transferredFromMissing && options.applyNullTransferFallback) {
         normalizedRow = {
           ...normalizedRow,
           transferred_from_registration_id: null,
         };
         fallbackApplied.push('transferred_from_registration_id');
       }
-      if (transferredToMissing) {
+      if (transferredToMissing && options.applyNullTransferFallback) {
         normalizedRow = {
           ...normalizedRow,
           transferred_to_registration_id: null,
@@ -367,7 +432,7 @@ const buildRestoreCandidates = async (
         ? 'RESTORABLE_WITH_NULL_KIT'
         : transferRefsMissing
           ? 'RESTORABLE_WITH_NULL_TRANSFER_REFS'
-          : 'RESTORABLE_FULL';
+          : 'RESTORABLE_SAFE';
 
       return {
         row,
@@ -379,15 +444,11 @@ const buildRestoreCandidates = async (
       };
     }
 
-    if (kitMissing) missingDependencies.push('kit_id');
-    if (transferredFromMissing) missingDependencies.push('transferred_from_registration_id');
-    if (transferredToMissing) missingDependencies.push('transferred_to_registration_id');
-
     return {
       row,
       normalizedRow: applyLegacyKitSnapshot(row, currentColumns, null, null),
       classification: 'SKIPPED' as const,
-      missingDependencies: blockingMissingDependencies,
+      missingDependencies: [...blockingMissingDependencies, ...unresolvedFallbackDependencies],
       fallbackApplied: [],
       legacyKitName,
     };
@@ -466,6 +527,21 @@ const copyRelatedRows = async (
   return { inserted };
 };
 
+const countByClassification = (candidates: RestoreCandidate[]): Record<RestoreCandidate['classification'], number> => {
+  return candidates.reduce(
+    (acc, candidate) => {
+      acc[candidate.classification] += 1;
+      return acc;
+    },
+    {
+      RESTORABLE_SAFE: 0,
+      RESTORABLE_WITH_NULL_KIT: 0,
+      RESTORABLE_WITH_NULL_TRANSFER_REFS: 0,
+      SKIPPED: 0,
+    }
+  );
+};
+
 const runPostRestoreValidation = async (eventId: string, restoredIds: string[]) => {
   if (restoredIds.length === 0) {
     return {
@@ -513,12 +589,15 @@ export default async function run(params: RunParams): Promise<RestoreResult> {
   const mode = params.mode ?? (params.confirm === true ? 'restore' : 'preview');
   const requestedLimit = Math.max(1, Math.min(Number(params.limit ?? DEFAULT_RESTORE_LIMIT) || DEFAULT_RESTORE_LIMIT, 1000));
   const batchSize = Math.max(1, Math.min(Number(params.batchSize ?? DEFAULT_BATCH_SIZE) || DEFAULT_BATCH_SIZE, 100));
+  const applyNullKitFallback = params.applyNullKitFallback !== false;
+  const applyNullTransferFallback = params.applyNullTransferFallback !== false;
   const { log, logs } = createStructuredLogger();
   const backupPool = createBackupPool();
 
   try {
     log(`Iniciando restore controlado em modo ${mode} para evento ${eventId}`);
-    const [backupRegistrationsResult, currentRegistrationsResult, eventExistsResult, currentColumns] =
+    log(`Flags recebidas: applyNullKitFallback=${applyNullKitFallback}; applyNullTransferFallback=${applyNullTransferFallback}`);
+    const [backupRegistrationsResult, currentRegistrationsResult, eventExistsResult, currentColumns, dependencyTargets] =
       await Promise.all([
         backupPool.query<RegistrationRow>(
           `SELECT *
@@ -541,15 +620,25 @@ export default async function run(params: RunParams): Promise<RestoreResult> {
           [eventId]
         ),
         getCurrentRegistrationColumns(),
+        resolveRestoreDependencyTargets(),
       ]);
 
     const backupRows = backupRegistrationsResult.rows;
     const currentIds = new Set(currentRegistrationsResult.rows.map((row) => String(row.id)));
     const missingRows = backupRows.filter((row) => !currentIds.has(String(row.id)));
     const eventExistsInCurrent = (eventExistsResult.rowCount ?? 0) > 0;
-    const candidates = await buildRestoreCandidates(backupPool, missingRows, currentColumns);
+    log(
+      `Tabelas de dependência usadas: kit_id->${dependencyTargets.kitTable}; ` +
+      `category_id->${dependencyTargets.categoryTable}; modality_id->${dependencyTargets.modalityTable}; ` +
+      `runner_id->${dependencyTargets.runnerTable}; transfer_refs->${dependencyTargets.registrationTable}`
+    );
+    const candidates = await buildRestoreCandidates(backupPool, missingRows, currentColumns, dependencyTargets, {
+      applyNullKitFallback,
+      applyNullTransferFallback,
+    });
+    const classificationCounts = countByClassification(candidates);
     const eligibleCandidates = candidates.filter((candidate) =>
-      candidate.classification === 'RESTORABLE_FULL' ||
+      candidate.classification === 'RESTORABLE_SAFE' ||
       candidate.classification === 'RESTORABLE_WITH_NULL_KIT' ||
       candidate.classification === 'RESTORABLE_WITH_NULL_TRANSFER_REFS'
     );
@@ -567,10 +656,32 @@ export default async function run(params: RunParams): Promise<RestoreResult> {
     log(`Backup encontrado: ${backupRows.length}`);
     log(`Produção encontrada: ${currentIds.size}`);
     log(`Faltantes por ID: ${missingRows.length}`);
+    log(
+      `Recebidas por classificação: RESTORABLE_SAFE=${classificationCounts.RESTORABLE_SAFE}; ` +
+      `RESTORABLE_WITH_NULL_KIT=${classificationCounts.RESTORABLE_WITH_NULL_KIT}; ` +
+      `RESTORABLE_WITH_NULL_TRANSFER_REFS=${classificationCounts.RESTORABLE_WITH_NULL_TRANSFER_REFS}; ` +
+      `SKIPPED=${classificationCounts.SKIPPED}`
+    );
     log(`Elegíveis para restore seguro: ${eligibleCandidates.length}`);
     log(`RESTORABLE_WITH_NULL_KIT promoted to eligible: ${nullKitPromotedCount}`);
     log(`RESTORABLE_WITH_NULL_TRANSFER_REFS promoted to eligible: ${nullTransferRefsPromotedCount}`);
     log(`Ignoradas por dependência real: ${skippedCandidates.length}`);
+    if (skippedCandidates.length > 0) {
+      log(
+        `Motivos de skip (amostra): ${skippedCandidates
+          .slice(0, 10)
+          .map((candidate) => `${candidate.row.id}:${candidate.missingDependencies.join('|') || 'sem motivo'}`)
+          .join(', ')}`
+      );
+    }
+    if (limitedCandidates.length > 0) {
+      log(
+        `Classificação final antes do insert (amostra): ${limitedCandidates
+          .slice(0, 10)
+          .map((candidate) => `${candidate.row.id}:${candidate.classification}:${candidate.fallbackApplied.join('|') || 'sem fallback'}`)
+          .join(', ')}`
+      );
+    }
     log(`Limit aplicado: ${requestedLimit}`);
 
     if (mode !== 'restore' || params.confirm !== true) {

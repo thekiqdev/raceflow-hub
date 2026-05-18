@@ -629,6 +629,8 @@ export const restoreRegistrationsFromBackupController = asyncHandler(async (req:
     const mode = req.body?.mode === 'restore' ? 'restore' : 'preview';
     const limit = Number(req.body?.limit ?? 10);
     const batchSize = Number(req.body?.batchSize ?? 10);
+    const applyNullKitFallback = req.body?.applyNullKitFallback !== false;
+    const applyNullTransferFallback = req.body?.applyNullTransferFallback !== false;
 
     if (!eventId) {
       throw new Error('eventId é obrigatório para recuperar inscrições do backup');
@@ -639,8 +641,17 @@ export const restoreRegistrationsFromBackupController = asyncHandler(async (req:
       : 'Iniciando preview de recuperação de inscrições do backup...');
     logMessage(`Evento: ${eventId}`);
     logMessage(confirm && mode === 'restore' ? `Modo: restore (confirm=true, limit=${limit}, batchSize=${batchSize})` : 'Modo: preview (nenhum dado será inserido)');
+    logMessage(`Fallbacks aprovados: kit NULL=${applyNullKitFallback}; transfer refs NULL=${applyNullTransferFallback}`);
 
-    const result = await restoreRegistrationsFromBackup({ eventId, confirm, mode, limit, batchSize });
+    const result = await restoreRegistrationsFromBackup({
+      eventId,
+      confirm,
+      mode,
+      limit,
+      batchSize,
+      applyNullKitFallback,
+      applyNullTransferFallback,
+    });
 
     logMessage(`Inscrições no backup: ${result.backup_found}`);
     logMessage(`Inscrições atuais: ${result.current_found}`);

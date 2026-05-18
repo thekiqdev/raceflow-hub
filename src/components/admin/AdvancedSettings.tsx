@@ -459,6 +459,8 @@ const AdvancedSettings = () => {
         mode: confirm ? "restore" : "preview",
         limit: confirm ? 10 : undefined,
         batchSize: 10,
+        applyNullKitFallback: true,
+        applyNullTransferFallback: true,
       },
       (message: string) => {
         newLogs.push(message);
