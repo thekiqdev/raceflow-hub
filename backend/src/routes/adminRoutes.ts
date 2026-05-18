@@ -133,6 +133,7 @@ import {
   restoreRegistrationsFromBackupController,
   deepForensicRegistrationsInvestigationController,
   analyzeBackupRegistrationDependenciesController,
+  analyzeNullKitCompatibilityController,
 } from '../controllers/adminScriptsController.js';
 import { removeCommissionController, getRegistrationCommissionController } from '../controllers/adminCommissionsController.js';
 import { getLeaderCouponRegistrationsController } from '../controllers/leaderRegistrationsController.js';
@@ -347,6 +348,7 @@ router.post('/scripts/forensic-event-registrations-investigation', forensicEvent
 router.post('/scripts/restore-registrations-from-backup', restoreRegistrationsFromBackupController);
 router.post('/scripts/deep-forensic-registrations-investigation', deepForensicRegistrationsInvestigationController);
 router.post('/scripts/analyze-backup-registration-dependencies', analyzeBackupRegistrationDependenciesController);
+router.post('/scripts/analyze-null-kit-compatibility', analyzeNullKitCompatibilityController);
 
 export default router;
 

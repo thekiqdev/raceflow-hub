@@ -21,11 +21,13 @@ import {
   executeRestoreRegistrationsFromBackupScript,
   executeDeepForensicRegistrationsInvestigationScript,
   executeAnalyzeBackupRegistrationDependenciesScript,
+  executeAnalyzeNullKitCompatibilityScript,
   type EventRegistrationsIntegrityDiagnosis,
   type ForensicEventRegistrationsInvestigation,
   type RestoreRegistrationsFromBackupResult,
   type DeepForensicRegistrationsInvestigation,
   type AnalyzeBackupRegistrationDependenciesResult,
+  type AnalyzeNullKitCompatibilityResult,
 } from "@/lib/api/systemSettings";
 import { InvitationBonusAuditPanel } from "@/components/admin/InvitationBonusAuditPanel";
 import { getEvents, type Event } from "@/lib/api/events";
@@ -95,6 +97,11 @@ const AdvancedSettings = () => {
   const [summaryBackupAnalyzer, setSummaryBackupAnalyzer] = useState<AnalyzeBackupRegistrationDependenciesResult | null>(null);
   const [hasErrorBackupAnalyzer, setHasErrorBackupAnalyzer] = useState(false);
   const logsEndRefBackupAnalyzer = useRef<HTMLDivElement>(null);
+  const [isRunningNullKitAnalyzer, setIsRunningNullKitAnalyzer] = useState(false);
+  const [logsNullKitAnalyzer, setLogsNullKitAnalyzer] = useState<string[]>([]);
+  const [summaryNullKitAnalyzer, setSummaryNullKitAnalyzer] = useState<AnalyzeNullKitCompatibilityResult | null>(null);
+  const [hasErrorNullKitAnalyzer, setHasErrorNullKitAnalyzer] = useState(false);
+  const logsEndRefNullKitAnalyzer = useRef<HTMLDivElement>(null);
 
   // Auto-scroll para o final dos logs
   useEffect(() => {
@@ -137,6 +144,11 @@ const AdvancedSettings = () => {
       logsEndRefBackupAnalyzer.current.scrollIntoView({ behavior: 'smooth' });
     }
   }, [logsBackupAnalyzer]);
+  useEffect(() => {
+    if (logsEndRefNullKitAnalyzer.current) {
+      logsEndRefNullKitAnalyzer.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [logsNullKitAnalyzer]);
 
   useEffect(() => {
     let cancelled = false;
@@ -586,12 +598,61 @@ const AdvancedSettings = () => {
     toast.success("Log baixado com sucesso!");
   };
 
+  const handleExecuteNullKitAnalyzerScript = async () => {
+    if (isRunningNullKitAnalyzer) return;
+    setIsRunningNullKitAnalyzer(true);
+    setLogsNullKitAnalyzer([]);
+    setSummaryNullKitAnalyzer(null);
+    setHasErrorNullKitAnalyzer(false);
+    const newLogs: string[] = [];
+
+    await executeAnalyzeNullKitCompatibilityScript(
+      (message: string) => {
+        newLogs.push(message);
+        setLogsNullKitAnalyzer([...newLogs]);
+      },
+      (data) => {
+        setIsRunningNullKitAnalyzer(false);
+        if (data.success) {
+          setSummaryNullKitAnalyzer(data.summary ?? null);
+          toast.success("Análise kit NULL concluída com sucesso!");
+        } else {
+          setHasErrorNullKitAnalyzer(true);
+          toast.error(data.message || "Erro ao executar análise kit NULL");
+        }
+      },
+      (error: string) => {
+        setIsRunningNullKitAnalyzer(false);
+        setHasErrorNullKitAnalyzer(true);
+        newLogs.push(`❌ Erro: ${error}`);
+        setLogsNullKitAnalyzer([...newLogs]);
+        toast.error(error);
+      }
+    );
+  };
+
+  const handleDownloadLogNullKitAnalyzer = () => {
+    if (!logsNullKitAnalyzer.length) return;
+    const logContent = logsNullKitAnalyzer.join('\n');
+    const blob = new Blob([logContent], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `analyze-null-kit-compatibility-${Date.now()}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast.success("Log baixado com sucesso!");
+  };
+
   const isAnyInvestigationRunning =
     isRunningIntegrity ||
     isRunningForensic ||
     isRunningRestoreBackup ||
     isRunningDeepForensic ||
     isRunningBackupAnalyzer ||
+    isRunningNullKitAnalyzer ||
     loadingIntegrityEvents;
 
 
@@ -971,6 +1032,24 @@ const AdvancedSettings = () => {
               )}
             </Button>
             <Button
+              onClick={handleExecuteNullKitAnalyzerScript}
+              disabled={isAnyInvestigationRunning}
+              variant="outline"
+              className="flex items-center gap-2 sm:w-auto"
+            >
+              {isRunningNullKitAnalyzer ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Analisando...
+                </>
+              ) : (
+                <>
+                  <Play className="h-4 w-4" />
+                  Validar kit NULL
+                </>
+              )}
+            </Button>
+            <Button
               onClick={() => runRestoreBackupScript(false)}
               disabled={isAnyInvestigationRunning}
               variant="outline"
@@ -1034,6 +1113,16 @@ const AdvancedSettings = () => {
               >
                 <Download className="h-4 w-4" />
                 Baixar log analyzer
+              </Button>
+            )}
+            {logsNullKitAnalyzer.length > 0 && (
+              <Button
+                onClick={handleDownloadLogNullKitAnalyzer}
+                variant="outline"
+                className="flex items-center gap-2 sm:w-auto"
+              >
+                <Download className="h-4 w-4" />
+                Baixar log kit NULL
               </Button>
             )}
             {logsRestoreBackup.length > 0 && (
@@ -1176,6 +1265,35 @@ const AdvancedSettings = () => {
             </Alert>
           )}
 
+          {summaryNullKitAnalyzer && (
+            <Alert variant={summaryNullKitAnalyzer.totals.ALTO > 0 ? "destructive" : "default"}>
+              <CheckCircle2 className="h-4 w-4" />
+              <AlertDescription>
+                <div className="space-y-2">
+                  <p className="font-semibold">Compatibilidade kit_id NULL analisada</p>
+                  <div className="text-sm space-y-1">
+                    <p>Arquivos analisados: {summaryNullKitAnalyzer.scope.files_scanned}</p>
+                    <p>ALTO: {summaryNullKitAnalyzer.totals.ALTO}</p>
+                    <p>MÉDIO: {summaryNullKitAnalyzer.totals.MÉDIO}</p>
+                    <p>BAIXO: {summaryNullKitAnalyzer.totals.BAIXO}</p>
+                    <p>Áreas seguras: {summaryNullKitAnalyzer.safe_areas.join(", ") || "-"}</p>
+                    <p>Áreas que precisam ajuste: {summaryNullKitAnalyzer.areas_needing_adjustment.join(", ") || "-"}</p>
+                    <p className="text-muted-foreground">{summaryNullKitAnalyzer.recommendation.join(" ")}</p>
+                  </div>
+                </div>
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {hasErrorNullKitAnalyzer && (
+            <Alert variant="destructive">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertDescription>
+                Ocorreu um erro ao executar a análise de compatibilidade com kit NULL. Verifique os logs abaixo.
+              </AlertDescription>
+            </Alert>
+          )}
+
           {summaryRestoreBackup && (
             <Alert variant={summaryRestoreBackup.mode === "restore" ? "destructive" : "default"}>
               <CheckCircle2 className="h-4 w-4" />
@@ -1279,6 +1397,25 @@ const AdvancedSettings = () => {
                       </div>
                     ))}
                     <div ref={logsEndRefBackupAnalyzer} />
+                  </div>
+                </ScrollArea>
+              </CardContent>
+            </Card>
+          )}
+          {logsNullKitAnalyzer.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm">Logs – Compatibilidade kit_id NULL</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ScrollArea className="h-[500px] w-full rounded-md border p-4 bg-muted/50 font-mono text-sm">
+                  <div>
+                    {logsNullKitAnalyzer.map((log, index) => (
+                      <div key={index} className="mb-1 whitespace-pre-wrap">
+                        {log}
+                      </div>
+                    ))}
+                    <div ref={logsEndRefNullKitAnalyzer} />
                   </div>
                 </ScrollArea>
               </CardContent>

@@ -12,6 +12,7 @@ import forensicEventRegistrationsInvestigation from '../scripts/forensicEventReg
 import restoreRegistrationsFromBackup from '../scripts/restoreRegistrationsFromBackup.js';
 import deepForensicRegistrationsInvestigation from '../scripts/deepForensicRegistrationsInvestigation.js';
 import analyzeBackupRegistrationDependencies from '../scripts/analyzeBackupRegistrationDependencies.js';
+import analyzeNullKitCompatibility from '../scripts/analyzeNullKitCompatibility.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -815,6 +816,72 @@ export const analyzeBackupRegistrationDependenciesController = asyncHandler(asyn
     return;
   } catch (error: any) {
     logMessage(`Erro ao executar Restore Analyzer: ${error.message}`);
+    res.write(`data: ${JSON.stringify({
+      type: 'error',
+      success: false,
+      message: error.message,
+    })}\n\n`);
+    res.end();
+    return;
+  }
+});
+
+/**
+ * POST /api/admin/scripts/analyze-null-kit-compatibility
+ * Analyzer read-only de compatibilidade do sistema com registrations.kit_id NULL.
+ */
+export const analyzeNullKitCompatibilityController = asyncHandler(async (req: AuthRequest, res: Response) => {
+  if (!req.user) {
+    return res.status(401).json({
+      success: false,
+      error: 'Not authenticated',
+    });
+  }
+
+  const isAdmin = await hasRole(req.user.id, 'admin');
+  if (!isAdmin) {
+    return res.status(403).json({
+      success: false,
+      error: 'Forbidden',
+      message: 'Apenas administradores podem executar este script',
+    });
+  }
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+
+  const logMessage = (message: string) => {
+    const timestamp = new Date().toISOString();
+    res.write(`data: ${JSON.stringify({ type: 'log', message: `[${timestamp}] ${message}` })}\n\n`);
+  };
+
+  try {
+    logMessage('Iniciando análise read-only de compatibilidade com kit_id NULL...');
+    logMessage('Nenhum restore/INSERT/UPDATE/DELETE/ALTER será executado.');
+
+    const analysis = await analyzeNullKitCompatibility();
+
+    logMessage(`Arquivos analisados: ${analysis.scope.files_scanned}`);
+    logMessage(`TOTAL DE RISCOS - ALTO: ${analysis.totals.ALTO}, MÉDIO: ${analysis.totals.MÉDIO}, BAIXO: ${analysis.totals.BAIXO}`);
+    logMessage(`ÁREAS SEGURAS: ${analysis.safe_areas.join(', ') || '-'}`);
+    logMessage(`ÁREAS QUE PRECISAM AJUSTE: ${analysis.areas_needing_adjustment.join(', ') || '-'}`);
+    for (const finding of analysis.findings.slice(0, 30)) {
+      logMessage(`${finding.risk} ${finding.type} ${finding.file}:${finding.line} - ${finding.impact}`);
+      logMessage(`Sugestão: ${finding.suggestion}`);
+    }
+
+    res.write(`data: ${JSON.stringify({
+      type: 'complete',
+      success: true,
+      summary: analysis,
+      message: analysis.recommendation.join(' '),
+    })}\n\n`);
+    res.end();
+    return;
+  } catch (error: any) {
+    logMessage(`Erro ao executar análise de compatibilidade kit NULL: ${error.message}`);
     res.write(`data: ${JSON.stringify({
       type: 'error',
       success: false,
