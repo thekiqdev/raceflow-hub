@@ -1248,15 +1248,25 @@ const AdvancedSettings = () => {
                     <p>Total no backup: {summaryBackupAnalyzer.totals.backup}</p>
                     <p>Total atual: {summaryBackupAnalyzer.totals.current}</p>
                     <p>Faltantes: {summaryBackupAnalyzer.totals.missing}</p>
-                    <p>RESTORABLE_FULL: {summaryBackupAnalyzer.classification_counts.RESTORABLE_FULL}</p>
+                    <p>RESTORABLE_SAFE: {summaryBackupAnalyzer.classification_counts.RESTORABLE_SAFE}</p>
                     <p>RESTORABLE_WITH_NULL_KIT: {summaryBackupAnalyzer.classification_counts.RESTORABLE_WITH_NULL_KIT}</p>
-                    <p>RESTORABLE_WITH_MISSING_CATEGORY: {summaryBackupAnalyzer.classification_counts.RESTORABLE_WITH_MISSING_CATEGORY}</p>
-                    <p>RESTORABLE_WITH_MISSING_MODALITY: {summaryBackupAnalyzer.classification_counts.RESTORABLE_WITH_MISSING_MODALITY}</p>
-                    <p>
-                      RESTORABLE_WITH_MULTIPLE_MISSING_DEPENDENCIES:{" "}
-                      {summaryBackupAnalyzer.classification_counts.RESTORABLE_WITH_MULTIPLE_MISSING_DEPENDENCIES}
-                    </p>
+                    <p>RESTORABLE_WITH_NULL_REGISTERED_BY: {summaryBackupAnalyzer.classification_counts.RESTORABLE_WITH_NULL_REGISTERED_BY}</p>
+                    <p>RESTORABLE_WITH_NULL_TRANSFER_REFS: {summaryBackupAnalyzer.classification_counts.RESTORABLE_WITH_NULL_TRANSFER_REFS}</p>
+                    <p>BLOCKED_RUNNER_MISSING: {summaryBackupAnalyzer.classification_counts.BLOCKED_RUNNER_MISSING}</p>
+                    <p>BLOCKED_CRITICAL_DEPENDENCY: {summaryBackupAnalyzer.classification_counts.BLOCKED_CRITICAL_DEPENDENCY}</p>
                     <p>ALREADY_EXISTS: {summaryBackupAnalyzer.classification_counts.ALREADY_EXISTS}</p>
+                    <div className="pt-2">
+                      <p className="font-medium">Dependências ausentes:</p>
+                      {summaryBackupAnalyzer.dependency_matrix.length === 0 ? (
+                        <p>Nenhuma dependência ausente.</p>
+                      ) : (
+                        summaryBackupAnalyzer.dependency_matrix.slice(0, 8).map((row) => (
+                          <p key={row.dependency}>
+                            {row.dependency}: {row.missing_count} | {row.kind} | fallback: {row.restorable_with_fallback ? "sim" : "não"}
+                          </p>
+                        ))
+                      )}
+                    </div>
                     <p className="text-muted-foreground">{summaryBackupAnalyzer.restore_plan.recommendation}</p>
                   </div>
                 </div>

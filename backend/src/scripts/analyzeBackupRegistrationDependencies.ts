@@ -13,11 +13,12 @@ type RegistrationRow = Record<string, unknown> & {
 };
 
 type DependencyClassification =
-  | 'RESTORABLE_FULL'
+  | 'RESTORABLE_SAFE'
   | 'RESTORABLE_WITH_NULL_KIT'
-  | 'RESTORABLE_WITH_MISSING_CATEGORY'
-  | 'RESTORABLE_WITH_MISSING_MODALITY'
-  | 'RESTORABLE_WITH_MULTIPLE_MISSING_DEPENDENCIES'
+  | 'RESTORABLE_WITH_NULL_REGISTERED_BY'
+  | 'RESTORABLE_WITH_NULL_TRANSFER_REFS'
+  | 'BLOCKED_RUNNER_MISSING'
+  | 'BLOCKED_CRITICAL_DEPENDENCY'
   | 'ALREADY_EXISTS';
 
 type DependencyDefinition = {
@@ -42,6 +43,24 @@ type SnapshotRecord = {
   attributes: Record<string, unknown>;
 };
 
+type DependencyKind = 'CRITICAL' | 'FLEXIBLE' | 'POSSIBLY_FLEXIBLE';
+
+type DependencyMatrixRow = {
+  dependency: string;
+  target_table: string;
+  missing_count: number;
+  kind: DependencyKind;
+  restorable_with_fallback: boolean;
+  suggested_strategy: string;
+  examples: Array<{
+    registration_id: string;
+    runner_id: string | null;
+    runner_name: string | null;
+    missing_value: string;
+    can_restore_with_fallback: boolean;
+  }>;
+};
+
 type RegistrationAnalysis = {
   registration_id: string;
   runner_id: string | null;
@@ -54,6 +73,7 @@ type RegistrationAnalysis = {
     modality?: SnapshotRecord;
   };
   suggested_action: string;
+  can_restore_with_fallback: boolean;
 };
 
 type AnalyzerResult = {
@@ -66,11 +86,16 @@ type AnalyzerResult = {
   };
   classification_counts: Record<DependencyClassification, number>;
   dependencies_checked: DependencyDefinition[];
+  dependency_matrix: DependencyMatrixRow[];
   problematic_sample: RegistrationAnalysis[];
   summary_lines: string[];
   restore_plan: {
     immediate_full_restore_count: number;
     null_kit_restore_count: number;
+    null_registered_by_restore_count: number;
+    null_transfer_refs_restore_count: number;
+    blocked_runner_missing_count: number;
+    blocked_critical_dependency_count: number;
     requires_category_strategy_count: number;
     requires_modality_strategy_count: number;
     requires_manual_review_count: number;
@@ -94,11 +119,12 @@ type ForeignKeyRow = {
 };
 
 const CLASSIFICATIONS: DependencyClassification[] = [
-  'RESTORABLE_FULL',
+  'RESTORABLE_SAFE',
   'RESTORABLE_WITH_NULL_KIT',
-  'RESTORABLE_WITH_MISSING_CATEGORY',
-  'RESTORABLE_WITH_MISSING_MODALITY',
-  'RESTORABLE_WITH_MULTIPLE_MISSING_DEPENDENCIES',
+  'RESTORABLE_WITH_NULL_REGISTERED_BY',
+  'RESTORABLE_WITH_NULL_TRANSFER_REFS',
+  'BLOCKED_RUNNER_MISSING',
+  'BLOCKED_CRITICAL_DEPENDENCY',
   'ALREADY_EXISTS',
 ];
 
@@ -107,7 +133,9 @@ const KNOWN_DEPENDENCIES: DependencyDefinition[] = [
   { column: 'modality_id', target_table: 'modalities', target_column: 'id', source: 'known', requiredForClassification: true },
   { column: 'kit_id', target_table: 'event_kits', target_column: 'id', source: 'known', requiredForClassification: true },
   { column: 'runner_id', target_table: 'profiles', target_column: 'id', source: 'known', requiredForClassification: true },
+  { column: 'registered_by', target_table: 'profiles', target_column: 'id', source: 'known', requiredForClassification: true },
   { column: 'coupon_id', target_table: 'coupons', target_column: 'id', source: 'known', requiredForClassification: true },
+  { column: 'category_batch_id', target_table: 'category_batches', target_column: 'id', source: 'known', requiredForClassification: true },
   {
     column: 'transferred_from_registration_id',
     target_table: 'registrations',
@@ -127,6 +155,31 @@ const KNOWN_DEPENDENCIES: DependencyDefinition[] = [
 const toStringOrNull = (value: unknown): string | null => {
   if (value === null || value === undefined || value === '') return null;
   return String(value);
+};
+
+const getDependencyKind = (column: string): DependencyKind => {
+  if (['event_id', 'category_id', 'modality_id'].includes(column)) return 'CRITICAL';
+  if (['kit_id', 'registered_by', 'transferred_from_registration_id', 'transferred_to_registration_id'].includes(column)) {
+    return 'FLEXIBLE';
+  }
+  if (column === 'category_batch_id') return 'POSSIBLY_FLEXIBLE';
+  if (column === 'runner_id') return 'CRITICAL';
+  return 'CRITICAL';
+};
+
+const canRestoreWithFallback = (column: string): boolean => {
+  return getDependencyKind(column) !== 'CRITICAL' && column !== 'runner_id';
+};
+
+const fallbackStrategyFor = (column: string): string => {
+  if (column === 'kit_id') return 'Restaurar com kit_id NULL e preservar snapshot textual do kit original.';
+  if (column === 'registered_by') return 'Avaliar restaurar com registered_by NULL apenas se schema permitir; se NOT NULL, mapear para runner_id/admin em etapa futura.';
+  if (column === 'transferred_from_registration_id' || column === 'transferred_to_registration_id') {
+    return 'Restaurar com referência de transferência NULL para evitar FK quebrada, preservando demais dados históricos.';
+  }
+  if (column === 'category_batch_id') return 'Possivelmente restaurar com category_batch_id NULL, pois FK é ON DELETE SET NULL; validar impacto de lote/preço.';
+  if (column === 'runner_id') return 'Bloqueante: runner precisa existir ou ser restaurado antes da inscrição.';
+  return 'Bloqueante: dependência crítica precisa existir antes do restore.';
 };
 
 const quoteIdentifier = (identifier: string): string => {
@@ -341,29 +394,59 @@ const loadRunnerNames = async (backupPool: pg.Pool, rows: RegistrationRow[]): Pr
   return names;
 };
 
+const buildDependencyMatrix = (
+  dependencies: DependencyDefinition[],
+  missingByColumn: Map<string, MissingDependency[]>,
+  exampleByColumn: Map<string, DependencyMatrixRow['examples']>
+): DependencyMatrixRow[] => {
+  return dependencies
+    .map((dependency) => {
+      const missing = missingByColumn.get(dependency.column) ?? [];
+      return {
+        dependency: dependency.column,
+        target_table: dependency.target_table,
+        missing_count: missing.length,
+        kind: getDependencyKind(dependency.column),
+        restorable_with_fallback: canRestoreWithFallback(dependency.column),
+        suggested_strategy: fallbackStrategyFor(dependency.column),
+        examples: exampleByColumn.get(dependency.column) ?? [],
+      };
+    })
+    .filter((row) => row.missing_count > 0)
+    .sort((a, b) => b.missing_count - a.missing_count || a.dependency.localeCompare(b.dependency));
+};
+
 const classify = (missing: MissingDependency[]): DependencyClassification => {
-  if (missing.length === 0) return 'RESTORABLE_FULL';
-  if (missing.length > 1) return 'RESTORABLE_WITH_MULTIPLE_MISSING_DEPENDENCIES';
-  const onlyMissing = missing[0]?.column;
-  if (onlyMissing === 'kit_id') return 'RESTORABLE_WITH_NULL_KIT';
-  if (onlyMissing === 'category_id') return 'RESTORABLE_WITH_MISSING_CATEGORY';
-  if (onlyMissing === 'modality_id') return 'RESTORABLE_WITH_MISSING_MODALITY';
-  return 'RESTORABLE_WITH_MULTIPLE_MISSING_DEPENDENCIES';
+  if (missing.length === 0) return 'RESTORABLE_SAFE';
+  const missingColumns = new Set(missing.map((item) => item.column));
+  if (missingColumns.has('runner_id')) return 'BLOCKED_RUNNER_MISSING';
+  if ([...missingColumns].some((column) => getDependencyKind(column) === 'CRITICAL')) {
+    return 'BLOCKED_CRITICAL_DEPENDENCY';
+  }
+  if (missingColumns.has('registered_by')) return 'RESTORABLE_WITH_NULL_REGISTERED_BY';
+  if (missingColumns.has('transferred_from_registration_id') || missingColumns.has('transferred_to_registration_id')) {
+    return 'RESTORABLE_WITH_NULL_TRANSFER_REFS';
+  }
+  if (missingColumns.has('kit_id')) return 'RESTORABLE_WITH_NULL_KIT';
+  return 'BLOCKED_CRITICAL_DEPENDENCY';
 };
 
 const suggestedAction = (classification: DependencyClassification, missing: MissingDependency[]): string => {
   if (classification === 'ALREADY_EXISTS') return 'Nenhuma ação. Inscrição já existe na produção.';
-  if (classification === 'RESTORABLE_FULL') return 'Pode ser restaurada integralmente em etapa futura.';
+  if (classification === 'RESTORABLE_SAFE') return 'Pode ser restaurada integralmente em etapa futura.';
   if (classification === 'RESTORABLE_WITH_NULL_KIT') {
     return 'Em etapa futura, restaurar com kit_id NULL e preservar snapshot textual do kit original.';
   }
-  if (classification === 'RESTORABLE_WITH_MISSING_CATEGORY') {
-    return 'Não restaurar automaticamente ainda. Definir estratégia de fallback/recriação segura de categoria.';
+  if (classification === 'RESTORABLE_WITH_NULL_REGISTERED_BY') {
+    return 'Pode ser candidato a fallback de registered_by, mas depende do schema aceitar NULL ou de estratégia explícita de mapeamento.';
   }
-  if (classification === 'RESTORABLE_WITH_MISSING_MODALITY') {
-    return 'Não restaurar automaticamente ainda. Definir estratégia de fallback/recriação segura de modalidade.';
+  if (classification === 'RESTORABLE_WITH_NULL_TRANSFER_REFS') {
+    return 'Pode ser candidato a fallback com referências de transferência NULL, preservando status/financeiro.';
   }
-  return `Revisão manual obrigatória antes do restore. Dependências ausentes: ${missing.map((item) => item.column).join(', ')}.`;
+  if (classification === 'BLOCKED_RUNNER_MISSING') {
+    return 'Bloqueado: runner_id inexistente. Restaurar ou mapear runner antes da inscrição.';
+  }
+  return `Bloqueado por dependência crítica: ${missing.map((item) => item.column).join(', ')}.`;
 };
 
 const buildSummaryLines = (
@@ -375,11 +458,12 @@ const buildSummaryLines = (
   `Total no backup: ${totals.backup}`,
   `Total atual: ${totals.current}`,
   `Faltantes: ${totals.missing}`,
-  `RESTORABLE_FULL: ${counts.RESTORABLE_FULL}`,
+  `RESTORABLE_SAFE: ${counts.RESTORABLE_SAFE}`,
   `RESTORABLE_WITH_NULL_KIT: ${counts.RESTORABLE_WITH_NULL_KIT}`,
-  `RESTORABLE_WITH_MISSING_CATEGORY: ${counts.RESTORABLE_WITH_MISSING_CATEGORY}`,
-  `RESTORABLE_WITH_MISSING_MODALITY: ${counts.RESTORABLE_WITH_MISSING_MODALITY}`,
-  `RESTORABLE_WITH_MULTIPLE_MISSING_DEPENDENCIES: ${counts.RESTORABLE_WITH_MULTIPLE_MISSING_DEPENDENCIES}`,
+  `RESTORABLE_WITH_NULL_REGISTERED_BY: ${counts.RESTORABLE_WITH_NULL_REGISTERED_BY}`,
+  `RESTORABLE_WITH_NULL_TRANSFER_REFS: ${counts.RESTORABLE_WITH_NULL_TRANSFER_REFS}`,
+  `BLOCKED_RUNNER_MISSING: ${counts.BLOCKED_RUNNER_MISSING}`,
+  `BLOCKED_CRITICAL_DEPENDENCY: ${counts.BLOCKED_CRITICAL_DEPENDENCY}`,
   `ALREADY_EXISTS: ${counts.ALREADY_EXISTS}`,
 ];
 
@@ -440,6 +524,8 @@ export default async function run(params: RunParams): Promise<AnalyzerResult> {
       {} as Record<DependencyClassification, number>
     );
     const problematic: RegistrationAnalysis[] = [];
+    const missingByColumn = new Map<string, MissingDependency[]>();
+    const examplesByColumn = new Map<string, DependencyMatrixRow['examples']>();
 
     counts.ALREADY_EXISTS = alreadyExistingRows.length;
 
@@ -454,19 +540,36 @@ export default async function run(params: RunParams): Promise<AnalyzerResult> {
         const existingValues = existingByColumn.get(dependency.column) ?? new Set<string>();
         if (!existingValues.has(value)) {
           log(`${dependency.column} inexistente detectado para registration ${registrationId}`);
-          missingDependencies.push({
+          const missingDependency = {
             column: dependency.column,
             value,
             target_table: dependency.target_table,
             target_column: dependency.target_column,
-          });
+          };
+          missingDependencies.push(missingDependency);
+          const currentMissing = missingByColumn.get(dependency.column) ?? [];
+          currentMissing.push(missingDependency);
+          missingByColumn.set(dependency.column, currentMissing);
+
+          const currentExamples = examplesByColumn.get(dependency.column) ?? [];
+          if (currentExamples.length < 10) {
+            const runnerId = toStringOrNull(row.runner_id);
+            currentExamples.push({
+              registration_id: registrationId,
+              runner_id: runnerId,
+              runner_name: runnerId ? runnerNames.get(runnerId) ?? null : null,
+              missing_value: value,
+              can_restore_with_fallback: canRestoreWithFallback(dependency.column),
+            });
+            examplesByColumn.set(dependency.column, currentExamples);
+          }
         }
       }
 
       const classification = classify(missingDependencies);
       counts[classification]++;
 
-      if (classification !== 'RESTORABLE_FULL' && problematic.length < 50) {
+      if (classification !== 'RESTORABLE_SAFE' && problematic.length < 50) {
         const kitId = toStringOrNull(row.kit_id);
         const categoryId = toStringOrNull(row.category_id);
         const modalityId = toStringOrNull(row.modality_id);
@@ -483,6 +586,7 @@ export default async function run(params: RunParams): Promise<AnalyzerResult> {
             modality: modalityId ? modalitySnapshots.get(modalityId) : undefined,
           },
           suggested_action: suggestedAction(classification, missingDependencies),
+          can_restore_with_fallback: missingDependencies.length > 0 && missingDependencies.every((item) => canRestoreWithFallback(item.column)),
         });
       }
     }
@@ -499,16 +603,21 @@ export default async function run(params: RunParams): Promise<AnalyzerResult> {
       totals,
       classification_counts: counts,
       dependencies_checked: dependencies,
+      dependency_matrix: buildDependencyMatrix(dependencies, missingByColumn, examplesByColumn),
       problematic_sample: problematic,
       summary_lines: buildSummaryLines(eventId, totals, counts),
       restore_plan: {
-        immediate_full_restore_count: counts.RESTORABLE_FULL,
+        immediate_full_restore_count: counts.RESTORABLE_SAFE,
         null_kit_restore_count: counts.RESTORABLE_WITH_NULL_KIT,
-        requires_category_strategy_count: counts.RESTORABLE_WITH_MISSING_CATEGORY,
-        requires_modality_strategy_count: counts.RESTORABLE_WITH_MISSING_MODALITY,
-        requires_manual_review_count: counts.RESTORABLE_WITH_MULTIPLE_MISSING_DEPENDENCIES,
+        null_registered_by_restore_count: counts.RESTORABLE_WITH_NULL_REGISTERED_BY,
+        null_transfer_refs_restore_count: counts.RESTORABLE_WITH_NULL_TRANSFER_REFS,
+        blocked_runner_missing_count: counts.BLOCKED_RUNNER_MISSING,
+        blocked_critical_dependency_count: counts.BLOCKED_CRITICAL_DEPENDENCY,
+        requires_category_strategy_count: (missingByColumn.get('category_id') ?? []).length,
+        requires_modality_strategy_count: (missingByColumn.get('modality_id') ?? []).length,
+        requires_manual_review_count: counts.BLOCKED_RUNNER_MISSING + counts.BLOCKED_CRITICAL_DEPENDENCY,
         recommendation:
-          'Validar este relatório antes de implementar restore. Próxima etapa deve separar restore integral, restore com kit_id NULL e casos que exigem fallback/recriação controlada.',
+          'Usar a matriz de dependências para decidir fallbacks seguros. Liberar restore parcial apenas para RESTORABLE_SAFE e fallbacks explicitamente aprovados.',
       },
       safety: {
         read_only: true,

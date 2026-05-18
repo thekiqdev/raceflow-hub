@@ -807,6 +807,17 @@ export const analyzeBackupRegistrationDependenciesController = asyncHandler(asyn
       logMessage(line);
     }
     logMessage(`Dependências verificadas: ${analysis.dependencies_checked.map((item) => item.column).join(', ')}`);
+    logMessage('Matriz de dependências faltantes:');
+    for (const row of analysis.dependency_matrix) {
+      logMessage(
+        `${row.dependency} inexistente: ${row.missing_count} | kind=${row.kind} | fallback=${row.restorable_with_fallback ? 'sim' : 'não'} | estratégia=${row.suggested_strategy}`
+      );
+      for (const example of row.examples.slice(0, 3)) {
+        logMessage(
+          `  exemplo registration=${example.registration_id}, runner=${example.runner_name ?? example.runner_id ?? '-'}, valor=${example.missing_value}`
+        );
+      }
+    }
     logMessage(`Amostra problemática: ${analysis.problematic_sample.length} inscrição(ões)`);
     for (const item of analysis.problematic_sample.slice(0, 10)) {
       logMessage(`Registration: ${item.registration_id}`);

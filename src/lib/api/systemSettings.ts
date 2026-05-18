@@ -1005,11 +1005,12 @@ export const executeDeepForensicRegistrationsInvestigationScript = async (
 };
 
 export type BackupRegistrationDependencyClassification =
-  | 'RESTORABLE_FULL'
+  | 'RESTORABLE_SAFE'
   | 'RESTORABLE_WITH_NULL_KIT'
-  | 'RESTORABLE_WITH_MISSING_CATEGORY'
-  | 'RESTORABLE_WITH_MISSING_MODALITY'
-  | 'RESTORABLE_WITH_MULTIPLE_MISSING_DEPENDENCIES'
+  | 'RESTORABLE_WITH_NULL_REGISTERED_BY'
+  | 'RESTORABLE_WITH_NULL_TRANSFER_REFS'
+  | 'BLOCKED_RUNNER_MISSING'
+  | 'BLOCKED_CRITICAL_DEPENDENCY'
   | 'ALREADY_EXISTS';
 
 export interface AnalyzeBackupRegistrationDependenciesResult {
@@ -1028,6 +1029,21 @@ export interface AnalyzeBackupRegistrationDependenciesResult {
     source: 'fk' | 'known';
     requiredForClassification: boolean;
   }>;
+  dependency_matrix: Array<{
+    dependency: string;
+    target_table: string;
+    missing_count: number;
+    kind: 'CRITICAL' | 'FLEXIBLE' | 'POSSIBLY_FLEXIBLE';
+    restorable_with_fallback: boolean;
+    suggested_strategy: string;
+    examples: Array<{
+      registration_id: string;
+      runner_id: string | null;
+      runner_name: string | null;
+      missing_value: string;
+      can_restore_with_fallback: boolean;
+    }>;
+  }>;
   problematic_sample: Array<{
     registration_id: string;
     runner_id: string | null;
@@ -1045,11 +1061,16 @@ export interface AnalyzeBackupRegistrationDependenciesResult {
       modality?: { id: string; table: string; name: string | null; attributes: Record<string, unknown> };
     };
     suggested_action: string;
+    can_restore_with_fallback: boolean;
   }>;
   summary_lines: string[];
   restore_plan: {
     immediate_full_restore_count: number;
     null_kit_restore_count: number;
+    null_registered_by_restore_count: number;
+    null_transfer_refs_restore_count: number;
+    blocked_runner_missing_count: number;
+    blocked_critical_dependency_count: number;
     requires_category_strategy_count: number;
     requires_modality_strategy_count: number;
     requires_manual_review_count: number;
