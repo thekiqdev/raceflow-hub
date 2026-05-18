@@ -33,8 +33,12 @@ type RestoreResult = {
   requested_limit: number;
   batch_size: number;
   restored_count: number;
+  restored_with_normal_kit: number;
+  restored_with_null_kit: number;
   custom_field_values_restored: number;
   kit_null_applied: number;
+  null_kit_promoted_count: number;
+  skipped_real_dependency_count: number;
   failed_count: number;
   sample: RegistrationRow[];
   missing_sample: RegistrationRow[];
@@ -84,6 +88,15 @@ type RestoreCandidate = {
   missingDependencies: string[];
   legacyKitName: string | null;
 };
+
+const BLOCKING_DEPENDENCY_COLUMNS = new Set([
+  'event_id',
+  'runner_id',
+  'registered_by',
+  'category_id',
+  'modality_id',
+  'coupon_id',
+]);
 
 type RelatedTableCopyResult = {
   inserted: number;
@@ -268,12 +281,6 @@ const buildRestoreCandidates = async (
   const modalityIds = missingRows.map((row) => toStringOrNull(row.modality_id)).filter((value): value is string => Boolean(value));
   const runnerIds = missingRows.map((row) => toStringOrNull(row.runner_id)).filter((value): value is string => Boolean(value));
   const registeredByIds = missingRows.map((row) => toStringOrNull(row.registered_by)).filter((value): value is string => Boolean(value));
-  const transferredFromIds = missingRows
-    .map((row) => toStringOrNull(row.transferred_from_registration_id))
-    .filter((value): value is string => Boolean(value));
-  const transferredToIds = missingRows
-    .map((row) => toStringOrNull(row.transferred_to_registration_id))
-    .filter((value): value is string => Boolean(value));
 
   const [
     existingKits,
@@ -281,8 +288,6 @@ const buildRestoreCandidates = async (
     existingModalities,
     existingRunners,
     existingRegisteredBy,
-    existingTransferredFrom,
-    existingTransferredTo,
     kitNames,
   ] = await Promise.all([
     loadExistingSet((await tableExists({ query }, 'event_kits')) ? 'event_kits' : 'kits', kitIds),
@@ -290,8 +295,6 @@ const buildRestoreCandidates = async (
     loadExistingSet('modalities', modalityIds),
     loadExistingSet('profiles', runnerIds),
     loadExistingSet('profiles', registeredByIds),
-    loadExistingSet('registrations', transferredFromIds),
-    loadExistingSet('registrations', transferredToIds),
     loadKitNamesFromBackup(backupPool, kitIds),
   ]);
 
@@ -311,17 +314,11 @@ const buildRestoreCandidates = async (
     if (toStringOrNull(row.registered_by) && !existingRegisteredBy.has(String(row.registered_by))) {
       missingDependencies.push('registered_by');
     }
-    if (toStringOrNull(row.transferred_from_registration_id) && !existingTransferredFrom.has(String(row.transferred_from_registration_id))) {
-      missingDependencies.push('transferred_from_registration_id');
-    }
-    if (toStringOrNull(row.transferred_to_registration_id) && !existingTransferredTo.has(String(row.transferred_to_registration_id))) {
-      missingDependencies.push('transferred_to_registration_id');
-    }
-
     const kitMissing = Boolean(originalKitId && !existingKits.has(originalKitId));
     const legacyKitName = originalKitId ? kitNames.get(originalKitId) ?? null : null;
+    const blockingMissingDependencies = missingDependencies.filter((column) => BLOCKING_DEPENDENCY_COLUMNS.has(column));
 
-    if (kitMissing && missingDependencies.length === 0) {
+    if (kitMissing && blockingMissingDependencies.length === 0) {
       const rowWithNullKit = {
         ...row,
         kit_id: null,
@@ -335,13 +332,11 @@ const buildRestoreCandidates = async (
       };
     }
 
-    if (kitMissing) missingDependencies.push('kit_id');
-
     return {
       row,
       normalizedRow: applyLegacyKitSnapshot(row, currentColumns, null, null),
-      classification: missingDependencies.length === 0 ? 'RESTORABLE_FULL' as const : 'SKIPPED' as const,
-      missingDependencies,
+      classification: blockingMissingDependencies.length === 0 ? 'RESTORABLE_FULL' as const : 'SKIPPED' as const,
+      missingDependencies: blockingMissingDependencies,
       legacyKitName,
     };
   });
@@ -504,11 +499,16 @@ export default async function run(params: RunParams): Promise<RestoreResult> {
     );
     const skippedCandidates = candidates.filter((candidate) => candidate.classification === 'SKIPPED');
     const limitedCandidates = eligibleCandidates.slice(0, requestedLimit);
+    const nullKitPromotedCount = eligibleCandidates.filter(
+      (candidate) => candidate.classification === 'RESTORABLE_WITH_NULL_KIT'
+    ).length;
 
     log(`Backup encontrado: ${backupRows.length}`);
     log(`Produção encontrada: ${currentIds.size}`);
     log(`Faltantes por ID: ${missingRows.length}`);
     log(`Elegíveis para restore seguro: ${eligibleCandidates.length}`);
+    log(`RESTORABLE_WITH_NULL_KIT promoted to eligible: ${nullKitPromotedCount}`);
+    log(`Ignoradas por dependência real: ${skippedCandidates.length}`);
     log(`Limit aplicado: ${requestedLimit}`);
 
     if (mode !== 'restore' || params.confirm !== true) {
@@ -523,8 +523,12 @@ export default async function run(params: RunParams): Promise<RestoreResult> {
         requested_limit: requestedLimit,
         batch_size: batchSize,
         restored_count: 0,
+        restored_with_normal_kit: 0,
+        restored_with_null_kit: 0,
         custom_field_values_restored: 0,
         kit_null_applied: limitedCandidates.filter((candidate) => candidate.classification === 'RESTORABLE_WITH_NULL_KIT').length,
+        null_kit_promoted_count: nullKitPromotedCount,
+        skipped_real_dependency_count: skippedCandidates.length,
         failed_count: 0,
         sample: backupRows.slice(0, 10),
         missing_sample: limitedCandidates.map((candidate) => candidate.normalizedRow).slice(0, 10),
@@ -565,6 +569,8 @@ export default async function run(params: RunParams): Promise<RestoreResult> {
     }
 
     let restoredCount = 0;
+    let restoredWithNormalKit = 0;
+    let restoredWithNullKit = 0;
     let customFieldValuesRestored = 0;
     const restoredIds: string[] = [];
     const failedBatches: RestoreResult['failed_batches'] = [];
@@ -583,9 +589,12 @@ export default async function run(params: RunParams): Promise<RestoreResult> {
           if (inserted) {
             restoredCount++;
             batchRestoredIds.push(String(candidate.row.id));
-            log(`Restaurada registration ${candidate.row.id}`);
             if (candidate.classification === 'RESTORABLE_WITH_NULL_KIT') {
-              log(`kit_id NULL aplicado em ${candidate.row.id}; kit original ${candidate.row.kit_id}`);
+              restoredWithNullKit++;
+              log(`Restaurada com kit NULL fallback: ${candidate.row.id}; kit original ${candidate.row.kit_id}`);
+            } else {
+              restoredWithNormalKit++;
+              log(`Restaurada com kit normal: ${candidate.row.id}`);
             }
           } else {
             log(`Ignorada por idempotência (já existe): ${candidate.row.id}`);
@@ -622,8 +631,12 @@ export default async function run(params: RunParams): Promise<RestoreResult> {
       requested_limit: requestedLimit,
       batch_size: batchSize,
       restored_count: restoredCount,
+      restored_with_normal_kit: restoredWithNormalKit,
+      restored_with_null_kit: restoredWithNullKit,
       custom_field_values_restored: customFieldValuesRestored,
       kit_null_applied: limitedCandidates.filter((candidate) => candidate.classification === 'RESTORABLE_WITH_NULL_KIT').length,
+      null_kit_promoted_count: nullKitPromotedCount,
+      skipped_real_dependency_count: skippedCandidates.length,
       failed_count: failedBatches.reduce((sum, batch) => sum + batch.registration_ids.length, 0),
       sample: backupRows.slice(0, 10),
       missing_sample: limitedCandidates.map((candidate) => candidate.normalizedRow).slice(0, 10),

@@ -700,8 +700,12 @@ export interface RestoreRegistrationsFromBackupResult {
   requested_limit: number;
   batch_size: number;
   restored_count: number;
+  restored_with_normal_kit: number;
+  restored_with_null_kit: number;
   custom_field_values_restored: number;
   kit_null_applied: number;
+  null_kit_promoted_count: number;
+  skipped_real_dependency_count: number;
   failed_count: number;
   sample: Array<Record<string, unknown>>;
   missing_sample: Array<Record<string, unknown>>;

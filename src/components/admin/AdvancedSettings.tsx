@@ -1317,9 +1317,13 @@ const AdvancedSettings = () => {
                     <p>Faltantes por ID: {summaryRestoreBackup.missing_count}</p>
                     <p>Elegíveis: {summaryRestoreBackup.eligible_count}</p>
                     <p>Ignoradas: {summaryRestoreBackup.skipped_count}</p>
+                    <p>RESTORABLE_WITH_NULL_KIT promovidas: {summaryRestoreBackup.null_kit_promoted_count}</p>
                     <p>Limite desta execução: {summaryRestoreBackup.requested_limit}</p>
                     <p>Restauradas: {summaryRestoreBackup.restored_count}</p>
+                    <p>Restauradas com kit normal: {summaryRestoreBackup.restored_with_normal_kit}</p>
+                    <p>Restauradas com kit NULL fallback: {summaryRestoreBackup.restored_with_null_kit}</p>
                     <p>kit_id NULL aplicado: {summaryRestoreBackup.kit_null_applied}</p>
+                    <p>Ignoradas por dependência real: {summaryRestoreBackup.skipped_real_dependency_count}</p>
                     <p>Campos personalizados restaurados: {summaryRestoreBackup.custom_field_values_restored}</p>
                     <p>Falhas: {summaryRestoreBackup.failed_count}</p>
                     <p className="text-muted-foreground">

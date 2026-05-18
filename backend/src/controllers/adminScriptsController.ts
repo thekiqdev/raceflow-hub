@@ -647,8 +647,12 @@ export const restoreRegistrationsFromBackupController = asyncHandler(async (req:
     logMessage(`Inscrições faltantes: ${result.missing_count}`);
     logMessage(`Elegíveis: ${result.eligible_count}`);
     logMessage(`Ignoradas: ${result.skipped_count}`);
+    logMessage(`RESTORABLE_WITH_NULL_KIT promoted to eligible: ${result.null_kit_promoted_count}`);
     logMessage(`Inscrições restauradas: ${result.restored_count}`);
+    logMessage(`Restauradas com kit normal: ${result.restored_with_normal_kit}`);
+    logMessage(`Restauradas com kit NULL fallback: ${result.restored_with_null_kit}`);
     logMessage(`kit_id NULL aplicado: ${result.kit_null_applied}`);
+    logMessage(`Ignoradas por dependência real: ${result.skipped_real_dependency_count}`);
     logMessage(`Falhas: ${result.failed_count}`);
     logMessage('Garantias: sem overwrite, sem delete, insert apenas por ID faltante.');
 
