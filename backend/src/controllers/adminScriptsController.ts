@@ -13,6 +13,7 @@ import restoreRegistrationsFromBackup from '../scripts/restoreRegistrationsFromB
 import deepForensicRegistrationsInvestigation from '../scripts/deepForensicRegistrationsInvestigation.js';
 import analyzeBackupRegistrationDependencies from '../scripts/analyzeBackupRegistrationDependencies.js';
 import analyzeNullKitCompatibility from '../scripts/analyzeNullKitCompatibility.js';
+import auditRestoredRegistrationSemantics from '../scripts/auditRestoredRegistrationSemantics.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -699,6 +700,80 @@ export const restoreRegistrationsFromBackupController = asyncHandler(async (req:
 });
 
 export const restoreMissingRegistrationsController = restoreRegistrationsFromBackupController;
+
+/**
+ * POST /api/admin/scripts/audit-restored-registration-semantics
+ * Auditoria semântica read-only entre backup e banco atual para inscrições já presentes.
+ */
+export const auditRestoredRegistrationSemanticsController = asyncHandler(async (req: AuthRequest, res: Response) => {
+  if (!req.user) {
+    return res.status(401).json({
+      success: false,
+      error: 'Not authenticated',
+    });
+  }
+
+  const isAdmin = await hasRole(req.user.id, 'admin');
+  if (!isAdmin) {
+    return res.status(403).json({
+      success: false,
+      error: 'Forbidden',
+      message: 'Apenas administradores podem executar este script',
+    });
+  }
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+
+  const logs: string[] = [];
+  const logMessage = (message: string) => {
+    const timestamp = new Date().toISOString();
+    const logLine = `[${timestamp}] ${message}`;
+    logs.push(logLine);
+    res.write(`data: ${JSON.stringify({ type: 'log', message: logLine })}\n\n`);
+  };
+
+  try {
+    const eventId = typeof req.body?.eventId === 'string' ? req.body.eventId.trim() : '';
+    if (!eventId) {
+      throw new Error('eventId é obrigatório para auditar semântica das inscrições restauradas');
+    }
+
+    logMessage('Iniciando auditoria semântica read-only das inscrições restauradas...');
+    logMessage(`Evento: ${eventId}`);
+    logMessage('Garantia: nenhum restore, reconcile, insert, update ou delete será executado.');
+
+    const result = await auditRestoredRegistrationSemantics({ eventId });
+
+    logMessage(`Comparadas por ID: ${result.totals.compared_registrations}`);
+    logMessage(`payment_method divergentes: ${result.divergences.payment_method_count}`);
+    logMessage(`payment_status divergentes: ${result.divergences.payment_status_count}`);
+    logMessage(`leader_invitations perdidas: ${result.leader_invitations.lost_link_count}`);
+    logMessage(`free_bonus órfãs no atual: ${result.free_bonus_orphans.current_count}`);
+    logMessage(`Receita potencialmente inflada: ${result.potential_inflated_revenue.count} inscrição(ões), R$ ${result.potential_inflated_revenue.total_amount_sum.toFixed(2)}`);
+    logMessage(result.conclusion);
+
+    res.write(`data: ${JSON.stringify({
+      type: 'complete',
+      success: true,
+      summary: result,
+      message: 'Auditoria semântica concluída em modo read-only',
+    })}\n\n`);
+    res.end();
+    return;
+  } catch (error: any) {
+    logMessage(`Erro ao executar auditoria semântica: ${error.message}`);
+    res.write(`data: ${JSON.stringify({
+      type: 'error',
+      success: false,
+      message: error.message,
+    })}\n\n`);
+    res.end();
+    return;
+  }
+});
 
 /**
  * POST /api/admin/scripts/deep-forensic-registrations-investigation

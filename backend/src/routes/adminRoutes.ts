@@ -135,6 +135,7 @@ import {
   analyzeBackupRegistrationDependenciesController,
   analyzeNullKitCompatibilityController,
   restoreMissingRegistrationsController,
+  auditRestoredRegistrationSemanticsController,
 } from '../controllers/adminScriptsController.js';
 import { removeCommissionController, getRegistrationCommissionController } from '../controllers/adminCommissionsController.js';
 import { getLeaderCouponRegistrationsController } from '../controllers/leaderRegistrationsController.js';
@@ -350,6 +351,7 @@ router.post('/scripts/restore-registrations-from-backup', restoreRegistrationsFr
 router.post('/scripts/deep-forensic-registrations-investigation', deepForensicRegistrationsInvestigationController);
 router.post('/scripts/analyze-backup-registration-dependencies', analyzeBackupRegistrationDependenciesController);
 router.post('/scripts/analyze-null-kit-compatibility', analyzeNullKitCompatibilityController);
+router.post('/scripts/audit-restored-registration-semantics', auditRestoredRegistrationSemanticsController);
 router.post('/scripts/restore-missing-registrations', restoreMissingRegistrationsController);
 
 export default router;

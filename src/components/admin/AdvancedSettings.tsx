@@ -23,12 +23,14 @@ import {
   executeDeepForensicRegistrationsInvestigationScript,
   executeAnalyzeBackupRegistrationDependenciesScript,
   executeAnalyzeNullKitCompatibilityScript,
+  executeAuditRestoredRegistrationSemanticsScript,
   type EventRegistrationsIntegrityDiagnosis,
   type ForensicEventRegistrationsInvestigation,
   type RestoreRegistrationsFromBackupResult,
   type DeepForensicRegistrationsInvestigation,
   type AnalyzeBackupRegistrationDependenciesResult,
   type AnalyzeNullKitCompatibilityResult,
+  type AuditRestoredRegistrationSemanticsResult,
 } from "@/lib/api/systemSettings";
 import { InvitationBonusAuditPanel } from "@/components/admin/InvitationBonusAuditPanel";
 import { getEvents, type Event } from "@/lib/api/events";
@@ -105,6 +107,11 @@ const AdvancedSettings = () => {
   const [summaryNullKitAnalyzer, setSummaryNullKitAnalyzer] = useState<AnalyzeNullKitCompatibilityResult | null>(null);
   const [hasErrorNullKitAnalyzer, setHasErrorNullKitAnalyzer] = useState(false);
   const logsEndRefNullKitAnalyzer = useRef<HTMLDivElement>(null);
+  const [isRunningSemanticAudit, setIsRunningSemanticAudit] = useState(false);
+  const [logsSemanticAudit, setLogsSemanticAudit] = useState<string[]>([]);
+  const [summarySemanticAudit, setSummarySemanticAudit] = useState<AuditRestoredRegistrationSemanticsResult | null>(null);
+  const [hasErrorSemanticAudit, setHasErrorSemanticAudit] = useState(false);
+  const logsEndRefSemanticAudit = useRef<HTMLDivElement>(null);
 
   // Auto-scroll para o final dos logs
   useEffect(() => {
@@ -152,6 +159,11 @@ const AdvancedSettings = () => {
       logsEndRefNullKitAnalyzer.current.scrollIntoView({ behavior: 'smooth' });
     }
   }, [logsNullKitAnalyzer]);
+  useEffect(() => {
+    if (logsEndRefSemanticAudit.current) {
+      logsEndRefSemanticAudit.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [logsSemanticAudit]);
 
   useEffect(() => {
     let cancelled = false;
@@ -662,6 +674,62 @@ const AdvancedSettings = () => {
     toast.success("Log baixado com sucesso!");
   };
 
+  const handleExecuteSemanticAuditScript = async () => {
+    if (isRunningSemanticAudit) return;
+
+    const selectedEventId = getSelectedEventIdForBackupRestore();
+    if (!selectedEventId) {
+      toast.error("Selecione um evento antes de auditar a semântica");
+      return;
+    }
+
+    setIsRunningSemanticAudit(true);
+    setLogsSemanticAudit([]);
+    setSummarySemanticAudit(null);
+    setHasErrorSemanticAudit(false);
+    const newLogs: string[] = [];
+
+    await executeAuditRestoredRegistrationSemanticsScript(
+      { eventId: selectedEventId },
+      (message: string) => {
+        newLogs.push(message);
+        setLogsSemanticAudit([...newLogs]);
+      },
+      (data) => {
+        setIsRunningSemanticAudit(false);
+        if (data.success) {
+          setSummarySemanticAudit(data.summary ?? null);
+          toast.success(data.message || "Auditoria semântica concluída com sucesso!");
+        } else {
+          setHasErrorSemanticAudit(true);
+          toast.error(data.message || "Erro ao executar auditoria semântica");
+        }
+      },
+      (error: string) => {
+        setIsRunningSemanticAudit(false);
+        setHasErrorSemanticAudit(true);
+        newLogs.push(`❌ Erro: ${error}`);
+        setLogsSemanticAudit([...newLogs]);
+        toast.error(error);
+      }
+    );
+  };
+
+  const handleDownloadLogSemanticAudit = () => {
+    if (!logsSemanticAudit.length) return;
+    const logContent = logsSemanticAudit.join('\n');
+    const blob = new Blob([logContent], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `audit-restored-registration-semantics-${Date.now()}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast.success("Log baixado com sucesso!");
+  };
+
   const isAnyInvestigationRunning =
     isRunningIntegrity ||
     isRunningForensic ||
@@ -669,6 +737,7 @@ const AdvancedSettings = () => {
     isRunningDeepForensic ||
     isRunningBackupAnalyzer ||
     isRunningNullKitAnalyzer ||
+    isRunningSemanticAudit ||
     loadingIntegrityEvents;
 
 
@@ -1066,6 +1135,24 @@ const AdvancedSettings = () => {
               )}
             </Button>
             <Button
+              onClick={handleExecuteSemanticAuditScript}
+              disabled={isAnyInvestigationRunning}
+              variant="outline"
+              className="flex items-center gap-2 sm:w-auto"
+            >
+              {isRunningSemanticAudit ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Auditando...
+                </>
+              ) : (
+                <>
+                  <Play className="h-4 w-4" />
+                  Auditar semântica
+                </>
+              )}
+            </Button>
+            <Button
               onClick={() => runRestoreBackupScript(false)}
               disabled={isAnyInvestigationRunning}
               variant="outline"
@@ -1173,6 +1260,16 @@ const AdvancedSettings = () => {
               >
                 <Download className="h-4 w-4" />
                 Baixar log kit NULL
+              </Button>
+            )}
+            {logsSemanticAudit.length > 0 && (
+              <Button
+                onClick={handleDownloadLogSemanticAudit}
+                variant="outline"
+                className="flex items-center gap-2 sm:w-auto"
+              >
+                <Download className="h-4 w-4" />
+                Baixar log auditoria
               </Button>
             )}
             {logsRestoreBackup.length > 0 && (
@@ -1354,6 +1451,74 @@ const AdvancedSettings = () => {
             </Alert>
           )}
 
+          {summarySemanticAudit && (
+            <Alert
+              variant={
+                summarySemanticAudit.leader_invitations.lost_link_count > 0 ||
+                summarySemanticAudit.free_bonus_orphans.current_count > 0 ||
+                summarySemanticAudit.potential_inflated_revenue.count > 0 ||
+                summarySemanticAudit.divergences.payment_method_count > 0 ||
+                summarySemanticAudit.divergences.payment_status_count > 0
+                  ? "destructive"
+                  : "default"
+              }
+            >
+              <CheckCircle2 className="h-4 w-4" />
+              <AlertDescription>
+                <div className="space-y-2">
+                  <p className="font-semibold">Auditoria semântica read-only concluída</p>
+                  <div className="text-sm space-y-1">
+                    <p>Evento: {summarySemanticAudit.eventId}</p>
+                    <p>Inscrições comparadas por ID: {summarySemanticAudit.totals.compared_registrations}</p>
+                    <p>Leader invitations no backup: {summarySemanticAudit.leader_invitations.backup_linked_count}</p>
+                    <p>Leader invitations no atual: {summarySemanticAudit.leader_invitations.current_linked_count}</p>
+                    <p>Vínculos de convite perdidos: {summarySemanticAudit.leader_invitations.lost_link_count}</p>
+                    <p>free_bonus órfãos no atual: {summarySemanticAudit.free_bonus_orphans.current_count}</p>
+                    <p>
+                      Receita potencialmente inflada: {summarySemanticAudit.potential_inflated_revenue.count} inscrição(ões) / R${" "}
+                      {summarySemanticAudit.potential_inflated_revenue.total_amount_sum.toFixed(2)}
+                    </p>
+                    <p>Divergências payment_method: {summarySemanticAudit.divergences.payment_method_count}</p>
+                    <p>Divergências payment_status: {summarySemanticAudit.divergences.payment_status_count}</p>
+                    <div className="pt-2">
+                      <p className="font-medium">BACKUP payment_status/payment_method:</p>
+                      {summarySemanticAudit.combined_semantics_matrix.backup.slice(0, 6).map((row) => (
+                        <p key={`backup-${row.value}`}>{row.value}: {row.count}</p>
+                      ))}
+                    </div>
+                    <div className="pt-2">
+                      <p className="font-medium">ATUAL payment_status/payment_method:</p>
+                      {summarySemanticAudit.combined_semantics_matrix.current.slice(0, 6).map((row) => (
+                        <p key={`current-${row.value}`}>{row.value}: {row.count}</p>
+                      ))}
+                    </div>
+                    {summarySemanticAudit.divergences.sample.length > 0 && (
+                      <div className="pt-2">
+                        <p className="font-medium">Amostra de divergências:</p>
+                        {summarySemanticAudit.divergences.sample.slice(0, 5).map((item) => (
+                          <p key={item.registration_id}>
+                            {item.registration_id}: backup {item.backup.payment_status}/{item.backup.payment_method}
+                            {" → "}atual {item.current.payment_status}/{item.current.payment_method}
+                          </p>
+                        ))}
+                      </div>
+                    )}
+                    <p className="text-muted-foreground">{summarySemanticAudit.conclusion}</p>
+                  </div>
+                </div>
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {hasErrorSemanticAudit && (
+            <Alert variant="destructive">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertDescription>
+                Ocorreu um erro ao executar a auditoria semântica. Verifique os logs abaixo.
+              </AlertDescription>
+            </Alert>
+          )}
+
           {summaryRestoreBackup && (
             <Alert variant={summaryRestoreBackup.mode === "restore" ? "destructive" : "default"}>
               <CheckCircle2 className="h-4 w-4" />
@@ -1498,6 +1663,25 @@ const AdvancedSettings = () => {
                       </div>
                     ))}
                     <div ref={logsEndRefNullKitAnalyzer} />
+                  </div>
+                </ScrollArea>
+              </CardContent>
+            </Card>
+          )}
+          {logsSemanticAudit.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm">Logs – Auditoria semântica do restore</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ScrollArea className="h-[500px] w-full rounded-md border p-4 bg-muted/50 font-mono text-sm">
+                  <div>
+                    {logsSemanticAudit.map((log, index) => (
+                      <div key={index} className="mb-1 whitespace-pre-wrap">
+                        {log}
+                      </div>
+                    ))}
+                    <div ref={logsEndRefSemanticAudit} />
                   </div>
                 </ScrollArea>
               </CardContent>

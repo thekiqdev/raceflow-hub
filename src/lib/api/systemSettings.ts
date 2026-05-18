@@ -1301,6 +1301,162 @@ export const executeAnalyzeNullKitCompatibilityScript = async (
   }
 };
 
+export interface AuditRestoredRegistrationSemanticsResult {
+  eventId: string;
+  mode: 'read_only_semantic_audit';
+  totals: {
+    backup_registrations: number;
+    current_registrations: number;
+    compared_registrations: number;
+    current_not_in_backup: number;
+  };
+  payment_method_matrix: {
+    backup: Array<{ value: string; count: number }>;
+    current: Array<{ value: string; count: number }>;
+  };
+  payment_status_matrix: {
+    backup: Array<{ value: string; count: number }>;
+    current: Array<{ value: string; count: number }>;
+  };
+  combined_semantics_matrix: {
+    backup: Array<{ value: string; count: number }>;
+    current: Array<{ value: string; count: number }>;
+  };
+  leader_invitations: {
+    backup_linked_count: number;
+    current_linked_count: number;
+    lost_link_count: number;
+    gained_link_count: number;
+    backup_rows: number;
+    current_rows: number;
+  };
+  free_bonus_orphans: {
+    current_count: number;
+    sample_registration_ids: string[];
+  };
+  potential_inflated_revenue: {
+    count: number;
+    total_amount_sum: number;
+    sample_registration_ids: string[];
+  };
+  divergences: {
+    payment_method_count: number;
+    payment_status_count: number;
+    leader_invitation_link_count: number;
+    sample: Array<{
+      registration_id: string;
+      backup: {
+        payment_method: string | null;
+        payment_status: string | null;
+        status: string | null;
+        total_amount: number;
+        has_leader_invitation: boolean;
+      };
+      current: {
+        payment_method: string | null;
+        payment_status: string | null;
+        status: string | null;
+        total_amount: number;
+        has_leader_invitation: boolean;
+      };
+      divergences: string[];
+    }>;
+  };
+  conclusion: string;
+  safety: {
+    read_only: true;
+    inserts: false;
+    updates: false;
+    deletes: false;
+    restore_executed: false;
+    reconcile_executed: false;
+  };
+  logs: string[];
+}
+
+export const executeAuditRestoredRegistrationSemanticsScript = async (
+  params: { eventId: string },
+  onLog: (message: string) => void,
+  onComplete: (data: {
+    success: boolean;
+    summary?: AuditRestoredRegistrationSemanticsResult;
+    message?: string;
+  }) => void,
+  onError: (error: string) => void
+): Promise<void> => {
+  try {
+    const token = localStorage.getItem('auth_token');
+    if (!token) throw new Error('Não autenticado');
+
+    const getApiUrl = () => {
+      const envUrl = import.meta.env.VITE_API_URL;
+      if (envUrl && !envUrl.includes('localhost')) return envUrl;
+      if (import.meta.env.PROD) return 'https://cronoteam-crono-back.e758qe.easypanel.host/api';
+      return 'http://localhost:3001/api';
+    };
+
+    const response = await fetch(`${getApiUrl()}/admin/scripts/audit-restored-registration-semantics`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ eventId: params.eventId }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: 'Erro desconhecido' }));
+      throw new Error(errorData.error || errorData.message || 'Erro ao executar auditoria semântica');
+    }
+
+    const reader = response.body?.getReader();
+    const decoder = new TextDecoder();
+    if (!reader) throw new Error('Resposta do servidor não contém stream de dados');
+
+    let buffer = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          try {
+            const data = JSON.parse(line.slice(6));
+            if (data.type === 'log') onLog(data.message);
+            else if (data.type === 'complete') {
+              onComplete({
+                success: data.success,
+                summary: data.summary,
+                message: data.message,
+              });
+            } else if (data.type === 'error') {
+              onError(data.message || 'Erro desconhecido');
+            }
+          } catch (e) {
+            console.error('Erro ao processar linha SSE:', e);
+          }
+        }
+      }
+    }
+
+    if (buffer.startsWith('data: ')) {
+      try {
+        const data = JSON.parse(buffer.slice(6));
+        if (data.type === 'complete') {
+          onComplete({
+            success: data.success,
+            summary: data.summary,
+            message: data.message,
+          });
+        }
+      } catch (e) {
+        console.error('Erro ao processar buffer final:', e);
+      }
+    }
+  } catch (error: any) {
+    onError(error.message || 'Erro ao executar auditoria semântica');
+  }
+};
+
 
 
 
