@@ -441,7 +441,7 @@ const AdvancedSettings = () => {
 
     if (confirm) {
       const confirmed = window.confirm(
-        "Esta ação irá restaurar inscrições faltantes encontradas no backup.\n\nNenhuma inscrição existente será alterada.\n\nInscrições com kit removido serão restauradas com kit nulo, preservando os demais dados históricos.\n\nDeseja continuar?"
+        "Esta ação irá restaurar inscrições faltantes encontradas no backup.\n\nNenhuma inscrição existente será alterada.\n\nInscrições com kit removido serão restauradas com kit nulo. Referências de transferência inexistentes serão zeradas, preservando os demais dados históricos.\n\nDeseja continuar?"
       );
       if (!confirmed) return;
     }
@@ -1328,13 +1328,23 @@ const AdvancedSettings = () => {
                     <p>Elegíveis: {summaryRestoreBackup.eligible_count}</p>
                     <p>Ignoradas: {summaryRestoreBackup.skipped_count}</p>
                     <p>RESTORABLE_WITH_NULL_KIT promovidas: {summaryRestoreBackup.null_kit_promoted_count}</p>
+                    <p>
+                      RESTORABLE_WITH_NULL_TRANSFER_REFS promovidas:{" "}
+                      {summaryRestoreBackup.null_transfer_refs_promoted_count}
+                    </p>
                     <p>Limite desta execução: {summaryRestoreBackup.requested_limit}</p>
                     <p>Restauradas: {summaryRestoreBackup.restored_count}</p>
                     <p>Restauradas com kit normal: {summaryRestoreBackup.restored_with_normal_kit}</p>
                     <p>Restauradas com kit NULL fallback: {summaryRestoreBackup.restored_with_null_kit}</p>
+                    <p>
+                      Restauradas com transfer refs NULL fallback:{" "}
+                      {summaryRestoreBackup.restored_with_null_transfer_refs}
+                    </p>
                     <p>kit_id NULL aplicado: {summaryRestoreBackup.kit_null_applied}</p>
+                    <p>transfer refs NULL aplicado: {summaryRestoreBackup.transfer_refs_null_applied}</p>
                     <p>Ignoradas por dependência real: {summaryRestoreBackup.skipped_real_dependency_count}</p>
                     <p>Campos personalizados restaurados: {summaryRestoreBackup.custom_field_values_restored}</p>
+                    <p>Pagamentos financeiros restaurados: {summaryRestoreBackup.financial_payments_restored}</p>
                     <p>Falhas: {summaryRestoreBackup.failed_count}</p>
                     <p className="text-muted-foreground">
                       Segurança: sem overwrite, sem delete, batches com rollback e insert apenas de registros faltantes por ID.

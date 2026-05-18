@@ -35,9 +35,13 @@ type RestoreResult = {
   restored_count: number;
   restored_with_normal_kit: number;
   restored_with_null_kit: number;
+  restored_with_null_transfer_refs: number;
   custom_field_values_restored: number;
+  financial_payments_restored: number;
   kit_null_applied: number;
+  transfer_refs_null_applied: number;
   null_kit_promoted_count: number;
+  null_transfer_refs_promoted_count: number;
   skipped_real_dependency_count: number;
   failed_count: number;
   sample: RegistrationRow[];
@@ -84,8 +88,9 @@ type RestoreResult = {
 type RestoreCandidate = {
   row: RegistrationRow;
   normalizedRow: RegistrationRow;
-  classification: 'RESTORABLE_FULL' | 'RESTORABLE_WITH_NULL_KIT' | 'SKIPPED';
+  classification: 'RESTORABLE_FULL' | 'RESTORABLE_WITH_NULL_KIT' | 'RESTORABLE_WITH_NULL_TRANSFER_REFS' | 'SKIPPED';
   missingDependencies: string[];
+  fallbackApplied: Array<'kit_id' | 'transferred_from_registration_id' | 'transferred_to_registration_id'>;
   legacyKitName: string | null;
 };
 
@@ -281,6 +286,12 @@ const buildRestoreCandidates = async (
   const modalityIds = missingRows.map((row) => toStringOrNull(row.modality_id)).filter((value): value is string => Boolean(value));
   const runnerIds = missingRows.map((row) => toStringOrNull(row.runner_id)).filter((value): value is string => Boolean(value));
   const registeredByIds = missingRows.map((row) => toStringOrNull(row.registered_by)).filter((value): value is string => Boolean(value));
+  const transferredFromIds = missingRows
+    .map((row) => toStringOrNull(row.transferred_from_registration_id))
+    .filter((value): value is string => Boolean(value));
+  const transferredToIds = missingRows
+    .map((row) => toStringOrNull(row.transferred_to_registration_id))
+    .filter((value): value is string => Boolean(value));
 
   const [
     existingKits,
@@ -288,6 +299,8 @@ const buildRestoreCandidates = async (
     existingModalities,
     existingRunners,
     existingRegisteredBy,
+    existingTransferredFrom,
+    existingTransferredTo,
     kitNames,
   ] = await Promise.all([
     loadExistingSet((await tableExists({ query }, 'event_kits')) ? 'event_kits' : 'kits', kitIds),
@@ -295,6 +308,8 @@ const buildRestoreCandidates = async (
     loadExistingSet('modalities', modalityIds),
     loadExistingSet('profiles', runnerIds),
     loadExistingSet('profiles', registeredByIds),
+    loadExistingSet('registrations', transferredFromIds),
+    loadExistingSet('registrations', transferredToIds),
     loadKitNamesFromBackup(backupPool, kitIds),
   ]);
 
@@ -317,26 +332,63 @@ const buildRestoreCandidates = async (
     const kitMissing = Boolean(originalKitId && !existingKits.has(originalKitId));
     const legacyKitName = originalKitId ? kitNames.get(originalKitId) ?? null : null;
     const blockingMissingDependencies = missingDependencies.filter((column) => BLOCKING_DEPENDENCY_COLUMNS.has(column));
+    const transferredFromId = toStringOrNull(row.transferred_from_registration_id);
+    const transferredToId = toStringOrNull(row.transferred_to_registration_id);
+    const transferredFromMissing = Boolean(transferredFromId && !existingTransferredFrom.has(transferredFromId));
+    const transferredToMissing = Boolean(transferredToId && !existingTransferredTo.has(transferredToId));
+    const transferRefsMissing = transferredFromMissing || transferredToMissing;
+    const fallbackApplied: RestoreCandidate['fallbackApplied'] = [];
 
-    if (kitMissing && blockingMissingDependencies.length === 0) {
-      const rowWithNullKit = {
-        ...row,
-        kit_id: null,
-      };
+    if (blockingMissingDependencies.length === 0) {
+      let normalizedRow: RegistrationRow = { ...row };
+      if (kitMissing) {
+        normalizedRow = {
+          ...normalizedRow,
+          kit_id: null,
+        };
+        fallbackApplied.push('kit_id');
+      }
+      if (transferredFromMissing) {
+        normalizedRow = {
+          ...normalizedRow,
+          transferred_from_registration_id: null,
+        };
+        fallbackApplied.push('transferred_from_registration_id');
+      }
+      if (transferredToMissing) {
+        normalizedRow = {
+          ...normalizedRow,
+          transferred_to_registration_id: null,
+        };
+        fallbackApplied.push('transferred_to_registration_id');
+      }
+
+      const classification = kitMissing
+        ? 'RESTORABLE_WITH_NULL_KIT'
+        : transferRefsMissing
+          ? 'RESTORABLE_WITH_NULL_TRANSFER_REFS'
+          : 'RESTORABLE_FULL';
+
       return {
         row,
-        normalizedRow: applyLegacyKitSnapshot(rowWithNullKit, currentColumns, legacyKitName, originalKitId),
-        classification: 'RESTORABLE_WITH_NULL_KIT' as const,
-        missingDependencies: ['kit_id'],
+        normalizedRow: applyLegacyKitSnapshot(normalizedRow, currentColumns, kitMissing ? legacyKitName : null, kitMissing ? originalKitId : null),
+        classification,
+        missingDependencies: fallbackApplied,
+        fallbackApplied,
         legacyKitName,
       };
     }
 
+    if (kitMissing) missingDependencies.push('kit_id');
+    if (transferredFromMissing) missingDependencies.push('transferred_from_registration_id');
+    if (transferredToMissing) missingDependencies.push('transferred_to_registration_id');
+
     return {
       row,
       normalizedRow: applyLegacyKitSnapshot(row, currentColumns, null, null),
-      classification: blockingMissingDependencies.length === 0 ? 'RESTORABLE_FULL' as const : 'SKIPPED' as const,
+      classification: 'SKIPPED' as const,
       missingDependencies: blockingMissingDependencies,
+      fallbackApplied: [],
       legacyKitName,
     };
   });
@@ -394,11 +446,13 @@ const copyRelatedRows = async (
     const columns = currentColumns.filter((column) => rowColumns.has(column));
     if (columns.length === 0) continue;
 
-    const conflictClause = columns.includes('id')
-      ? 'ON CONFLICT (id) DO NOTHING'
-      : tableName === 'registration_custom_field_values'
-        ? 'ON CONFLICT (registration_id, category_custom_field_id) DO NOTHING'
-        : 'ON CONFLICT DO NOTHING';
+    const conflictClause = tableName === 'registration_custom_field_values' && columns.includes('category_custom_field_id')
+      ? 'ON CONFLICT (registration_id, category_custom_field_id) DO NOTHING'
+      : tableName === 'asaas_payments' && columns.includes('asaas_payment_id')
+        ? 'ON CONFLICT (asaas_payment_id) DO NOTHING'
+        : columns.includes('id')
+          ? 'ON CONFLICT (id) DO NOTHING'
+          : 'ON CONFLICT DO NOTHING';
 
     const result = await client.query(
       `INSERT INTO ${quoteIdentifier(tableName)} (${columns.map(quoteIdentifier).join(', ')})
@@ -495,12 +549,19 @@ export default async function run(params: RunParams): Promise<RestoreResult> {
     const eventExistsInCurrent = (eventExistsResult.rowCount ?? 0) > 0;
     const candidates = await buildRestoreCandidates(backupPool, missingRows, currentColumns);
     const eligibleCandidates = candidates.filter((candidate) =>
-      candidate.classification === 'RESTORABLE_FULL' || candidate.classification === 'RESTORABLE_WITH_NULL_KIT'
+      candidate.classification === 'RESTORABLE_FULL' ||
+      candidate.classification === 'RESTORABLE_WITH_NULL_KIT' ||
+      candidate.classification === 'RESTORABLE_WITH_NULL_TRANSFER_REFS'
     );
     const skippedCandidates = candidates.filter((candidate) => candidate.classification === 'SKIPPED');
     const limitedCandidates = eligibleCandidates.slice(0, requestedLimit);
     const nullKitPromotedCount = eligibleCandidates.filter(
-      (candidate) => candidate.classification === 'RESTORABLE_WITH_NULL_KIT'
+      (candidate) => candidate.fallbackApplied.includes('kit_id')
+    ).length;
+    const nullTransferRefsPromotedCount = eligibleCandidates.filter(
+      (candidate) =>
+        candidate.fallbackApplied.includes('transferred_from_registration_id') ||
+        candidate.fallbackApplied.includes('transferred_to_registration_id')
     ).length;
 
     log(`Backup encontrado: ${backupRows.length}`);
@@ -508,6 +569,7 @@ export default async function run(params: RunParams): Promise<RestoreResult> {
     log(`Faltantes por ID: ${missingRows.length}`);
     log(`Elegíveis para restore seguro: ${eligibleCandidates.length}`);
     log(`RESTORABLE_WITH_NULL_KIT promoted to eligible: ${nullKitPromotedCount}`);
+    log(`RESTORABLE_WITH_NULL_TRANSFER_REFS promoted to eligible: ${nullTransferRefsPromotedCount}`);
     log(`Ignoradas por dependência real: ${skippedCandidates.length}`);
     log(`Limit aplicado: ${requestedLimit}`);
 
@@ -525,9 +587,17 @@ export default async function run(params: RunParams): Promise<RestoreResult> {
         restored_count: 0,
         restored_with_normal_kit: 0,
         restored_with_null_kit: 0,
+        restored_with_null_transfer_refs: 0,
         custom_field_values_restored: 0,
-        kit_null_applied: limitedCandidates.filter((candidate) => candidate.classification === 'RESTORABLE_WITH_NULL_KIT').length,
+        financial_payments_restored: 0,
+        kit_null_applied: limitedCandidates.filter((candidate) => candidate.fallbackApplied.includes('kit_id')).length,
+        transfer_refs_null_applied: limitedCandidates.filter(
+          (candidate) =>
+            candidate.fallbackApplied.includes('transferred_from_registration_id') ||
+            candidate.fallbackApplied.includes('transferred_to_registration_id')
+        ).length,
         null_kit_promoted_count: nullKitPromotedCount,
+        null_transfer_refs_promoted_count: nullTransferRefsPromotedCount,
         skipped_real_dependency_count: skippedCandidates.length,
         failed_count: 0,
         sample: backupRows.slice(0, 10),
@@ -571,7 +641,9 @@ export default async function run(params: RunParams): Promise<RestoreResult> {
     let restoredCount = 0;
     let restoredWithNormalKit = 0;
     let restoredWithNullKit = 0;
+    let restoredWithNullTransferRefs = 0;
     let customFieldValuesRestored = 0;
+    let financialPaymentsRestored = 0;
     const restoredIds: string[] = [];
     const failedBatches: RestoreResult['failed_batches'] = [];
 
@@ -589,10 +661,19 @@ export default async function run(params: RunParams): Promise<RestoreResult> {
           if (inserted) {
             restoredCount++;
             batchRestoredIds.push(String(candidate.row.id));
-            if (candidate.classification === 'RESTORABLE_WITH_NULL_KIT') {
+            const hasNullKitFallback = candidate.fallbackApplied.includes('kit_id');
+            const hasNullTransferFallback =
+              candidate.fallbackApplied.includes('transferred_from_registration_id') ||
+              candidate.fallbackApplied.includes('transferred_to_registration_id');
+            if (hasNullKitFallback) {
               restoredWithNullKit++;
               log(`Restaurada com kit NULL fallback: ${candidate.row.id}; kit original ${candidate.row.kit_id}`);
-            } else {
+            }
+            if (hasNullTransferFallback) {
+              restoredWithNullTransferRefs++;
+              log(`Restaurada com transfer refs NULL fallback: ${candidate.row.id}`);
+            }
+            if (!hasNullKitFallback) {
               restoredWithNormalKit++;
               log(`Restaurada com kit normal: ${candidate.row.id}`);
             }
@@ -603,10 +684,15 @@ export default async function run(params: RunParams): Promise<RestoreResult> {
 
         const customFieldsResult = await copyRelatedRows(backupPool, client, 'registration_custom_field_values', batchRestoredIds);
         customFieldValuesRestored += customFieldsResult.inserted;
+        const financialPaymentsResult = await copyRelatedRows(backupPool, client, 'asaas_payments', batchRestoredIds);
+        financialPaymentsRestored += financialPaymentsResult.inserted;
 
         await client.query('COMMIT');
         restoredIds.push(...batchRestoredIds);
-        log(`Batch ${batchIndex} confirmado com ${batchRestoredIds.length} inscrição(ões)`);
+        log(
+          `Batch ${batchIndex} confirmado com ${batchRestoredIds.length} inscrição(ões), ` +
+          `${customFieldsResult.inserted} campo(s) personalizado(s) e ${financialPaymentsResult.inserted} pagamento(s)`
+        );
       } catch (error: any) {
         await client.query('ROLLBACK');
         failedBatches.push({
@@ -633,9 +719,17 @@ export default async function run(params: RunParams): Promise<RestoreResult> {
       restored_count: restoredCount,
       restored_with_normal_kit: restoredWithNormalKit,
       restored_with_null_kit: restoredWithNullKit,
+      restored_with_null_transfer_refs: restoredWithNullTransferRefs,
       custom_field_values_restored: customFieldValuesRestored,
-      kit_null_applied: limitedCandidates.filter((candidate) => candidate.classification === 'RESTORABLE_WITH_NULL_KIT').length,
+      financial_payments_restored: financialPaymentsRestored,
+      kit_null_applied: limitedCandidates.filter((candidate) => candidate.fallbackApplied.includes('kit_id')).length,
+      transfer_refs_null_applied: limitedCandidates.filter(
+        (candidate) =>
+          candidate.fallbackApplied.includes('transferred_from_registration_id') ||
+          candidate.fallbackApplied.includes('transferred_to_registration_id')
+      ).length,
       null_kit_promoted_count: nullKitPromotedCount,
+      null_transfer_refs_promoted_count: nullTransferRefsPromotedCount,
       skipped_real_dependency_count: skippedCandidates.length,
       failed_count: failedBatches.reduce((sum, batch) => sum + batch.registration_ids.length, 0),
       sample: backupRows.slice(0, 10),

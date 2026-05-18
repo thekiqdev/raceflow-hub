@@ -702,9 +702,13 @@ export interface RestoreRegistrationsFromBackupResult {
   restored_count: number;
   restored_with_normal_kit: number;
   restored_with_null_kit: number;
+  restored_with_null_transfer_refs: number;
   custom_field_values_restored: number;
+  financial_payments_restored: number;
   kit_null_applied: number;
+  transfer_refs_null_applied: number;
   null_kit_promoted_count: number;
+  null_transfer_refs_promoted_count: number;
   skipped_real_dependency_count: number;
   failed_count: number;
   sample: Array<Record<string, unknown>>;
