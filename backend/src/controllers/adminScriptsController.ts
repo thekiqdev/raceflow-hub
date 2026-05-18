@@ -10,6 +10,7 @@ import { fileURLToPath } from 'url';
 import investigateEventRegistrationsIntegrity from '../scripts/investigateEventRegistrationsIntegrity.js';
 import forensicEventRegistrationsInvestigation from '../scripts/forensicEventRegistrationsInvestigation.js';
 import restoreRegistrationsFromBackup from '../scripts/restoreRegistrationsFromBackup.js';
+import deepForensicRegistrationsInvestigation from '../scripts/deepForensicRegistrationsInvestigation.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -654,6 +655,86 @@ export const restoreRegistrationsFromBackupController = asyncHandler(async (req:
     return;
   } catch (error: any) {
     logMessage(`Erro ao executar recuperação do backup: ${error.message}`);
+    res.write(`data: ${JSON.stringify({
+      type: 'error',
+      success: false,
+      message: error.message,
+    })}\n\n`);
+    res.end();
+    return;
+  }
+});
+
+/**
+ * POST /api/admin/scripts/deep-forensic-registrations-investigation
+ * Investigação forense profunda read-only sobre inscrições e tabelas relacionadas.
+ */
+export const deepForensicRegistrationsInvestigationController = asyncHandler(async (req: AuthRequest, res: Response) => {
+  if (!req.user) {
+    return res.status(401).json({
+      success: false,
+      error: 'Not authenticated',
+    });
+  }
+
+  const isAdmin = await hasRole(req.user.id, 'admin');
+  if (!isAdmin) {
+    return res.status(403).json({
+      success: false,
+      error: 'Forbidden',
+      message: 'Apenas administradores podem executar este script',
+    });
+  }
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+
+  const logs: string[] = [];
+  const logMessage = (message: string) => {
+    const timestamp = new Date().toISOString();
+    const logLine = `[${timestamp}] ${message}`;
+    logs.push(logLine);
+    res.write(`data: ${JSON.stringify({ type: 'log', message: logLine })}\n\n`);
+  };
+
+  try {
+    const eventId = typeof req.body?.eventId === 'string' && req.body.eventId.trim()
+      ? req.body.eventId.trim()
+      : undefined;
+
+    logMessage('Iniciando investigação forense profunda (read-only)...');
+    logMessage(eventId ? `Evento informado: ${eventId}` : 'Nenhum evento informado. Usando evento mais recente.');
+
+    const investigation = await deepForensicRegistrationsInvestigation({ eventId });
+    const registrationsFinding = investigation.findings.registrations.find((item) => item.table === 'registrations');
+    const orphanTotal = investigation.findings.orphan_records.reduce((sum, item) => sum + item.orphan_count, 0);
+    const financialSignals = investigation.findings.financial_records.reduce(
+      (sum, item) => sum + (item.event_id_matches ?? 0) + (item.orphan_registration_id_count ?? 0),
+      0
+    );
+
+    logMessage(`Evento: ${investigation.event.name} (${investigation.event.id})`);
+    logMessage(`Inscrições atuais do evento: ${registrationsFinding?.event_id_matches ?? 0}`);
+    logMessage(`Tabelas relacionadas inspecionadas: ${investigation.findings.registrations.filter((item) => item.exists).length}`);
+    logMessage(`Registros órfãos por registration_id: ${orphanTotal}`);
+    logMessage(`Sinais financeiros relacionados/órfãos: ${financialSignals}`);
+    logMessage(`Triggers encontradas: ${investigation.findings.triggers.length}`);
+    logMessage(`FKs encontradas: ${investigation.findings.foreign_keys.length}`);
+    logMessage(`Causa provável: ${investigation.probable_cause}`);
+    logMessage(`Recomendação: ${investigation.recovery_recommendation}`);
+
+    res.write(`data: ${JSON.stringify({
+      type: 'complete',
+      success: true,
+      summary: investigation,
+      message: investigation.recovery_recommendation,
+    })}\n\n`);
+    res.end();
+    return;
+  } catch (error: any) {
+    logMessage(`Erro ao executar investigação forense profunda: ${error.message}`);
     res.write(`data: ${JSON.stringify({
       type: 'error',
       success: false,

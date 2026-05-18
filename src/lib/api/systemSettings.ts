@@ -794,6 +794,166 @@ export const executeRestoreRegistrationsFromBackupScript = async (
   }
 };
 
+export interface DeepForensicRegistrationsInvestigation {
+  event: { id: string; name: string; created_at: string | null };
+  findings: {
+    registrations: Array<{
+      table: string;
+      exists: boolean;
+      total_rows: number;
+      event_id_matches?: number;
+      registration_id_matches_current_event?: number;
+      orphan_registration_id_count?: number;
+      soft_delete: {
+        columns_present: string[];
+        deleted_at_count?: number;
+        is_deleted_count?: number;
+        inactive_count?: number;
+        status_counts?: Array<{ status: string; total: number }>;
+      };
+      sample?: Array<Record<string, unknown>>;
+    }>;
+    orphan_records: Array<{
+      table: string;
+      orphan_count: number;
+      sample: Array<Record<string, unknown>>;
+    }>;
+    financial_records: Array<{
+      table: string;
+      exists: boolean;
+      event_id_matches?: number;
+      registration_id_matches_current_event?: number;
+      orphan_registration_id_count?: number;
+      sample?: Array<Record<string, unknown>>;
+    }>;
+    triggers: Array<{
+      trigger_schema: string;
+      trigger_name: string;
+      event_manipulation: string;
+      event_object_table: string;
+      action_timing: string;
+      action_statement: string;
+    }>;
+    foreign_keys: Array<{
+      constraint_name: string;
+      source_table: string;
+      source_column: string;
+      target_table: string;
+      target_column: string;
+      delete_rule: string;
+      update_rule: string;
+    }>;
+    hidden_tables: Array<{
+      table: string;
+      total_rows: number;
+      columns: string[];
+    }>;
+    kits: {
+      table: string | null;
+      current_total: number;
+      current_soft_deleted: number;
+      backup_total?: number;
+      backup_missing_in_current?: number;
+      backup_missing_ids_sample?: string[];
+    };
+  };
+  probable_cause:
+    | 'DELECAO_REAL'
+    | 'SOFT_DELETE'
+    | 'CASCADE_DELETE'
+    | 'DADOS_ORFAOS'
+    | 'INCONSISTENCIA_ESTRUTURAL'
+    | 'EVENTO_RECRIADO'
+    | 'SEM_ANOMALIA_FORTE';
+  recovery_recommendation: string;
+}
+
+/**
+ * Executa investigação forense profunda read-only nas tabelas relacionadas às inscrições.
+ */
+export const executeDeepForensicRegistrationsInvestigationScript = async (
+  params: { eventId?: string } | undefined,
+  onLog: (message: string) => void,
+  onComplete: (data: {
+    success: boolean;
+    summary?: DeepForensicRegistrationsInvestigation;
+    message?: string;
+  }) => void,
+  onError: (error: string) => void
+): Promise<void> => {
+  try {
+    const token = localStorage.getItem('auth_token');
+    if (!token) throw new Error('Não autenticado');
+
+    const getApiUrl = () => {
+      const envUrl = import.meta.env.VITE_API_URL;
+      if (envUrl && !envUrl.includes('localhost')) return envUrl;
+      if (import.meta.env.PROD) return 'https://cronoteam-crono-back.e758qe.easypanel.host/api';
+      return 'http://localhost:3001/api';
+    };
+
+    const response = await fetch(`${getApiUrl()}/admin/scripts/deep-forensic-registrations-investigation`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ eventId: params?.eventId || undefined }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: 'Erro desconhecido' }));
+      throw new Error(errorData.error || errorData.message || 'Erro ao executar investigação profunda');
+    }
+
+    const reader = response.body?.getReader();
+    const decoder = new TextDecoder();
+    if (!reader) throw new Error('Resposta do servidor não contém stream de dados');
+
+    let buffer = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          try {
+            const data = JSON.parse(line.slice(6));
+            if (data.type === 'log') onLog(data.message);
+            else if (data.type === 'complete') {
+              onComplete({
+                success: data.success,
+                summary: data.summary,
+                message: data.message,
+              });
+            } else if (data.type === 'error') {
+              onError(data.message || 'Erro desconhecido');
+            }
+          } catch (e) {
+            console.error('Erro ao processar linha SSE:', e);
+          }
+        }
+      }
+    }
+
+    if (buffer.startsWith('data: ')) {
+      try {
+        const data = JSON.parse(buffer.slice(6));
+        if (data.type === 'complete') {
+          onComplete({
+            success: data.success,
+            summary: data.summary,
+            message: data.message,
+          });
+        }
+      } catch (e) {
+        console.error('Erro ao processar buffer final:', e);
+      }
+    }
+  } catch (error: any) {
+    onError(error.message || 'Erro ao executar investigação profunda');
+  }
+};
+
 
 
 

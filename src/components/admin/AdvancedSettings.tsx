@@ -19,9 +19,11 @@ import {
   executeInvestigateEventRegistrationsIntegrityScript,
   executeForensicEventRegistrationsInvestigationScript,
   executeRestoreRegistrationsFromBackupScript,
+  executeDeepForensicRegistrationsInvestigationScript,
   type EventRegistrationsIntegrityDiagnosis,
   type ForensicEventRegistrationsInvestigation,
   type RestoreRegistrationsFromBackupResult,
+  type DeepForensicRegistrationsInvestigation,
 } from "@/lib/api/systemSettings";
 import { InvitationBonusAuditPanel } from "@/components/admin/InvitationBonusAuditPanel";
 import { getEvents, type Event } from "@/lib/api/events";
@@ -81,6 +83,11 @@ const AdvancedSettings = () => {
   const [summaryRestoreBackup, setSummaryRestoreBackup] = useState<RestoreRegistrationsFromBackupResult | null>(null);
   const [hasErrorRestoreBackup, setHasErrorRestoreBackup] = useState(false);
   const logsEndRefRestoreBackup = useRef<HTMLDivElement>(null);
+  const [isRunningDeepForensic, setIsRunningDeepForensic] = useState(false);
+  const [logsDeepForensic, setLogsDeepForensic] = useState<string[]>([]);
+  const [summaryDeepForensic, setSummaryDeepForensic] = useState<DeepForensicRegistrationsInvestigation | null>(null);
+  const [hasErrorDeepForensic, setHasErrorDeepForensic] = useState(false);
+  const logsEndRefDeepForensic = useRef<HTMLDivElement>(null);
 
   // Auto-scroll para o final dos logs
   useEffect(() => {
@@ -113,6 +120,11 @@ const AdvancedSettings = () => {
       logsEndRefRestoreBackup.current.scrollIntoView({ behavior: 'smooth' });
     }
   }, [logsRestoreBackup]);
+  useEffect(() => {
+    if (logsEndRefDeepForensic.current) {
+      logsEndRefDeepForensic.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [logsDeepForensic]);
 
   useEffect(() => {
     let cancelled = false;
@@ -457,6 +469,58 @@ const AdvancedSettings = () => {
     toast.success("Log baixado com sucesso!");
   };
 
+  const handleExecuteDeepForensicScript = async () => {
+    if (isRunningDeepForensic) return;
+    setIsRunningDeepForensic(true);
+    setLogsDeepForensic([]);
+    setSummaryDeepForensic(null);
+    setHasErrorDeepForensic(false);
+    const newLogs: string[] = [];
+
+    await executeDeepForensicRegistrationsInvestigationScript(
+      { eventId: integrityEventId.trim() || undefined },
+      (message: string) => {
+        newLogs.push(message);
+        setLogsDeepForensic([...newLogs]);
+      },
+      (data) => {
+        setIsRunningDeepForensic(false);
+        if (data.success) {
+          setSummaryDeepForensic(data.summary ?? null);
+          toast.success("Investigação profunda concluída com sucesso!");
+        } else {
+          setHasErrorDeepForensic(true);
+          toast.error(data.message || "Erro ao executar investigação profunda");
+        }
+      },
+      (error: string) => {
+        setIsRunningDeepForensic(false);
+        setHasErrorDeepForensic(true);
+        newLogs.push(`❌ Erro: ${error}`);
+        setLogsDeepForensic([...newLogs]);
+        toast.error(error);
+      }
+    );
+  };
+
+  const handleDownloadLogDeepForensic = () => {
+    if (!logsDeepForensic.length) return;
+    const logContent = logsDeepForensic.join('\n');
+    const blob = new Blob([logContent], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `deep-forensic-registrations-investigation-${Date.now()}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast.success("Log baixado com sucesso!");
+  };
+
+  const isAnyInvestigationRunning =
+    isRunningIntegrity || isRunningForensic || isRunningRestoreBackup || isRunningDeepForensic || loadingIntegrityEvents;
+
   const formatIntegrityEventLabel = (event: Event) => {
     const eventDate = event.event_date
       ? new Date(event.event_date).toLocaleDateString("pt-BR")
@@ -747,7 +811,7 @@ const AdvancedSettings = () => {
             <Select
               value={integrityEventId || LATEST_EVENT_VALUE}
               onValueChange={(value) => setIntegrityEventId(value === LATEST_EVENT_VALUE ? "" : value)}
-              disabled={isRunningIntegrity || isRunningForensic || isRunningRestoreBackup || loadingIntegrityEvents}
+              disabled={isAnyInvestigationRunning}
             >
               <SelectTrigger className="w-full">
                 <SelectValue placeholder={loadingIntegrityEvents ? "Carregando eventos..." : "Selecione um evento"} />
@@ -763,7 +827,7 @@ const AdvancedSettings = () => {
             </Select>
             <Button
               onClick={handleExecuteIntegrityScript}
-              disabled={isRunningIntegrity || isRunningForensic || isRunningRestoreBackup || loadingIntegrityEvents}
+              disabled={isAnyInvestigationRunning}
               className="flex items-center gap-2 sm:w-auto"
             >
               {isRunningIntegrity ? (
@@ -780,7 +844,7 @@ const AdvancedSettings = () => {
             </Button>
             <Button
               onClick={handleExecuteForensicScript}
-              disabled={isRunningIntegrity || isRunningForensic || isRunningRestoreBackup || loadingIntegrityEvents}
+              disabled={isAnyInvestigationRunning}
               variant="secondary"
               className="flex items-center gap-2 sm:w-auto"
             >
@@ -797,8 +861,26 @@ const AdvancedSettings = () => {
               )}
             </Button>
             <Button
+              onClick={handleExecuteDeepForensicScript}
+              disabled={isAnyInvestigationRunning}
+              variant="secondary"
+              className="flex items-center gap-2 sm:w-auto"
+            >
+              {isRunningDeepForensic ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Investigando...
+                </>
+              ) : (
+                <>
+                  <Play className="h-4 w-4" />
+                  Forense profunda
+                </>
+              )}
+            </Button>
+            <Button
               onClick={() => runRestoreBackupScript(false)}
-              disabled={isRunningIntegrity || isRunningForensic || isRunningRestoreBackup || loadingIntegrityEvents}
+              disabled={isAnyInvestigationRunning}
               variant="outline"
               className="flex items-center gap-2 sm:w-auto"
             >
@@ -816,7 +898,7 @@ const AdvancedSettings = () => {
             </Button>
             <Button
               onClick={() => runRestoreBackupScript(true)}
-              disabled={isRunningIntegrity || isRunningForensic || isRunningRestoreBackup || loadingIntegrityEvents}
+              disabled={isAnyInvestigationRunning}
               variant="destructive"
               className="flex items-center gap-2 sm:w-auto"
             >
@@ -840,6 +922,16 @@ const AdvancedSettings = () => {
               >
                 <Download className="h-4 w-4" />
                 Baixar log forense
+              </Button>
+            )}
+            {logsDeepForensic.length > 0 && (
+              <Button
+                onClick={handleDownloadLogDeepForensic}
+                variant="outline"
+                className="flex items-center gap-2 sm:w-auto"
+              >
+                <Download className="h-4 w-4" />
+                Baixar log profundo
               </Button>
             )}
             {logsRestoreBackup.length > 0 && (
@@ -916,6 +1008,36 @@ const AdvancedSettings = () => {
             </Alert>
           )}
 
+          {summaryDeepForensic && (
+            <Alert variant={summaryDeepForensic.probable_cause === "SEM_ANOMALIA_FORTE" ? "default" : "destructive"}>
+              <CheckCircle2 className="h-4 w-4" />
+              <AlertDescription>
+                <div className="space-y-2">
+                  <p className="font-semibold">Forense profunda: {summaryDeepForensic.probable_cause}</p>
+                  <div className="text-sm space-y-1">
+                    <p>Evento: {summaryDeepForensic.event.name} ({summaryDeepForensic.event.id})</p>
+                    <p>Tabelas relacionadas existentes: {summaryDeepForensic.findings.registrations.filter((item) => item.exists).length}</p>
+                    <p>Registros órfãos: {summaryDeepForensic.findings.orphan_records.reduce((sum, item) => sum + item.orphan_count, 0)}</p>
+                    <p>Triggers: {summaryDeepForensic.findings.triggers.length}</p>
+                    <p>Foreign keys: {summaryDeepForensic.findings.foreign_keys.length}</p>
+                    <p>Kits atuais: {summaryDeepForensic.findings.kits.current_total}</p>
+                    <p>Kits ausentes vs backup: {summaryDeepForensic.findings.kits.backup_missing_in_current ?? 0}</p>
+                    <p className="text-muted-foreground">{summaryDeepForensic.recovery_recommendation}</p>
+                  </div>
+                </div>
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {hasErrorDeepForensic && (
+            <Alert variant="destructive">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertDescription>
+                Ocorreu um erro ao executar a investigação forense profunda. Verifique os logs abaixo.
+              </AlertDescription>
+            </Alert>
+          )}
+
           {summaryRestoreBackup && (
             <Alert variant={summaryRestoreBackup.mode === "restore" ? "destructive" : "default"}>
               <CheckCircle2 className="h-4 w-4" />
@@ -981,6 +1103,25 @@ const AdvancedSettings = () => {
                       </div>
                     ))}
                     <div ref={logsEndRefForensic} />
+                  </div>
+                </ScrollArea>
+              </CardContent>
+            </Card>
+          )}
+          {logsDeepForensic.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm">Logs – Investigação forense profunda</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ScrollArea className="h-[500px] w-full rounded-md border p-4 bg-muted/50 font-mono text-sm">
+                  <div>
+                    {logsDeepForensic.map((log, index) => (
+                      <div key={index} className="mb-1 whitespace-pre-wrap">
+                        {log}
+                      </div>
+                    ))}
+                    <div ref={logsEndRefDeepForensic} />
                   </div>
                 </ScrollArea>
               </CardContent>
