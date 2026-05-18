@@ -17,7 +17,9 @@ import {
   executeDisableAsaasNotificationsScript,
   executeBackfillPlatformFeeAmountScript,
   executeInvestigateEventRegistrationsIntegrityScript,
+  executeForensicEventRegistrationsInvestigationScript,
   type EventRegistrationsIntegrityDiagnosis,
+  type ForensicEventRegistrationsInvestigation,
 } from "@/lib/api/systemSettings";
 import { InvitationBonusAuditPanel } from "@/components/admin/InvitationBonusAuditPanel";
 import { getEvents, type Event } from "@/lib/api/events";
@@ -67,6 +69,11 @@ const AdvancedSettings = () => {
   const [summaryIntegrity, setSummaryIntegrity] = useState<EventRegistrationsIntegrityDiagnosis | null>(null);
   const [hasErrorIntegrity, setHasErrorIntegrity] = useState(false);
   const logsEndRefIntegrity = useRef<HTMLDivElement>(null);
+  const [isRunningForensic, setIsRunningForensic] = useState(false);
+  const [logsForensic, setLogsForensic] = useState<string[]>([]);
+  const [summaryForensic, setSummaryForensic] = useState<ForensicEventRegistrationsInvestigation | null>(null);
+  const [hasErrorForensic, setHasErrorForensic] = useState(false);
+  const logsEndRefForensic = useRef<HTMLDivElement>(null);
 
   // Auto-scroll para o final dos logs
   useEffect(() => {
@@ -89,6 +96,11 @@ const AdvancedSettings = () => {
       logsEndRefIntegrity.current.scrollIntoView({ behavior: 'smooth' });
     }
   }, [logsIntegrity]);
+  useEffect(() => {
+    if (logsEndRefForensic.current) {
+      logsEndRefForensic.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [logsForensic]);
 
   useEffect(() => {
     let cancelled = false;
@@ -310,6 +322,55 @@ const AdvancedSettings = () => {
     const a = document.createElement('a');
     a.href = url;
     a.download = `investigate-event-registrations-integrity-${Date.now()}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast.success("Log baixado com sucesso!");
+  };
+
+  const handleExecuteForensicScript = async () => {
+    if (isRunningForensic) return;
+    setIsRunningForensic(true);
+    setLogsForensic([]);
+    setSummaryForensic(null);
+    setHasErrorForensic(false);
+    const newLogs: string[] = [];
+
+    await executeForensicEventRegistrationsInvestigationScript(
+      { eventId: integrityEventId.trim() || undefined },
+      (message: string) => {
+        newLogs.push(message);
+        setLogsForensic([...newLogs]);
+      },
+      (data) => {
+        setIsRunningForensic(false);
+        if (data.success) {
+          setSummaryForensic(data.summary ?? null);
+          toast.success("Investigação forense concluída com sucesso!");
+        } else {
+          setHasErrorForensic(true);
+          toast.error(data.message || "Erro ao executar investigação forense");
+        }
+      },
+      (error: string) => {
+        setIsRunningForensic(false);
+        setHasErrorForensic(true);
+        newLogs.push(`❌ Erro: ${error}`);
+        setLogsForensic([...newLogs]);
+        toast.error(error);
+      }
+    );
+  };
+
+  const handleDownloadLogForensic = () => {
+    if (!logsForensic.length) return;
+    const logContent = logsForensic.join('\n');
+    const blob = new Blob([logContent], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `forensic-event-registrations-investigation-${Date.now()}.txt`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -607,7 +668,7 @@ const AdvancedSettings = () => {
             <Select
               value={integrityEventId || LATEST_EVENT_VALUE}
               onValueChange={(value) => setIntegrityEventId(value === LATEST_EVENT_VALUE ? "" : value)}
-              disabled={isRunningIntegrity || loadingIntegrityEvents}
+              disabled={isRunningIntegrity || isRunningForensic || loadingIntegrityEvents}
             >
               <SelectTrigger className="w-full">
                 <SelectValue placeholder={loadingIntegrityEvents ? "Carregando eventos..." : "Selecione um evento"} />
@@ -623,7 +684,7 @@ const AdvancedSettings = () => {
             </Select>
             <Button
               onClick={handleExecuteIntegrityScript}
-              disabled={isRunningIntegrity || loadingIntegrityEvents}
+              disabled={isRunningIntegrity || isRunningForensic || loadingIntegrityEvents}
               className="flex items-center gap-2 sm:w-auto"
             >
               {isRunningIntegrity ? (
@@ -638,6 +699,24 @@ const AdvancedSettings = () => {
                 </>
               )}
             </Button>
+            <Button
+              onClick={handleExecuteForensicScript}
+              disabled={isRunningIntegrity || isRunningForensic || loadingIntegrityEvents}
+              variant="secondary"
+              className="flex items-center gap-2 sm:w-auto"
+            >
+              {isRunningForensic ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Investigando...
+                </>
+              ) : (
+                <>
+                  <Play className="h-4 w-4" />
+                  Investigação forense
+                </>
+              )}
+            </Button>
             {logsIntegrity.length > 0 && (
               <Button
                 onClick={handleDownloadLogIntegrity}
@@ -646,6 +725,16 @@ const AdvancedSettings = () => {
               >
                 <Download className="h-4 w-4" />
                 Baixar log
+              </Button>
+            )}
+            {logsForensic.length > 0 && (
+              <Button
+                onClick={handleDownloadLogForensic}
+                variant="outline"
+                className="flex items-center gap-2 sm:w-auto"
+              >
+                <Download className="h-4 w-4" />
+                Baixar log forense
               </Button>
             )}
           </div>
@@ -681,6 +770,37 @@ const AdvancedSettings = () => {
             </Alert>
           )}
 
+          {summaryForensic && (
+            <Alert variant={summaryForensic.anomaly_detected ? "destructive" : "default"}>
+              <CheckCircle2 className="h-4 w-4" />
+              <AlertDescription>
+                <div className="space-y-2">
+                  <p className="font-semibold">
+                    Investigação forense concluída: {summaryForensic.anomaly_detected ? "anomalia detectada" : "sem anomalia forte"}
+                  </p>
+                  <div className="text-sm space-y-1">
+                    <p>Evento: {summaryForensic.event.name} ({summaryForensic.event.id})</p>
+                    <p>Inscrições encontradas: {summaryForensic.registrations_found}</p>
+                    <p>Possíveis soft-deleted: {summaryForensic.possible_soft_deleted}</p>
+                    <p>Leader invitations: {summaryForensic.related_data.leader_invitations}</p>
+                    <p>Transferências globais: {summaryForensic.related_data.transfers}</p>
+                    <p>Sinais em auditoria/logs: {summaryForensic.related_data.audit_signals.reduce((sum, signal) => sum + signal.count, 0)}</p>
+                    <p className="text-muted-foreground">{summaryForensic.conclusion}</p>
+                  </div>
+                </div>
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {hasErrorForensic && (
+            <Alert variant="destructive">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertDescription>
+                Ocorreu um erro ao executar a investigação forense. Verifique os logs abaixo.
+              </AlertDescription>
+            </Alert>
+          )}
+
           {logsIntegrity.length > 0 && (
             <Card>
               <CardHeader>
@@ -695,6 +815,25 @@ const AdvancedSettings = () => {
                       </div>
                     ))}
                     <div ref={logsEndRefIntegrity} />
+                  </div>
+                </ScrollArea>
+              </CardContent>
+            </Card>
+          )}
+          {logsForensic.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm">Logs – Investigação forense</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ScrollArea className="h-[500px] w-full rounded-md border p-4 bg-muted/50 font-mono text-sm">
+                  <div>
+                    {logsForensic.map((log, index) => (
+                      <div key={index} className="mb-1 whitespace-pre-wrap">
+                        {log}
+                      </div>
+                    ))}
+                    <div ref={logsEndRefForensic} />
                   </div>
                 </ScrollArea>
               </CardContent>

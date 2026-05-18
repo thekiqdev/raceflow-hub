@@ -576,6 +576,119 @@ export const executeInvestigateEventRegistrationsIntegrityScript = async (
   }
 };
 
+export interface ForensicEventRegistrationsInvestigation {
+  event: { id: string; name: string; created_at: string | null };
+  registrations_found: number;
+  global_distribution: Array<{ event_id: string; event_name?: string; total: number }>;
+  runner_history: Array<{ runner_id: string | null; total: number }>;
+  registrations_by_day: Array<{ date: string; total: number }>;
+  possible_soft_deleted: number;
+  related_data: {
+    leader_invitations: number;
+    transfers: number;
+    registration_payments?: number;
+    registration_history?: number;
+    audit_signals: Array<{
+      table: string;
+      count: number;
+      sample: Array<Record<string, unknown>>;
+    }>;
+  };
+  fk_rules: Array<{
+    constraint_name: string;
+    delete_rule: string;
+  }>;
+  event_comparison: Array<{ id: string; name: string; registrations_count: number }>;
+  anomaly_detected: boolean;
+  conclusion: string;
+}
+
+/**
+ * Executa investigação forense read-only de possíveis inscrições desaparecidas.
+ */
+export const executeForensicEventRegistrationsInvestigationScript = async (
+  params: { eventId?: string } | undefined,
+  onLog: (message: string) => void,
+  onComplete: (data: {
+    success: boolean;
+    summary?: ForensicEventRegistrationsInvestigation;
+    message?: string;
+  }) => void,
+  onError: (error: string) => void
+): Promise<void> => {
+  try {
+    const token = localStorage.getItem('auth_token');
+    if (!token) throw new Error('Não autenticado');
+
+    const getApiUrl = () => {
+      const envUrl = import.meta.env.VITE_API_URL;
+      if (envUrl && !envUrl.includes('localhost')) return envUrl;
+      if (import.meta.env.PROD) return 'https://cronoteam-crono-back.e758qe.easypanel.host/api';
+      return 'http://localhost:3001/api';
+    };
+
+    const response = await fetch(`${getApiUrl()}/admin/scripts/forensic-event-registrations-investigation`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ eventId: params?.eventId || undefined }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: 'Erro desconhecido' }));
+      throw new Error(errorData.error || errorData.message || 'Erro ao executar investigação forense');
+    }
+
+    const reader = response.body?.getReader();
+    const decoder = new TextDecoder();
+    if (!reader) throw new Error('Resposta do servidor não contém stream de dados');
+
+    let buffer = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          try {
+            const data = JSON.parse(line.slice(6));
+            if (data.type === 'log') onLog(data.message);
+            else if (data.type === 'complete') {
+              onComplete({
+                success: data.success,
+                summary: data.summary,
+                message: data.message,
+              });
+            } else if (data.type === 'error') {
+              onError(data.message || 'Erro desconhecido');
+            }
+          } catch (e) {
+            console.error('Erro ao processar linha SSE:', e);
+          }
+        }
+      }
+    }
+
+    if (buffer.startsWith('data: ')) {
+      try {
+        const data = JSON.parse(buffer.slice(6));
+        if (data.type === 'complete') {
+          onComplete({
+            success: data.success,
+            summary: data.summary,
+            message: data.message,
+          });
+        }
+      } catch (e) {
+        console.error('Erro ao processar buffer final:', e);
+      }
+    }
+  } catch (error: any) {
+    onError(error.message || 'Erro ao executar investigação forense');
+  }
+};
+
 
 
 
