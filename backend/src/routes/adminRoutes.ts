@@ -128,6 +128,7 @@ import {
   fixOrganizerRegistrationsController,
   disableAsaasNotificationsController,
   backfillPlatformFeeAmountController,
+  investigateEventRegistrationsIntegrityController,
 } from '../controllers/adminScriptsController.js';
 import { removeCommissionController, getRegistrationCommissionController } from '../controllers/adminCommissionsController.js';
 import { getLeaderCouponRegistrationsController } from '../controllers/leaderRegistrationsController.js';
@@ -337,6 +338,7 @@ router.post('/migration-rollback', rollbackMigrationController);
 router.post('/scripts/fix-organizer-registrations', fixOrganizerRegistrationsController);
 router.post('/scripts/disable-asaas-notifications', disableAsaasNotificationsController);
 router.post('/scripts/backfill-platform-fee-amount', backfillPlatformFeeAmountController);
+router.post('/scripts/investigate-event-registrations-integrity', investigateEventRegistrationsIntegrityController);
 
 export default router;
 

@@ -3,10 +3,26 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Loader2, Play, Download, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
-import { executeFixOrganizerRegistrationsScript, executeDisableAsaasNotificationsScript, executeBackfillPlatformFeeAmountScript } from "@/lib/api/systemSettings";
+import {
+  executeFixOrganizerRegistrationsScript,
+  executeDisableAsaasNotificationsScript,
+  executeBackfillPlatformFeeAmountScript,
+  executeInvestigateEventRegistrationsIntegrityScript,
+  type EventRegistrationsIntegrityDiagnosis,
+} from "@/lib/api/systemSettings";
 import { InvitationBonusAuditPanel } from "@/components/admin/InvitationBonusAuditPanel";
+import { getEvents, type Event } from "@/lib/api/events";
+
+const LATEST_EVENT_VALUE = "__latest__";
 
 const AdvancedSettings = () => {
   const [isRunning, setIsRunning] = useState(false);
@@ -42,6 +58,16 @@ const AdvancedSettings = () => {
   const [hasErrorBackfill, setHasErrorBackfill] = useState(false);
   const logsEndRefBackfill = useRef<HTMLDivElement>(null);
 
+  // Diagnóstico read-only de inscrições ocultas/inconsistentes após exclusão de kits
+  const [integrityEventId, setIntegrityEventId] = useState("");
+  const [integrityEvents, setIntegrityEvents] = useState<Event[]>([]);
+  const [loadingIntegrityEvents, setLoadingIntegrityEvents] = useState(false);
+  const [isRunningIntegrity, setIsRunningIntegrity] = useState(false);
+  const [logsIntegrity, setLogsIntegrity] = useState<string[]>([]);
+  const [summaryIntegrity, setSummaryIntegrity] = useState<EventRegistrationsIntegrityDiagnosis | null>(null);
+  const [hasErrorIntegrity, setHasErrorIntegrity] = useState(false);
+  const logsEndRefIntegrity = useRef<HTMLDivElement>(null);
+
   // Auto-scroll para o final dos logs
   useEffect(() => {
     if (logsEndRef.current) {
@@ -58,6 +84,39 @@ const AdvancedSettings = () => {
       logsEndRefBackfill.current.scrollIntoView({ behavior: 'smooth' });
     }
   }, [logsBackfill]);
+  useEffect(() => {
+    if (logsEndRefIntegrity.current) {
+      logsEndRefIntegrity.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [logsIntegrity]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoadingIntegrityEvents(true);
+    getEvents({ order_by_date: "desc" })
+      .then((response) => {
+        if (cancelled) return;
+        if (response.success && response.data) {
+          setIntegrityEvents(response.data);
+        } else {
+          setIntegrityEvents([]);
+          toast.error(response.error || "Erro ao carregar eventos para diagnóstico");
+        }
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        console.error("Erro ao carregar eventos para diagnóstico:", error);
+        setIntegrityEvents([]);
+        toast.error("Erro ao carregar eventos para diagnóstico");
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingIntegrityEvents(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const handleExecuteScript = async () => {
     if (isRunning) return;
@@ -207,6 +266,63 @@ const AdvancedSettings = () => {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
     toast.success("Log baixado com sucesso!");
+  };
+
+  const handleExecuteIntegrityScript = async () => {
+    if (isRunningIntegrity) return;
+    setIsRunningIntegrity(true);
+    setLogsIntegrity([]);
+    setSummaryIntegrity(null);
+    setHasErrorIntegrity(false);
+    const newLogs: string[] = [];
+
+    await executeInvestigateEventRegistrationsIntegrityScript(
+      { eventId: integrityEventId.trim() || undefined },
+      (message: string) => {
+        newLogs.push(message);
+        setLogsIntegrity([...newLogs]);
+      },
+      (data) => {
+        setIsRunningIntegrity(false);
+        if (data.success) {
+          setSummaryIntegrity(data.summary ?? null);
+          toast.success("Diagnóstico concluído com sucesso!");
+        } else {
+          setHasErrorIntegrity(true);
+          toast.error(data.message || "Erro ao executar diagnóstico");
+        }
+      },
+      (error: string) => {
+        setIsRunningIntegrity(false);
+        setHasErrorIntegrity(true);
+        newLogs.push(`❌ Erro: ${error}`);
+        setLogsIntegrity([...newLogs]);
+        toast.error(error);
+      }
+    );
+  };
+
+  const handleDownloadLogIntegrity = () => {
+    if (!logsIntegrity.length) return;
+    const logContent = logsIntegrity.join('\n');
+    const blob = new Blob([logContent], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `investigate-event-registrations-integrity-${Date.now()}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast.success("Log baixado com sucesso!");
+  };
+
+  const formatIntegrityEventLabel = (event: Event) => {
+    const eventDate = event.event_date
+      ? new Date(event.event_date).toLocaleDateString("pt-BR")
+      : "sem data";
+    const location = [event.city, event.state].filter(Boolean).join("/");
+    return `${event.title} - ${eventDate}${location ? ` - ${location}` : ""}`;
   };
 
   return (
@@ -470,6 +586,115 @@ const AdvancedSettings = () => {
                       </div>
                     ))}
                     <div ref={logsEndRefBackfill} />
+                  </div>
+                </ScrollArea>
+              </CardContent>
+            </Card>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Investigar integridade de inscrições por evento</CardTitle>
+          <CardDescription>
+            Diagnóstico 100% read-only para encontrar inscrições ocultas ou inconsistentes após exclusão de kits.
+            Selecione um evento na lista ou use o evento mais recente.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <Select
+              value={integrityEventId || LATEST_EVENT_VALUE}
+              onValueChange={(value) => setIntegrityEventId(value === LATEST_EVENT_VALUE ? "" : value)}
+              disabled={isRunningIntegrity || loadingIntegrityEvents}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder={loadingIntegrityEvents ? "Carregando eventos..." : "Selecione um evento"} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={LATEST_EVENT_VALUE}>Evento mais recente</SelectItem>
+                {integrityEvents.map((event) => (
+                  <SelectItem key={event.id} value={event.id}>
+                    {formatIntegrityEventLabel(event)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button
+              onClick={handleExecuteIntegrityScript}
+              disabled={isRunningIntegrity || loadingIntegrityEvents}
+              className="flex items-center gap-2 sm:w-auto"
+            >
+              {isRunningIntegrity ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Investigando...
+                </>
+              ) : (
+                <>
+                  <Play className="h-4 w-4" />
+                  Executar diagnóstico
+                </>
+              )}
+            </Button>
+            {logsIntegrity.length > 0 && (
+              <Button
+                onClick={handleDownloadLogIntegrity}
+                variant="outline"
+                className="flex items-center gap-2 sm:w-auto"
+              >
+                <Download className="h-4 w-4" />
+                Baixar log
+              </Button>
+            )}
+          </div>
+
+          {summaryIntegrity && (
+            <Alert>
+              <CheckCircle2 className="h-4 w-4" />
+              <AlertDescription>
+                <div className="space-y-2">
+                  <p className="font-semibold">Diagnóstico concluído: {summaryIntegrity.status}</p>
+                  <div className="text-sm space-y-1">
+                    <p>Evento: {summaryIntegrity.event.name} ({summaryIntegrity.event.id})</p>
+                    <p>Total: {summaryIntegrity.metrics.total}</p>
+                    <p>Visíveis com INNER JOIN: {summaryIntegrity.metrics.visible}</p>
+                    <p>Ocultas por kit inexistente: {summaryIntegrity.metrics.hidden}</p>
+                    <p>Diferença total vs INNER JOIN: {summaryIntegrity.metrics.hidden_difference}</p>
+                    <p>Sem kit: {summaryIntegrity.metrics.without_kit}</p>
+                    <p>Kits soft deletados: {summaryIntegrity.metrics.kits_soft_deleted}</p>
+                    <p>Inscrições com kit soft deletado: {summaryIntegrity.metrics.registrations_with_soft_deleted_kit ?? 0}</p>
+                    <p className="text-muted-foreground">{summaryIntegrity.conclusion}</p>
+                  </div>
+                </div>
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {hasErrorIntegrity && (
+            <Alert variant="destructive">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertDescription>
+                Ocorreu um erro ao executar o diagnóstico. Verifique os logs abaixo.
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {logsIntegrity.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm">Logs – Diagnóstico de integridade</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ScrollArea className="h-[500px] w-full rounded-md border p-4 bg-muted/50 font-mono text-sm">
+                  <div>
+                    {logsIntegrity.map((log, index) => (
+                      <div key={index} className="mb-1 whitespace-pre-wrap">
+                        {log}
+                      </div>
+                    ))}
+                    <div ref={logsEndRefIntegrity} />
                   </div>
                 </ScrollArea>
               </CardContent>

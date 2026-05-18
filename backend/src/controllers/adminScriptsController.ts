@@ -7,6 +7,7 @@ import { updateCustomerNotificationDisabled } from '../services/asaasService.js'
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import investigateEventRegistrationsIntegrity from '../scripts/investigateEventRegistrationsIntegrity.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -415,6 +416,95 @@ export const backfillPlatformFeeAmountController = asyncHandler(async (req: Auth
       success: false,
       message: error.message,
       logFile: logFileName,
+    })}\n\n`);
+    res.end();
+    return;
+  }
+});
+
+/**
+ * POST /api/admin/scripts/investigate-event-registrations-integrity
+ * Diagnostica possíveis inscrições ocultas/inconsistentes após exclusão de kits.
+ * 100% read-only.
+ */
+export const investigateEventRegistrationsIntegrityController = asyncHandler(async (req: AuthRequest, res: Response) => {
+  if (!req.user) {
+    return res.status(401).json({
+      success: false,
+      error: 'Not authenticated',
+    });
+  }
+
+  const isAdmin = await hasRole(req.user.id, 'admin');
+  if (!isAdmin) {
+    return res.status(403).json({
+      success: false,
+      error: 'Forbidden',
+      message: 'Apenas administradores podem executar este script',
+    });
+  }
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+
+  const logs: string[] = [];
+  const logMessage = (message: string) => {
+    const timestamp = new Date().toISOString();
+    const logLine = `[${timestamp}] ${message}`;
+    logs.push(logLine);
+    res.write(`data: ${JSON.stringify({ type: 'log', message: logLine })}\n\n`);
+  };
+
+  try {
+    const eventId = typeof req.body?.eventId === 'string' && req.body.eventId.trim()
+      ? req.body.eventId.trim()
+      : undefined;
+
+    logMessage('🔍 Investigando integridade de inscrições do evento (read-only)...');
+    if (eventId) {
+      logMessage(`   Evento informado: ${eventId}`);
+    } else {
+      logMessage('   Nenhum evento informado. Usando evento mais recente.');
+    }
+
+    const diagnosis = await investigateEventRegistrationsIntegrity({ eventId });
+
+    logMessage(`📌 Evento: ${diagnosis.event.name} (${diagnosis.event.id})`);
+    logMessage(`📊 Total de inscrições: ${diagnosis.metrics.total}`);
+    logMessage(`📦 Com kit: ${diagnosis.metrics.with_kit}`);
+    logMessage(`📭 Sem kit: ${diagnosis.metrics.without_kit}`);
+    logMessage(`👁️ Visíveis com INNER JOIN em kits: ${diagnosis.metrics.visible}`);
+    logMessage(`🚨 Ocultas por kit inexistente: ${diagnosis.metrics.hidden}`);
+    logMessage(`↔️ Diferença total vs INNER JOIN: ${diagnosis.metrics.hidden_difference}`);
+    logMessage(`🗑️ Kits soft deletados: ${diagnosis.metrics.kits_soft_deleted}`);
+    logMessage(`🧩 Inscrições com kit soft deletado: ${diagnosis.metrics.registrations_with_soft_deleted_kit}`);
+
+    if (diagnosis.sample_hidden.length > 0) {
+      logMessage('Amostra de inscrições ocultas:');
+      diagnosis.sample_hidden.forEach((row) => {
+        logMessage(`  - registration=${row.id}, runner=${row.runner_id ?? '-'}, kit=${row.kit_id ?? '-'}, category=${row.category_id ?? '-'}`);
+      });
+    }
+
+    logMessage(`Status: ${diagnosis.status}`);
+    logMessage(`Conclusão: ${diagnosis.conclusion}`);
+
+    res.write(`data: ${JSON.stringify({
+      type: 'complete',
+      success: true,
+      summary: diagnosis,
+      message: diagnosis.conclusion,
+    })}\n\n`);
+    res.end();
+    return;
+  } catch (error: any) {
+    logMessage(`❌ Erro ao executar diagnóstico: ${error.message}`);
+    res.write(`data: ${JSON.stringify({
+      type: 'error',
+      success: false,
+      message: error.message,
     })}\n\n`);
     res.end();
     return;
