@@ -18,8 +18,10 @@ import {
   executeBackfillPlatformFeeAmountScript,
   executeInvestigateEventRegistrationsIntegrityScript,
   executeForensicEventRegistrationsInvestigationScript,
+  executeRestoreRegistrationsFromBackupScript,
   type EventRegistrationsIntegrityDiagnosis,
   type ForensicEventRegistrationsInvestigation,
+  type RestoreRegistrationsFromBackupResult,
 } from "@/lib/api/systemSettings";
 import { InvitationBonusAuditPanel } from "@/components/admin/InvitationBonusAuditPanel";
 import { getEvents, type Event } from "@/lib/api/events";
@@ -74,6 +76,11 @@ const AdvancedSettings = () => {
   const [summaryForensic, setSummaryForensic] = useState<ForensicEventRegistrationsInvestigation | null>(null);
   const [hasErrorForensic, setHasErrorForensic] = useState(false);
   const logsEndRefForensic = useRef<HTMLDivElement>(null);
+  const [isRunningRestoreBackup, setIsRunningRestoreBackup] = useState(false);
+  const [logsRestoreBackup, setLogsRestoreBackup] = useState<string[]>([]);
+  const [summaryRestoreBackup, setSummaryRestoreBackup] = useState<RestoreRegistrationsFromBackupResult | null>(null);
+  const [hasErrorRestoreBackup, setHasErrorRestoreBackup] = useState(false);
+  const logsEndRefRestoreBackup = useRef<HTMLDivElement>(null);
 
   // Auto-scroll para o final dos logs
   useEffect(() => {
@@ -101,6 +108,11 @@ const AdvancedSettings = () => {
       logsEndRefForensic.current.scrollIntoView({ behavior: 'smooth' });
     }
   }, [logsForensic]);
+  useEffect(() => {
+    if (logsEndRefRestoreBackup.current) {
+      logsEndRefRestoreBackup.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [logsRestoreBackup]);
 
   useEffect(() => {
     let cancelled = false;
@@ -371,6 +383,73 @@ const AdvancedSettings = () => {
     const a = document.createElement('a');
     a.href = url;
     a.download = `forensic-event-registrations-investigation-${Date.now()}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast.success("Log baixado com sucesso!");
+  };
+
+  const getSelectedEventIdForBackupRestore = () => {
+    return integrityEventId.trim() || integrityEvents[0]?.id || "";
+  };
+
+  const runRestoreBackupScript = async (confirm: boolean) => {
+    if (isRunningRestoreBackup) return;
+
+    const selectedEventId = getSelectedEventIdForBackupRestore();
+    if (!selectedEventId) {
+      toast.error("Selecione um evento antes de consultar o backup");
+      return;
+    }
+
+    if (confirm) {
+      const confirmed = window.confirm(
+        "Confirmar restauração incremental? Apenas inscrições ausentes por ID serão inseridas. Nenhum registro existente será sobrescrito."
+      );
+      if (!confirmed) return;
+    }
+
+    setIsRunningRestoreBackup(true);
+    setLogsRestoreBackup([]);
+    setSummaryRestoreBackup(null);
+    setHasErrorRestoreBackup(false);
+    const newLogs: string[] = [];
+
+    await executeRestoreRegistrationsFromBackupScript(
+      { eventId: selectedEventId, confirm },
+      (message: string) => {
+        newLogs.push(message);
+        setLogsRestoreBackup([...newLogs]);
+      },
+      (data) => {
+        setIsRunningRestoreBackup(false);
+        if (data.success) {
+          setSummaryRestoreBackup(data.summary ?? null);
+          toast.success(data.message || "Consulta do backup concluída com sucesso!");
+        } else {
+          setHasErrorRestoreBackup(true);
+          toast.error(data.message || "Erro ao consultar backup");
+        }
+      },
+      (error: string) => {
+        setIsRunningRestoreBackup(false);
+        setHasErrorRestoreBackup(true);
+        newLogs.push(`❌ Erro: ${error}`);
+        setLogsRestoreBackup([...newLogs]);
+        toast.error(error);
+      }
+    );
+  };
+
+  const handleDownloadLogRestoreBackup = () => {
+    if (!logsRestoreBackup.length) return;
+    const logContent = logsRestoreBackup.join('\n');
+    const blob = new Blob([logContent], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `restore-registrations-from-backup-${Date.now()}.txt`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -668,7 +747,7 @@ const AdvancedSettings = () => {
             <Select
               value={integrityEventId || LATEST_EVENT_VALUE}
               onValueChange={(value) => setIntegrityEventId(value === LATEST_EVENT_VALUE ? "" : value)}
-              disabled={isRunningIntegrity || isRunningForensic || loadingIntegrityEvents}
+              disabled={isRunningIntegrity || isRunningForensic || isRunningRestoreBackup || loadingIntegrityEvents}
             >
               <SelectTrigger className="w-full">
                 <SelectValue placeholder={loadingIntegrityEvents ? "Carregando eventos..." : "Selecione um evento"} />
@@ -684,7 +763,7 @@ const AdvancedSettings = () => {
             </Select>
             <Button
               onClick={handleExecuteIntegrityScript}
-              disabled={isRunningIntegrity || isRunningForensic || loadingIntegrityEvents}
+              disabled={isRunningIntegrity || isRunningForensic || isRunningRestoreBackup || loadingIntegrityEvents}
               className="flex items-center gap-2 sm:w-auto"
             >
               {isRunningIntegrity ? (
@@ -701,7 +780,7 @@ const AdvancedSettings = () => {
             </Button>
             <Button
               onClick={handleExecuteForensicScript}
-              disabled={isRunningIntegrity || isRunningForensic || loadingIntegrityEvents}
+              disabled={isRunningIntegrity || isRunningForensic || isRunningRestoreBackup || loadingIntegrityEvents}
               variant="secondary"
               className="flex items-center gap-2 sm:w-auto"
             >
@@ -716,6 +795,32 @@ const AdvancedSettings = () => {
                   Investigação forense
                 </>
               )}
+            </Button>
+            <Button
+              onClick={() => runRestoreBackupScript(false)}
+              disabled={isRunningIntegrity || isRunningForensic || isRunningRestoreBackup || loadingIntegrityEvents}
+              variant="outline"
+              className="flex items-center gap-2 sm:w-auto"
+            >
+              {isRunningRestoreBackup ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Consultando...
+                </>
+              ) : (
+                <>
+                  <Play className="h-4 w-4" />
+                  Preview backup
+                </>
+              )}
+            </Button>
+            <Button
+              onClick={() => runRestoreBackupScript(true)}
+              disabled={isRunningIntegrity || isRunningForensic || isRunningRestoreBackup || loadingIntegrityEvents}
+              variant="destructive"
+              className="flex items-center gap-2 sm:w-auto"
+            >
+              Restaurar faltantes
             </Button>
             {logsIntegrity.length > 0 && (
               <Button
@@ -735,6 +840,16 @@ const AdvancedSettings = () => {
               >
                 <Download className="h-4 w-4" />
                 Baixar log forense
+              </Button>
+            )}
+            {logsRestoreBackup.length > 0 && (
+              <Button
+                onClick={handleDownloadLogRestoreBackup}
+                variant="outline"
+                className="flex items-center gap-2 sm:w-auto"
+              >
+                <Download className="h-4 w-4" />
+                Baixar log backup
               </Button>
             )}
           </div>
@@ -801,6 +916,38 @@ const AdvancedSettings = () => {
             </Alert>
           )}
 
+          {summaryRestoreBackup && (
+            <Alert variant={summaryRestoreBackup.mode === "restore" ? "destructive" : "default"}>
+              <CheckCircle2 className="h-4 w-4" />
+              <AlertDescription>
+                <div className="space-y-2">
+                  <p className="font-semibold">
+                    {summaryRestoreBackup.mode === "restore" ? "Restauração concluída" : "Preview do backup concluído"}
+                  </p>
+                  <div className="text-sm space-y-1">
+                    <p>Evento: {summaryRestoreBackup.eventId}</p>
+                    <p>Inscrições no backup: {summaryRestoreBackup.backup_found}</p>
+                    <p>Inscrições atuais: {summaryRestoreBackup.current_found}</p>
+                    <p>Faltantes por ID: {summaryRestoreBackup.missing_count}</p>
+                    <p>Restauradas: {summaryRestoreBackup.restored_count}</p>
+                    <p className="text-muted-foreground">
+                      Segurança: sem overwrite, sem delete, insert apenas de registros faltantes por ID.
+                    </p>
+                  </div>
+                </div>
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {hasErrorRestoreBackup && (
+            <Alert variant="destructive">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertDescription>
+                Ocorreu um erro ao consultar/restaurar inscrições do backup. Verifique os logs abaixo.
+              </AlertDescription>
+            </Alert>
+          )}
+
           {logsIntegrity.length > 0 && (
             <Card>
               <CardHeader>
@@ -834,6 +981,25 @@ const AdvancedSettings = () => {
                       </div>
                     ))}
                     <div ref={logsEndRefForensic} />
+                  </div>
+                </ScrollArea>
+              </CardContent>
+            </Card>
+          )}
+          {logsRestoreBackup.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm">Logs – Recuperação de inscrições do backup</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ScrollArea className="h-[500px] w-full rounded-md border p-4 bg-muted/50 font-mono text-sm">
+                  <div>
+                    {logsRestoreBackup.map((log, index) => (
+                      <div key={index} className="mb-1 whitespace-pre-wrap">
+                        {log}
+                      </div>
+                    ))}
+                    <div ref={logsEndRefRestoreBackup} />
                   </div>
                 </ScrollArea>
               </CardContent>

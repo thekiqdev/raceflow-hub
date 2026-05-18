@@ -9,6 +9,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import investigateEventRegistrationsIntegrity from '../scripts/investigateEventRegistrationsIntegrity.js';
 import forensicEventRegistrationsInvestigation from '../scripts/forensicEventRegistrationsInvestigation.js';
+import restoreRegistrationsFromBackup from '../scripts/restoreRegistrationsFromBackup.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -575,6 +576,84 @@ export const forensicEventRegistrationsInvestigationController = asyncHandler(as
     return;
   } catch (error: any) {
     logMessage(`Erro ao executar investigação forense: ${error.message}`);
+    res.write(`data: ${JSON.stringify({
+      type: 'error',
+      success: false,
+      message: error.message,
+    })}\n\n`);
+    res.end();
+    return;
+  }
+});
+
+/**
+ * POST /api/admin/scripts/restore-registrations-from-backup
+ * Preview/restauração incremental de inscrições a partir de BACKUP_DATABASE_URL.
+ */
+export const restoreRegistrationsFromBackupController = asyncHandler(async (req: AuthRequest, res: Response) => {
+  if (!req.user) {
+    return res.status(401).json({
+      success: false,
+      error: 'Not authenticated',
+    });
+  }
+
+  const isAdmin = await hasRole(req.user.id, 'admin');
+  if (!isAdmin) {
+    return res.status(403).json({
+      success: false,
+      error: 'Forbidden',
+      message: 'Apenas administradores podem executar este script',
+    });
+  }
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+
+  const logs: string[] = [];
+  const logMessage = (message: string) => {
+    const timestamp = new Date().toISOString();
+    const logLine = `[${timestamp}] ${message}`;
+    logs.push(logLine);
+    res.write(`data: ${JSON.stringify({ type: 'log', message: logLine })}\n\n`);
+  };
+
+  try {
+    const eventId = typeof req.body?.eventId === 'string' ? req.body.eventId.trim() : '';
+    const confirm = req.body?.confirm === true;
+
+    if (!eventId) {
+      throw new Error('eventId é obrigatório para recuperar inscrições do backup');
+    }
+
+    logMessage(confirm
+      ? 'Iniciando restauração incremental de inscrições do backup...'
+      : 'Iniciando preview de recuperação de inscrições do backup...');
+    logMessage(`Evento: ${eventId}`);
+    logMessage(confirm ? 'Modo: restore (confirm=true)' : 'Modo: preview (nenhum dado será inserido)');
+
+    const result = await restoreRegistrationsFromBackup({ eventId, confirm });
+
+    logMessage(`Inscrições no backup: ${result.backup_found}`);
+    logMessage(`Inscrições atuais: ${result.current_found}`);
+    logMessage(`Inscrições faltantes: ${result.missing_count}`);
+    logMessage(`Inscrições restauradas: ${result.restored_count}`);
+    logMessage('Garantias: sem overwrite, sem delete, insert apenas por ID faltante.');
+
+    res.write(`data: ${JSON.stringify({
+      type: 'complete',
+      success: true,
+      summary: result,
+      message: confirm
+        ? `${result.restored_count} inscrição(ões) restaurada(s)`
+        : `Preview concluído: ${result.missing_count} inscrição(ões) faltante(s)`,
+    })}\n\n`);
+    res.end();
+    return;
+  } catch (error: any) {
+    logMessage(`Erro ao executar recuperação do backup: ${error.message}`);
     res.write(`data: ${JSON.stringify({
       type: 'error',
       success: false,

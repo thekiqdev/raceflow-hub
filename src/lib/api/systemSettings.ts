@@ -689,6 +689,111 @@ export const executeForensicEventRegistrationsInvestigationScript = async (
   }
 };
 
+export interface RestoreRegistrationsFromBackupResult {
+  eventId: string;
+  mode: 'preview' | 'restore';
+  backup_found: number;
+  current_found: number;
+  missing_count: number;
+  restored_count: number;
+  sample: Array<Record<string, unknown>>;
+  missing_sample: Array<Record<string, unknown>>;
+  safety: {
+    backup_database_url_present: boolean;
+    event_exists_in_current: boolean;
+    confirm_required: boolean;
+    inserted_only_missing_by_id: boolean;
+    overwrites_existing_records: false;
+    deletes_current_records: false;
+  };
+}
+
+/**
+ * Preview/restauração incremental de inscrições a partir de BACKUP_DATABASE_URL.
+ */
+export const executeRestoreRegistrationsFromBackupScript = async (
+  params: { eventId: string; confirm?: boolean },
+  onLog: (message: string) => void,
+  onComplete: (data: {
+    success: boolean;
+    summary?: RestoreRegistrationsFromBackupResult;
+    message?: string;
+  }) => void,
+  onError: (error: string) => void
+): Promise<void> => {
+  try {
+    const token = localStorage.getItem('auth_token');
+    if (!token) throw new Error('Não autenticado');
+
+    const getApiUrl = () => {
+      const envUrl = import.meta.env.VITE_API_URL;
+      if (envUrl && !envUrl.includes('localhost')) return envUrl;
+      if (import.meta.env.PROD) return 'https://cronoteam-crono-back.e758qe.easypanel.host/api';
+      return 'http://localhost:3001/api';
+    };
+
+    const response = await fetch(`${getApiUrl()}/admin/scripts/restore-registrations-from-backup`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ eventId: params.eventId, confirm: params.confirm === true }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: 'Erro desconhecido' }));
+      throw new Error(errorData.error || errorData.message || 'Erro ao executar recuperação do backup');
+    }
+
+    const reader = response.body?.getReader();
+    const decoder = new TextDecoder();
+    if (!reader) throw new Error('Resposta do servidor não contém stream de dados');
+
+    let buffer = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          try {
+            const data = JSON.parse(line.slice(6));
+            if (data.type === 'log') onLog(data.message);
+            else if (data.type === 'complete') {
+              onComplete({
+                success: data.success,
+                summary: data.summary,
+                message: data.message,
+              });
+            } else if (data.type === 'error') {
+              onError(data.message || 'Erro desconhecido');
+            }
+          } catch (e) {
+            console.error('Erro ao processar linha SSE:', e);
+          }
+        }
+      }
+    }
+
+    if (buffer.startsWith('data: ')) {
+      try {
+        const data = JSON.parse(buffer.slice(6));
+        if (data.type === 'complete') {
+          onComplete({
+            success: data.success,
+            summary: data.summary,
+            message: data.message,
+          });
+        }
+      } catch (e) {
+        console.error('Erro ao processar buffer final:', e);
+      }
+    }
+  } catch (error: any) {
+    onError(error.message || 'Erro ao executar recuperação do backup');
+  }
+};
+
 
 
 
