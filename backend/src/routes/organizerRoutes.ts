@@ -48,7 +48,7 @@ import {
 import { getLeaderCouponRegistrationsController } from '../controllers/leaderRegistrationsController.js';
 import { getLeadersInvitationsGrantedByEventController } from '../controllers/leadersInvitationsReportController.js';
 import { getEventInvitationStatsController } from '../controllers/eventInvitationStatsController.js';
-import { getEventGeneralStatsController } from '../controllers/reportsController.js';
+import { getEventGeneralStatsController, getEventProductStockReportController } from '../controllers/reportsController.js';
 
 const router = Router();
 
@@ -79,6 +79,10 @@ router.get(
 router.get(
   '/reports/events/:eventId/general-stats',
   getEventGeneralStatsController
+);
+router.get(
+  '/reports/events/:eventId/product-stock',
+  getEventProductStockReportController
 );
 
 // Settings endpoints

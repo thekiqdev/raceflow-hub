@@ -70,7 +70,7 @@ import {
 } from '../controllers/reportsController.js';
 import { getLeadersInvitationsGrantedByEventController } from '../controllers/leadersInvitationsReportController.js';
 import { getEventInvitationStatsController } from '../controllers/eventInvitationStatsController.js';
-import { getEventGeneralStatsController } from '../controllers/reportsController.js';
+import { getEventGeneralStatsController, getEventProductStockReportController } from '../controllers/reportsController.js';
 import {
   getSupportTicketsController,
   getTicketByIdController,
@@ -136,6 +136,7 @@ import {
   analyzeNullKitCompatibilityController,
   restoreMissingRegistrationsController,
   auditRestoredRegistrationSemanticsController,
+  auditEventKitsWithRegistrationsController,
 } from '../controllers/adminScriptsController.js';
 import { removeCommissionController, getRegistrationCommissionController } from '../controllers/adminCommissionsController.js';
 import { getLeaderCouponRegistrationsController } from '../controllers/leaderRegistrationsController.js';
@@ -252,6 +253,10 @@ router.get(
   '/reports/events/:eventId/general-stats',
   getEventGeneralStatsController
 );
+router.get(
+  '/reports/events/:eventId/product-stock',
+  getEventProductStockReportController
+);
 
 // Support
 router.get('/support/tickets', getSupportTicketsController);
@@ -352,6 +357,7 @@ router.post('/scripts/deep-forensic-registrations-investigation', deepForensicRe
 router.post('/scripts/analyze-backup-registration-dependencies', analyzeBackupRegistrationDependenciesController);
 router.post('/scripts/analyze-null-kit-compatibility', analyzeNullKitCompatibilityController);
 router.post('/scripts/audit-restored-registration-semantics', auditRestoredRegistrationSemanticsController);
+router.post('/scripts/audit-event-kits-with-registrations', auditEventKitsWithRegistrationsController);
 router.post('/scripts/restore-missing-registrations', restoreMissingRegistrationsController);
 
 export default router;

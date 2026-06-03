@@ -24,6 +24,7 @@ import {
   executeAnalyzeBackupRegistrationDependenciesScript,
   executeAnalyzeNullKitCompatibilityScript,
   executeAuditRestoredRegistrationSemanticsScript,
+  executeAuditEventKitsWithRegistrationsScript,
   type EventRegistrationsIntegrityDiagnosis,
   type ForensicEventRegistrationsInvestigation,
   type RestoreRegistrationsFromBackupResult,
@@ -31,6 +32,7 @@ import {
   type AnalyzeBackupRegistrationDependenciesResult,
   type AnalyzeNullKitCompatibilityResult,
   type AuditRestoredRegistrationSemanticsResult,
+  type AuditEventKitsWithRegistrationsResult,
 } from "@/lib/api/systemSettings";
 import { InvitationBonusAuditPanel } from "@/components/admin/InvitationBonusAuditPanel";
 import { getEvents, type Event } from "@/lib/api/events";
@@ -113,6 +115,11 @@ const AdvancedSettings = () => {
   const [summarySemanticAudit, setSummarySemanticAudit] = useState<AuditRestoredRegistrationSemanticsResult | null>(null);
   const [hasErrorSemanticAudit, setHasErrorSemanticAudit] = useState(false);
   const logsEndRefSemanticAudit = useRef<HTMLDivElement>(null);
+  const [isRunningKitUsageAudit, setIsRunningKitUsageAudit] = useState(false);
+  const [logsKitUsageAudit, setLogsKitUsageAudit] = useState<string[]>([]);
+  const [summaryKitUsageAudit, setSummaryKitUsageAudit] = useState<AuditEventKitsWithRegistrationsResult | null>(null);
+  const [hasErrorKitUsageAudit, setHasErrorKitUsageAudit] = useState(false);
+  const logsEndRefKitUsageAudit = useRef<HTMLDivElement>(null);
 
   // Auto-scroll para o final dos logs
   useEffect(() => {
@@ -165,6 +172,11 @@ const AdvancedSettings = () => {
       logsEndRefSemanticAudit.current.scrollIntoView({ behavior: 'smooth' });
     }
   }, [logsSemanticAudit]);
+  useEffect(() => {
+    if (logsEndRefKitUsageAudit.current) {
+      logsEndRefKitUsageAudit.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [logsKitUsageAudit]);
 
   useEffect(() => {
     let cancelled = false;
@@ -731,6 +743,56 @@ const AdvancedSettings = () => {
     toast.success("Log baixado com sucesso!");
   };
 
+  const handleExecuteKitUsageAuditScript = async () => {
+    if (isRunningKitUsageAudit) return;
+
+    setIsRunningKitUsageAudit(true);
+    setLogsKitUsageAudit([]);
+    setSummaryKitUsageAudit(null);
+    setHasErrorKitUsageAudit(false);
+    const newLogs: string[] = [];
+
+    await executeAuditEventKitsWithRegistrationsScript(
+      { eventId: integrityEventId.trim() || undefined },
+      (message: string) => {
+        newLogs.push(message);
+        setLogsKitUsageAudit([...newLogs]);
+      },
+      (data) => {
+        setIsRunningKitUsageAudit(false);
+        if (data.success) {
+          setSummaryKitUsageAudit(data.summary ?? null);
+          toast.success(data.message || "Auditoria de kits concluída com sucesso!");
+        } else {
+          setHasErrorKitUsageAudit(true);
+          toast.error(data.message || "Erro ao executar auditoria de kits");
+        }
+      },
+      (error: string) => {
+        setIsRunningKitUsageAudit(false);
+        setHasErrorKitUsageAudit(true);
+        newLogs.push(`❌ Erro: ${error}`);
+        setLogsKitUsageAudit([...newLogs]);
+        toast.error(error);
+      }
+    );
+  };
+
+  const handleDownloadLogKitUsageAudit = () => {
+    if (!logsKitUsageAudit.length) return;
+    const logContent = logsKitUsageAudit.join('\n');
+    const blob = new Blob([logContent], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `audit-event-kits-with-registrations-${Date.now()}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast.success("Log baixado com sucesso!");
+  };
+
   const isAnyInvestigationRunning =
     isRunningIntegrity ||
     isRunningForensic ||
@@ -739,6 +801,7 @@ const AdvancedSettings = () => {
     isRunningBackupAnalyzer ||
     isRunningNullKitAnalyzer ||
     isRunningSemanticAudit ||
+    isRunningKitUsageAudit ||
     loadingIntegrityEvents;
 
 
@@ -1169,6 +1232,24 @@ const AdvancedSettings = () => {
               )}
             </Button>
             <Button
+              onClick={handleExecuteKitUsageAuditScript}
+              disabled={isAnyInvestigationRunning}
+              variant="outline"
+              className="flex items-center gap-2 sm:w-auto"
+            >
+              {isRunningKitUsageAudit ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Auditando...
+                </>
+              ) : (
+                <>
+                  <Play className="h-4 w-4" />
+                  Auditar kits
+                </>
+              )}
+            </Button>
+            <Button
               onClick={handleExecuteSemanticAuditScript}
               disabled={isAnyInvestigationRunning}
               variant="outline"
@@ -1308,6 +1389,16 @@ const AdvancedSettings = () => {
               >
                 <Download className="h-4 w-4" />
                 Baixar log auditoria
+              </Button>
+            )}
+            {logsKitUsageAudit.length > 0 && (
+              <Button
+                onClick={handleDownloadLogKitUsageAudit}
+                variant="outline"
+                className="flex items-center gap-2 sm:w-auto"
+              >
+                <Download className="h-4 w-4" />
+                Baixar log kits
               </Button>
             )}
             {logsRestoreBackup.length > 0 && (
@@ -1486,6 +1577,46 @@ const AdvancedSettings = () => {
               <AlertTriangle className="h-4 w-4" />
               <AlertDescription>
                 Ocorreu um erro ao executar a análise de compatibilidade com kit NULL. Verifique os logs abaixo.
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {summaryKitUsageAudit && (
+            <Alert variant={summaryKitUsageAudit.totals.orphan_registration_kit_refs > 0 ? "destructive" : "default"}>
+              <CheckCircle2 className="h-4 w-4" />
+              <AlertDescription>
+                <div className="space-y-2">
+                  <p className="font-semibold">Auditoria de kits com inscrições concluída</p>
+                  <div className="text-sm space-y-1">
+                    <p>Evento: {summaryKitUsageAudit.eventId || "todos"}</p>
+                    <p>Kits totais: {summaryKitUsageAudit.totals.kits_total}</p>
+                    <p>Kits com inscrições: {summaryKitUsageAudit.totals.kits_with_registrations}</p>
+                    <p>Kits sem uso: {summaryKitUsageAudit.totals.kits_without_registrations}</p>
+                    <p>Kits soft deletados: {summaryKitUsageAudit.totals.kits_soft_deleted}</p>
+                    <p>Soft deletados com inscrições: {summaryKitUsageAudit.totals.soft_deleted_with_registrations}</p>
+                    <p>Referências órfãs registration.kit_id: {summaryKitUsageAudit.totals.orphan_registration_kit_refs}</p>
+                    {summaryKitUsageAudit.kits_with_registrations.length > 0 && (
+                      <div className="pt-2">
+                        <p className="font-medium">Kits com mais inscrições:</p>
+                        {summaryKitUsageAudit.kits_with_registrations.slice(0, 6).map((kit) => (
+                          <p key={kit.kit_id}>
+                            {kit.kit_name || kit.kit_id}: {kit.registration_count} inscrição(ões)
+                            {kit.deleted_at ? " (desativado)" : ""}
+                          </p>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {hasErrorKitUsageAudit && (
+            <Alert variant="destructive">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertDescription>
+                Ocorreu um erro ao executar a auditoria de kits. Verifique os logs abaixo.
               </AlertDescription>
             </Alert>
           )}
@@ -1721,6 +1852,25 @@ const AdvancedSettings = () => {
                       </div>
                     ))}
                     <div ref={logsEndRefSemanticAudit} />
+                  </div>
+                </ScrollArea>
+              </CardContent>
+            </Card>
+          )}
+          {logsKitUsageAudit.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm">Logs – Auditoria de kits com inscrições</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ScrollArea className="h-[500px] w-full rounded-md border p-4 bg-muted/50 font-mono text-sm">
+                  <div>
+                    {logsKitUsageAudit.map((log, index) => (
+                      <div key={index} className="mb-1 whitespace-pre-wrap">
+                        {log}
+                      </div>
+                    ))}
+                    <div ref={logsEndRefKitUsageAudit} />
                   </div>
                 </ScrollArea>
               </CardContent>

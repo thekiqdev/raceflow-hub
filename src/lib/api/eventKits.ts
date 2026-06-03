@@ -30,6 +30,7 @@ export interface EventKit {
   description: string | null;
   price: number;
   display_order: number;
+  deleted_at?: string | null;
   created_at?: string;
   products?: KitProduct[];
   category_ids?: string[]; // IDs das categorias associadas ao kit (opcional para compatibilidade retroativa)

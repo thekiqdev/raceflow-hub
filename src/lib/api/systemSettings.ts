@@ -1457,6 +1457,129 @@ export const executeAuditRestoredRegistrationSemanticsScript = async (
   }
 };
 
+export interface AuditEventKitsWithRegistrationsResult {
+  mode: 'read_only_kit_usage_audit';
+  eventId: string | null;
+  totals: {
+    kits_total: number;
+    kits_with_registrations: number;
+    kits_without_registrations: number;
+    kits_soft_deleted: number;
+    soft_deleted_with_registrations: number;
+    orphan_registration_kit_refs: number;
+  };
+  kits_with_registrations: Array<{
+    kit_id: string;
+    kit_name: string | null;
+    event_id: string;
+    registration_count: number;
+    paid_count: number;
+    invited_count: number;
+    deleted_at: string | null;
+  }>;
+  kits_without_registrations_sample: Array<{
+    kit_id: string;
+    kit_name: string | null;
+    event_id: string;
+    deleted_at: string | null;
+  }>;
+  orphan_registration_kit_refs_sample: Array<{
+    registration_id: string;
+    event_id: string;
+    kit_id: string;
+  }>;
+  safety: {
+    read_only: true;
+    inserts: false;
+    updates: false;
+    deletes: false;
+  };
+  logs: string[];
+}
+
+export const executeAuditEventKitsWithRegistrationsScript = async (
+  params: { eventId?: string },
+  onLog: (message: string) => void,
+  onComplete: (data: {
+    success: boolean;
+    summary?: AuditEventKitsWithRegistrationsResult;
+    message?: string;
+  }) => void,
+  onError: (error: string) => void
+): Promise<void> => {
+  try {
+    const token = localStorage.getItem('auth_token');
+    if (!token) throw new Error('Não autenticado');
+
+    const getApiUrl = () => {
+      const envUrl = import.meta.env.VITE_API_URL;
+      if (envUrl && !envUrl.includes('localhost')) return envUrl;
+      if (import.meta.env.PROD) return 'https://cronoteam-crono-back.e758qe.easypanel.host/api';
+      return 'http://localhost:3001/api';
+    };
+
+    const response = await fetch(`${getApiUrl()}/admin/scripts/audit-event-kits-with-registrations`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ eventId: params.eventId || undefined }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: 'Erro desconhecido' }));
+      throw new Error(errorData.error || errorData.message || 'Erro ao executar auditoria de kits');
+    }
+
+    const reader = response.body?.getReader();
+    const decoder = new TextDecoder();
+    if (!reader) throw new Error('Resposta do servidor não contém stream de dados');
+
+    let buffer = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          try {
+            const data = JSON.parse(line.slice(6));
+            if (data.type === 'log') onLog(data.message);
+            else if (data.type === 'complete') {
+              onComplete({
+                success: data.success,
+                summary: data.summary,
+                message: data.message,
+              });
+            } else if (data.type === 'error') {
+              onError(data.message || 'Erro desconhecido');
+            }
+          } catch (e) {
+            console.error('Erro ao processar linha SSE:', e);
+          }
+        }
+      }
+    }
+
+    if (buffer.startsWith('data: ')) {
+      try {
+        const data = JSON.parse(buffer.slice(6));
+        if (data.type === 'complete') {
+          onComplete({
+            success: data.success,
+            summary: data.summary,
+            message: data.message,
+          });
+        }
+      } catch (e) {
+        console.error('Erro ao processar buffer final:', e);
+      }
+    }
+  } catch (error: any) {
+    onError(error.message || 'Erro ao executar auditoria de kits');
+  }
+};
+
 
 
 

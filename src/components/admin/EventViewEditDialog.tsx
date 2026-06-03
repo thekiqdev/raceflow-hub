@@ -538,6 +538,17 @@ export function EventViewEditDialog({
   };
 
   const removeKit = (index: number) => {
+    const kit = kits[index];
+    if (kit?.id && !String(kit.id).startsWith("temp-")) {
+      const confirmed = window.confirm(
+        "Se este kit possuir inscrições vinculadas, ele será apenas desativado para novas inscrições e continuará preservado no histórico. Deseja continuar?"
+      );
+      if (!confirmed) return;
+      toast({
+        title: "Kit será desativado se tiver inscrições",
+        description: "Por segurança, kits vinculados a inscrições não são excluídos fisicamente. Eles deixam de aparecer para novas inscrições, mas continuam no histórico.",
+      });
+    }
     setKits(kits.filter((_, i) => i !== index));
   };
 
@@ -1145,12 +1156,19 @@ export function EventViewEditDialog({
             products: kit.products || [],
           }));
         
-        await syncEventKits(eventId, kitsData);
+        const kitsResponse = await syncEventKits(eventId, kitsData);
+        if (!kitsResponse.success) {
+          toast({
+            title: "Não foi possível salvar os kits",
+            description: kitsResponse.message || kitsResponse.error || "Evento atualizado, mas houve erro ao salvar kits.",
+            variant: "destructive",
+          });
+        }
       } catch (error: any) {
         console.error('Error syncing kits:', error);
         toast({
-          title: "Aviso",
-          description: "Evento atualizado, mas houve erro ao salvar kits",
+          title: "Não foi possível salvar os kits",
+          description: error?.message || "Evento atualizado, mas houve erro ao salvar kits.",
           variant: "destructive",
         });
       }
@@ -2621,7 +2639,7 @@ export function EventViewEditDialog({
                             variant="ghost"
                             size="icon"
                             onClick={() => removeKit(index)}
-                            title="Remover"
+                            title="Remover ou desativar"
                           >
                             <Trash2 className="h-4 w-4 text-destructive" />
                           </Button>

@@ -4,6 +4,7 @@ import { asyncHandler } from '../middleware/errorHandler.js';
 import { hasRole } from '../services/userRolesService.js';
 import { getEventById } from '../services/eventsService.js';
 import { getEventGeneralStats } from '../services/eventGeneralStatsService.js';
+import { getEventProductStockReport } from '../services/eventProductStockReportService.js';
 import {
   getRegistrationsByPeriod,
   getNewUsersByMonth,
@@ -292,6 +293,47 @@ export const getEventGeneralStatsController = asyncHandler(async (req: AuthReque
   }
 
   const data = await getEventGeneralStats(eventId);
+
+  res.json({
+    success: true,
+    data,
+  });
+});
+
+/**
+ * GET /api/admin/reports/events/:eventId/product-stock
+ * GET /api/organizer/reports/events/:eventId/product-stock
+ * Read-only product stock report by variation for an event.
+ */
+export const getEventProductStockReportController = asyncHandler(async (req: AuthRequest, res: Response) => {
+  if (!req.user) {
+    res.status(401).json({ success: false, error: 'Not authenticated' });
+    return;
+  }
+
+  const { eventId } = req.params as { eventId: string };
+  const event = await getEventById(eventId);
+
+  if (!event) {
+    res.status(404).json({
+      success: false,
+      error: 'Not found',
+      message: 'Evento não encontrado',
+    });
+    return;
+  }
+
+  const isAdmin = await hasRole(req.user.id, 'admin');
+  if (!isAdmin && event.organizer_id !== req.user.id) {
+    res.status(403).json({
+      success: false,
+      error: 'Forbidden',
+      message: 'Sem permissão para visualizar estoque deste evento',
+    });
+    return;
+  }
+
+  const data = await getEventProductStockReport(eventId);
 
   res.json({
     success: true,

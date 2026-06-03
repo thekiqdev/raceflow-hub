@@ -13,11 +13,16 @@ import {
   getOrganizerEventInvitationStats,
   getEventGeneralStats,
   getOrganizerEventGeneralStats,
+  getEventProductStockReport,
+  getOrganizerEventProductStockReport,
   type EventInvitationStats,
   type EventGeneralStats,
+  type EventProductStockReport,
+  type EventProductStockStatus,
+  type EventProductStockVariationRow,
 } from "@/lib/api/reports";
 import { getCanonicalRegistrationDisplayValue } from "@/lib/utils/feeCalculations";
-import { ArrowLeft, Users, DollarSign, Package, CreditCard, Smartphone, Gift, AlertTriangle, LayoutGrid } from "lucide-react";
+import { ArrowLeft, Users, DollarSign, Package, CreditCard, Smartphone, Gift, AlertTriangle, LayoutGrid, Warehouse } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { toast } from "sonner";
 import {
@@ -129,6 +134,41 @@ interface AttributeSelectionInfo {
 type RegistrationTableFilter = "all" | "paid" | "convidado" | "transferred" | "free_bonus";
 
 const pillBadgeBase = "px-2 py-1 rounded-full text-xs font-medium inline-block";
+
+function getStockStatusLabel(status: EventProductStockStatus): string {
+  switch (status) {
+    case "available":
+      return "Disponível";
+    case "low":
+      return "Baixo estoque";
+    case "exhausted":
+      return "Esgotado";
+    case "unlimited":
+      return "Ilimitado";
+    default:
+      return status;
+  }
+}
+
+function getStockStatusBadgeClass(status: EventProductStockStatus): string {
+  switch (status) {
+    case "available":
+      return "bg-green-100 text-green-700";
+    case "low":
+      return "bg-yellow-100 text-yellow-700";
+    case "exhausted":
+      return "bg-red-100 text-red-700";
+    case "unlimited":
+      return "bg-gray-100 text-gray-700";
+    default:
+      return "bg-gray-100 text-gray-700";
+  }
+}
+
+function formatStockQuantity(value: number | null): string {
+  if (value === null) return "Ilimitado";
+  return String(value);
+}
 
 function matchesRegistrationFilter(
   reg: RegistrationDetail,
@@ -242,6 +282,7 @@ const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
   const [leaderInvitationsGranted, setLeaderInvitationsGranted] = useState<Record<string, number>>({});
   const [invitationStats, setInvitationStats] = useState<EventInvitationStats | null>(null);
   const [generalStats, setGeneralStats] = useState<EventGeneralStats | null>(null);
+  const [productStockReport, setProductStockReport] = useState<EventProductStockReport | null>(null);
   const [registrationFilter, setRegistrationFilter] = useState<RegistrationTableFilter>("all");
   const registrationsSectionRef = useRef<HTMLDivElement>(null);
 
@@ -577,6 +618,20 @@ const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
           variantPrice: stat.variant_price,
         }));
         setAttributeSelections(selectionsInfo);
+      }
+
+      // Load product stock report (read-only, computed on backend)
+      try {
+        const stockRes = isAdmin
+          ? await getEventProductStockReport(eventId)
+          : await getOrganizerEventProductStockReport(eventId);
+        if (stockRes?.success && stockRes.data) {
+          setProductStockReport(stockRes.data);
+        } else {
+          setProductStockReport(null);
+        }
+      } catch {
+        setProductStockReport(null);
       }
 
       // Load modalities
@@ -978,6 +1033,119 @@ const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
             </TableBody>
           </Table>
         </Card>
+      )}
+
+      {/* Estoque dos Produtos */}
+      {productStockReport && productStockReport.variations.length > 0 && (
+        <div className="space-y-6">
+          <Card className="bg-white rounded-2xl p-6 shadow-sm border-0">
+            <h3 className="text-lg font-semibold mb-4">📦 Estoque dos Produtos</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
+              <KpiCard
+                label="Produtos cadastrados"
+                value={productStockReport.summary.products_count}
+                icon={Package}
+                iconWrapClass="bg-blue-100"
+                iconClass="text-blue-600"
+              />
+              <KpiCard
+                label="Estoque inicial total"
+                value={productStockReport.summary.stock_initial_total}
+                icon={Warehouse}
+                iconWrapClass="bg-indigo-100"
+                iconClass="text-indigo-600"
+              />
+              <KpiCard
+                label="Estoque utilizado"
+                value={productStockReport.summary.stock_used_total}
+                icon={LayoutGrid}
+                iconWrapClass="bg-orange-100"
+                iconClass="text-orange-600"
+                valueClassName="text-orange-600"
+              />
+              <KpiCard
+                label="Estoque disponível"
+                value={productStockReport.summary.stock_available_total}
+                icon={Warehouse}
+                iconWrapClass="bg-green-100"
+                iconClass="text-green-600"
+                valueClassName="text-green-600"
+              />
+              <KpiCard
+                label="Produtos esgotados"
+                value={productStockReport.summary.exhausted_variations_count}
+                icon={AlertTriangle}
+                iconWrapClass="bg-red-100"
+                iconClass="text-red-600"
+                valueClassName="text-red-600"
+              />
+            </div>
+
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Produto</TableHead>
+                  <TableHead>Variação</TableHead>
+                  <TableHead className="text-right">Estoque Inicial</TableHead>
+                  <TableHead className="text-right">Utilizado</TableHead>
+                  <TableHead className="text-right">Disponível</TableHead>
+                  <TableHead>Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {productStockReport.variations.map((item: EventProductStockVariationRow) => (
+                  <TableRow key={item.variation_id}>
+                    <TableCell className="font-medium">{item.product_name}</TableCell>
+                    <TableCell>{item.variation_name}</TableCell>
+                    <TableCell className="text-right">{formatStockQuantity(item.stock_initial)}</TableCell>
+                    <TableCell className="text-right">{item.stock_used}</TableCell>
+                    <TableCell className="text-right">{formatStockQuantity(item.stock_available)}</TableCell>
+                    <TableCell>
+                      <span className={cn(pillBadgeBase, getStockStatusBadgeClass(item.status))}>
+                        {getStockStatusLabel(item.status)}
+                      </span>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </Card>
+
+          {productStockReport.low_stock_alerts.length > 0 && (
+            <Card className="bg-white rounded-2xl p-6 shadow-sm border-0 border-l-4 border-l-yellow-500">
+              <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5 text-yellow-600" />
+                Produtos com estoque baixo
+              </h3>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Produto</TableHead>
+                    <TableHead>Variação</TableHead>
+                    <TableHead className="text-right">Disponível</TableHead>
+                    <TableHead>Status</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {productStockReport.low_stock_alerts.map((item: EventProductStockVariationRow) => (
+                    <TableRow key={`alert-${item.variation_id}`}>
+                      <TableCell className="font-medium">{item.product_name}</TableCell>
+                      <TableCell>{item.variation_name}</TableCell>
+                      <TableCell className="text-right font-semibold">
+                        {formatStockQuantity(item.stock_available)}
+                      </TableCell>
+                      <TableCell>
+                        <span className={cn(pillBadgeBase, getStockStatusBadgeClass(item.status))}>
+                          {getStockStatusLabel(item.status)}
+                        </span>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </Card>
+          )}
+        </div>
       )}
 
       {/* Statistics by State and City */}

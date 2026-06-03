@@ -14,6 +14,7 @@ import deepForensicRegistrationsInvestigation from '../scripts/deepForensicRegis
 import analyzeBackupRegistrationDependencies from '../scripts/analyzeBackupRegistrationDependencies.js';
 import analyzeNullKitCompatibility from '../scripts/analyzeNullKitCompatibility.js';
 import auditRestoredRegistrationSemantics from '../scripts/auditRestoredRegistrationSemantics.js';
+import auditEventKitsWithRegistrations from '../scripts/auditEventKitsWithRegistrations.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -765,6 +766,74 @@ export const auditRestoredRegistrationSemanticsController = asyncHandler(async (
     return;
   } catch (error: any) {
     logMessage(`Erro ao executar auditoria semântica: ${error.message}`);
+    res.write(`data: ${JSON.stringify({
+      type: 'error',
+      success: false,
+      message: error.message,
+    })}\n\n`);
+    res.end();
+    return;
+  }
+});
+
+/**
+ * POST /api/admin/scripts/audit-event-kits-with-registrations
+ * Auditoria read-only de kits com inscrições, kits sem uso e referências órfãs.
+ */
+export const auditEventKitsWithRegistrationsController = asyncHandler(async (req: AuthRequest, res: Response) => {
+  if (!req.user) {
+    return res.status(401).json({
+      success: false,
+      error: 'Not authenticated',
+    });
+  }
+
+  const isAdmin = await hasRole(req.user.id, 'admin');
+  if (!isAdmin) {
+    return res.status(403).json({
+      success: false,
+      error: 'Forbidden',
+      message: 'Apenas administradores podem executar este script',
+    });
+  }
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+
+  const logs: string[] = [];
+  const logMessage = (message: string) => {
+    const timestamp = new Date().toISOString();
+    const logLine = `[${timestamp}] ${message}`;
+    logs.push(logLine);
+    res.write(`data: ${JSON.stringify({ type: 'log', message: logLine })}\n\n`);
+  };
+
+  try {
+    const eventId = typeof req.body?.eventId === 'string' ? req.body.eventId.trim() : undefined;
+    logMessage('Iniciando auditoria read-only de kits com inscrições...');
+    if (eventId) logMessage(`Evento: ${eventId}`);
+    logMessage('Garantia: nenhum kit será removido ou alterado.');
+
+    const result = await auditEventKitsWithRegistrations({ eventId });
+
+    logMessage(`Kits totais: ${result.totals.kits_total}`);
+    logMessage(`Kits com inscrições: ${result.totals.kits_with_registrations}`);
+    logMessage(`Kits sem uso: ${result.totals.kits_without_registrations}`);
+    logMessage(`Kits soft deletados: ${result.totals.kits_soft_deleted}`);
+    logMessage(`Referências órfãs registration.kit_id: ${result.totals.orphan_registration_kit_refs}`);
+
+    res.write(`data: ${JSON.stringify({
+      type: 'complete',
+      success: true,
+      summary: result,
+      message: 'Auditoria de kits concluída em modo read-only',
+    })}\n\n`);
+    res.end();
+    return;
+  } catch (error: any) {
+    logMessage(`Erro ao executar auditoria de kits: ${error.message}`);
     res.write(`data: ${JSON.stringify({
       type: 'error',
       success: false,

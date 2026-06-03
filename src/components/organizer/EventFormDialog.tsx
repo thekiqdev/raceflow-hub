@@ -1040,6 +1040,17 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
   };
 
   const removeKit = (index: number) => {
+    const kit = kits[index];
+    if (kit?.id) {
+      const confirmed = window.confirm(
+        "Se este kit possuir inscrições vinculadas, ele será apenas desativado para novas inscrições e continuará preservado no histórico. Deseja continuar?"
+      );
+      if (!confirmed) return;
+      toast({
+        title: "Kit será desativado se tiver inscrições",
+        description: "Por segurança, kits vinculados a inscrições não são excluídos fisicamente. Eles deixam de aparecer para novas inscrições, mas continuam no histórico.",
+      });
+    }
     setKits(kits.filter((_, i) => i !== index));
   };
 
@@ -2281,8 +2292,8 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
           if (!kitsResponse.success) {
             console.error('Error syncing kits:', kitsResponse.error);
             toast({
-              title: "Aviso",
-              description: "Evento salvo, mas houve erro ao salvar kits",
+              title: "Não foi possível salvar os kits",
+              description: kitsResponse.message || kitsResponse.error || "Evento salvo, mas houve erro ao salvar kits.",
               variant: "destructive",
             });
           } else {
@@ -2317,8 +2328,8 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
         } catch (error: any) {
           console.error('Error syncing kits:', error);
           toast({
-            title: "Aviso",
-            description: "Evento salvo, mas houve erro ao salvar kits",
+            title: "Não foi possível salvar os kits",
+            description: error?.message || "Evento salvo, mas houve erro ao salvar kits.",
             variant: "destructive",
           });
         }
@@ -3035,7 +3046,7 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
                                 variant="ghost"
                                 size="icon"
                                 onClick={() => removeCategory(index)}
-                                title="Remover"
+                                title="Remover ou desativar"
                               >
                                 <Trash2 className="h-4 w-4 text-destructive" />
                               </Button>

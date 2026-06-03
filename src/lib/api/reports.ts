@@ -98,6 +98,33 @@ export interface EventGeneralStats {
   normal_paid_count: number;
 }
 
+export type EventProductStockStatus = 'available' | 'low' | 'exhausted' | 'unlimited';
+
+export interface EventProductStockVariationRow {
+  product_id: string;
+  product_name: string;
+  variation_id: string;
+  variation_name: string;
+  stock_initial: number | null;
+  stock_used: number;
+  stock_available: number | null;
+  status: EventProductStockStatus;
+}
+
+export interface EventProductStockReportSummary {
+  products_count: number;
+  stock_initial_total: number;
+  stock_used_total: number;
+  stock_available_total: number;
+  exhausted_variations_count: number;
+}
+
+export interface EventProductStockReport {
+  summary: EventProductStockReportSummary;
+  variations: EventProductStockVariationRow[];
+  low_stock_alerts: EventProductStockVariationRow[];
+}
+
 export interface EventInvitationStats {
   event_id: string;
   total_invitations: number;
@@ -324,6 +351,28 @@ export const getOrganizerEventGeneralStats = async (eventId: string): Promise<{
   return apiClient.get<EventGeneralStats>(`/organizer/reports/events/${eventId}/general-stats`);
 };
 
+/**
+ * GET /api/admin/reports/events/:eventId/product-stock
+ */
+export const getEventProductStockReport = async (eventId: string): Promise<{
+  success: boolean;
+  data?: EventProductStockReport;
+  error?: string;
+  message?: string;
+}> => {
+  return apiClient.get<EventProductStockReport>(`/admin/reports/events/${eventId}/product-stock`);
+};
 
+/**
+ * GET /api/organizer/reports/events/:eventId/product-stock
+ */
+export const getOrganizerEventProductStockReport = async (eventId: string): Promise<{
+  success: boolean;
+  data?: EventProductStockReport;
+  error?: string;
+  message?: string;
+}> => {
+  return apiClient.get<EventProductStockReport>(`/organizer/reports/events/${eventId}/product-stock`);
+};
 
 

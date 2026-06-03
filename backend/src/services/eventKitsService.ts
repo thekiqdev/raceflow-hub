@@ -33,6 +33,7 @@ export interface EventKit {
   description: string | null;
   price: number;
   display_order: number;
+  deleted_at?: Date | null;
   created_at: Date | null;
   products?: KitProduct[];
   category_ids?: string[]; // IDs das categorias associadas ao kit (opcional para compatibilidade retroativa)
@@ -53,6 +54,40 @@ async function getEventIdFromSlugOrId(eventIdOrSlug: string): Promise<string | n
   return event?.id || null;
 }
 
+const columnExists = async (tableName: string, columnName: string): Promise<boolean> => {
+  const result = await query(
+    `SELECT 1
+       FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = $1
+        AND column_name = $2
+      LIMIT 1`,
+    [tableName, columnName]
+  );
+  return (result.rowCount ?? 0) > 0;
+};
+
+const eventKitsHasDeletedAt = async (): Promise<boolean> => {
+  return columnExists('event_kits', 'deleted_at');
+};
+
+const activeKitWhereClause = async (alias = ''): Promise<string> => {
+  if (!(await eventKitsHasDeletedAt())) return '';
+  const prefix = alias ? `${alias}.` : '';
+  return ` AND ${prefix}deleted_at IS NULL`;
+};
+
+const mapEventKitRow = (row: any): EventKit => ({
+  id: row.id,
+  event_id: row.event_id,
+  name: row.name,
+  description: row.description,
+  price: parseFloat(row.price) || 0,
+  display_order: row.display_order,
+  deleted_at: row.deleted_at ?? null,
+  created_at: row.created_at,
+});
+
 /**
  * Get all kits for an event with products and variants
  * @param eventIdOrSlug - ID or slug of the event
@@ -68,32 +103,27 @@ export const getEventKits = async (eventIdOrSlug: string, categoryId?: string): 
   let queryParams: any[];
 
   if (categoryId) {
+    const activeClause = await activeKitWhereClause('k');
     // Somente kits com vínculo explícito à categoria (sem "fallback" para kits sem associação)
     queryText = `
       SELECT DISTINCT k.*
       FROM event_kits k
       INNER JOIN kit_categories kc ON kc.kit_id = k.id AND kc.category_id = $2::uuid
       WHERE k.event_id = $1
+      ${activeClause}
       ORDER BY k.display_order ASC
     `;
     queryParams = [eventId, categoryId];
   } else {
+    const activeClause = await activeKitWhereClause();
     // Get all kits for the event
-    queryText = `SELECT * FROM event_kits WHERE event_id = $1 ORDER BY display_order ASC`;
+    queryText = `SELECT * FROM event_kits WHERE event_id = $1${activeClause} ORDER BY display_order ASC`;
     queryParams = [eventId];
   }
 
   const kitsResult = await query(queryText, queryParams);
 
-  const kits: EventKit[] = kitsResult.rows.map((row) => ({
-    id: row.id,
-    event_id: row.event_id,
-    name: row.name,
-    description: row.description,
-    price: parseFloat(row.price) || 0,
-    display_order: row.display_order,
-    created_at: row.created_at,
-  }));
+  const kits: EventKit[] = kitsResult.rows.map(mapEventKitRow);
 
   // Usage count per variant in this event (inscrições não canceladas que escolheram cada variante)
   const usageResult = await query(
@@ -178,15 +208,7 @@ export const loadKitProductsWithStockForEvent = async (
   }
 
   const row = kitResult.rows[0];
-  const kit: EventKit = {
-    id: row.id,
-    event_id: row.event_id,
-    name: row.name,
-    description: row.description,
-    price: parseFloat(row.price) || 0,
-    display_order: row.display_order,
-    created_at: row.created_at,
-  };
+  const kit: EventKit = mapEventKitRow(row);
 
   const usageResult = await query(
     `SELECT rps.variant_id, COUNT(DISTINCT rps.registration_id)::int AS usage_count
@@ -256,15 +278,7 @@ export const getEventKitById = async (kitId: string): Promise<EventKit | null> =
   }
 
   const row = result.rows[0];
-  const kit: EventKit = {
-    id: row.id,
-    event_id: row.event_id,
-    name: row.name,
-    description: row.description,
-    price: parseFloat(row.price) || 0,
-    display_order: row.display_order,
-    created_at: row.created_at,
-  };
+  const kit: EventKit = mapEventKitRow(row);
 
   // Get category_ids
   const categoryIds = await getKitCategories(kit.id);
@@ -307,15 +321,7 @@ export const createEventKit = async (data: {
     ]
   );
 
-  return {
-    id: result.rows[0].id,
-    event_id: result.rows[0].event_id,
-    name: result.rows[0].name,
-    description: result.rows[0].description,
-    price: parseFloat(result.rows[0].price) || 0,
-    display_order: result.rows[0].display_order,
-    created_at: result.rows[0].created_at,
-  };
+  return mapEventKitRow(result.rows[0]);
 };
 
 /**
@@ -373,21 +379,36 @@ export const updateEventKit = async (
     return null;
   }
 
-  return {
-    id: result.rows[0].id,
-    event_id: result.rows[0].event_id,
-    name: result.rows[0].name,
-    description: result.rows[0].description,
-    price: parseFloat(result.rows[0].price) || 0,
-    display_order: result.rows[0].display_order,
-    created_at: result.rows[0].created_at,
-  };
+  return mapEventKitRow(result.rows[0]);
 };
 
 /**
  * Delete a kit
  */
 export const deleteEventKit = async (kitId: string): Promise<boolean> => {
+  const usageResult = await query(
+    `SELECT COUNT(*)::int AS count
+       FROM registrations
+      WHERE kit_id = $1`,
+    [kitId]
+  );
+  const linkedRegistrations = Number(usageResult.rows[0]?.count ?? 0) || 0;
+
+  if (linkedRegistrations > 0) {
+    if (await eventKitsHasDeletedAt()) {
+      const result = await query(
+        `UPDATE event_kits
+            SET deleted_at = COALESCE(deleted_at, NOW())
+          WHERE id = $1
+          RETURNING id`,
+        [kitId]
+      );
+      return (result.rowCount ?? 0) > 0;
+    }
+
+    throw new Error('Este kit possui inscrições vinculadas e não pode ser removido.');
+  }
+
   const result = await query(
     `DELETE FROM event_kits WHERE id = $1`,
     [kitId]

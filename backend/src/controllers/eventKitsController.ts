@@ -143,7 +143,20 @@ export const syncEventKitsController = asyncHandler(async (req: AuthRequest, res
     }
   }
 
-  const syncedKits = await syncEventKits(eventId, kits);
+  let syncedKits;
+  try {
+    syncedKits = await syncEventKits(eventId, kits);
+  } catch (error: any) {
+    if (String(error?.message || '').includes('inscrições vinculadas')) {
+      res.status(409).json({
+        success: false,
+        error: 'Kit has linked registrations',
+        message: error.message,
+      });
+      return;
+    }
+    throw error;
+  }
 
   res.json({
     success: true,
