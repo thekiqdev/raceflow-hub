@@ -33,10 +33,16 @@ export interface EventKit {
   description: string | null;
   price: number;
   display_order: number;
+  is_visible?: boolean;
   deleted_at?: Date | null;
   created_at: Date | null;
   products?: KitProduct[];
   category_ids?: string[]; // IDs das categorias associadas ao kit (opcional para compatibilidade retroativa)
+}
+
+export interface GetEventKitsOptions {
+  /** Quando true, retorna apenas kits visíveis (fluxo público). Default: false. */
+  visibleOnly?: boolean;
 }
 
 /**
@@ -71,10 +77,21 @@ const eventKitsHasDeletedAt = async (): Promise<boolean> => {
   return columnExists('event_kits', 'deleted_at');
 };
 
+const eventKitsHasIsVisible = async (): Promise<boolean> => {
+  return columnExists('event_kits', 'is_visible');
+};
+
 const activeKitWhereClause = async (alias = ''): Promise<string> => {
   if (!(await eventKitsHasDeletedAt())) return '';
   const prefix = alias ? `${alias}.` : '';
   return ` AND ${prefix}deleted_at IS NULL`;
+};
+
+const visibleKitWhereClause = async (alias = '', visibleOnly = false): Promise<string> => {
+  if (!visibleOnly) return '';
+  if (!(await eventKitsHasIsVisible())) return '';
+  const prefix = alias ? `${alias}.` : '';
+  return ` AND ${prefix}is_visible = TRUE`;
 };
 
 const mapEventKitRow = (row: any): EventKit => ({
@@ -84,6 +101,7 @@ const mapEventKitRow = (row: any): EventKit => ({
   description: row.description,
   price: parseFloat(row.price) || 0,
   display_order: row.display_order,
+  is_visible: row.is_visible !== false && row.is_visible !== 'f' && row.is_visible !== 0,
   deleted_at: row.deleted_at ?? null,
   created_at: row.created_at,
 });
@@ -93,7 +111,12 @@ const mapEventKitRow = (row: any): EventKit => ({
  * @param eventIdOrSlug - ID or slug of the event
  * @param categoryId - Optional category ID to filter kits (somente kits explicitamente vinculados a essa categoria em kit_categories)
  */
-export const getEventKits = async (eventIdOrSlug: string, categoryId?: string): Promise<EventKit[]> => {
+export const getEventKits = async (
+  eventIdOrSlug: string,
+  categoryId?: string,
+  options?: GetEventKitsOptions
+): Promise<EventKit[]> => {
+  const visibleOnly = options?.visibleOnly === true;
   // Convert slug to UUID if necessary
   const eventId = await getEventIdFromSlugOrId(eventIdOrSlug);
   if (!eventId) {
@@ -104,6 +127,7 @@ export const getEventKits = async (eventIdOrSlug: string, categoryId?: string): 
 
   if (categoryId) {
     const activeClause = await activeKitWhereClause('k');
+    const visibleClause = await visibleKitWhereClause('k', visibleOnly);
     // Somente kits com vínculo explícito à categoria (sem "fallback" para kits sem associação)
     queryText = `
       SELECT DISTINCT k.*
@@ -111,13 +135,15 @@ export const getEventKits = async (eventIdOrSlug: string, categoryId?: string): 
       INNER JOIN kit_categories kc ON kc.kit_id = k.id AND kc.category_id = $2::uuid
       WHERE k.event_id = $1
       ${activeClause}
+      ${visibleClause}
       ORDER BY k.display_order ASC
     `;
     queryParams = [eventId, categoryId];
   } else {
     const activeClause = await activeKitWhereClause();
+    const visibleClause = await visibleKitWhereClause('', visibleOnly);
     // Get all kits for the event
-    queryText = `SELECT * FROM event_kits WHERE event_id = $1${activeClause} ORDER BY display_order ASC`;
+    queryText = `SELECT * FROM event_kits WHERE event_id = $1${activeClause}${visibleClause} ORDER BY display_order ASC`;
     queryParams = [eventId];
   }
 
@@ -192,6 +218,31 @@ export const getEventKits = async (eventIdOrSlug: string, categoryId?: string): 
   }
 
   return kits;
+};
+
+/**
+ * Valida kit para inscrição pública (criação nova / convite): deve existir, não estar soft-deleted e is_visible = TRUE.
+ * Se a coluna is_visible não existir (pré-migration 114), valida apenas existência no evento.
+ */
+export const validateKitVisibleForPublicRegistration = async (
+  kitId: string,
+  eventId: string
+): Promise<void> => {
+  const hasDeletedAt = await eventKitsHasDeletedAt();
+  const hasIsVisible = await eventKitsHasIsVisible();
+
+  let sql = 'SELECT 1 FROM event_kits WHERE id = $1 AND event_id = $2';
+  if (hasDeletedAt) sql += ' AND deleted_at IS NULL';
+  if (hasIsVisible) sql += ' AND is_visible = TRUE';
+
+  const result = await query(sql, [kitId, eventId]);
+  if (result.rows.length === 0) {
+    throw new Error(
+      hasIsVisible
+        ? 'Kit inválido, indisponível ou oculto para inscrição pública.'
+        : 'Kit inválido ou não pertence a este evento.'
+    );
+  }
 };
 
 /**
@@ -296,6 +347,7 @@ export const createEventKit = async (data: {
   description?: string | null;
   price: number;
   display_order?: number;
+  is_visible?: boolean;
 }): Promise<EventKit> => {
   // Se display_order não foi fornecido, calcular como próximo valor
   let displayOrder = data.display_order;
@@ -308,17 +360,33 @@ export const createEventKit = async (data: {
     displayOrder = (maxResult.rows[0]?.max_order || 0) + 1;
   }
 
+  const hasIsVisible = await eventKitsHasIsVisible();
+  const isVisible = data.is_visible !== false;
+
   const result = await query(
-    `INSERT INTO event_kits (event_id, name, description, price, display_order)
-     VALUES ($1, $2, $3, $4, $5)
-     RETURNING *`,
-    [
-      data.event_id,
-      data.name,
-      data.description || null,
-      data.price,
-      displayOrder,
-    ]
+    hasIsVisible
+      ? `INSERT INTO event_kits (event_id, name, description, price, display_order, is_visible)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         RETURNING *`
+      : `INSERT INTO event_kits (event_id, name, description, price, display_order)
+         VALUES ($1, $2, $3, $4, $5)
+         RETURNING *`,
+    hasIsVisible
+      ? [
+          data.event_id,
+          data.name,
+          data.description || null,
+          data.price,
+          displayOrder,
+          isVisible,
+        ]
+      : [
+          data.event_id,
+          data.name,
+          data.description || null,
+          data.price,
+          displayOrder,
+        ]
   );
 
   return mapEventKitRow(result.rows[0]);
@@ -334,6 +402,7 @@ export const updateEventKit = async (
     description?: string | null;
     price?: number;
     display_order?: number;
+    is_visible?: boolean;
   }
 ): Promise<EventKit | null> => {
   const fields: string[] = [];
@@ -358,6 +427,11 @@ export const updateEventKit = async (
   if (data.display_order !== undefined) {
     fields.push(`display_order = $${paramIndex}`);
     values.push(data.display_order);
+    paramIndex++;
+  }
+  if (data.is_visible !== undefined && (await eventKitsHasIsVisible())) {
+    fields.push(`is_visible = $${paramIndex}`);
+    values.push(data.is_visible);
     paramIndex++;
   }
 
@@ -427,6 +501,7 @@ export interface SyncKitData {
   price: number;
   display_order?: number;
   category_ids?: string[]; // IDs das categorias associadas ao kit (opcional)
+  is_visible?: boolean;
   products?: Array<{
     id?: string;
     name: string;
@@ -472,6 +547,7 @@ export const syncEventKits = async (
         description: kitData.description,
         price: kitData.price,
         display_order: kitData.display_order,
+        is_visible: kitData.is_visible,
       });
       if (!updated) continue;
       kit = updated;
@@ -483,6 +559,7 @@ export const syncEventKits = async (
         description: kitData.description,
         price: kitData.price,
         display_order: kitData.display_order,
+        is_visible: kitData.is_visible,
       });
     }
 
@@ -595,10 +672,8 @@ export const syncEventKits = async (
       }
     }
 
-    // Process category associations for this kit
-    if (kitData.category_ids !== undefined) {
-      await associateKitToCategories(kit.id, kitData.category_ids);
-    }
+    // Sempre sincroniza categorias (array vazio remove vínculos)
+    await associateKitToCategories(kit.id, kitData.category_ids ?? []);
 
     result.push(kit);
   }

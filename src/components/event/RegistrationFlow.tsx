@@ -788,7 +788,10 @@ export function RegistrationFlow({
       if (selectedCategory?.id) {
         setLoadingKits(true);
         try {
-          const response = await getEventKits(event.id, selectedCategory.id);
+          const response = await getEventKits(event.id, {
+            categoryId: selectedCategory.id,
+            context: 'public',
+          });
           if (response.success && response.data) {
             const linkedOnly = response.data.filter(
               (kit) =>

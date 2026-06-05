@@ -311,7 +311,7 @@ const OrganizerRegistrations = () => {
 
     try {
       // Load kit products with variants
-      const kitsResponse = await getEventKits(registrationDetails.event_id);
+      const kitsResponse = await getEventKits(registrationDetails.event_id, { context: 'management' });
       if (kitsResponse.success && kitsResponse.data) {
         const kit = kitsResponse.data.find((k) => k.id === registrationDetails.kit_id);
         if (kit && kit.products) {

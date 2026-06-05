@@ -92,7 +92,7 @@ export function CompleteInvitationModal({
         return;
       }
       try {
-        const res = await getEventKits(eventId, categoryId);
+        const res = await getEventKits(eventId, { categoryId, context: 'public' });
         if (cancelled) return;
         if (res.success && res.data) {
           setKits(

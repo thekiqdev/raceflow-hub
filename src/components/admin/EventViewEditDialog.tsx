@@ -21,7 +21,7 @@ import { getEventKits, syncEventKits } from "@/lib/api/eventKits";
 import { getEventPickupLocations, createPickupLocation, updatePickupLocation, deletePickupLocation } from "@/lib/api/kitPickup";
 import { getOrganizers } from "@/lib/api/userManagement";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, MapPin, Calendar, Users, DollarSign, Package, MapPin as MapPinIcon, Plus, Trash2, ChevronUp, ChevronDown, X, AlertTriangle, ArrowRight } from "lucide-react";
+import { Loader2, MapPin, Calendar, Users, DollarSign, Package, MapPin as MapPinIcon, Plus, Trash2, ChevronUp, ChevronDown, X, AlertTriangle, ArrowRight, Eye, EyeOff } from "lucide-react";
 import { FileUpload } from "@/components/ui/file-upload";
 import { Switch } from "@/components/ui/switch";
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
@@ -236,7 +236,7 @@ export function EventViewEditDialog({
 
       // Load kits
       try {
-        const kitsResponse = await getEventKits(eventId);
+        const kitsResponse = await getEventKits(eventId, { context: 'management' });
         if (kitsResponse.success && kitsResponse.data) {
           setKits(kitsResponse.data);
         } else {
@@ -534,7 +534,12 @@ export function EventViewEditDialog({
 
   // Kits functions
   const addKit = () => {
-    setKits([...kits, { name: "", description: "", price: 0, products: [], category_ids: undefined, id: `temp-${Date.now()}` }]);
+    setKits([...kits, { name: "", description: "", price: 0, products: [], category_ids: [], is_visible: true, id: `temp-${Date.now()}` }]);
+  };
+
+  const toggleKitVisibility = (index: number) => {
+    const kit = kits[index];
+    updateKitLocal(index, "is_visible", kit.is_visible === false);
   };
 
   const removeKit = (index: number) => {
@@ -1152,7 +1157,8 @@ export function EventViewEditDialog({
             description: kit.description || null,
             price: kit.price,
             display_order: kit.display_order !== undefined ? kit.display_order : index,
-            category_ids: kit.category_ids && kit.category_ids.length > 0 ? kit.category_ids : undefined,
+            category_ids: Array.isArray(kit.category_ids) ? kit.category_ids : [],
+            is_visible: kit.is_visible !== false,
             products: kit.products || [],
           }));
         
@@ -1163,6 +1169,8 @@ export function EventViewEditDialog({
             description: kitsResponse.message || kitsResponse.error || "Evento atualizado, mas houve erro ao salvar kits.",
             variant: "destructive",
           });
+        } else if (kitsResponse.data) {
+          setKits(kitsResponse.data);
         }
       } catch (error: any) {
         console.error('Error syncing kits:', error);
@@ -2630,19 +2638,37 @@ export function EventViewEditDialog({
                   <Card key={kit.id || index}>
                     <CardHeader className="pb-3">
                       <div className="flex justify-between items-center">
-                        <CardTitle className="text-base">
+                        <CardTitle className="text-base flex items-center gap-2">
                           {mode === "edit" ? `Kit ${index + 1}` : kit.name}
+                          {kit.is_visible === false && (
+                            <span className="text-xs font-normal text-muted-foreground">(Oculto)</span>
+                          )}
                         </CardTitle>
                         {mode === "edit" && (
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => removeKit(index)}
-                            title="Remover ou desativar"
-                          >
-                            <Trash2 className="h-4 w-4 text-destructive" />
-                          </Button>
+                          <div className="flex items-center gap-1">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => toggleKitVisibility(index)}
+                              title={kit.is_visible === false ? "Kit oculto na inscrição e página pública" : "Kit visível na inscrição e página pública"}
+                            >
+                              {kit.is_visible === false ? (
+                                <EyeOff className="h-4 w-4 text-muted-foreground" />
+                              ) : (
+                                <Eye className="h-4 w-4 text-primary" />
+                              )}
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => removeKit(index)}
+                              title="Remover ou desativar"
+                            >
+                              <Trash2 className="h-4 w-4 text-destructive" />
+                            </Button>
+                          </div>
                         )}
                       </div>
                     </CardHeader>
@@ -2720,7 +2746,7 @@ export function EventViewEditDialog({
                                           const newCategoryIds = isChecked
                                             ? currentCategoryIds.filter(id => id !== categoryId)
                                             : [...currentCategoryIds, categoryId];
-                                          updateKitLocal(index, "category_ids", newCategoryIds.length > 0 ? newCategoryIds : undefined);
+                                          updateKitLocal(index, "category_ids", newCategoryIds);
                                         }}
                                         className="h-4 w-4 rounded border-gray-300"
                                       />

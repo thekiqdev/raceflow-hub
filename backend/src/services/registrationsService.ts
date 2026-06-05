@@ -1977,13 +1977,8 @@ export const completeInvitationRegistration = async (
   }
 
   if (kit_id) {
-    const kitCheck = await query(
-      'SELECT 1 FROM event_kits WHERE id = $1 AND event_id = $2',
-      [kit_id, eventId]
-    );
-    if (kitCheck.rows.length === 0) {
-      throw new Error('Kit inválido ou não pertence a este evento.');
-    }
+    const { validateKitVisibleForPublicRegistration } = await import('./eventKitsService.js');
+    await validateKitVisibleForPublicRegistration(kit_id, eventId);
     // Etapa 5: kit com produto variável exige seleção de variante
     const kitProductsRows = await query(
       'SELECT id, name, type FROM kit_products WHERE kit_id = $1',

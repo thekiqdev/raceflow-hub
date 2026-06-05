@@ -101,6 +101,8 @@ export interface EventGeneralStats {
 export type EventProductStockStatus = 'available' | 'low' | 'exhausted' | 'unlimited';
 
 export interface EventProductStockVariationRow {
+  kit_id: string;
+  kit_name: string;
   product_id: string;
   product_name: string;
   variation_id: string;

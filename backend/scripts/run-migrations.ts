@@ -140,6 +140,8 @@ const migrations = [
   '110_admin_registration_transfer_split.sql',
   '111_add_transfer_until_to_events.sql',
   '112_organizer_liquid_value_canonical.sql',
+  '113_protect_event_kits_from_destructive_delete.sql',
+  '114_add_event_kits_is_visible.sql',
 ];
 
 // Create migrations tracking table

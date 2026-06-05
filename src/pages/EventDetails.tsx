@@ -193,7 +193,7 @@ const EventDetails = () => {
         const [eventResponse, categoriesResponse, kitsResponse, modalitiesResponse, pickupResponse] = await Promise.all([
           getEventById(eventIdOrSlug),
           getCategories(eventIdOrSlug),
-          getEventKits(eventIdOrSlug),
+          getEventKits(eventIdOrSlug, { context: 'public' }),
           getModalities(eventIdOrSlug).catch(() => ({ success: true, data: [] })),
           getEventPickupLocations(eventIdOrSlug).catch(() => ({ success: true, data: [] })),
         ]);

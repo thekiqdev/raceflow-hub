@@ -231,7 +231,10 @@ export function RegisterAthleteStaffDialog({
     }
     try {
       setLoadingKits(true);
-      const response = await getEventKits(selectedEventId, selectedCategoryId);
+      const response = await getEventKits(selectedEventId, {
+        categoryId: selectedCategoryId,
+        context: 'management',
+      });
       if (response.success && response.data) {
         const linkedOnly = response.data.filter(
           (kit) =>

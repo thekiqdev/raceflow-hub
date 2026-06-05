@@ -531,7 +531,10 @@ const AdminRegistrations = () => {
         const categoryExists = currentCategoryId && categories.some((c: Category) => c.id === currentCategoryId);
         if (categoryExists && currentCategoryId) {
           setEditingCategoryId(currentCategoryId);
-          const kitsRes = await getEventKits(registrationDetails!.event_id, currentCategoryId);
+          const kitsRes = await getEventKits(registrationDetails!.event_id, {
+            categoryId: currentCategoryId,
+            context: 'management',
+          });
           if (kitsRes.success && kitsRes.data) {
             setEventKitsList(kitsRes.data);
             const kitExists = currentKitId && kitsRes.data.some((k: EventKit) => k.id === currentKitId);
@@ -567,7 +570,10 @@ const AdminRegistrations = () => {
           } else setCategoryBatchesList([]);
         } else if (categories.length === 1) {
           setEditingCategoryId(categories[0].id);
-          const kitsRes = await getEventKits(registrationDetails!.event_id, categories[0].id);
+          const kitsRes = await getEventKits(registrationDetails!.event_id, {
+            categoryId: categories[0].id,
+            context: 'management',
+          });
           if (kitsRes.success && kitsRes.data) setEventKitsList(kitsRes.data);
           const batchesRes = await getCategoryBatches(categories[0].id);
           setCategoryBatchesList(Array.isArray(batchesRes?.data) ? batchesRes.data : []);
@@ -599,7 +605,10 @@ const AdminRegistrations = () => {
     const currentAttrs = { ...editingProductAttributes };
     setLoadingKit(true);
     try {
-      const kitsResponse = await getEventKits(registrationDetails.event_id, newCategoryId || undefined);
+      const kitsResponse = await getEventKits(registrationDetails.event_id, {
+        categoryId: newCategoryId || undefined,
+        context: 'management',
+      });
       if (kitsResponse.success && kitsResponse.data) {
         setEventKitsList(kitsResponse.data);
         const kits = kitsResponse.data;

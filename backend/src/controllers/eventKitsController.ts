@@ -3,16 +3,43 @@ import { AuthRequest } from '../middleware/auth.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { getEventKits, syncEventKits, reorderEventKits } from '../services/eventKitsService.js';
 import { getEventById } from '../services/eventsService.js';
+import { hasRole } from '../services/userRolesService.js';
 import { z } from 'zod';
+
+async function shouldFilterVisibleKitsOnly(req: AuthRequest, eventId: string): Promise<boolean> {
+  if (!req.user) return true;
+
+  const event = await getEventById(eventId);
+  if (!event) return true;
+
+  if (event.organizer_id === req.user.id) return false;
+
+  const isAdmin = await hasRole(req.user.id, 'admin');
+  return !isAdmin;
+}
+
+type KitsRequestContext = 'public' | 'management';
+
+async function resolveVisibleOnlyFromQuery(
+  context: unknown,
+  req: AuthRequest,
+  eventId: string
+): Promise<boolean> {
+  if (context === 'public') return true;
+  if (context === 'management') return false;
+  return shouldFilterVisibleKitsOnly(req, eventId);
+}
 
 /**
  * GET /api/events/:eventId/kits
  * Get all kits for an event
- * Query params: category_id (optional) - Filter kits by category
+ * Query params:
+ *   category_id (optional) - Filter kits by category
+ *   context (optional) - public | management (default: legacy auth-based behavior)
  */
 export const getEventKitsController = asyncHandler(async (req: AuthRequest, res: Response) => {
   const { eventId } = req.params;
-  const { category_id } = req.query;
+  const { category_id, context } = req.query;
 
   if (!eventId) {
     res.status(400).json({
@@ -38,7 +65,18 @@ export const getEventKitsController = asyncHandler(async (req: AuthRequest, res:
     }
   }
 
-  const kits = await getEventKits(eventId, category_id as string | undefined);
+  if (context !== undefined && context !== 'public' && context !== 'management') {
+    res.status(400).json({
+      success: false,
+      error: 'Validation Error',
+      message: 'context deve ser "public" ou "management"',
+    });
+    return;
+  }
+
+  const kits = await getEventKits(eventId, category_id as string | undefined, {
+    visibleOnly: await resolveVisibleOnlyFromQuery(context as KitsRequestContext | undefined, req, eventId),
+  });
 
   res.json({
     success: true,
@@ -88,6 +126,7 @@ export const syncEventKitsController = asyncHandler(async (req: AuthRequest, res
     price: z.number().nonnegative('Preço deve ser maior ou igual a zero'),
     display_order: z.number().int().nonnegative('display_order deve ser um número inteiro não negativo').optional(),
     category_ids: z.array(z.string().uuid('ID da categoria inválido')).optional(),
+    is_visible: z.boolean().optional(),
     products: z.array(z.object({
       id: z.string().uuid().optional(),
       name: z.string().min(1),

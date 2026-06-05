@@ -4,6 +4,8 @@ import { registrationConsumesVariantStockSql } from './variantStockPolicyService
 export type EventProductStockStatus = 'available' | 'low' | 'exhausted' | 'unlimited';
 
 export interface EventProductStockVariationRow {
+  kit_id: string;
+  kit_name: string;
   product_id: string;
   product_name: string;
   variation_id: string;
@@ -49,6 +51,8 @@ function computeStockStatus(stockInitial: number | null, stockAvailable: number 
 }
 
 function buildVariationRow(row: {
+  kit_id: string;
+  kit_name: string;
   product_id: string;
   product_name: string;
   variation_id: string;
@@ -62,6 +66,8 @@ function buildVariationRow(row: {
   const status = computeStockStatus(stockInitial, stockAvailable);
 
   return {
+    kit_id: row.kit_id,
+    kit_name: row.kit_name,
     product_id: row.product_id,
     product_name: row.product_name,
     variation_id: row.variation_id,
@@ -87,6 +93,8 @@ export async function getEventProductStockReport(eventId: string): Promise<Event
        GROUP BY rps.variant_id
      )
      SELECT
+       k.id AS kit_id,
+       k.name AS kit_name,
        p.id AS product_id,
        p.name AS product_name,
        pv.id AS variation_id,

@@ -1254,6 +1254,21 @@ export const createRegistrationController = asyncHandler(async (req: AuthRequest
     payment_method: registrationData.payment_method,
   });
 
+  if (registrationData.kit_id) {
+    try {
+      const { validateKitVisibleForPublicRegistration } = await import('../services/eventKitsService.js');
+      await validateKitVisibleForPublicRegistration(registrationData.kit_id, event_id);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Kit inválido para inscrição pública.';
+      res.status(400).json({
+        success: false,
+        error: 'Invalid kit',
+        message,
+      });
+      return;
+    }
+  }
+
   // Create registration
   const registration = await createRegistration(registrationData);
 

@@ -24,7 +24,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { CalendarIcon, Plus, Trash2, Upload, X, ChevronUp, ChevronDown, AlertTriangle } from "lucide-react";
+import { CalendarIcon, Plus, Trash2, Upload, X, ChevronUp, ChevronDown, AlertTriangle, Eye, EyeOff } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { cn, isoToDatetimeLocal, processDatetimeLocalForSave, datetimeLocalToISO } from "@/lib/utils";
@@ -192,6 +192,7 @@ interface Kit {
   name: string;
   description: string;
   price: number;
+  is_visible?: boolean;
   products: Product[];
 }
 
@@ -446,7 +447,7 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
             }
 
             // Load kits
-            const kitsResponse = await getEventKits(event.id);
+            const kitsResponse = await getEventKits(event.id, { context: 'management' });
             if (kitsResponse.success && kitsResponse.data) {
               const loadedKits: Kit[] = kitsResponse.data.map((kit: any) => ({
                 id: kit.id,
@@ -454,6 +455,7 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
                 description: kit.description || "",
                 price: kit.price,
                 category_ids: kit.category_ids,
+                is_visible: kit.is_visible !== false,
                 products: kit.products?.map((product: any) => {
                   const variants = product.variants?.map((variant: any) => ({
                     id: variant.id,
@@ -1036,7 +1038,12 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
   };
 
   const addKit = () => {
-    setKits([...kits, { name: "", description: "", price: 0, products: [], category_ids: undefined }]);
+    setKits([...kits, { name: "", description: "", price: 0, products: [], category_ids: [], is_visible: true }]);
+  };
+
+  const toggleKitVisibility = (index: number) => {
+    const kit = kits[index];
+    updateKit(index, "is_visible", kit.is_visible === false);
   };
 
   const removeKit = (index: number) => {
@@ -2227,18 +2234,21 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
             typeof id === "string" && id.length > 0 && !id.startsWith("temp-") && uuidRegex.test(id);
           const savedCatsRes = await getCategories(eventId);
           const savedCategoryList = savedCatsRes.success && savedCatsRes.data ? savedCatsRes.data : [];
-          const validCategoryIds = (ids: (string | null | undefined)[] | undefined): string[] | undefined => {
-            if (!ids?.length) return undefined;
-            const mapped = ids.map((id, i) => (isValidId(id) ? id : savedCategoryList[i]?.id)).filter((id): id is string => isValidId(id));
-            return mapped.length > 0 ? mapped : undefined;
+          const validCategoryIds = (ids: string[] | undefined): string[] => {
+            if (!ids?.length) return [];
+            const validIds = new Set(
+              savedCategoryList.map((c) => c.id).filter((id): id is string => isValidId(id))
+            );
+            return ids.filter((id) => isValidId(id) && validIds.has(id));
           };
           const kitsData = kits.map((kit, index) => ({
-            id: kit.id,
+            id: isValidId(kit.id) ? kit.id : undefined,
             name: kit.name,
             description: kit.description || null,
             price: kit.price,
             display_order: index,
             category_ids: validCategoryIds(kit.category_ids),
+            is_visible: kit.is_visible !== false,
             products: kit.products.map((product) => {
               /* Não usar product.variant_attributes quando for [] — em JS [] é truthy e o sync gravava array vazio no PG.
                * Preferir nomes não vazios do estado da UI (variantAttributes), depois variant_attributes persistido. */
@@ -2296,12 +2306,25 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
               description: kitsResponse.message || kitsResponse.error || "Evento salvo, mas houve erro ao salvar kits.",
               variant: "destructive",
             });
-          } else {
-            // Reordenar kits se houver IDs salvos
-            // Recarregar kits do servidor para obter IDs atualizados
-            const reloadKitsResponse = await getEventKits(eventId);
-            if (reloadKitsResponse.success && reloadKitsResponse.data) {
-              const savedKits = reloadKitsResponse.data.filter(k => k.id);
+          } else if (kitsResponse.success && kitsResponse.data) {
+            setKits((prev) =>
+              prev.map((localKit) => {
+                const saved = kitsResponse.data!.find(
+                  (sk) =>
+                    (localKit.id && sk.id === localKit.id) ||
+                    (sk.name === localKit.name && sk.price === localKit.price)
+                );
+                if (!saved) return localKit;
+                return {
+                  ...localKit,
+                  id: saved.id,
+                  category_ids: saved.category_ids ?? [],
+                  is_visible: saved.is_visible !== false,
+                };
+              })
+            );
+
+            const savedKits = kitsResponse.data.filter((k) => k.id);
               if (savedKits.length > 1) {
                 try {
                   // Mapear a ordem atual dos kits locais para os IDs salvos
@@ -2323,7 +2346,6 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
                   console.error('Error reordering kits:', error);
                 }
               }
-            }
           }
         } catch (error: any) {
           console.error('Error syncing kits:', error);
@@ -3676,9 +3698,12 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
                       <Card key={index}>
                         <CardHeader className="pb-3">
                           <div className="flex justify-between items-center">
-                            <CardTitle className="text-base">
-                              Kit {index + 1}
-                            </CardTitle>
+                        <CardTitle className="text-base flex items-center gap-2">
+                          Kit {index + 1}
+                          {kit.is_visible === false && (
+                            <span className="text-xs font-normal text-muted-foreground">(Oculto)</span>
+                          )}
+                        </CardTitle>
                             <div className="flex items-center gap-1">
                               <Button
                                 type="button"
@@ -3704,8 +3729,21 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
                               type="button"
                               variant="ghost"
                               size="icon"
+                              onClick={() => toggleKitVisibility(index)}
+                              title={kit.is_visible === false ? "Kit oculto na inscrição e página pública" : "Kit visível na inscrição e página pública"}
+                            >
+                              {kit.is_visible === false ? (
+                                <EyeOff className="h-4 w-4 text-muted-foreground" />
+                              ) : (
+                                <Eye className="h-4 w-4 text-primary" />
+                              )}
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
                               onClick={() => removeKit(index)}
-                                title="Remover"
+                                title="Remover ou desativar"
                             >
                               <Trash2 className="h-4 w-4 text-destructive" />
                             </Button>
@@ -3787,7 +3825,7 @@ export function EventFormDialog({ open, onOpenChange, event, onSuccess, isAdmin 
                                            const newCategoryIds = isChecked
                                              ? currentCategoryIds.filter(id => id !== categoryId)
                                              : [...currentCategoryIds, categoryId];
-                                           updateKit(index, "category_ids", newCategoryIds.length > 0 ? newCategoryIds : undefined);
+                                           updateKit(index, "category_ids", newCategoryIds);
                                          }}
                                          className="h-4 w-4 rounded border-gray-300"
                                        />

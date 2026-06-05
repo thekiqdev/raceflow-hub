@@ -15,7 +15,10 @@ export async function loadKitsForCategoryWithKitFallback(params: {
 }> {
   const { eventId, categoryId, registrationKitId } = params;
 
-  const first = await getEventKits(eventId, categoryId || undefined);
+  const first = await getEventKits(eventId, {
+    categoryId: categoryId || undefined,
+    context: 'management',
+  });
   let kitsForDropdown = first.success && first.data ? [...first.data] : [];
 
   if (!registrationKitId) {
@@ -26,7 +29,7 @@ export async function loadKitsForCategoryWithKitFallback(params: {
   let products = kit?.products?.length ? kit.products : [];
 
   if (products.length === 0) {
-    const all = await getEventKits(eventId);
+    const all = await getEventKits(eventId, { context: 'management' });
     if (all.success && all.data) {
       const resolved = all.data.find((k) => k.id === registrationKitId) ?? null;
       products = resolved?.products?.length ? resolved.products : [];
@@ -48,7 +51,7 @@ export async function ensureKitProductsForEdit(
   kitFromList: EventKit | undefined
 ): Promise<KitProduct[]> {
   if (kitFromList?.products?.length) return kitFromList.products;
-  const all = await getEventKits(eventId);
+  const all = await getEventKits(eventId, { context: 'management' });
   if (!all.success || !all.data) return [];
   const k = all.data.find((x) => x.id === kitId);
   return k?.products?.length ? k.products : [];

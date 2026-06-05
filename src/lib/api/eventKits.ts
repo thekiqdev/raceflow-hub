@@ -30,18 +30,44 @@ export interface EventKit {
   description: string | null;
   price: number;
   display_order: number;
+  is_visible?: boolean;
   deleted_at?: string | null;
   created_at?: string;
   products?: KitProduct[];
   category_ids?: string[]; // IDs das categorias associadas ao kit (opcional para compatibilidade retroativa)
 }
 
+export type EventKitsContext = 'public' | 'management';
+
+export interface GetEventKitsParams {
+  categoryId?: string;
+  context?: EventKitsContext;
+}
+
+function buildEventKitsQuery(params?: GetEventKitsParams | string): string {
+  let categoryId: string | undefined;
+  let context: EventKitsContext | undefined;
+
+  if (typeof params === 'string') {
+    categoryId = params;
+  } else if (params) {
+    categoryId = params.categoryId;
+    context = params.context;
+  }
+
+  const searchParams = new URLSearchParams();
+  if (categoryId) searchParams.set('category_id', categoryId);
+  if (context) searchParams.set('context', context);
+
+  const qs = searchParams.toString();
+  return qs ? `?${qs}` : '';
+}
+
 // Get all kits for an event
 // @param eventId - ID of the event
-// @param categoryId - Optional category ID to filter kits
-export const getEventKits = async (eventId: string, categoryId?: string) => {
-  const query = categoryId ? `?category_id=${encodeURIComponent(categoryId)}` : '';
-  return apiClient.get<EventKit[]>(`/events/${eventId}/kits${query}`);
+// @param params - categoryId and/or context (public | management), or legacy categoryId string
+export const getEventKits = async (eventId: string, params?: GetEventKitsParams | string) => {
+  return apiClient.get<EventKit[]>(`/events/${eventId}/kits${buildEventKitsQuery(params)}`);
 };
 
 // Sync (create/update/delete) kits for an event
@@ -71,6 +97,7 @@ export interface SyncKitData {
   price: number;
   display_order?: number; // Opcional na criação - será calculado automaticamente se não fornecido
   category_ids?: string[]; // IDs das categorias associadas ao kit (opcional)
+  is_visible?: boolean;
   products?: SyncProductData[];
 }
 
@@ -86,4 +113,3 @@ export interface ReorderEventKitsData {
 export const reorderEventKits = async (eventId: string, data: ReorderEventKitsData) => {
   return apiClient.put<void>(`/events/${eventId}/kits/reorder`, data);
 };
-

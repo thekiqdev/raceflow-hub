@@ -254,7 +254,7 @@ export function EventRegistrationsPanel({ eventId, rolePage, backPath }: EventRe
         getEventById(eventId),
         getModalities(eventId).catch(() => ({ success: false as const, data: [] as Modality[] })),
         getCategories(eventId).catch(() => ({ success: false as const, data: [] as Category[] })),
-        getEventKits(eventId).catch(() => ({ success: false as const, data: [] as EventKit[] })),
+        getEventKits(eventId, { context: 'management' }).catch(() => ({ success: false as const, data: [] as EventKit[] })),
       ]);
       if (evRes.success && evRes.data) {
         setEventTitle(evRes.data.title || "");

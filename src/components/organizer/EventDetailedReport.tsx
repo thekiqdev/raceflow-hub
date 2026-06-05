@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, type ReactNode } from "react";
+import { useState, useEffect, useRef, useMemo, type ReactNode } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -22,7 +22,7 @@ import {
   type EventProductStockVariationRow,
 } from "@/lib/api/reports";
 import { getCanonicalRegistrationDisplayValue } from "@/lib/utils/feeCalculations";
-import { ArrowLeft, Users, DollarSign, Package, CreditCard, Smartphone, Gift, AlertTriangle, LayoutGrid, Warehouse } from "lucide-react";
+import { ArrowLeft, Users, DollarSign, Package, CreditCard, Smartphone, Gift, AlertTriangle, LayoutGrid, Warehouse, CheckCircle2, Flame } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { toast } from "sonner";
 import {
@@ -36,6 +36,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { EventKitPerformanceSection } from "@/components/organizer/EventKitPerformanceSection";
 import { useAuth } from "@/contexts/AuthContext";
 
 interface EventDetailedReportProps {
@@ -170,6 +171,193 @@ function formatStockQuantity(value: number | null): string {
   return String(value);
 }
 
+interface StockProductGroup {
+  product_id: string;
+  product_name: string;
+  variations: EventProductStockVariationRow[];
+}
+
+interface StockKitGroup {
+  kit_id: string;
+  kit_name: string;
+  products_count: number;
+  variations_count: number;
+  total_consumed: number;
+  products: StockProductGroup[];
+}
+
+function groupStockVariationsByKit(variations: EventProductStockVariationRow[]): StockKitGroup[] {
+  const kitMap = new Map<string, StockKitGroup & { productMap: Map<string, StockProductGroup> }>();
+
+  for (const row of variations) {
+    let kitEntry = kitMap.get(row.kit_id);
+    if (!kitEntry) {
+      kitEntry = {
+        kit_id: row.kit_id,
+        kit_name: row.kit_name,
+        products_count: 0,
+        variations_count: 0,
+        total_consumed: 0,
+        products: [],
+        productMap: new Map(),
+      };
+      kitMap.set(row.kit_id, kitEntry);
+    }
+
+    kitEntry.variations_count += 1;
+    kitEntry.total_consumed += row.stock_used;
+
+    let productEntry = kitEntry.productMap.get(row.product_id);
+    if (!productEntry) {
+      productEntry = {
+        product_id: row.product_id,
+        product_name: row.product_name,
+        variations: [],
+      };
+      kitEntry.productMap.set(row.product_id, productEntry);
+      kitEntry.products.push(productEntry);
+    }
+    productEntry.variations.push(row);
+  }
+
+  const kits = Array.from(kitMap.values()).map(({ productMap: _productMap, ...kit }) => {
+    const products = kit.products
+      .sort((a, b) => a.product_name.localeCompare(b.product_name, "pt-BR"))
+      .map((product) => ({
+        ...product,
+        variations: [...product.variations].sort((a, b) =>
+          a.variation_name.localeCompare(b.variation_name, "pt-BR")
+        ),
+      }));
+
+    return {
+      ...kit,
+      products_count: products.length,
+      products,
+    };
+  });
+
+  return kits.sort((a, b) => a.kit_name.localeCompare(b.kit_name, "pt-BR"));
+}
+
+function StockStatusBadge({ status }: { status: EventProductStockStatus }) {
+  return (
+    <Badge
+      variant="outline"
+      className={cn("border-0 font-medium", getStockStatusBadgeClass(status))}
+    >
+      {getStockStatusLabel(status)}
+    </Badge>
+  );
+}
+
+type OperationalStockLevel = "critical" | "low" | "normal" | "unlimited";
+
+function getOperationalStockLevel(item: EventProductStockVariationRow): OperationalStockLevel {
+  if (item.stock_initial === null) return "unlimited";
+  if (item.stock_available === null) return "unlimited";
+  if (item.stock_available <= 5) return "critical";
+  if (item.stock_available <= 10) return "low";
+  return "normal";
+}
+
+function getOperationalStockLabel(level: OperationalStockLevel): string {
+  switch (level) {
+    case "critical":
+      return "Crítico";
+    case "low":
+      return "Baixo Estoque";
+    case "normal":
+      return "Normal";
+    case "unlimited":
+      return "Ilimitado";
+    default:
+      return level;
+  }
+}
+
+function getOperationalStockBadgeClass(level: OperationalStockLevel): string {
+  switch (level) {
+    case "critical":
+      return "bg-red-100 text-red-700 ring-1 ring-red-200";
+    case "low":
+      return "bg-yellow-100 text-yellow-800 ring-1 ring-yellow-200";
+    case "normal":
+      return "bg-green-100 text-green-700 ring-1 ring-green-200";
+    case "unlimited":
+      return "bg-blue-100 text-blue-700 ring-1 ring-blue-200";
+    default:
+      return "bg-gray-100 text-gray-700";
+  }
+}
+
+function OperationalStockBadge({ item }: { item: EventProductStockVariationRow }) {
+  const level = getOperationalStockLevel(item);
+  return (
+    <Badge
+      variant="outline"
+      className={cn("border-0 font-semibold", getOperationalStockBadgeClass(level))}
+    >
+      {getOperationalStockLabel(level)}
+    </Badge>
+  );
+}
+
+function sortAttentionStockItems(
+  items: EventProductStockVariationRow[]
+): EventProductStockVariationRow[] {
+  return [...items].sort((a, b) => {
+    const aAvail = a.stock_available ?? Number.MAX_SAFE_INTEGER;
+    const bAvail = b.stock_available ?? Number.MAX_SAFE_INTEGER;
+    const aExhausted = aAvail === 0 ? 0 : 1;
+    const bExhausted = bAvail === 0 ? 0 : 1;
+    if (aExhausted !== bExhausted) return aExhausted - bExhausted;
+    if (aAvail !== bAvail) return aAvail - bAvail;
+    return a.kit_name.localeCompare(b.kit_name, "pt-BR");
+  });
+}
+
+function computeStockOperationalSummary(variations: EventProductStockVariationRow[]) {
+  let criticalCount = 0;
+  let lowCount = 0;
+  let exhaustedCount = 0;
+
+  for (const item of variations) {
+    if (item.stock_available === null) continue;
+    if (item.stock_available === 0) exhaustedCount += 1;
+    if (item.stock_available <= 5) criticalCount += 1;
+    else if (item.stock_available <= 10) lowCount += 1;
+  }
+
+  return { criticalCount, lowCount, exhaustedCount };
+}
+
+function computeKitCriticalCounts(variations: EventProductStockVariationRow[]): Map<string, number> {
+  const map = new Map<string, number>();
+  for (const item of variations) {
+    if (item.stock_available !== null && item.stock_available <= 5) {
+      map.set(item.kit_id, (map.get(item.kit_id) ?? 0) + 1);
+    }
+  }
+  return map;
+}
+
+function matchesAttentionStock(item: EventProductStockVariationRow): boolean {
+  return item.stock_available !== null && item.stock_available <= 10;
+}
+
+function matchesCriticalStock(item: EventProductStockVariationRow): boolean {
+  return item.stock_available !== null && item.stock_available <= 5;
+}
+
+function matchesLowOperationalStock(item: EventProductStockVariationRow): boolean {
+  return (
+    item.stock_available !== null &&
+    item.stock_available > 5 &&
+    item.stock_available <= 10
+  );
+}
+
 function matchesRegistrationFilter(
   reg: RegistrationDetail,
   filter: RegistrationTableFilter
@@ -293,6 +481,48 @@ const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
 
   const filteredRegistrations = registrations.filter((reg) =>
     matchesRegistrationFilter(reg, registrationFilter)
+  );
+
+  const stockKitGroups = useMemo(
+    () =>
+      productStockReport?.variations?.length
+        ? groupStockVariationsByKit(productStockReport.variations)
+        : [],
+    [productStockReport]
+  );
+
+  const stockSummary = useMemo(
+    () =>
+      productStockReport?.variations?.length
+        ? computeStockOperationalSummary(productStockReport.variations)
+        : { criticalCount: 0, lowCount: 0, exhaustedCount: 0 },
+    [productStockReport]
+  );
+
+  const criticalStockItems = useMemo(
+    () => productStockReport?.variations?.filter(matchesCriticalStock) ?? [],
+    [productStockReport]
+  );
+
+  const lowStockItems = useMemo(
+    () => productStockReport?.variations?.filter(matchesLowOperationalStock) ?? [],
+    [productStockReport]
+  );
+
+  const attentionStockItems = useMemo(
+    () =>
+      sortAttentionStockItems(
+        productStockReport?.variations?.filter(matchesAttentionStock) ?? []
+      ),
+    [productStockReport]
+  );
+
+  const kitCriticalCounts = useMemo(
+    () =>
+      productStockReport?.variations?.length
+        ? computeKitCriticalCounts(productStockReport.variations)
+        : new Map<string, number>(),
+    [productStockReport]
   );
 
   const getCanonicalDisplayValue = (
@@ -1035,12 +1265,21 @@ const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
         </Card>
       )}
 
+      {/* Performance dos Kits — acima do estoque */}
+      <EventKitPerformanceSection
+        registrations={registrations}
+        kitRevenues={kitRevenues}
+        stockKitGroups={stockKitGroups}
+        kitCriticalCounts={kitCriticalCounts}
+        formatCurrency={formatCurrency}
+      />
+
       {/* Estoque dos Produtos */}
-      {productStockReport && productStockReport.variations.length > 0 && (
+      {productStockReport && (
         <div className="space-y-6">
           <Card className="bg-white rounded-2xl p-6 shadow-sm border-0">
             <h3 className="text-lg font-semibold mb-4">📦 Estoque dos Produtos</h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-4">
               <KpiCard
                 label="Produtos cadastrados"
                 value={productStockReport.summary.products_count}
@@ -1080,71 +1319,216 @@ const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
                 valueClassName="text-red-600"
               />
             </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+              <KpiCard
+                label="Variações Críticas"
+                value={stockSummary.criticalCount}
+                sublabel="Disponível ≤ 5"
+                icon={Flame}
+                iconWrapClass="bg-red-100"
+                iconClass="text-red-600"
+                valueClassName="text-red-600"
+              />
+              <KpiCard
+                label="Baixo Estoque"
+                value={stockSummary.lowCount}
+                sublabel="Disponível 6–10"
+                icon={AlertTriangle}
+                iconWrapClass="bg-yellow-100"
+                iconClass="text-yellow-600"
+                valueClassName="text-yellow-600"
+              />
+              <KpiCard
+                label="Esgotadas"
+                value={stockSummary.exhaustedCount}
+                sublabel="Disponível = 0"
+                icon={AlertTriangle}
+                iconWrapClass="bg-red-100"
+                iconClass="text-red-700"
+                valueClassName="text-red-700"
+              />
+            </div>
 
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Produto</TableHead>
-                  <TableHead>Variação</TableHead>
-                  <TableHead className="text-right">Estoque Inicial</TableHead>
-                  <TableHead className="text-right">Utilizado</TableHead>
-                  <TableHead className="text-right">Disponível</TableHead>
-                  <TableHead>Status</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {productStockReport.variations.map((item: EventProductStockVariationRow) => (
-                  <TableRow key={item.variation_id}>
-                    <TableCell className="font-medium">{item.product_name}</TableCell>
-                    <TableCell>{item.variation_name}</TableCell>
-                    <TableCell className="text-right">{formatStockQuantity(item.stock_initial)}</TableCell>
-                    <TableCell className="text-right">{item.stock_used}</TableCell>
-                    <TableCell className="text-right">{formatStockQuantity(item.stock_available)}</TableCell>
-                    <TableCell>
-                      <span className={cn(pillBadgeBase, getStockStatusBadgeClass(item.status))}>
-                        {getStockStatusLabel(item.status)}
-                      </span>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+            {productStockReport.variations.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-8">
+                Nenhum produto com controle de estoque encontrado.
+              </p>
+            ) : (
+              <>
+                {criticalStockItems.length === 0 ? (
+                  <div className="mb-6 flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
+                    <CheckCircle2 className="h-4 w-4 shrink-0" />
+                    <span className="font-medium">Nenhuma variação com estoque crítico.</span>
+                  </div>
+                ) : (
+                  <div className="mb-6 flex items-center gap-2 rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800">
+                    <Flame className="h-4 w-4 shrink-0" />
+                    <span className="font-semibold">
+                      {stockSummary.criticalCount} variação(ões) crítica(s) — revise o estoque abaixo.
+                    </span>
+                  </div>
+                )}
+
+                {attentionStockItems.length > 0 && (
+                  <Card
+                    className={cn(
+                      "mb-6 rounded-xl border-2 shadow-sm",
+                      criticalStockItems.length > 0
+                        ? "border-red-300 bg-red-50/40"
+                        : "border-yellow-300 bg-yellow-50/40"
+                    )}
+                  >
+                    <div className="px-4 py-4 md:px-5">
+                      <h4 className="text-base font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                        <AlertTriangle
+                          className={cn(
+                            "h-5 w-5 shrink-0",
+                            criticalStockItems.length > 0 ? "text-red-600" : "text-yellow-600"
+                          )}
+                        />
+                        Atenção ao Estoque
+                      </h4>
+                      <div className="space-y-3">
+                        {attentionStockItems.map((item) => {
+                          const level = getOperationalStockLevel(item);
+                          return (
+                            <div
+                              key={`attention-${item.variation_id}`}
+                              className={cn(
+                                "flex flex-col gap-2 rounded-lg border bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between",
+                                level === "critical"
+                                  ? "border-red-200"
+                                  : "border-yellow-200"
+                              )}
+                            >
+                              <div className="min-w-0 space-y-0.5">
+                                <p className="text-sm font-semibold text-gray-900">{item.kit_name}</p>
+                                <p className="text-sm text-gray-700">
+                                  {item.product_name}{" "}
+                                  <span className="font-medium">{item.variation_name}</span>
+                                </p>
+                                <p className="text-sm tabular-nums">
+                                  Disponível:{" "}
+                                  <span
+                                    className={cn(
+                                      "font-bold",
+                                      level === "critical" ? "text-red-600" : "text-yellow-700"
+                                    )}
+                                  >
+                                    {item.stock_available}
+                                  </span>
+                                </p>
+                              </div>
+                              <OperationalStockBadge item={item} />
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </Card>
+                )}
+
+                <div className="space-y-6">
+                  {stockKitGroups.map((kit) => {
+                    const kitCriticalCount = kitCriticalCounts.get(kit.kit_id) ?? 0;
+                    return (
+                      <div
+                        key={kit.kit_id}
+                        className={cn(
+                          "rounded-xl border overflow-hidden",
+                          kitCriticalCount > 0
+                            ? "border-red-200 bg-red-50/20"
+                            : "border-gray-100 bg-gray-50/50"
+                        )}
+                      >
+                        <div className="px-4 py-4 md:px-5 md:py-5 border-b border-gray-100 bg-white">
+                          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                            <h4 className="text-base font-semibold text-gray-900 flex items-center gap-2">
+                              <Package className="h-4 w-4 text-primary shrink-0" />
+                              {kit.kit_name}
+                              {kitCriticalCount > 0 && (
+                                <Badge className="bg-red-100 text-red-700 border-0 hover:bg-red-100">
+                                  {kitCriticalCount} crítico(s)
+                                </Badge>
+                              )}
+                            </h4>
+                            <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-600">
+                              <span>
+                                Produtos:{" "}
+                                <span className="font-semibold text-gray-900 tabular-nums">
+                                  {kit.products_count}
+                                </span>
+                              </span>
+                              <span>
+                                Variações:{" "}
+                                <span className="font-semibold text-gray-900 tabular-nums">
+                                  {kit.variations_count}
+                                </span>
+                              </span>
+                              <span>
+                                Consumidos:{" "}
+                                <span className="font-semibold text-orange-600 tabular-nums">
+                                  {kit.total_consumed}
+                                </span>
+                              </span>
+                              <span>
+                                Críticos:{" "}
+                                <span
+                                  className={cn(
+                                    "font-semibold tabular-nums",
+                                    kitCriticalCount > 0 ? "text-red-600" : "text-gray-900"
+                                  )}
+                                >
+                                  {kitCriticalCount}
+                                </span>
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="overflow-x-auto">
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead>Produto</TableHead>
+                                <TableHead>Variação</TableHead>
+                                <TableHead className="text-right">Estoque Inicial</TableHead>
+                                <TableHead className="text-right">Utilizado</TableHead>
+                                <TableHead className="text-right">Disponível</TableHead>
+                                <TableHead>Status</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {kit.products.map((product) =>
+                                product.variations.map((item) => (
+                                  <TableRow key={item.variation_id}>
+                                    <TableCell className="font-medium">{product.product_name}</TableCell>
+                                    <TableCell>{item.variation_name}</TableCell>
+                                    <TableCell className="text-right tabular-nums">
+                                      {formatStockQuantity(item.stock_initial)}
+                                    </TableCell>
+                                    <TableCell className="text-right tabular-nums">
+                                      {item.stock_used}
+                                    </TableCell>
+                                    <TableCell className="text-right tabular-nums">
+                                      {formatStockQuantity(item.stock_available)}
+                                    </TableCell>
+                                    <TableCell>
+                                      <StockStatusBadge status={item.status} />
+                                    </TableCell>
+                                  </TableRow>
+                                ))
+                              )}
+                            </TableBody>
+                          </Table>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            )}
           </Card>
-
-          {productStockReport.low_stock_alerts.length > 0 && (
-            <Card className="bg-white rounded-2xl p-6 shadow-sm border-0 border-l-4 border-l-yellow-500">
-              <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-                <AlertTriangle className="h-5 w-5 text-yellow-600" />
-                Produtos com estoque baixo
-              </h3>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Produto</TableHead>
-                    <TableHead>Variação</TableHead>
-                    <TableHead className="text-right">Disponível</TableHead>
-                    <TableHead>Status</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {productStockReport.low_stock_alerts.map((item: EventProductStockVariationRow) => (
-                    <TableRow key={`alert-${item.variation_id}`}>
-                      <TableCell className="font-medium">{item.product_name}</TableCell>
-                      <TableCell>{item.variation_name}</TableCell>
-                      <TableCell className="text-right font-semibold">
-                        {formatStockQuantity(item.stock_available)}
-                      </TableCell>
-                      <TableCell>
-                        <span className={cn(pillBadgeBase, getStockStatusBadgeClass(item.status))}>
-                          {getStockStatusLabel(item.status)}
-                        </span>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </Card>
-          )}
         </div>
       )}
 

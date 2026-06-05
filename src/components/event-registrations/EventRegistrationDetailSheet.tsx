@@ -355,7 +355,7 @@ export function EventRegistrationDetailSheet({
         }
 
         const [kitsRes, batchesRes, catRes2] = await Promise.all([
-          getEventKits(eventId, d.category_id),
+          getEventKits(eventId, { categoryId: d.category_id, context: 'management' }),
           getCategoryBatches(d.category_id),
           getCategoryById(d.category_id),
         ]);
@@ -429,7 +429,7 @@ export function EventRegistrationDetailSheet({
       return;
     }
     const [kitsRes, batchesRes, catFull] = await Promise.all([
-      getEventKits(eventId, newCategoryId),
+      getEventKits(eventId, { categoryId: newCategoryId, context: 'management' }),
       getCategoryBatches(newCategoryId),
       getCategoryById(newCategoryId),
     ]);

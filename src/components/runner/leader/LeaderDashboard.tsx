@@ -223,7 +223,10 @@ export function LeaderDashboard() {
     (async () => {
       try {
         setLoadingKits(true);
-        const response = await getEventKits(selectedEventForRegistration, selectedCategoryId);
+        const response = await getEventKits(selectedEventForRegistration, {
+          categoryId: selectedCategoryId,
+          context: 'public',
+        });
         if (cancelled) return;
         if (response.success && response.data) {
           const linkedOnly = response.data.filter(
@@ -305,7 +308,7 @@ export function LeaderDashboard() {
         return;
       }
       try {
-        const res = await getEventKits(eventId, inviteCategoryId);
+        const res = await getEventKits(eventId, { categoryId: inviteCategoryId, context: 'public' });
         if (cancelled) return;
         if (res.success && res.data) {
           setInviteKits(
