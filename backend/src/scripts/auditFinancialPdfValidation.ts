@@ -32,7 +32,6 @@ import {
 } from '../services/financialReportingService.js';
 import { getSystemSettings } from '../services/systemSettingsService.js';
 
-const TOLERANCE = 0.01;
 const OUT_DIR = join(process.cwd(), '..', 'docs');
 
 type Status = 'OK' | 'WARNING' | 'ERROR';
@@ -43,16 +42,6 @@ function round2(n: number): number {
 
 function formatBRL(value: number): string {
   return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-}
-
-function paymentMethodLabel(method: string): string {
-  const map: Record<string, string> = {
-    pix: 'PIX',
-    credit_card: 'Cartão de crédito',
-    boleto: 'Boleto',
-    other: 'Outros',
-  };
-  return map[method] ?? method;
 }
 
 function classifyDiff(a: number, b: number): Status {
@@ -494,6 +483,7 @@ async function auditEvent(
       .find((r) => r.audience === 'admin')!
       .field_comparisons.find((f) => f.field === 'executive.avg_ticket')?.pdf,
     avg_ticket_recalculated: avgTicketRecalc,
+    avg_ticket_formula_value: avgTicketFormula,
     formula: 'avg_ticket = net_revenue / paid_registrations_with_positive_liquid',
     status: classifyDiff(avgTicketJson, avgTicketRecalc),
     note:
