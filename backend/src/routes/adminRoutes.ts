@@ -70,7 +70,7 @@ import {
 } from '../controllers/reportsController.js';
 import { getLeadersInvitationsGrantedByEventController } from '../controllers/leadersInvitationsReportController.js';
 import { getEventInvitationStatsController } from '../controllers/eventInvitationStatsController.js';
-import { getEventGeneralStatsController, getEventProductStockReportController } from '../controllers/reportsController.js';
+import { getEventGeneralStatsController, getEventProductStockReportController, getEventFinancialReportController, getEventFinancialReportPdfController } from '../controllers/reportsController.js';
 import {
   getSupportTicketsController,
   getTicketByIdController,
@@ -256,6 +256,14 @@ router.get(
 router.get(
   '/reports/events/:eventId/product-stock',
   getEventProductStockReportController
+);
+router.get(
+  '/reports/events/:eventId/financial-report',
+  getEventFinancialReportController
+);
+router.get(
+  '/reports/events/:eventId/financial-report/pdf',
+  getEventFinancialReportPdfController
 );
 
 // Support

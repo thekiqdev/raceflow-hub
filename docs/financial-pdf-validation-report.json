@@ -1,0 +1,2792 @@
+{
+  "audit": "AUDIT_FINANCIAL_PDF_VALIDATION",
+  "mode": "read-only",
+  "audited_at": "2026-06-05T22:52:38.116Z",
+  "admin_user": "admin@test.com",
+  "summary": {
+    "json_vs_pdf": "WARNING",
+    "avg_ticket": "OK",
+    "payment_methods": "WARNING",
+    "encoding_pdf": "ERROR",
+    "financial_recalc": "OK",
+    "overall": "ERROR"
+  },
+  "final_risk": {
+    "overall": "ERROR",
+    "apto_valores_financeiros": true,
+    "apto_documento_oficial": false,
+    "bloqueadores": [
+      "Símbolo ≤ corrompido no rótulo \"Estoque crítico (≤5)\"",
+      "Símbolo Δ corrompido nos rótulos \"Δ métodos/categorias/modalidades/kits\""
+    ]
+  },
+  "events": [
+    {
+      "event_id": "8d88b8f3-453e-44c5-b6c9-6264bbad58e9",
+      "event_title": "Evento teste 2026",
+      "generated_at": "2026-06-05T22:52:37.781Z",
+      "overall_status": "ERROR",
+      "sections": {
+        "json_vs_pdf": "WARNING",
+        "avg_ticket": "OK",
+        "payment_methods": "WARNING",
+        "encoding_pdf": "ERROR",
+        "financial_recalc": "OK"
+      },
+      "avg_ticket_audit": {
+        "paid_registrations_executive": 5,
+        "paid_registrations_with_revenue": 1,
+        "net_revenue": 51,
+        "avg_ticket_json": 51,
+        "avg_ticket_pdf": "R$ 51,00",
+        "avg_ticket_recalculated": 51,
+        "formula": "avg_ticket = net_revenue / paid_registrations_with_positive_liquid",
+        "status": "OK",
+        "note": "paid_registrations (executive) inclui pagas com receita líquida zero (convites/cortesia/transfer shell); ticket usa apenas pagas com liquid > 0"
+      },
+      "payment_methods_db_raw": {
+        "free_bonus": {
+          "count": 2,
+          "revenue": 0
+        },
+        "credit_card": {
+          "count": 1,
+          "revenue": 0
+        },
+        "admin_transfer": {
+          "count": 3,
+          "revenue": 51
+        }
+      },
+      "payment_methods_db_normalized": {
+        "other": {
+          "count": 1,
+          "revenue": 51
+        }
+      },
+      "payment_methods_dto": {
+        "other": {
+          "count": 1,
+          "revenue": 51
+        }
+      },
+      "payment_methods_db_rows_sample": [
+        {
+          "payment_method": "admin_transfer",
+          "payment_status": "paid",
+          "status": "transferred",
+          "has_transfer": true,
+          "cnt": 1
+        },
+        {
+          "payment_method": "admin_transfer",
+          "payment_status": "paid",
+          "status": "confirmed",
+          "has_transfer": false,
+          "cnt": 2
+        },
+        {
+          "payment_method": "credit_card",
+          "payment_status": "paid",
+          "status": "transferred",
+          "has_transfer": true,
+          "cnt": 1
+        },
+        {
+          "payment_method": "free_bonus",
+          "payment_status": "paid",
+          "status": "transferred",
+          "has_transfer": true,
+          "cnt": 1
+        },
+        {
+          "payment_method": "free_bonus",
+          "payment_status": "convidado",
+          "status": "confirmed",
+          "has_transfer": false,
+          "cnt": 1
+        }
+      ],
+      "financial_independent_recalc": {
+        "net_revenue": {
+          "dto": 51,
+          "recalc": 51,
+          "status": "OK"
+        },
+        "gross_revenue": {
+          "dto": 57,
+          "recalc": 57,
+          "status": "OK"
+        },
+        "platform_fee_total": {
+          "dto": 6,
+          "recalc": 6,
+          "status": "OK"
+        },
+        "edit_fee_total": {
+          "dto": 0,
+          "recalc": 0,
+          "status": "OK"
+        },
+        "platform_revenue": {
+          "dto": 6,
+          "recalc": 6,
+          "status": "OK"
+        }
+      },
+      "divergent_fields": [
+        {
+          "audience": "admin",
+          "field": "audit.difference_payment_methods",
+          "json": 0,
+          "pdf": "(valor R$ 0,00 — rótulo Δ possivelmente corrompido)",
+          "equal": false,
+          "status": "WARNING"
+        },
+        {
+          "audience": "organizer",
+          "field": "audit.difference_payment_methods",
+          "json": 0,
+          "pdf": "(valor R$ 0,00 — rótulo Δ possivelmente corrompido)",
+          "equal": false,
+          "status": "WARNING"
+        }
+      ],
+      "corrupted_characters": [
+        {
+          "audience": "admin",
+          "snippet": "Estoque crítico (\"d5)3",
+          "reason": "símbolo ≤ corrompido em WinAnsi/Helvetica",
+          "origin_field": "stock.critical_count label — \"Estoque crítico (≤5)\""
+        },
+        {
+          "audience": "admin",
+          "snippet": "9B\u00066\u0017FVv÷iasR$ 0,00\n9",
+          "reason": "rótulo Δ (delta) corrompido — bytes binários no lugar do caractere Unicode",
+          "origin_field": "audit.difference_* labels"
+        },
+        {
+          "audience": "organizer",
+          "snippet": "Estoque crítico (\"d5)3",
+          "reason": "símbolo ≤ corrompido em WinAnsi/Helvetica",
+          "origin_field": "stock.critical_count label — \"Estoque crítico (≤5)\""
+        },
+        {
+          "audience": "organizer",
+          "snippet": "9B\u00066\u0017FVv÷iasR$ 0,00\n9",
+          "reason": "rótulo Δ (delta) corrompido — bytes binários no lugar do caractere Unicode",
+          "origin_field": "audit.difference_* labels"
+        }
+      ],
+      "pdf_fonts": [
+        {
+          "audience": "admin",
+          "fonts": []
+        },
+        {
+          "audience": "organizer",
+          "fonts": []
+        }
+      ],
+      "pdf_encoding_notes": {
+        "library": "pdfkit",
+        "fonts_used": [
+          "Helvetica",
+          "Helvetica-Bold"
+        ],
+        "utf8_support": "Limitado — Standard Helvetica WinAnsi; símbolos Δ ≤ % acentos podem falhar",
+        "special_chars_risk": [
+          {
+            "char": "≤",
+            "field": "stock.critical_count label",
+            "risk": "ALTO — observado corrupção (\"d5)"
+          },
+          {
+            "char": "—",
+            "field": "cover city/state separator",
+            "risk": "MÉDIO"
+          },
+          {
+            "char": "Δ",
+            "field": "audit difference labels",
+            "risk": "MÉDIO"
+          },
+          {
+            "char": "ã/ç/é",
+            "field": "texto pt-BR geral",
+            "risk": "BAIXO com WinAnsi"
+          }
+        ]
+      },
+      "json_pdf_comparisons": [
+        {
+          "audience": "admin",
+          "pdf_bytes": 7019,
+          "pdf_pages": 4,
+          "fields": [
+            {
+              "field": "cover.event_title",
+              "json": "Evento teste 2026",
+              "pdf": "Evento teste 2026",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "cover.city",
+              "json": "português do Brasil",
+              "pdf": "português do Brasil",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "cover.state",
+              "json": "SP",
+              "pdf": "SP",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "cover.organizer_name",
+              "json": "Organizador Teste",
+              "pdf": "Organizador Teste",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "cover.status",
+              "json": "published",
+              "pdf": "published",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "cover.net_revenue (capa)",
+              "json": 51,
+              "pdf": "R$ 51,00",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "executive.total_registrations",
+              "json": 6,
+              "pdf": "6",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "executive.paid_registrations",
+              "json": 5,
+              "pdf": "5",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "executive.invitation_registrations",
+              "json": 1,
+              "pdf": "1",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "executive.courtesy_registrations",
+              "json": 1,
+              "pdf": "1",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "executive.transferred_registrations",
+              "json": 3,
+              "pdf": "3",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "executive.net_revenue",
+              "json": 51,
+              "pdf": "R$ 51,00",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "executive.avg_ticket",
+              "json": 51,
+              "pdf": "R$ 51,00",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "financial.net_revenue",
+              "json": 51,
+              "pdf": "R$ 51,00",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "financial.avg_ticket",
+              "json": 51,
+              "pdf": "R$ 51,00",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "financial.gross_revenue",
+              "json": 57,
+              "pdf": "R$ 57,00",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "financial.platform_fee_total",
+              "json": 6,
+              "pdf": "R$ 6,00",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "financial.edit_fee_total",
+              "json": 0,
+              "pdf": "R$ 0,00",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "financial.platform_revenue",
+              "json": 6,
+              "pdf": "R$ 6,00",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "payment.other.count",
+              "json": 1,
+              "pdf": "1",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "payment.other.net_amount",
+              "json": 51,
+              "pdf": "R$ 51,00",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "payment.other.share_pct",
+              "json": "100.0%",
+              "pdf": "100.0%",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "category.Geral.registrations",
+              "json": 1,
+              "pdf": "1",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "category.Geral.net_revenue",
+              "json": 51,
+              "pdf": "R$ 51,00",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "modality.5k.registrations",
+              "json": 1,
+              "pdf": "1",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "modality.5k.net_revenue",
+              "json": 51,
+              "pdf": "R$ 51,00",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "kit.teste 22222.registrations",
+              "json": 1,
+              "pdf": "1",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "kit.teste 22222.net_revenue",
+              "json": 51,
+              "pdf": "R$ 51,00",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "stock.products_count",
+              "json": 2,
+              "pdf": "2",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "stock.variations_count",
+              "json": 5,
+              "pdf": "5",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "stock.exhausted_count",
+              "json": 1,
+              "pdf": "1",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "stock.critical_count",
+              "json": 3,
+              "pdf": "3",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "stock.low_stock_count",
+              "json": 1,
+              "pdf": "1",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "invitations.granted",
+              "json": 0,
+              "pdf": "0",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "invitations.available",
+              "json": 0,
+              "pdf": "0",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "invitations.sent",
+              "json": 0,
+              "pdf": "0",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "invitations.used",
+              "json": 0,
+              "pdf": "0",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "invitations.expired",
+              "json": 1,
+              "pdf": "1",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "audit.status",
+              "json": "VALIDADO",
+              "pdf": "VALIDADO",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "audit.expected_net_revenue",
+              "json": 51,
+              "pdf": "R$ 51,00",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "audit.difference_payment_methods",
+              "json": 0,
+              "pdf": "(valor R$ 0,00 — rótulo Δ possivelmente corrompido)",
+              "equal": false,
+              "status": "WARNING"
+            }
+          ]
+        },
+        {
+          "audience": "organizer",
+          "pdf_bytes": 6028,
+          "pdf_pages": 3,
+          "fields": [
+            {
+              "field": "cover.event_title",
+              "json": "Evento teste 2026",
+              "pdf": "Evento teste 2026",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "cover.city",
+              "json": "português do Brasil",
+              "pdf": "português do Brasil",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "cover.state",
+              "json": "SP",
+              "pdf": "SP",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "cover.organizer_name",
+              "json": "Organizador Teste",
+              "pdf": "Organizador Teste",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "cover.status",
+              "json": "published",
+              "pdf": "published",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "cover.net_revenue (capa)",
+              "json": 51,
+              "pdf": "R$ 51,00",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "executive.total_registrations",
+              "json": 6,
+              "pdf": "6",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "executive.paid_registrations",
+              "json": 5,
+              "pdf": "5",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "executive.invitation_registrations",
+              "json": 1,
+              "pdf": "1",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "executive.courtesy_registrations",
+              "json": 1,
+              "pdf": "1",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "executive.transferred_registrations",
+              "json": 3,
+              "pdf": "3",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "executive.net_revenue",
+              "json": 51,
+              "pdf": "R$ 51,00",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "executive.avg_ticket",
+              "json": 51,
+              "pdf": "R$ 51,00",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "financial.net_revenue",
+              "json": 51,
+              "pdf": "R$ 51,00",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "financial.avg_ticket",
+              "json": 51,
+              "pdf": "R$ 51,00",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "payment.other.count",
+              "json": 1,
+              "pdf": "1",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "payment.other.net_amount",
+              "json": 51,
+              "pdf": "R$ 51,00",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "payment.other.share_pct",
+              "json": "100.0%",
+              "pdf": "100.0%",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "category.Geral.registrations",
+              "json": 1,
+              "pdf": "1",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "category.Geral.net_revenue",
+              "json": 51,
+              "pdf": "R$ 51,00",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "modality.5k.registrations",
+              "json": 1,
+              "pdf": "1",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "modality.5k.net_revenue",
+              "json": 51,
+              "pdf": "R$ 51,00",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "kit.teste 22222.registrations",
+              "json": 1,
+              "pdf": "1",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "kit.teste 22222.net_revenue",
+              "json": 51,
+              "pdf": "R$ 51,00",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "stock.products_count",
+              "json": 2,
+              "pdf": "2",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "stock.variations_count",
+              "json": 5,
+              "pdf": "5",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "stock.exhausted_count",
+              "json": 1,
+              "pdf": "1",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "stock.critical_count",
+              "json": 3,
+              "pdf": "3",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "stock.low_stock_count",
+              "json": 1,
+              "pdf": "1",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "invitations.granted",
+              "json": 0,
+              "pdf": "0",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "invitations.available",
+              "json": 0,
+              "pdf": "0",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "invitations.sent",
+              "json": 0,
+              "pdf": "0",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "invitations.used",
+              "json": 0,
+              "pdf": "0",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "invitations.expired",
+              "json": 1,
+              "pdf": "1",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "audit.status",
+              "json": "VALIDADO",
+              "pdf": "VALIDADO",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "audit.expected_net_revenue",
+              "json": 51,
+              "pdf": "R$ 51,00",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "audit.difference_payment_methods",
+              "json": 0,
+              "pdf": "(valor R$ 0,00 — rótulo Δ possivelmente corrompido)",
+              "equal": false,
+              "status": "WARNING"
+            }
+          ]
+        }
+      ],
+      "json_snapshots": {
+        "json_admin": {
+          "meta": {
+            "event_id": "8d88b8f3-453e-44c5-b6c9-6264bbad58e9",
+            "generated_at": "2026-06-05T22:52:37.781Z",
+            "report_version": "1.0.0",
+            "rules_version": "financialReportingService@canonical",
+            "audience": "admin",
+            "export_formats": [
+              "json",
+              "pdf"
+            ],
+            "integrity_hash": "eb7c1b18c15825ca3e6f851aa1b1fcdedbe4d904ec6d81dd72aa4509b8bfa453"
+          },
+          "cover": {
+            "event_title": "Evento teste 2026",
+            "event_date": "2026-06-22T16:11:00.000Z",
+            "city": "português do Brasil",
+            "state": "SP",
+            "status": "published",
+            "organizer_name": "Organizador Teste",
+            "organizer_organization_name": null
+          },
+          "financial_snapshot": {
+            "registrations_total": 6,
+            "paid_total": 5,
+            "pending_total": 0,
+            "refunded_total": 0,
+            "invited_total": 1,
+            "transferred_total": 3
+          },
+          "executive_summary": {
+            "total_registrations": 6,
+            "paid_registrations": 5,
+            "invitation_registrations": 1,
+            "courtesy_registrations": 1,
+            "transferred_registrations": 3,
+            "net_revenue": 51,
+            "avg_ticket": 51
+          },
+          "registration_status": {
+            "paid": 5,
+            "pending": 0,
+            "cancelled": 0,
+            "refunded": 0,
+            "convidado": 1,
+            "transferred": 3
+          },
+          "payment_methods": [
+            {
+              "method": "other",
+              "count": 1,
+              "net_amount": 51,
+              "share_pct": 100
+            }
+          ],
+          "categories": [
+            {
+              "id": "1a1e42c0-29a0-4e72-85c6-118f07c41348",
+              "name": "Geral",
+              "registrations": 1,
+              "net_revenue": 51,
+              "share_pct": 100
+            }
+          ],
+          "modalities": [
+            {
+              "id": "d00d9046-fee9-4522-beb0-53b0e7a5bddc",
+              "name": "5k",
+              "registrations": 1,
+              "net_revenue": 51,
+              "share_pct": 100
+            }
+          ],
+          "kits": [
+            {
+              "id": "b7b8735c-b2e9-444b-a0b0-91a12b4912ff",
+              "name": "teste 22222",
+              "registrations": 1,
+              "net_revenue": 51,
+              "share_pct": 100
+            }
+          ],
+          "stock": {
+            "products_count": 2,
+            "variations_count": 5,
+            "exhausted_count": 1,
+            "critical_count": 3,
+            "low_stock_count": 1
+          },
+          "invitations": {
+            "granted": 0,
+            "available": 0,
+            "sent": 0,
+            "used": 0,
+            "expired": 1
+          },
+          "financial": {
+            "net_revenue": 51,
+            "avg_ticket": 51,
+            "payment_methods": [
+              {
+                "method": "other",
+                "count": 1,
+                "net_amount": 51,
+                "share_pct": 100
+              }
+            ],
+            "gross_revenue": 57,
+            "platform_fee_total": 6,
+            "edit_fee_total": 0,
+            "platform_revenue": 6,
+            "gross_net_delta": 6
+          },
+          "audit": {
+            "financial_consistency": {
+              "status": "OK",
+              "expected_net_revenue": 51,
+              "payment_methods_total": 51,
+              "categories_total": 51,
+              "modalities_total": 51,
+              "kits_total": 51,
+              "difference_payment_methods": 0,
+              "difference_categories": 0,
+              "difference_modalities": 0,
+              "difference_kits": 0
+            }
+          }
+        },
+        "json_organizer": {
+          "meta": {
+            "event_id": "8d88b8f3-453e-44c5-b6c9-6264bbad58e9",
+            "generated_at": "2026-06-05T22:52:37.958Z",
+            "report_version": "1.0.0",
+            "rules_version": "financialReportingService@canonical",
+            "audience": "organizer",
+            "export_formats": [
+              "json",
+              "pdf"
+            ],
+            "integrity_hash": "5dde3b5dee3d8a1e971e3dad951e557001efebb2fbddf9e464b856e0ae52ea1e"
+          },
+          "cover": {
+            "event_title": "Evento teste 2026",
+            "event_date": "2026-06-22T16:11:00.000Z",
+            "city": "português do Brasil",
+            "state": "SP",
+            "status": "published",
+            "organizer_name": "Organizador Teste",
+            "organizer_organization_name": null
+          },
+          "financial_snapshot": {
+            "registrations_total": 6,
+            "paid_total": 5,
+            "pending_total": 0,
+            "refunded_total": 0,
+            "invited_total": 1,
+            "transferred_total": 3
+          },
+          "executive_summary": {
+            "total_registrations": 6,
+            "paid_registrations": 5,
+            "invitation_registrations": 1,
+            "courtesy_registrations": 1,
+            "transferred_registrations": 3,
+            "net_revenue": 51,
+            "avg_ticket": 51
+          },
+          "registration_status": {
+            "paid": 5,
+            "pending": 0,
+            "cancelled": 0,
+            "refunded": 0,
+            "convidado": 1,
+            "transferred": 3
+          },
+          "payment_methods": [
+            {
+              "method": "other",
+              "count": 1,
+              "net_amount": 51,
+              "share_pct": 100
+            }
+          ],
+          "categories": [
+            {
+              "id": "1a1e42c0-29a0-4e72-85c6-118f07c41348",
+              "name": "Geral",
+              "registrations": 1,
+              "net_revenue": 51,
+              "share_pct": 100
+            }
+          ],
+          "modalities": [
+            {
+              "id": "d00d9046-fee9-4522-beb0-53b0e7a5bddc",
+              "name": "5k",
+              "registrations": 1,
+              "net_revenue": 51,
+              "share_pct": 100
+            }
+          ],
+          "kits": [
+            {
+              "id": "b7b8735c-b2e9-444b-a0b0-91a12b4912ff",
+              "name": "teste 22222",
+              "registrations": 1,
+              "net_revenue": 51,
+              "share_pct": 100
+            }
+          ],
+          "stock": {
+            "products_count": 2,
+            "variations_count": 5,
+            "exhausted_count": 1,
+            "critical_count": 3,
+            "low_stock_count": 1
+          },
+          "invitations": {
+            "granted": 0,
+            "available": 0,
+            "sent": 0,
+            "used": 0,
+            "expired": 1
+          },
+          "financial": {
+            "net_revenue": 51,
+            "avg_ticket": 51,
+            "payment_methods": [
+              {
+                "method": "other",
+                "count": 1,
+                "net_amount": 51,
+                "share_pct": 100
+              }
+            ]
+          },
+          "audit": {
+            "financial_consistency": {
+              "status": "OK",
+              "expected_net_revenue": 51,
+              "payment_methods_total": 51,
+              "categories_total": 51,
+              "modalities_total": 51,
+              "kits_total": 51,
+              "difference_payment_methods": 0,
+              "difference_categories": 0,
+              "difference_modalities": 0,
+              "difference_kits": 0
+            }
+          }
+        }
+      }
+    },
+    {
+      "event_id": "977568dc-4557-4dc1-a505-9a251c46f5bd",
+      "event_title": "TESTE CORRIDA",
+      "generated_at": "2026-06-05T22:52:38.000Z",
+      "overall_status": "ERROR",
+      "sections": {
+        "json_vs_pdf": "WARNING",
+        "avg_ticket": "OK",
+        "payment_methods": "WARNING",
+        "encoding_pdf": "ERROR",
+        "financial_recalc": "OK"
+      },
+      "avg_ticket_audit": {
+        "paid_registrations_executive": 5,
+        "paid_registrations_with_revenue": 1,
+        "net_revenue": 150,
+        "avg_ticket_json": 150,
+        "avg_ticket_pdf": "R$ 150,00",
+        "avg_ticket_recalculated": 150,
+        "formula": "avg_ticket = net_revenue / paid_registrations_with_positive_liquid",
+        "status": "OK",
+        "note": "paid_registrations (executive) inclui pagas com receita líquida zero (convites/cortesia/transfer shell); ticket usa apenas pagas com liquid > 0"
+      },
+      "payment_methods_db_raw": {
+        "pix": {
+          "count": 2,
+          "revenue": 0
+        },
+        "admin_transfer": {
+          "count": 4,
+          "revenue": 150
+        }
+      },
+      "payment_methods_db_normalized": {
+        "other": {
+          "count": 1,
+          "revenue": 150
+        }
+      },
+      "payment_methods_dto": {
+        "other": {
+          "count": 1,
+          "revenue": 150
+        }
+      },
+      "payment_methods_db_rows_sample": [
+        {
+          "payment_method": "admin_transfer",
+          "payment_status": "paid",
+          "status": "confirmed",
+          "has_transfer": false,
+          "cnt": 1
+        },
+        {
+          "payment_method": "admin_transfer",
+          "payment_status": "paid",
+          "status": "transferred",
+          "has_transfer": true,
+          "cnt": 3
+        },
+        {
+          "payment_method": "pix",
+          "payment_status": "pending",
+          "status": "cancelled",
+          "has_transfer": false,
+          "cnt": 1
+        },
+        {
+          "payment_method": "pix",
+          "payment_status": "paid",
+          "status": "transferred",
+          "has_transfer": true,
+          "cnt": 1
+        }
+      ],
+      "financial_independent_recalc": {
+        "net_revenue": {
+          "dto": 150,
+          "recalc": 150,
+          "status": "OK"
+        },
+        "gross_revenue": {
+          "dto": 168,
+          "recalc": 168,
+          "status": "OK"
+        },
+        "platform_fee_total": {
+          "dto": 8,
+          "recalc": 8,
+          "status": "OK"
+        },
+        "edit_fee_total": {
+          "dto": 10,
+          "recalc": 10,
+          "status": "OK"
+        },
+        "platform_revenue": {
+          "dto": 18,
+          "recalc": 18,
+          "status": "OK"
+        }
+      },
+      "divergent_fields": [
+        {
+          "audience": "admin",
+          "field": "audit.difference_payment_methods",
+          "json": 0,
+          "pdf": "(valor R$ 0,00 — rótulo Δ possivelmente corrompido)",
+          "equal": false,
+          "status": "WARNING"
+        },
+        {
+          "audience": "organizer",
+          "field": "audit.difference_payment_methods",
+          "json": 0,
+          "pdf": "(valor R$ 0,00 — rótulo Δ possivelmente corrompido)",
+          "equal": false,
+          "status": "WARNING"
+        }
+      ],
+      "corrupted_characters": [
+        {
+          "audience": "admin",
+          "snippet": "Estoque crítico (\"d5)2",
+          "reason": "símbolo ≤ corrompido em WinAnsi/Helvetica",
+          "origin_field": "stock.critical_count label — \"Estoque crítico (≤5)\""
+        },
+        {
+          "audience": "admin",
+          "snippet": "9B\u00066\u0017FVv÷iasR$ 0,00\n9",
+          "reason": "rótulo Δ (delta) corrompido — bytes binários no lugar do caractere Unicode",
+          "origin_field": "audit.difference_* labels"
+        },
+        {
+          "audience": "organizer",
+          "snippet": "Estoque crítico (\"d5)2",
+          "reason": "símbolo ≤ corrompido em WinAnsi/Helvetica",
+          "origin_field": "stock.critical_count label — \"Estoque crítico (≤5)\""
+        },
+        {
+          "audience": "organizer",
+          "snippet": "9B\u00066\u0017FVv÷iasR$ 0,00\n9",
+          "reason": "rótulo Δ (delta) corrompido — bytes binários no lugar do caractere Unicode",
+          "origin_field": "audit.difference_* labels"
+        }
+      ],
+      "pdf_fonts": [
+        {
+          "audience": "admin",
+          "fonts": []
+        },
+        {
+          "audience": "organizer",
+          "fonts": []
+        }
+      ],
+      "pdf_encoding_notes": {
+        "library": "pdfkit",
+        "fonts_used": [
+          "Helvetica",
+          "Helvetica-Bold"
+        ],
+        "utf8_support": "Limitado — Standard Helvetica WinAnsi; símbolos Δ ≤ % acentos podem falhar",
+        "special_chars_risk": [
+          {
+            "char": "≤",
+            "field": "stock.critical_count label",
+            "risk": "ALTO — observado corrupção (\"d5)"
+          },
+          {
+            "char": "—",
+            "field": "cover city/state separator",
+            "risk": "MÉDIO"
+          },
+          {
+            "char": "Δ",
+            "field": "audit difference labels",
+            "risk": "MÉDIO"
+          },
+          {
+            "char": "ã/ç/é",
+            "field": "texto pt-BR geral",
+            "risk": "BAIXO com WinAnsi"
+          }
+        ]
+      },
+      "json_pdf_comparisons": [
+        {
+          "audience": "admin",
+          "pdf_bytes": 7038,
+          "pdf_pages": 4,
+          "fields": [
+            {
+              "field": "cover.event_title",
+              "json": "TESTE CORRIDA",
+              "pdf": "TESTE CORRIDA",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "cover.city",
+              "json": "São Paulo - Praia Grande",
+              "pdf": "São Paulo - Praia Grande",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "cover.state",
+              "json": "SP",
+              "pdf": "SP",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "cover.organizer_name",
+              "json": "Administrador Teste",
+              "pdf": "Administrador Teste",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "cover.status",
+              "json": "published",
+              "pdf": "published",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "cover.net_revenue (capa)",
+              "json": 150,
+              "pdf": "R$ 150,00",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "executive.total_registrations",
+              "json": 6,
+              "pdf": "6",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "executive.paid_registrations",
+              "json": 5,
+              "pdf": "5",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "executive.invitation_registrations",
+              "json": 0,
+              "pdf": "0",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "executive.courtesy_registrations",
+              "json": 0,
+              "pdf": "0",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "executive.transferred_registrations",
+              "json": 4,
+              "pdf": "4",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "executive.net_revenue",
+              "json": 150,
+              "pdf": "R$ 150,00",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "executive.avg_ticket",
+              "json": 150,
+              "pdf": "R$ 150,00",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "financial.net_revenue",
+              "json": 150,
+              "pdf": "R$ 150,00",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "financial.avg_ticket",
+              "json": 150,
+              "pdf": "R$ 150,00",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "financial.gross_revenue",
+              "json": 168,
+              "pdf": "R$ 168,00",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "financial.platform_fee_total",
+              "json": 8,
+              "pdf": "R$ 8,00",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "financial.edit_fee_total",
+              "json": 10,
+              "pdf": "R$ 10,00",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "financial.platform_revenue",
+              "json": 18,
+              "pdf": "R$ 18,00",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "payment.other.count",
+              "json": 1,
+              "pdf": "1",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "payment.other.net_amount",
+              "json": 150,
+              "pdf": "R$ 150,00",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "payment.other.share_pct",
+              "json": "100.0%",
+              "pdf": "100.0%",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "category.Geral 2 .registrations",
+              "json": 1,
+              "pdf": "1",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "category.Geral 2 .net_revenue",
+              "json": 150,
+              "pdf": "R$ 150,00",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "modality.5K.registrations",
+              "json": 1,
+              "pdf": "1",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "modality.5K.net_revenue",
+              "json": 150,
+              "pdf": "R$ 150,00",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "kit.Básico.registrations",
+              "json": 1,
+              "pdf": "1",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "kit.Básico.net_revenue",
+              "json": 150,
+              "pdf": "R$ 150,00",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "stock.products_count",
+              "json": 2,
+              "pdf": "2",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "stock.variations_count",
+              "json": 6,
+              "pdf": "6",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "stock.exhausted_count",
+              "json": 1,
+              "pdf": "1",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "stock.critical_count",
+              "json": 2,
+              "pdf": "2",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "stock.low_stock_count",
+              "json": 0,
+              "pdf": "0",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "invitations.granted",
+              "json": 0,
+              "pdf": "0",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "invitations.available",
+              "json": 0,
+              "pdf": "0",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "invitations.sent",
+              "json": 0,
+              "pdf": "0",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "invitations.used",
+              "json": 0,
+              "pdf": "0",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "invitations.expired",
+              "json": 0,
+              "pdf": "0",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "audit.status",
+              "json": "VALIDADO",
+              "pdf": "VALIDADO",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "audit.expected_net_revenue",
+              "json": 150,
+              "pdf": "R$ 150,00",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "audit.difference_payment_methods",
+              "json": 0,
+              "pdf": "(valor R$ 0,00 — rótulo Δ possivelmente corrompido)",
+              "equal": false,
+              "status": "WARNING"
+            }
+          ]
+        },
+        {
+          "audience": "organizer",
+          "pdf_bytes": 6058,
+          "pdf_pages": 3,
+          "fields": [
+            {
+              "field": "cover.event_title",
+              "json": "TESTE CORRIDA",
+              "pdf": "TESTE CORRIDA",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "cover.city",
+              "json": "São Paulo - Praia Grande",
+              "pdf": "São Paulo - Praia Grande",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "cover.state",
+              "json": "SP",
+              "pdf": "SP",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "cover.organizer_name",
+              "json": "Administrador Teste",
+              "pdf": "Administrador Teste",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "cover.status",
+              "json": "published",
+              "pdf": "published",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "cover.net_revenue (capa)",
+              "json": 150,
+              "pdf": "R$ 150,00",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "executive.total_registrations",
+              "json": 6,
+              "pdf": "6",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "executive.paid_registrations",
+              "json": 5,
+              "pdf": "5",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "executive.invitation_registrations",
+              "json": 0,
+              "pdf": "0",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "executive.courtesy_registrations",
+              "json": 0,
+              "pdf": "0",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "executive.transferred_registrations",
+              "json": 4,
+              "pdf": "4",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "executive.net_revenue",
+              "json": 150,
+              "pdf": "R$ 150,00",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "executive.avg_ticket",
+              "json": 150,
+              "pdf": "R$ 150,00",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "financial.net_revenue",
+              "json": 150,
+              "pdf": "R$ 150,00",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "financial.avg_ticket",
+              "json": 150,
+              "pdf": "R$ 150,00",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "payment.other.count",
+              "json": 1,
+              "pdf": "1",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "payment.other.net_amount",
+              "json": 150,
+              "pdf": "R$ 150,00",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "payment.other.share_pct",
+              "json": "100.0%",
+              "pdf": "100.0%",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "category.Geral 2 .registrations",
+              "json": 1,
+              "pdf": "1",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "category.Geral 2 .net_revenue",
+              "json": 150,
+              "pdf": "R$ 150,00",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "modality.5K.registrations",
+              "json": 1,
+              "pdf": "1",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "modality.5K.net_revenue",
+              "json": 150,
+              "pdf": "R$ 150,00",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "kit.Básico.registrations",
+              "json": 1,
+              "pdf": "1",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "kit.Básico.net_revenue",
+              "json": 150,
+              "pdf": "R$ 150,00",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "stock.products_count",
+              "json": 2,
+              "pdf": "2",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "stock.variations_count",
+              "json": 6,
+              "pdf": "6",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "stock.exhausted_count",
+              "json": 1,
+              "pdf": "1",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "stock.critical_count",
+              "json": 2,
+              "pdf": "2",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "stock.low_stock_count",
+              "json": 0,
+              "pdf": "0",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "invitations.granted",
+              "json": 0,
+              "pdf": "0",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "invitations.available",
+              "json": 0,
+              "pdf": "0",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "invitations.sent",
+              "json": 0,
+              "pdf": "0",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "invitations.used",
+              "json": 0,
+              "pdf": "0",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "invitations.expired",
+              "json": 0,
+              "pdf": "0",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "audit.status",
+              "json": "VALIDADO",
+              "pdf": "VALIDADO",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "audit.expected_net_revenue",
+              "json": 150,
+              "pdf": "R$ 150,00",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "audit.difference_payment_methods",
+              "json": 0,
+              "pdf": "(valor R$ 0,00 — rótulo Δ possivelmente corrompido)",
+              "equal": false,
+              "status": "WARNING"
+            }
+          ]
+        }
+      ],
+      "json_snapshots": {
+        "json_admin": {
+          "meta": {
+            "event_id": "977568dc-4557-4dc1-a505-9a251c46f5bd",
+            "generated_at": "2026-06-05T22:52:38.000Z",
+            "report_version": "1.0.0",
+            "rules_version": "financialReportingService@canonical",
+            "audience": "admin",
+            "export_formats": [
+              "json",
+              "pdf"
+            ],
+            "integrity_hash": "6b1276e89699bbf054864958053b92e67d5d6ab404b2ee97f2ad033de2fcb93c"
+          },
+          "cover": {
+            "event_title": "TESTE CORRIDA",
+            "event_date": "2026-12-13T16:00:00.000Z",
+            "city": "São Paulo - Praia Grande",
+            "state": "SP",
+            "status": "published",
+            "organizer_name": "Administrador Teste",
+            "organizer_organization_name": null
+          },
+          "financial_snapshot": {
+            "registrations_total": 6,
+            "paid_total": 5,
+            "pending_total": 1,
+            "refunded_total": 0,
+            "invited_total": 0,
+            "transferred_total": 4
+          },
+          "executive_summary": {
+            "total_registrations": 6,
+            "paid_registrations": 5,
+            "invitation_registrations": 0,
+            "courtesy_registrations": 0,
+            "transferred_registrations": 4,
+            "net_revenue": 150,
+            "avg_ticket": 150
+          },
+          "registration_status": {
+            "paid": 5,
+            "pending": 1,
+            "cancelled": 1,
+            "refunded": 0,
+            "convidado": 0,
+            "transferred": 4
+          },
+          "payment_methods": [
+            {
+              "method": "other",
+              "count": 1,
+              "net_amount": 150,
+              "share_pct": 100
+            }
+          ],
+          "categories": [
+            {
+              "id": "7aa1ca66-81e6-4bcf-bcec-02072701e52e",
+              "name": "Geral 2 ",
+              "registrations": 1,
+              "net_revenue": 150,
+              "share_pct": 100
+            }
+          ],
+          "modalities": [
+            {
+              "id": "ad3d1610-1abc-49f2-8f66-ade586acdaa6",
+              "name": "5K",
+              "registrations": 1,
+              "net_revenue": 150,
+              "share_pct": 100
+            }
+          ],
+          "kits": [
+            {
+              "id": "92be8ad8-390a-452e-968e-5256ceade8e0",
+              "name": "Básico",
+              "registrations": 1,
+              "net_revenue": 150,
+              "share_pct": 100
+            }
+          ],
+          "stock": {
+            "products_count": 2,
+            "variations_count": 6,
+            "exhausted_count": 1,
+            "critical_count": 2,
+            "low_stock_count": 0
+          },
+          "invitations": {
+            "granted": 0,
+            "available": 0,
+            "sent": 0,
+            "used": 0,
+            "expired": 0
+          },
+          "financial": {
+            "net_revenue": 150,
+            "avg_ticket": 150,
+            "payment_methods": [
+              {
+                "method": "other",
+                "count": 1,
+                "net_amount": 150,
+                "share_pct": 100
+              }
+            ],
+            "gross_revenue": 168,
+            "platform_fee_total": 8,
+            "edit_fee_total": 10,
+            "platform_revenue": 18,
+            "gross_net_delta": 18
+          },
+          "audit": {
+            "financial_consistency": {
+              "status": "OK",
+              "expected_net_revenue": 150,
+              "payment_methods_total": 150,
+              "categories_total": 150,
+              "modalities_total": 150,
+              "kits_total": 150,
+              "difference_payment_methods": 0,
+              "difference_categories": 0,
+              "difference_modalities": 0,
+              "difference_kits": 0
+            }
+          }
+        },
+        "json_organizer": {
+          "meta": {
+            "event_id": "977568dc-4557-4dc1-a505-9a251c46f5bd",
+            "generated_at": "2026-06-05T22:52:38.037Z",
+            "report_version": "1.0.0",
+            "rules_version": "financialReportingService@canonical",
+            "audience": "organizer",
+            "export_formats": [
+              "json",
+              "pdf"
+            ],
+            "integrity_hash": "afb45c7e61ebb8caa4f8b6cd64c9d13b69631c11fe01efcc4591d7a90f12fec5"
+          },
+          "cover": {
+            "event_title": "TESTE CORRIDA",
+            "event_date": "2026-12-13T16:00:00.000Z",
+            "city": "São Paulo - Praia Grande",
+            "state": "SP",
+            "status": "published",
+            "organizer_name": "Administrador Teste",
+            "organizer_organization_name": null
+          },
+          "financial_snapshot": {
+            "registrations_total": 6,
+            "paid_total": 5,
+            "pending_total": 1,
+            "refunded_total": 0,
+            "invited_total": 0,
+            "transferred_total": 4
+          },
+          "executive_summary": {
+            "total_registrations": 6,
+            "paid_registrations": 5,
+            "invitation_registrations": 0,
+            "courtesy_registrations": 0,
+            "transferred_registrations": 4,
+            "net_revenue": 150,
+            "avg_ticket": 150
+          },
+          "registration_status": {
+            "paid": 5,
+            "pending": 1,
+            "cancelled": 1,
+            "refunded": 0,
+            "convidado": 0,
+            "transferred": 4
+          },
+          "payment_methods": [
+            {
+              "method": "other",
+              "count": 1,
+              "net_amount": 150,
+              "share_pct": 100
+            }
+          ],
+          "categories": [
+            {
+              "id": "7aa1ca66-81e6-4bcf-bcec-02072701e52e",
+              "name": "Geral 2 ",
+              "registrations": 1,
+              "net_revenue": 150,
+              "share_pct": 100
+            }
+          ],
+          "modalities": [
+            {
+              "id": "ad3d1610-1abc-49f2-8f66-ade586acdaa6",
+              "name": "5K",
+              "registrations": 1,
+              "net_revenue": 150,
+              "share_pct": 100
+            }
+          ],
+          "kits": [
+            {
+              "id": "92be8ad8-390a-452e-968e-5256ceade8e0",
+              "name": "Básico",
+              "registrations": 1,
+              "net_revenue": 150,
+              "share_pct": 100
+            }
+          ],
+          "stock": {
+            "products_count": 2,
+            "variations_count": 6,
+            "exhausted_count": 1,
+            "critical_count": 2,
+            "low_stock_count": 0
+          },
+          "invitations": {
+            "granted": 0,
+            "available": 0,
+            "sent": 0,
+            "used": 0,
+            "expired": 0
+          },
+          "financial": {
+            "net_revenue": 150,
+            "avg_ticket": 150,
+            "payment_methods": [
+              {
+                "method": "other",
+                "count": 1,
+                "net_amount": 150,
+                "share_pct": 100
+              }
+            ]
+          },
+          "audit": {
+            "financial_consistency": {
+              "status": "OK",
+              "expected_net_revenue": 150,
+              "payment_methods_total": 150,
+              "categories_total": 150,
+              "modalities_total": 150,
+              "kits_total": 150,
+              "difference_payment_methods": 0,
+              "difference_categories": 0,
+              "difference_modalities": 0,
+              "difference_kits": 0
+            }
+          }
+        }
+      }
+    },
+    {
+      "event_id": "b897fdbc-4bf1-4210-bd51-10c611a291dc",
+      "event_title": "teste campo personalizado",
+      "generated_at": "2026-06-05T22:52:38.073Z",
+      "overall_status": "ERROR",
+      "sections": {
+        "json_vs_pdf": "WARNING",
+        "avg_ticket": "OK",
+        "payment_methods": "OK",
+        "encoding_pdf": "ERROR",
+        "financial_recalc": "OK"
+      },
+      "avg_ticket_audit": {
+        "paid_registrations_executive": 0,
+        "paid_registrations_with_revenue": 0,
+        "net_revenue": 0,
+        "avg_ticket_json": 0,
+        "avg_ticket_pdf": "R$ 0,00",
+        "avg_ticket_recalculated": 0,
+        "formula": "avg_ticket = net_revenue / paid_registrations_with_positive_liquid",
+        "status": "OK",
+        "note": "paid_registrations coincide com contagem de receita positiva"
+      },
+      "payment_methods_db_raw": {},
+      "payment_methods_db_normalized": {},
+      "payment_methods_dto": {},
+      "payment_methods_db_rows_sample": [],
+      "financial_independent_recalc": {
+        "net_revenue": {
+          "dto": 0,
+          "recalc": 0,
+          "status": "OK"
+        },
+        "gross_revenue": {
+          "dto": 0,
+          "recalc": 0,
+          "status": "OK"
+        },
+        "platform_fee_total": {
+          "dto": 0,
+          "recalc": 0,
+          "status": "OK"
+        },
+        "edit_fee_total": {
+          "dto": 0,
+          "recalc": 0,
+          "status": "OK"
+        },
+        "platform_revenue": {
+          "dto": 0,
+          "recalc": 0,
+          "status": "OK"
+        }
+      },
+      "divergent_fields": [
+        {
+          "audience": "admin",
+          "field": "audit.difference_payment_methods",
+          "json": 0,
+          "pdf": "(valor R$ 0,00 — rótulo Δ possivelmente corrompido)",
+          "equal": false,
+          "status": "WARNING"
+        },
+        {
+          "audience": "organizer",
+          "field": "audit.difference_payment_methods",
+          "json": 0,
+          "pdf": "(valor R$ 0,00 — rótulo Δ possivelmente corrompido)",
+          "equal": false,
+          "status": "WARNING"
+        }
+      ],
+      "corrupted_characters": [
+        {
+          "audience": "admin",
+          "snippet": "Estoque crítico (\"d5)0",
+          "reason": "símbolo ≤ corrompido em WinAnsi/Helvetica",
+          "origin_field": "stock.critical_count label — \"Estoque crítico (≤5)\""
+        },
+        {
+          "audience": "admin",
+          "snippet": "9B\u00066\u0017FVv÷iasR$ 0,00\n9",
+          "reason": "rótulo Δ (delta) corrompido — bytes binários no lugar do caractere Unicode",
+          "origin_field": "audit.difference_* labels"
+        },
+        {
+          "audience": "organizer",
+          "snippet": "Estoque crítico (\"d5)0",
+          "reason": "símbolo ≤ corrompido em WinAnsi/Helvetica",
+          "origin_field": "stock.critical_count label — \"Estoque crítico (≤5)\""
+        },
+        {
+          "audience": "organizer",
+          "snippet": "9B\u00066\u0017FVv÷iasR$ 0,00\n9",
+          "reason": "rótulo Δ (delta) corrompido — bytes binários no lugar do caractere Unicode",
+          "origin_field": "audit.difference_* labels"
+        }
+      ],
+      "pdf_fonts": [
+        {
+          "audience": "admin",
+          "fonts": []
+        },
+        {
+          "audience": "organizer",
+          "fonts": []
+        }
+      ],
+      "pdf_encoding_notes": {
+        "library": "pdfkit",
+        "fonts_used": [
+          "Helvetica",
+          "Helvetica-Bold"
+        ],
+        "utf8_support": "Limitado — Standard Helvetica WinAnsi; símbolos Δ ≤ % acentos podem falhar",
+        "special_chars_risk": [
+          {
+            "char": "≤",
+            "field": "stock.critical_count label",
+            "risk": "ALTO — observado corrupção (\"d5)"
+          },
+          {
+            "char": "—",
+            "field": "cover city/state separator",
+            "risk": "MÉDIO"
+          },
+          {
+            "char": "Δ",
+            "field": "audit difference labels",
+            "risk": "MÉDIO"
+          },
+          {
+            "char": "ã/ç/é",
+            "field": "texto pt-BR geral",
+            "risk": "BAIXO com WinAnsi"
+          }
+        ]
+      },
+      "json_pdf_comparisons": [
+        {
+          "audience": "admin",
+          "pdf_bytes": 5776,
+          "pdf_pages": 3,
+          "fields": [
+            {
+              "field": "cover.event_title",
+              "json": "teste campo personalizado",
+              "pdf": "teste campo personalizado",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "cover.city",
+              "json": "português do Brasil",
+              "pdf": "português do Brasil",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "cover.state",
+              "json": "SP",
+              "pdf": "SP",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "cover.organizer_name",
+              "json": "Administrador Teste",
+              "pdf": "Administrador Teste",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "cover.status",
+              "json": "published",
+              "pdf": "published",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "cover.net_revenue (capa)",
+              "json": 0,
+              "pdf": "R$ 0,00",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "executive.total_registrations",
+              "json": 0,
+              "pdf": "0",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "executive.paid_registrations",
+              "json": 0,
+              "pdf": "0",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "executive.invitation_registrations",
+              "json": 0,
+              "pdf": "0",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "executive.courtesy_registrations",
+              "json": 0,
+              "pdf": "0",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "executive.transferred_registrations",
+              "json": 0,
+              "pdf": "0",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "executive.net_revenue",
+              "json": 0,
+              "pdf": "R$ 0,00",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "executive.avg_ticket",
+              "json": 0,
+              "pdf": "R$ 0,00",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "financial.net_revenue",
+              "json": 0,
+              "pdf": "R$ 0,00",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "financial.avg_ticket",
+              "json": 0,
+              "pdf": "R$ 0,00",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "financial.gross_revenue",
+              "json": 0,
+              "pdf": "R$ 0,00",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "financial.platform_fee_total",
+              "json": 0,
+              "pdf": "R$ 0,00",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "financial.edit_fee_total",
+              "json": 0,
+              "pdf": "R$ 0,00",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "financial.platform_revenue",
+              "json": 0,
+              "pdf": "R$ 0,00",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "stock.products_count",
+              "json": 0,
+              "pdf": "0",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "stock.variations_count",
+              "json": 0,
+              "pdf": "0",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "stock.exhausted_count",
+              "json": 0,
+              "pdf": "0",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "stock.critical_count",
+              "json": 0,
+              "pdf": "0",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "stock.low_stock_count",
+              "json": 0,
+              "pdf": "0",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "invitations.granted",
+              "json": 0,
+              "pdf": "0",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "invitations.available",
+              "json": 0,
+              "pdf": "0",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "invitations.sent",
+              "json": 0,
+              "pdf": "0",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "invitations.used",
+              "json": 0,
+              "pdf": "0",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "invitations.expired",
+              "json": 0,
+              "pdf": "0",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "audit.status",
+              "json": "VALIDADO",
+              "pdf": "VALIDADO",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "audit.expected_net_revenue",
+              "json": 0,
+              "pdf": "R$ 0,00",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "audit.difference_payment_methods",
+              "json": 0,
+              "pdf": "(valor R$ 0,00 — rótulo Δ possivelmente corrompido)",
+              "equal": false,
+              "status": "WARNING"
+            }
+          ]
+        },
+        {
+          "audience": "organizer",
+          "pdf_bytes": 5665,
+          "pdf_pages": 3,
+          "fields": [
+            {
+              "field": "cover.event_title",
+              "json": "teste campo personalizado",
+              "pdf": "teste campo personalizado",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "cover.city",
+              "json": "português do Brasil",
+              "pdf": "português do Brasil",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "cover.state",
+              "json": "SP",
+              "pdf": "SP",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "cover.organizer_name",
+              "json": "Administrador Teste",
+              "pdf": "Administrador Teste",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "cover.status",
+              "json": "published",
+              "pdf": "published",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "cover.net_revenue (capa)",
+              "json": 0,
+              "pdf": "R$ 0,00",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "executive.total_registrations",
+              "json": 0,
+              "pdf": "0",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "executive.paid_registrations",
+              "json": 0,
+              "pdf": "0",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "executive.invitation_registrations",
+              "json": 0,
+              "pdf": "0",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "executive.courtesy_registrations",
+              "json": 0,
+              "pdf": "0",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "executive.transferred_registrations",
+              "json": 0,
+              "pdf": "0",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "executive.net_revenue",
+              "json": 0,
+              "pdf": "R$ 0,00",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "executive.avg_ticket",
+              "json": 0,
+              "pdf": "R$ 0,00",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "financial.net_revenue",
+              "json": 0,
+              "pdf": "R$ 0,00",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "financial.avg_ticket",
+              "json": 0,
+              "pdf": "R$ 0,00",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "stock.products_count",
+              "json": 0,
+              "pdf": "0",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "stock.variations_count",
+              "json": 0,
+              "pdf": "0",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "stock.exhausted_count",
+              "json": 0,
+              "pdf": "0",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "stock.critical_count",
+              "json": 0,
+              "pdf": "0",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "stock.low_stock_count",
+              "json": 0,
+              "pdf": "0",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "invitations.granted",
+              "json": 0,
+              "pdf": "0",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "invitations.available",
+              "json": 0,
+              "pdf": "0",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "invitations.sent",
+              "json": 0,
+              "pdf": "0",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "invitations.used",
+              "json": 0,
+              "pdf": "0",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "invitations.expired",
+              "json": 0,
+              "pdf": "0",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "audit.status",
+              "json": "VALIDADO",
+              "pdf": "VALIDADO",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "audit.expected_net_revenue",
+              "json": 0,
+              "pdf": "R$ 0,00",
+              "equal": true,
+              "status": "OK"
+            },
+            {
+              "field": "audit.difference_payment_methods",
+              "json": 0,
+              "pdf": "(valor R$ 0,00 — rótulo Δ possivelmente corrompido)",
+              "equal": false,
+              "status": "WARNING"
+            }
+          ]
+        }
+      ],
+      "json_snapshots": {
+        "json_admin": {
+          "meta": {
+            "event_id": "b897fdbc-4bf1-4210-bd51-10c611a291dc",
+            "generated_at": "2026-06-05T22:52:38.073Z",
+            "report_version": "1.0.0",
+            "rules_version": "financialReportingService@canonical",
+            "audience": "admin",
+            "export_formats": [
+              "json",
+              "pdf"
+            ],
+            "integrity_hash": "6fc71dce260805ec62552a3f164935b12d99aff3b1fa7ee9e326214450b4523c"
+          },
+          "cover": {
+            "event_title": "teste campo personalizado",
+            "event_date": "2029-11-21T03:00:00.000Z",
+            "city": "português do Brasil",
+            "state": "SP",
+            "status": "published",
+            "organizer_name": "Administrador Teste",
+            "organizer_organization_name": null
+          },
+          "financial_snapshot": {
+            "registrations_total": 0,
+            "paid_total": 0,
+            "pending_total": 0,
+            "refunded_total": 0,
+            "invited_total": 0,
+            "transferred_total": 0
+          },
+          "executive_summary": {
+            "total_registrations": 0,
+            "paid_registrations": 0,
+            "invitation_registrations": 0,
+            "courtesy_registrations": 0,
+            "transferred_registrations": 0,
+            "net_revenue": 0,
+            "avg_ticket": 0
+          },
+          "registration_status": {
+            "paid": 0,
+            "pending": 0,
+            "cancelled": 0,
+            "refunded": 0,
+            "convidado": 0,
+            "transferred": 0
+          },
+          "payment_methods": [],
+          "categories": [],
+          "modalities": [],
+          "kits": [],
+          "stock": {
+            "products_count": 0,
+            "variations_count": 0,
+            "exhausted_count": 0,
+            "critical_count": 0,
+            "low_stock_count": 0
+          },
+          "invitations": {
+            "granted": 0,
+            "available": 0,
+            "sent": 0,
+            "used": 0,
+            "expired": 0
+          },
+          "financial": {
+            "net_revenue": 0,
+            "avg_ticket": 0,
+            "payment_methods": [],
+            "gross_revenue": 0,
+            "platform_fee_total": 0,
+            "edit_fee_total": 0,
+            "platform_revenue": 0,
+            "gross_net_delta": 0
+          },
+          "audit": {
+            "financial_consistency": {
+              "status": "OK",
+              "expected_net_revenue": 0,
+              "payment_methods_total": 0,
+              "categories_total": 0,
+              "modalities_total": 0,
+              "kits_total": 0,
+              "difference_payment_methods": 0,
+              "difference_categories": 0,
+              "difference_modalities": 0,
+              "difference_kits": 0
+            }
+          }
+        },
+        "json_organizer": {
+          "meta": {
+            "event_id": "b897fdbc-4bf1-4210-bd51-10c611a291dc",
+            "generated_at": "2026-06-05T22:52:38.097Z",
+            "report_version": "1.0.0",
+            "rules_version": "financialReportingService@canonical",
+            "audience": "organizer",
+            "export_formats": [
+              "json",
+              "pdf"
+            ],
+            "integrity_hash": "644b6cb8299a195d5f4d683cc6b97ba77546e2461dae24d4b4cd30540b743c26"
+          },
+          "cover": {
+            "event_title": "teste campo personalizado",
+            "event_date": "2029-11-21T03:00:00.000Z",
+            "city": "português do Brasil",
+            "state": "SP",
+            "status": "published",
+            "organizer_name": "Administrador Teste",
+            "organizer_organization_name": null
+          },
+          "financial_snapshot": {
+            "registrations_total": 0,
+            "paid_total": 0,
+            "pending_total": 0,
+            "refunded_total": 0,
+            "invited_total": 0,
+            "transferred_total": 0
+          },
+          "executive_summary": {
+            "total_registrations": 0,
+            "paid_registrations": 0,
+            "invitation_registrations": 0,
+            "courtesy_registrations": 0,
+            "transferred_registrations": 0,
+            "net_revenue": 0,
+            "avg_ticket": 0
+          },
+          "registration_status": {
+            "paid": 0,
+            "pending": 0,
+            "cancelled": 0,
+            "refunded": 0,
+            "convidado": 0,
+            "transferred": 0
+          },
+          "payment_methods": [],
+          "categories": [],
+          "modalities": [],
+          "kits": [],
+          "stock": {
+            "products_count": 0,
+            "variations_count": 0,
+            "exhausted_count": 0,
+            "critical_count": 0,
+            "low_stock_count": 0
+          },
+          "invitations": {
+            "granted": 0,
+            "available": 0,
+            "sent": 0,
+            "used": 0,
+            "expired": 0
+          },
+          "financial": {
+            "net_revenue": 0,
+            "avg_ticket": 0,
+            "payment_methods": []
+          },
+          "audit": {
+            "financial_consistency": {
+              "status": "OK",
+              "expected_net_revenue": 0,
+              "payment_methods_total": 0,
+              "categories_total": 0,
+              "modalities_total": 0,
+              "kits_total": 0,
+              "difference_payment_methods": 0,
+              "difference_categories": 0,
+              "difference_modalities": 0,
+              "difference_kits": 0
+            }
+          }
+        }
+      }
+    }
+  ]
+}

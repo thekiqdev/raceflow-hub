@@ -34,7 +34,6 @@
   "dependencies": {
     "@types/multer": "^2.0.0",
     "axios": "^1.13.2",
-    "tsx": "^4.7.0",
     "bcrypt": "^5.1.1",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
@@ -43,7 +42,9 @@
     "jsonwebtoken": "^9.0.2",
     "multer": "^2.0.2",
     "nodemailer": "^7.0.12",
+    "pdfkit": "^0.18.0",
     "pg": "^8.11.3",
+    "tsx": "^4.7.0",
     "zod": "^3.22.4"
   },
   "devDependencies": {
@@ -53,6 +54,7 @@
     "@types/jsonwebtoken": "^9.0.5",
     "@types/node": "^20.10.6",
     "@types/nodemailer": "^7.0.4",
+    "@types/pdfkit": "^0.17.6",
     "@types/pg": "^8.10.9",
     "@typescript-eslint/eslint-plugin": "^6.17.0",
     "@typescript-eslint/parser": "^6.17.0",

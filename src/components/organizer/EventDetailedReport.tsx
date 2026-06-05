@@ -15,6 +15,9 @@ import {
   getOrganizerEventGeneralStats,
   getEventProductStockReport,
   getOrganizerEventProductStockReport,
+  downloadEventFinancialReportPdf,
+  EventFinancialReportDownloadError,
+  type EventFinancialReportPdfContext,
   type EventInvitationStats,
   type EventGeneralStats,
   type EventProductStockReport,
@@ -22,9 +25,15 @@ import {
   type EventProductStockVariationRow,
 } from "@/lib/api/reports";
 import { getCanonicalRegistrationDisplayValue } from "@/lib/utils/feeCalculations";
-import { ArrowLeft, Users, DollarSign, Package, CreditCard, Smartphone, Gift, AlertTriangle, LayoutGrid, Warehouse, CheckCircle2, Flame } from "lucide-react";
+import { ArrowLeft, Users, DollarSign, Package, CreditCard, Smartphone, Gift, AlertTriangle, LayoutGrid, Warehouse, CheckCircle2, Flame, FileDown, ChevronDown, Loader2 } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { toast } from "sonner";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   Table,
   TableBody,
@@ -472,7 +481,24 @@ const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
   const [generalStats, setGeneralStats] = useState<EventGeneralStats | null>(null);
   const [productStockReport, setProductStockReport] = useState<EventProductStockReport | null>(null);
   const [registrationFilter, setRegistrationFilter] = useState<RegistrationTableFilter>("all");
+  const [financialReportDownloading, setFinancialReportDownloading] = useState(false);
   const registrationsSectionRef = useRef<HTMLDivElement>(null);
+
+  const handleDownloadFinancialReport = async (context: EventFinancialReportPdfContext) => {
+    if (financialReportDownloading) return;
+    setFinancialReportDownloading(true);
+    try {
+      await downloadEventFinancialReportPdf(eventId, context);
+    } catch (error) {
+      if (error instanceof EventFinancialReportDownloadError) {
+        toast.error(error.message);
+      } else {
+        toast.error("Falha ao gerar relatório financeiro.");
+      }
+    } finally {
+      setFinancialReportDownloading(false);
+    }
+  };
 
   const scrollToRegistrations = (filter?: RegistrationTableFilter) => {
     if (filter) setRegistrationFilter(filter);
@@ -982,15 +1008,62 @@ const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
 
   return (
     <div className="space-y-6 bg-gray-50 rounded-2xl p-4 md:p-6">
-      <div className="flex items-center gap-4">
-        <Button variant="ghost" size="sm" onClick={onBack}>
-          <ArrowLeft className="h-4 w-4 mr-2" />
-          Voltar
-        </Button>
-        <div>
-          <h2 className="text-2xl font-bold text-gray-900">{eventTitle}</h2>
-          <p className="text-sm text-gray-500">Relatório detalhado · dashboard do evento</p>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-4">
+          <Button variant="ghost" size="sm" onClick={onBack}>
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            Voltar
+          </Button>
+          <div>
+            <h2 className="text-2xl font-bold text-gray-900">{eventTitle}</h2>
+            <p className="text-sm text-gray-500">Relatório detalhado · dashboard do evento</p>
+          </div>
         </div>
+
+        {(isAdmin || isOrganizer) && (
+          isAdmin ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button disabled={financialReportDownloading} className="shrink-0">
+                  {financialReportDownloading ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <FileDown className="h-4 w-4 mr-2" />
+                  )}
+                  {financialReportDownloading ? "Gerando relatório financeiro..." : "Gerar Relatório Financeiro"}
+                  {!financialReportDownloading && <ChevronDown className="h-4 w-4 ml-2" />}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-72">
+                <DropdownMenuItem
+                  disabled={financialReportDownloading}
+                  onClick={() => void handleDownloadFinancialReport("organizer")}
+                >
+                  Relatório Financeiro (Organizador)
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  disabled={financialReportDownloading}
+                  onClick={() => void handleDownloadFinancialReport("admin")}
+                >
+                  Relatório Financeiro (Administrativo)
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : (
+            <Button
+              disabled={financialReportDownloading}
+              onClick={() => void handleDownloadFinancialReport("organizer")}
+              className="shrink-0"
+            >
+              {financialReportDownloading ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <FileDown className="h-4 w-4 mr-2" />
+              )}
+              {financialReportDownloading ? "Gerando relatório financeiro..." : "Gerar Relatório Financeiro"}
+            </Button>
+          )
+        )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">

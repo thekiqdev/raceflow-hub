@@ -377,4 +377,94 @@ export const getOrganizerEventProductStockReport = async (eventId: string): Prom
   return apiClient.get<EventProductStockReport>(`/organizer/reports/events/${eventId}/product-stock`);
 };
 
+export type EventFinancialReportPdfContext = 'admin' | 'organizer';
+
+export class EventFinancialReportDownloadError extends Error {
+  readonly code?: string;
+
+  constructor(message: string, code?: string) {
+    super(message);
+    this.name = 'EventFinancialReportDownloadError';
+    this.code = code;
+  }
+}
+
+const getReportsApiBaseUrl = (): string => {
+  const envUrl = import.meta.env.VITE_API_URL;
+  if (envUrl && !envUrl.includes('localhost')) {
+    return envUrl;
+  }
+  if (import.meta.env.PROD) {
+    return 'https://cronoteam-crono-back.e758qe.easypanel.host/api';
+  }
+  return 'http://localhost:3001/api';
+};
+
+function parseContentDispositionFilename(header: string | null): string | null {
+  if (!header) return null;
+  const utf8Match = header.match(/filename\*=UTF-8''([^;]+)/i);
+  if (utf8Match?.[1]) {
+    try {
+      return decodeURIComponent(utf8Match[1]);
+    } catch {
+      return utf8Match[1];
+    }
+  }
+  const quotedMatch = header.match(/filename="([^"]+)"/i);
+  return quotedMatch?.[1] ?? null;
+}
+
+/**
+ * Baixa o PDF do relatório financeiro oficial do evento.
+ */
+export const downloadEventFinancialReportPdf = async (
+  eventId: string,
+  context: EventFinancialReportPdfContext
+): Promise<void> => {
+  const endpoint =
+    context === 'admin'
+      ? `/admin/reports/events/${eventId}/financial-report/pdf`
+      : `/organizer/reports/events/${eventId}/financial-report/pdf`;
+
+  const response = await fetch(`${getReportsApiBaseUrl()}${endpoint}`, {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${localStorage.getItem('auth_token') ?? ''}`,
+    },
+    credentials: 'include',
+  });
+
+  if (!response.ok) {
+    let message = 'Falha ao gerar relatório financeiro.';
+    let code: string | undefined;
+    try {
+      const errorData = (await response.json()) as {
+        message?: string;
+        error?: string;
+        code?: string;
+      };
+      code = errorData.code || errorData.error;
+      if (code === 'FINANCIAL_INCONSISTENCY_BLOCKED') {
+        message = 'Relatório financeiro bloqueado por inconsistência financeira.';
+      } else if (errorData.message || errorData.error) {
+        message = errorData.message || errorData.error || message;
+      }
+    } catch {
+      // resposta não-JSON (ex.: proxy)
+    }
+    throw new EventFinancialReportDownloadError(message, code);
+  }
+
+  const blob = await response.blob();
+  const url = window.URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download =
+    parseContentDispositionFilename(response.headers.get('Content-Disposition')) ??
+    `relatorio-financeiro_${eventId}_${new Date().toISOString().slice(0, 10)}.pdf`;
+  document.body.appendChild(anchor);
+  anchor.click();
+  window.URL.revokeObjectURL(url);
+  document.body.removeChild(anchor);
+};
 

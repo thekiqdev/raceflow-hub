@@ -48,12 +48,25 @@ import {
 import { getLeaderCouponRegistrationsController } from '../controllers/leaderRegistrationsController.js';
 import { getLeadersInvitationsGrantedByEventController } from '../controllers/leadersInvitationsReportController.js';
 import { getEventInvitationStatsController } from '../controllers/eventInvitationStatsController.js';
-import { getEventGeneralStatsController, getEventProductStockReportController } from '../controllers/reportsController.js';
+import {
+  getEventGeneralStatsController,
+  getEventProductStockReportController,
+  getEventFinancialReportController,
+  getOrganizerPerspectiveEventFinancialReportPdfController,
+} from '../controllers/reportsController.js';
 
 const router = Router();
 
-// All routes require authentication and organizer role
 router.use(authenticate);
+
+// Relatório financeiro: admin ou organizador do evento (perspectiva organizador no PDF)
+router.get('/reports/events/:eventId/financial-report', getEventFinancialReportController);
+router.get(
+  '/reports/events/:eventId/financial-report/pdf',
+  getOrganizerPerspectiveEventFinancialReportPdfController
+);
+
+// All other routes require organizer role
 router.use(requireRole('organizer'));
 
 // Dashboard endpoints
@@ -84,7 +97,6 @@ router.get(
   '/reports/events/:eventId/product-stock',
   getEventProductStockReportController
 );
-
 // Settings endpoints
 router.get('/settings', getOrganizerSettingsController);
 router.put('/settings', updateOrganizerSettingsController);
