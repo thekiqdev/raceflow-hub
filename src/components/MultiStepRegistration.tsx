@@ -160,11 +160,20 @@ export function MultiStepRegistration({ open, onOpenChange }: MultiStepRegistrat
     setGenderLockedFromLookup(false);
   }, []);
 
-  const { lookupLoading, lookupError, manualLookup, cpfAlreadyRegistered, clearLookupCompleted } =
+  const onCpfManualEntry = useCallback((proof: string) => {
+    setGenderLockedFromLookup(false);
+    setFormData((prev) => ({
+      ...prev,
+      cpfLookupProof: proof,
+    }));
+  }, []);
+
+  const { lookupLoading, lookupError, manualLookup, cpfAlreadyRegistered, clearLookupCompleted, isManualMode } =
     useCpfBrasilLookup({
       cpfMasked: formData.cpf,
       onSuccess: onCpfLookupSuccess,
       onInvalidate: onCpfLookupInvalidate,
+      onManualEntry: onCpfManualEntry,
       canAutoLookup: () => Boolean(formData.birthDate?.trim()),
     });
 
@@ -172,7 +181,8 @@ export function MultiStepRegistration({ open, onOpenChange }: MultiStepRegistrat
     clearLookupCompletedRef.current = clearLookupCompleted;
   }, [clearLookupCompleted]);
 
-  const lockedFromCpfLookup = Boolean(formData.cpfLookupProof);
+  const cpfProofReady = Boolean(formData.cpfLookupProof);
+  const fieldsReadOnlyFromApi = cpfProofReady && !isManualMode;
 
   // Carregar código de referência da URL
   useEffect(() => {
@@ -533,7 +543,7 @@ export function MultiStepRegistration({ open, onOpenChange }: MultiStepRegistrat
             </div>
           )}
           {errors.cpf && <p className="text-sm text-destructive">{errors.cpf}</p>}
-          {!lockedFromCpfLookup && !lookupLoading && (
+          {!cpfProofReady && !lookupLoading && (
             <p className="text-xs text-muted-foreground">
               Informe o CPF e a data de nascimento (como no documento) e clique em Consultar. A data será
               conferida com a consulta.
@@ -547,13 +557,13 @@ export function MultiStepRegistration({ open, onOpenChange }: MultiStepRegistrat
             id="birthDate"
             type="date"
             value={formData.birthDate}
-            onChange={(e) => !lockedFromCpfLookup && updateField("birthDate", e.target.value)}
-            readOnly={lockedFromCpfLookup}
+            onChange={(e) => !fieldsReadOnlyFromApi && updateField("birthDate", e.target.value)}
+            readOnly={fieldsReadOnlyFromApi}
             disabled={loading}
-            className={`${lockedFromCpfLookup ? "bg-muted" : ""} ${errors.birthDate ? "border-destructive" : ""}`}
+            className={`${fieldsReadOnlyFromApi ? "bg-muted" : ""} ${errors.birthDate ? "border-destructive" : ""}`}
           />
           {errors.birthDate && <p className="text-sm text-destructive">{errors.birthDate}</p>}
-          {!lockedFromCpfLookup && (
+          {!cpfProofReady && (
             <p className="text-xs text-muted-foreground">
               Deve ser exatamente a mesma data que consta no seu documento de identificação.
             </p>
@@ -573,24 +583,31 @@ export function MultiStepRegistration({ open, onOpenChange }: MultiStepRegistrat
           </Button>
         </div>
 
-        {lockedFromCpfLookup && (
+        {cpfProofReady && (
           <div className="space-y-4 rounded-lg border border-border bg-muted/30 p-4">
-            <p className="text-sm font-medium text-foreground">Dados confirmados</p>
+            {isManualMode ? (
+              <div className="rounded-lg border bg-muted/50 p-3 text-sm text-muted-foreground">
+                CPF válido, mas não encontrado na base nacional. Preencha seus dados manualmente para continuar.
+              </div>
+            ) : (
+              <p className="text-sm font-medium text-foreground">Dados confirmados</p>
+            )}
 
             <div className="space-y-2">
               <Label htmlFor="fullName">Nome completo *</Label>
               <Input
                 id="fullName"
                 value={formData.fullName}
-                readOnly
-                className={`bg-muted ${errors.fullName ? "border-destructive" : ""}`}
+                readOnly={fieldsReadOnlyFromApi}
+                onChange={(e) => !fieldsReadOnlyFromApi && updateField("fullName", e.target.value)}
+                className={`${fieldsReadOnlyFromApi ? "bg-muted" : ""} ${errors.fullName ? "border-destructive" : ""}`}
               />
               {errors.fullName && <p className="text-sm text-destructive">{errors.fullName}</p>}
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="gender-display">Sexo *</Label>
-              {genderLockedFromLookup ? (
+              {genderLockedFromLookup && fieldsReadOnlyFromApi ? (
                 <Input
                   id="gender-display"
                   value={formData.gender === "M" ? "Masculino" : "Feminino"}

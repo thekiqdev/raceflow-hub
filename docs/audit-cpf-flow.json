@@ -1,0 +1,349 @@
+{
+  "audit": "AUDIT_CPF_API_FALLBACK_AND_MANUAL_VALIDATION",
+  "mode": "read-only",
+  "audited_at": "2026-06-05T23:30:00.000Z",
+  "branch_reference": "deploy-v1.0.2.7.9.45",
+  "summary": {
+    "provider": "CPF Brasil API (api.cpf-brasil.org)",
+    "public_registration_blocked_on_api_miss": true,
+    "organizer_manual_paths_exist": true,
+    "algorithm_validation": {
+      "frontend": "validateCpf() — dígitos verificadores + rejeita sequências iguais",
+      "backend": "isValidCpfDigits() — mesmo algoritmo"
+    },
+    "recommended_change_scope": "Diferenciar EXTERNAL_NOT_FOUND de CPF inválido; liberar preenchimento manual com prova alternativa no cadastro público"
+  },
+  "api_provider": {
+    "service_client": "backend/src/services/cpfBrasilClient.ts",
+    "orchestrator": "backend/src/services/cpfLookupService.ts",
+    "endpoint": "GET {CPF_BRASIL_API_BASE_URL}/cpf/{11digits}",
+    "auth": "Header X-API-Key: CPF_BRASIL_API_KEY",
+    "health": "GET {base}/health",
+    "timeout_ms": "CPF_BRASIL_TIMEOUT_MS (default 10000, max 60000)",
+    "retries": 0,
+    "feature_flag": "CPF_BRASIL_ENABLED (default true)",
+    "config_required": ["CPF_BRASIL_API_BASE_URL", "CPF_BRASIL_API_KEY"],
+    "internal_codes": [
+      "OK",
+      "CONFIG_MISSING",
+      "FEATURE_DISABLED",
+      "EXTERNAL_NOT_FOUND",
+      "EXTERNAL_AUTH",
+      "EXTERNAL_QUOTA",
+      "EXTERNAL_PLAN",
+      "EXTERNAL_TIMEOUT",
+      "EXTERNAL_BAD_RESPONSE",
+      "EXTERNAL_UNKNOWN",
+      "LOCAL_INVALID_FORMAT"
+    ],
+    "response_examples": {
+      "cpf_found": {
+        "http": 200,
+        "body_fields": ["NOME/nome", "NASC/nasc", "SEXO/sexo"],
+        "mapped_to": {
+          "cpf": "11 dígitos",
+          "full_name": "nome",
+          "birth_date": "YYYY-MM-DD",
+          "gender": "M|F|''",
+          "gender_locked": "boolean"
+        },
+        "proof": "JWT cpf_lookup_v1 (15min) emitido em lookupCpfController"
+      },
+      "cpf_valid_not_found": {
+        "http": 404,
+        "internal_code": "EXTERNAL_NOT_FOUND",
+        "user_message_today": "CPF inválido",
+        "actual_behavior": "Bloqueio — tratado igual a falha de integração"
+      },
+      "provider_error": {
+        "timeout": { "internal_code": "EXTERNAL_TIMEOUT", "user_message": "CPF inválido" },
+        "auth": { "internal_code": "EXTERNAL_AUTH", "user_message": "CPf inválido" },
+        "quota": { "internal_code": "EXTERNAL_QUOTA", "user_message": "CPF inválido" }
+      }
+    }
+  },
+  "flows_inventory": [
+    {
+      "file": "src/pages/Auth.tsx",
+      "function": "Auth (signup tab)",
+      "flow": "Cadastro público",
+      "api_lookup": true,
+      "hook": "useCpfBrasilLookup",
+      "blocks_without_proof": true
+    },
+    {
+      "file": "src/components/MultiStepRegistration.tsx",
+      "function": "MultiStepRegistration",
+      "flow": "Cadastro público (dialog)",
+      "api_lookup": true,
+      "hook": "useCpfBrasilLookup",
+      "blocks_without_proof": true,
+      "note": "Exige birthDate antes do auto-lookup"
+    },
+    {
+      "file": "src/components/event/RegistrationFlow.tsx",
+      "function": "handleRegister",
+      "flow": "Inscrição pública — criar conta inline",
+      "api_lookup": true,
+      "hook": "useCpfBrasilLookup",
+      "blocks_without_proof": true
+    },
+    {
+      "file": "src/hooks/useCpfBrasilLookup.ts",
+      "function": "runLookup",
+      "flow": "Cliente — orquestra check-cpf-registered + lookup-cpf",
+      "api_lookup": true,
+      "blocks_on_api_fail": true
+    },
+    {
+      "file": "backend/src/controllers/cpfLookupController.ts",
+      "function": "lookupCpfController",
+      "flow": "POST /api/auth/lookup-cpf",
+      "api_lookup": true,
+      "blocks_on_api_fail": true
+    },
+    {
+      "file": "backend/src/services/cpfLookupService.ts",
+      "function": "lookupCpfForRegistration",
+      "flow": "Validação local + API",
+      "api_lookup": true,
+      "blocks_on_api_fail": true
+    },
+    {
+      "file": "backend/src/services/authService.ts",
+      "function": "register",
+      "flow": "POST /api/auth/register",
+      "api_lookup": false,
+      "requires_proof_jwt": "registerRequiresCpfLookupProof()",
+      "blocks_without_proof": true
+    },
+    {
+      "file": "src/components/registration/RegisterAthleteStaffDialog.tsx",
+      "function": "handleCpfLookup",
+      "flow": "Organizador/Admin — inscrição staff",
+      "api_lookup": false,
+      "db_lookup": "GET /profiles/organizer/search-by-cpf",
+      "manual_on_404": true
+    },
+    {
+      "file": "src/components/runner/leader/LeaderDashboard.tsx",
+      "function": "handleInviteCpfLookup",
+      "flow": "Líder — convite por CPF",
+      "api_lookup": false,
+      "db_lookup": "GET /profiles/public-by-cpf",
+      "manual_on_404": true
+    },
+    {
+      "file": "src/components/admin/AdminManualRunnerCreate.tsx",
+      "function": "submit",
+      "flow": "Admin — cadastro manual",
+      "api_lookup": false,
+      "backend": "createManualRunner — isValidCpfDigits only"
+    },
+    {
+      "file": "backend/src/services/registrationsService.ts",
+      "function": "createRunnerByOrganizer",
+      "flow": "Organizador cria atleta na inscrição",
+      "api_lookup": false,
+      "validation_gap": "Apenas length===11, sem isValidCpfDigits"
+    },
+    {
+      "file": "src/components/LoginDialog.tsx",
+      "function": "login form",
+      "flow": "Login",
+      "api_lookup": false,
+      "note": "CPF como identificador — sem API externa"
+    },
+    {
+      "file": "backend/src/services/authService.ts",
+      "function": "login / resolveLoginIdentifier",
+      "flow": "Login email ou CPF",
+      "api_lookup": false
+    }
+  ],
+  "blocking_points": [
+    {
+      "file": "backend/src/services/cpfLookupService.ts",
+      "line": "52-64",
+      "layer": "backend/service",
+      "type": "API miss = success:false, message 'CPF inválido'",
+      "codes_affected": ["EXTERNAL_NOT_FOUND", "EXTERNAL_TIMEOUT", "EXTERNAL_AUTH", "EXTERNAL_QUOTA", "EXTERNAL_PLAN", "EXTERNAL_BAD_RESPONSE", "EXTERNAL_UNKNOWN", "CONFIG_MISSING", "FEATURE_DISABLED"]
+    },
+    {
+      "file": "backend/src/controllers/cpfLookupController.ts",
+      "line": "41-54",
+      "layer": "backend/controller",
+      "type": "HTTP 400 em qualquer falha de lookup"
+    },
+    {
+      "file": "src/hooks/useCpfBrasilLookup.ts",
+      "line": "92-94",
+      "layer": "frontend/hook",
+      "type": "lookupError — impede onSuccess/proof"
+    },
+    {
+      "file": "src/pages/Auth.tsx",
+      "line": "169-177",
+      "layer": "frontend",
+      "type": "canSubmitSignUp exige cpfLookupProof"
+    },
+    {
+      "file": "src/components/MultiStepRegistration.tsx",
+      "line": "314-316",
+      "layer": "frontend",
+      "type": "validateStep(1) exige cpfLookupProof"
+    },
+    {
+      "file": "src/components/MultiStepRegistration.tsx",
+      "line": "1171",
+      "layer": "frontend",
+      "type": "Botão desabilitado sem cpfLookupProof no step 1"
+    },
+    {
+      "file": "src/components/event/RegistrationFlow.tsx",
+      "line": "1025-1027",
+      "layer": "frontend",
+      "type": "handleRegister bloqueia sem cpfLookupProof"
+    },
+    {
+      "file": "src/components/event/RegistrationFlow.tsx",
+      "line": "2100",
+      "layer": "frontend",
+      "type": "Botão Criar Conta disabled sem proof"
+    },
+    {
+      "file": "backend/src/services/authService.ts",
+      "line": "113-131",
+      "layer": "backend/service",
+      "type": "register exige cpf_lookup_proof JWT quando integração ativa"
+    },
+    {
+      "file": "backend/src/controllers/authController.ts",
+      "line": "54-60",
+      "layer": "backend/controller",
+      "type": "CPF_LOOKUP_PROOF_REQUIRED/INVALID → 400 CPF inválido"
+    },
+    {
+      "file": "backend/src/middleware/rateLimiter.ts",
+      "line": "114-123",
+      "layer": "backend/middleware",
+      "type": "Rate limit → 429 com message 'CPF inválido' (code RATE_LIMITED)"
+    }
+  ],
+  "validation_matrix": {
+    "11111111111": { "frontend": false, "backend_lookup": false, "backend_register_manual": false, "organizer_create_runner": "aceita se passar length (GAP)" },
+    "00000000000": { "frontend": false, "backend_lookup": false, "backend_register_manual": false, "organizer_create_runner": "aceita se passar length (GAP)" },
+    "12345678900": { "frontend": false, "backend_lookup": false, "backend_register_manual": false, "organizer_create_runner": "aceita se passar length (GAP)" },
+    "note": "Sequências iguais rejeitadas por regex ^(\\d)\\1{10}$; demais inválidos pelo módulo 11"
+  },
+  "validation_by_layer": {
+    "frontend_public_signup": { "algorithm": true, "library": "inline validateCpf", "mask_only": false },
+    "frontend_organizer_staff": { "algorithm": true, "library": "validateCpf em RegisterAthleteStaffDialog e LeaderDashboard" },
+    "frontend_admin_manual": { "algorithm": false, "note": "AdminManualRunnerCreate não chama validateCpf no client" },
+    "backend_lookup": { "algorithm": true, "function": "isValidCpfDigits" },
+    "backend_register": { "algorithm": "via proof only when API active; sem proof path quando API desligada" },
+    "backend_manual_runner": { "algorithm": true, "function": "isValidCpfDigits" },
+    "backend_organizer_create": { "algorithm": false, "only_length_11": true },
+    "backend_profile_update": { "algorithm": false, "only_length_11_in_service": true }
+  },
+  "masks": {
+    "utility": "src/lib/utils/masks.ts — maskCpf (000.000.000-00), unmask()",
+    "masked_inputs": [
+      "src/pages/Auth.tsx",
+      "src/components/MultiStepRegistration.tsx",
+      "src/components/event/RegistrationFlow.tsx",
+      "src/components/LoginDialog.tsx",
+      "src/components/registration/RegisterAthleteStaffDialog.tsx",
+      "src/components/runner/leader/LeaderDashboard.tsx",
+      "src/components/runner/profile/ProfileEditDialog.tsx",
+      "src/components/payment/CreditCardForm.tsx (titular)",
+      "src/components/admin/TransferRegistrationAdminDialog.tsx",
+      "src/components/runner/MyRegistrations.tsx"
+    ],
+    "display_only_mask": [
+      "src/components/event-registrations/EventRegistrationsPanel.tsx",
+      "src/components/runner/leader/LeaderDashboard.tsx (PDF)"
+    ],
+    "admin_manual_runner": "AdminManualRunnerCreate — campo CPF sem maskCpf no onChange (texto livre, strip no submit)"
+  },
+  "secondary_dependencies": {
+    "login": { "uses_api_lookup": false, "uses_cpf": true, "file": "authService.login" },
+    "password_reset": { "uses_api_lookup": false, "uses_cpf": false },
+    "check_in": { "uses_api_lookup": false, "uses_cpf": "indireto via perfil/inscrição" },
+    "certificates_rankings": { "uses_api_lookup": false, "note": "Não encontrado dependência de retorno da API CPF" },
+    "exports_reports": { "uses_api_lookup": false, "uses_cpf": "runner_cpf em listagens" },
+    "payments_asaas": { "uses_api_lookup": false, "uses_cpf": "cpfCnpj do titular — validação Asaas", "file": "asaasService.ts" },
+    "cpf_validated_at": { "column": "profiles.cpf_validated_at", "set_on": "register com proof API", "null_on": "manual runner, organizer create, legado" },
+    "admin_dashboard": { "endpoint": "GET /admin/reports/cpf-validation-overview", "file": "reportsService.getCpfValidationOverview" }
+  },
+  "proposed_architecture": {
+    "scenario_A_valid_found": {
+      "behavior": "Manter fluxo atual: lookup-cpf → autopreenchimento → proof JWT → register",
+      "changes": "Nenhuma obrigatória"
+    },
+    "scenario_B_valid_not_found": {
+      "behavior": "Permitir continuar com preenchimento manual; não bloquear",
+      "recommended_changes": [
+        "cpfLookupService: retornar code CPF_NOT_IN_REGISTRY (ou similar) distinto de LOCAL_INVALID_FORMAT",
+        "lookupCpfController: HTTP 200 com flag manual_entry_allowed + proof alternativo (ex. cpf_manual_v1 assinado só com CPF válido)",
+        "useCpfBrasilLookup: tratar NOT_FOUND como sucesso parcial — liberar campos editáveis",
+        "authService.register: aceitar proof manual OU proof API; não exigir match nome/nasc da API",
+        "UI: mensagem clara 'CPF válido não encontrado na base — preencha seus dados manualmente'"
+      ]
+    },
+    "scenario_C_invalid": {
+      "behavior": "Bloquear com mensagem CPF inválido",
+      "changes": "Manter isValidCpfDigits/validateCpf em todas as camadas; corrigir GAP em createRunnerByOrganizer"
+    }
+  },
+  "risks": {
+    "cadastro_publico": { "level": "ALTO", "reason": "Mudança de proof e UX em 3 telas + authService" },
+    "cadastro_organizador": { "level": "BAIXO", "reason": "Já permite manual; só reforçar isValidCpfDigits" },
+    "edicao_atleta": { "level": "MEDIO", "reason": "Profile update sem validação algorítmica hoje" },
+    "inscricoes_antigas": { "level": "BAIXO", "reason": "cpf_validated_at nullable — sem migração" },
+    "integracoes": { "level": "BAIXO", "reason": "Asaas valida CPF próprio; sem acoplamento à API CPF Brasil" },
+    "pagamentos": { "level": "MEDIO", "reason": "CPF inválido no cartão rejeitado pelo Asaas independentemente" },
+    "ranking_certificados": { "level": "BAIXO" },
+    "fraude_manual": { "level": "ALTO", "reason": "Fallback manual exige controles (captcha, rate limit, auditoria cpf_validated_at=null)"
+    }
+  },
+  "implementation_strategy": {
+    "phase_1": "Backend — distinguir códigos EXTERNAL_NOT_FOUND vs LOCAL_INVALID_FORMAT; novo proof manual",
+    "phase_2": "Frontend hook + Auth/MultiStep/RegistrationFlow — modo manual",
+    "phase_3": "Hardening — isValidCpfDigits em createRunnerByOrganizer e updateProfile",
+    "phase_4": "QA — CPF válido não encontrado, inválido, timeout, já cadastrado, organizador/admin paths",
+    "feature_flag": "CPF_ALLOW_MANUAL_WHEN_NOT_FOUND (sugerido) para rollout gradual"
+  },
+  "files_inventory": [
+    "backend/src/services/cpfBrasilClient.ts",
+    "backend/src/services/cpfLookupService.ts",
+    "backend/src/services/cpfLookupProof.ts",
+    "backend/src/services/cpfLookupMetricsService.ts",
+    "backend/src/services/cpfLookupAlerts.ts",
+    "backend/src/controllers/cpfLookupController.ts",
+    "backend/src/controllers/authController.ts",
+    "backend/src/services/authService.ts",
+    "backend/src/utils/cpf.ts",
+    "backend/src/middleware/rateLimiter.ts",
+    "backend/src/routes/auth.ts",
+    "backend/src/controllers/profilesController.ts",
+    "backend/src/services/profilesService.ts",
+    "backend/src/services/userManagementService.ts",
+    "backend/src/services/registrationsService.ts",
+    "backend/src/services/adminAthleteRegistrationService.ts",
+    "backend/src/services/reportsService.ts",
+    "src/hooks/useCpfBrasilLookup.ts",
+    "src/lib/api/auth.ts",
+    "src/lib/utils/validators.ts",
+    "src/lib/utils/masks.ts",
+    "src/pages/Auth.tsx",
+    "src/components/MultiStepRegistration.tsx",
+    "src/components/event/RegistrationFlow.tsx",
+    "src/components/LoginDialog.tsx",
+    "src/components/registration/RegisterAthleteStaffDialog.tsx",
+    "src/components/runner/leader/LeaderDashboard.tsx",
+    "src/components/admin/AdminManualRunnerCreate.tsx",
+    "src/components/runner/profile/ProfileEditDialog.tsx",
+    "docs/PLANO_IMPLANTACAO_AUTH_CPF_BRASIL.md"
+  ]
+}

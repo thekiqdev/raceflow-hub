@@ -4,9 +4,11 @@ import { query, getClient } from '../config/database.js';
 import { AppRole } from '../types/index.js';
 import { validateCompletionRegistration } from './leaderInvitationsService.js';
 import {
+  manualProofMatchesRegisterBody,
   proofMatchesRegisterBody,
   registerRequiresCpfLookupProof,
   verifyCpfLookupProof,
+  verifyManualCpfProof,
 } from './cpfLookupProof.js';
 import { isValidCpfDigits, normalizeCpfDigits } from '../utils/cpf.js';
 import { getSystemSettings } from './systemSettingsService.js';
@@ -115,20 +117,33 @@ export const register = async (data: RegisterData): Promise<AuthResponse> => {
       if (!token) {
         throw new Error('CPF_LOOKUP_PROOF_REQUIRED');
       }
-      const payload = verifyCpfLookupProof(token);
-      if (
-        !payload ||
-        !proofMatchesRegisterBody(payload, {
-          cpf: cleanCpf,
-          full_name: data.full_name,
-          birth_date: data.birth_date,
-          gender: data.gender,
-        })
-      ) {
-        throw new Error('CPF_LOOKUP_PROOF_INVALID');
+
+      const apiProof = verifyCpfLookupProof(token);
+      if (apiProof) {
+        if (
+          !proofMatchesRegisterBody(apiProof, {
+            cpf: cleanCpf,
+            full_name: data.full_name,
+            birth_date: data.birth_date,
+            gender: data.gender,
+          })
+        ) {
+          throw new Error('CPF_LOOKUP_PROOF_INVALID');
+        }
+        cpfValidatedAt = new Date().toISOString();
+        cpfLookupSource = 'cpf_brasil_api';
+      } else {
+        const manualProof = verifyManualCpfProof(token);
+        if (
+          !manualProof ||
+          !manualProofMatchesRegisterBody(manualProof, { cpf: cleanCpf }) ||
+          !isValidCpfDigits(cleanCpf)
+        ) {
+          throw new Error('CPF_LOOKUP_PROOF_INVALID');
+        }
+        cpfValidatedAt = null;
+        cpfLookupSource = 'manual';
       }
-      cpfValidatedAt = new Date().toISOString();
-      cpfLookupSource = 'cpf_brasil_api';
     }
 
     // Check if email already exists

@@ -168,6 +168,11 @@ import {
   getAssistedOperationalSignalsController,
   getAssistedAuditDetailController,
 } from '../controllers/invitationBonusAssistedSupportController.js';
+import {
+  getCpfAuditOverviewController,
+  getCpfAuditDailyController,
+  getCpfRecentErrorsController,
+} from '../controllers/cpfAuditController.js';
 
 const router = Router();
 
@@ -241,6 +246,11 @@ router.get('/reports/monthly-evolution', getMonthlyEvolutionController);
 router.get('/reports/event-performance', getEventPerformanceController);
 router.get('/reports/cpf-validation-overview', getCpfValidationOverviewController);
 router.get('/reports/cpf-lookup-metrics', getCpfLookupMetricsController);
+
+// Sprint 5 — auditoria operacional CPF (super admin)
+router.get('/audit/cpf/overview', getCpfAuditOverviewController);
+router.get('/audit/cpf/daily', getCpfAuditDailyController);
+router.get('/audit/cpf/recent-errors', getCpfRecentErrorsController);
 router.get(
   '/reports/leaders-invitations-granted/:eventId',
   getLeadersInvitationsGrantedByEventController

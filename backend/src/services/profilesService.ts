@@ -1,6 +1,7 @@
 import { query } from '../config/database.js';
 import { Profile } from '../types/index.js';
 import { comparePassword } from './authService.js';
+import { isValidCpfDigits } from '../utils/cpf.js';
 
 export interface UpdateProfileData {
   full_name?: string;
@@ -71,11 +72,12 @@ export const updateProfile = async (userId: string, data: UpdateProfileData) => 
       // Clean CPF: remove formatting
       if (key === 'cpf' && value) {
         const cleanCpf = String(value).replace(/[^0-9]/g, '');
-        if (cleanCpf.length === 11) {
-          fields.push(`${key} = $${paramIndex}`);
-          values.push(cleanCpf);
-          paramIndex++;
+        if (!isValidCpfDigits(cleanCpf)) {
+          throw new Error('CPF inválido');
         }
+        fields.push(`${key} = $${paramIndex}`);
+        values.push(cleanCpf);
+        paramIndex++;
       } else {
       fields.push(`${key} = $${paramIndex}`);
       values.push(value);

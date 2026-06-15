@@ -9,6 +9,7 @@ import {
   resendInvitationEmail,
   getInvitationRegistrationForLeader,
 } from '../services/leaderInvitationsService.js';
+import { isValidCpfDigits } from '../utils/cpf.js';
 
 // Runner data for pre-registration when CPF not found (same shape as createRunnerByOrganizer)
 const runnerDataSchema = z.object({
@@ -32,11 +33,8 @@ const productSelectionSchema = z.object({
 const sendInvitationSchema = z.object({
   invitation_id: z.string().uuid('Invalid invitation ID'),
   runner_cpf: z.string().min(1, 'CPF é obrigatório').refine(
-    (cpf) => {
-      const cleanCpf = cpf.replace(/\D/g, '');
-      return cleanCpf.length >= 11;
-    },
-    { message: 'CPF deve conter pelo menos 11 dígitos numéricos' }
+    (cpf) => isValidCpfDigits(cpf.replace(/\D/g, '')),
+    { message: 'CPF inválido. Verifique os dígitos informados.' }
   ),
   runner_data: runnerDataSchema.optional(),
   // Etapa 1: líder pode pré-definir categoria, modalidade e kit (e variante) do convite

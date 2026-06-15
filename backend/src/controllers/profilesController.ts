@@ -122,6 +122,14 @@ export const updateOwnProfile = asyncHandler(async (req: AuthRequest, res: Respo
   // Check if CPF already exists (excluding current user)
   if (profileData.cpf) {
     const cleanCpf = String(profileData.cpf).replace(/[^0-9]/g, '');
+    if (!isValidCpfDigits(cleanCpf)) {
+      return res.status(400).json({
+        success: false,
+        error: 'CPF inválido',
+        message: 'CPF inválido. Verifique os dígitos informados.',
+      });
+    }
+    profileData.cpf = cleanCpf;
     const existingCpf = await query(
       'SELECT id FROM profiles WHERE cpf = $1 AND id != $2',
       [cleanCpf, req.user.id]

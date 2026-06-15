@@ -20,6 +20,7 @@ import { GroupLeadersManagement } from "@/components/admin/GroupLeadersManagemen
 import QuotesManagement from "@/components/admin/QuotesManagement";
 import AdminRegistrations from "@/components/admin/AdminRegistrations";
 import AdminBanners from "@/components/admin/AdminBanners";
+import AuditCpfPage from "@/pages/admin/AuditCpfPage";
 import { getSystemSettings } from "@/lib/api/systemSettings";
 import { getAdminPath, getAdminSectionFromPath, getBreadcrumbForPath } from "@/lib/utils/navigation";
 
@@ -34,10 +35,30 @@ const AdminDashboard = () => {
   const activeSection = getAdminSectionFromPath(location.pathname);
 
   useEffect(() => {
-    if (!sectionParam || sectionParam === "" || sectionParam === "dashboard") {
+    const rest = location.pathname.replace(/^\/admin\/?/, "");
+    const resolvedSection = getAdminSectionFromPath(location.pathname);
+
+    // /admin ou /admin/ → URL canônica da visão geral
+    if (!rest) {
+      navigate(getAdminPath("overview"), { replace: true });
+      return;
+    }
+
+    // /admin/:section com segmento legado ou vazio
+    if (sectionParam === "dashboard" || sectionParam === "") {
+      navigate(getAdminPath("overview"), { replace: true });
+      return;
+    }
+
+    const hasValidSection =
+      rest.includes("/") || // rotas aninhadas: /admin/auditoria/cpf, etc.
+      Boolean(sectionParam) || // /admin/:section
+      resolvedSection !== "overview"; // mapeamento direto em getAdminSectionFromPath
+
+    if (!hasValidSection) {
       navigate(getAdminPath("overview"), { replace: true });
     }
-  }, [sectionParam, navigate]);
+  }, [sectionParam, navigate, location.pathname]);
 
   useEffect(() => {
     loadSystemSettings();
@@ -112,6 +133,8 @@ const AdminDashboard = () => {
         return <GroupLeadersManagement />;
       case "quotes":
         return <QuotesManagement />;
+      case "audit-cpf":
+        return <AuditCpfPage />;
       default:
         return <DashboardOverview />;
     }

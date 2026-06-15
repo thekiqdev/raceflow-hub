@@ -302,11 +302,20 @@ export function RegistrationFlow({
     setRegisterGenderLockedFromLookup(false);
   }, []);
 
-  const { lookupLoading, lookupError, manualLookup, cpfAlreadyRegistered, clearLookupCompleted } =
+  const onRegisterCpfManualEntry = useCallback((proof: string) => {
+    setRegisterGenderLockedFromLookup(false);
+    setRegisterData((prev) => ({
+      ...prev,
+      cpfLookupProof: proof,
+    }));
+  }, []);
+
+  const { lookupLoading, lookupError, manualLookup, cpfAlreadyRegistered, clearLookupCompleted, isManualMode } =
     useCpfBrasilLookup({
       cpfMasked: registerData.cpf,
       onSuccess: onRegisterCpfLookupSuccess,
       onInvalidate: onRegisterCpfLookupInvalidate,
+      onManualEntry: onRegisterCpfManualEntry,
       canAutoLookup: () => Boolean(registerData.birthDate?.trim()),
     });
 
@@ -314,7 +323,8 @@ export function RegistrationFlow({
     clearLookupCompletedRef.current = clearLookupCompleted;
   }, [clearLookupCompleted]);
 
-  const lockedFromRegisterCpfLookup = Boolean(registerData.cpfLookupProof);
+  const cpfProofReady = Boolean(registerData.cpfLookupProof);
+  const fieldsReadOnlyFromApi = cpfProofReady && !isManualMode;
 
   const [lgpdConsent, setLgpdConsent] = useState(false);
   const [isRegisteringAccount, setIsRegisteringAccount] = useState(false);
@@ -1023,7 +1033,7 @@ export function RegistrationFlow({
       return;
     }
     if (!registerData.cpfLookupProof) {
-      toast.error("CPF inválido");
+      toast.error("Consulte o CPF para continuar");
       return;
     }
     if (!registerData.fullName || !registerData.email || !registerData.password || !registerData.phone) {
@@ -1946,7 +1956,7 @@ export function RegistrationFlow({
                             )}
                           </div>
                         )}
-                        {!lockedFromRegisterCpfLookup && (
+                        {!cpfProofReady && (
                           <p className="mt-1 text-xs text-muted-foreground">
                             Informe o CPF e a data de nascimento e clique em Consultar. A data será conferida com
                             a consulta.
@@ -1959,16 +1969,16 @@ export function RegistrationFlow({
                           id="registerBirthDate"
                           type="date"
                           value={registerData.birthDate}
-                          readOnly={lockedFromRegisterCpfLookup}
+                          readOnly={fieldsReadOnlyFromApi}
                           onChange={(e) => {
-                            if (lockedFromRegisterCpfLookup) return;
+                            if (fieldsReadOnlyFromApi) return;
                             setRegisterData((prev) => ({ ...prev, birthDate: e.target.value }));
                           }}
                           max={new Date().toISOString().split("T")[0]}
-                          className={`mt-1 ${lockedFromRegisterCpfLookup ? "bg-muted" : ""}`}
+                          className={`mt-1 ${fieldsReadOnlyFromApi ? "bg-muted" : ""}`}
                           disabled={isRegisteringAccount}
                         />
-                        {!lockedFromRegisterCpfLookup && (
+                        {!cpfProofReady && (
                           <p className="mt-1 text-xs text-muted-foreground">
                             Deve ser a mesma data que consta no seu documento de identificação.
                           </p>
@@ -1987,22 +1997,31 @@ export function RegistrationFlow({
                           {lookupLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Consultar"}
                         </Button>
                       </div>
-                      {lockedFromRegisterCpfLookup && (
+                      {cpfProofReady && (
                         <>
+                          {isManualMode && (
+                            <div className="rounded-lg border bg-muted/50 p-3 text-sm text-muted-foreground">
+                              CPF válido, mas não localizado na base nacional. Complete seus dados para continuar.
+                            </div>
+                          )}
                           <div>
                             <Label htmlFor="registerFullName">Nome completo *</Label>
                             <Input
                               id="registerFullName"
                               value={registerData.fullName}
-                              readOnly
-                              placeholder="Confirmado após consulta"
-                              className="mt-1 bg-muted"
+                              readOnly={fieldsReadOnlyFromApi}
+                              onChange={(e) => {
+                                if (fieldsReadOnlyFromApi) return;
+                                setRegisterData((prev) => ({ ...prev, fullName: e.target.value }));
+                              }}
+                              placeholder={isManualMode ? "Seu nome completo" : "Confirmado após consulta"}
+                              className={`mt-1 ${fieldsReadOnlyFromApi ? "bg-muted" : ""}`}
                               disabled={isRegisteringAccount}
                             />
                           </div>
                           <div>
                             <Label htmlFor="registerGenderDisplay">Gênero *</Label>
-                            {registerGenderLockedFromLookup ? (
+                            {registerGenderLockedFromLookup && fieldsReadOnlyFromApi ? (
                               <Input
                                 id="registerGenderDisplay"
                                 value={registerData.gender === "M" ? "Masculino" : "Feminino"}

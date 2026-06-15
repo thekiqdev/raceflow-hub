@@ -81,11 +81,17 @@ const Auth = () => {
     setCpfLookupProof(null);
   }, []);
 
-  const { lookupLoading, lookupError, manualLookup, cpfAlreadyRegistered, clearLookupCompleted } =
+  const onManualEntry = useCallback((proof: string) => {
+    setGenderLockedFromLookup(false);
+    setCpfLookupProof(proof);
+  }, []);
+
+  const { lookupLoading, lookupError, manualLookup, cpfAlreadyRegistered, clearLookupCompleted, isManualMode } =
     useCpfBrasilLookup({
       cpfMasked: cpf,
       onSuccess: onLookupSuccess,
       onInvalidate: onLookupInvalidate,
+      onManualEntry,
       canAutoLookup: () => Boolean(birthDate.trim()),
     });
 
@@ -93,7 +99,8 @@ const Auth = () => {
     clearLookupCompletedRef.current = clearLookupCompleted;
   }, [clearLookupCompleted]);
 
-  const lockedFromLookup = Boolean(cpfLookupProof);
+  const cpfProofReady = Boolean(cpfLookupProof);
+  const fieldsReadOnlyFromApi = cpfProofReady && !isManualMode;
 
   const { user } = useAuth();
 
@@ -136,7 +143,7 @@ const Auth = () => {
     }
 
     if (!cpfLookupProof) {
-      toast.error("CPF inválido");
+      toast.error("Consulte o CPF para continuar");
       return;
     }
 
@@ -261,7 +268,7 @@ const Auth = () => {
                       )}
                     </div>
                   )}
-                  {!lockedFromLookup && (
+                  {!cpfProofReady && (
                     <p className="text-xs text-muted-foreground">
                       Informe o CPF e a data de nascimento e clique em Consultar. A data será conferida com a
                       consulta.
@@ -275,12 +282,12 @@ const Auth = () => {
                     id="signup-birthdate"
                     type="date"
                     value={birthDate}
-                    readOnly={lockedFromLookup}
-                    onChange={(e) => !lockedFromLookup && setBirthDate(e.target.value)}
+                    readOnly={fieldsReadOnlyFromApi}
+                    onChange={(e) => !fieldsReadOnlyFromApi && setBirthDate(e.target.value)}
                     required
-                    className={lockedFromLookup ? "bg-muted" : ""}
+                    className={fieldsReadOnlyFromApi ? "bg-muted" : ""}
                   />
-                  {!lockedFromLookup && (
+                  {!cpfProofReady && (
                     <p className="text-xs text-muted-foreground">
                       Deve ser a mesma data que consta no seu documento de identificação.
                     </p>
@@ -300,23 +307,31 @@ const Auth = () => {
                   </Button>
                 </div>
 
-                {lockedFromLookup && (
+                {cpfProofReady && (
                   <>
+                    {isManualMode && (
+                      <div className="rounded-lg border bg-muted/50 p-3 text-sm text-muted-foreground">
+                        CPF válido, mas não encontrado na base nacional. Preencha seus dados manualmente para
+                        continuar.
+                      </div>
+                    )}
+
                     <div className="space-y-2">
                       <Label htmlFor="signup-name">Nome completo *</Label>
                       <Input
                         id="signup-name"
-                        placeholder="Preenchido após confirmar CPF e data"
+                        placeholder={isManualMode ? "Seu nome completo" : "Preenchido após confirmar CPF e data"}
                         value={fullName}
-                        readOnly
+                        readOnly={fieldsReadOnlyFromApi}
+                        onChange={(e) => !fieldsReadOnlyFromApi && setFullName(e.target.value)}
                         required
-                        className="bg-muted"
+                        className={fieldsReadOnlyFromApi ? "bg-muted" : ""}
                       />
                     </div>
 
                     <div className="space-y-2">
                       <Label htmlFor="signup-gender">Sexo *</Label>
-                      {genderLockedFromLookup ? (
+                      {genderLockedFromLookup && fieldsReadOnlyFromApi ? (
                         <Input
                           id="signup-gender"
                           value={gender === "M" ? "Masculino" : "Feminino"}

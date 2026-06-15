@@ -22,7 +22,11 @@
     "grant-missing-bonuses": "tsx scripts/grant-missing-bonuses.ts",
     "fix-invitation-registrations": "tsx scripts/fix-invitation-registrations.ts",
     "test:migration-leaders": "node --import tsx --test tests/changeEventOrganizerService.leaders.test.ts",
-    "test:invitation-bonus-grant": "node --import tsx --test tests/invitationBonusGrantService.test.ts"
+    "test:invitation-bonus-grant": "node --import tsx --test tests/invitationBonusGrantService.test.ts",
+    "test:cpf-manual-fallback": "node --import tsx --test tests/cpfManualFallback.test.ts",
+    "test:cpf-hardening": "node --import tsx --test tests/cpfHardening.test.ts",
+    "test:leader-invitation-cpf": "node --import tsx --test tests/leaderInvitationCpfValidation.test.ts",
+    "test:cpf-audit": "node --import tsx --test tests/cpfAuditService.test.ts"
   },
   "keywords": [
     "raceflow",

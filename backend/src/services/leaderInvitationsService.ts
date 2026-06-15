@@ -1,6 +1,7 @@
 import jwt from 'jsonwebtoken';
 import { query } from '../config/database.js';
 import { createRunnerByOrganizer, type RunnerDataByOrganizer } from './registrationsService.js';
+import { isValidCpfDigits } from '../utils/cpf.js';
 
 export interface LeaderInvitation {
   id: string;
@@ -236,8 +237,8 @@ export const sendInvitationByCpf = async (
 ): Promise<LeaderInvitation> => {
   const cleanCpf = runnerCpf.replace(/\D/g, '');
 
-  if (cleanCpf.length !== 11) {
-    throw new Error(`CPF inválido. Deve conter 11 dígitos. Recebido: ${cleanCpf.length} dígitos.`);
+  if (!isValidCpfDigits(cleanCpf)) {
+    throw new Error('CPF inválido');
   }
 
   // Find runner by CPF

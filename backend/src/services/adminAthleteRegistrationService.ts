@@ -13,6 +13,7 @@ import {
 import { getEventById, getEffectiveRegistrationStatus } from './eventsService.js';
 import { getCategoryById } from './categoriesService.js';
 import { calculateRegistrationTotal } from './registrationTotalService.js';
+import { isValidCpfDigits } from '../utils/cpf.js';
 
 export type StaffAthleteActorType = 'organizer' | 'super_admin';
 
@@ -102,8 +103,8 @@ export async function registerAthleteByStaff(params: RegisterAthleteByStaffParam
   } = params;
 
   const cleanCpf = String(cpf).replace(/[^0-9]/g, '');
-  if (cleanCpf.length !== 11) {
-    throw new Error('CPF deve conter 11 dígitos');
+  if (!isValidCpfDigits(cleanCpf)) {
+    throw new Error('CPF inválido');
   }
 
   let athlete = await findUserByCpf(cleanCpf);

@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
+import { recordCpfLookupMetric } from '../services/cpfAuditService.js';
 
 // Simple in-memory rate limiter
 // For production, use Redis-based rate limiter
@@ -114,6 +115,13 @@ export const cpfLookupRateLimiter = (req: Request, res: Response, next: NextFunc
   if (cpfLookupStore[key].count >= maxRequests) {
     const secondsRemaining = Math.ceil((cpfLookupStore[key].resetTime - now) / 1000);
     console.warn(`[cpf-lookup] rate limit exceeded: ${key}`);
+    const rawCpf = typeof (req.body as { cpf?: string })?.cpf === 'string' ? (req.body as { cpf: string }).cpf : undefined;
+    void recordCpfLookupMetric({
+      cpf: rawCpf,
+      resultCode: 'RATE_LIMITED',
+      source: 'lookup-cpf',
+      metadata: { retry_after_seconds: secondsRemaining },
+    });
     res.status(429).json({
       success: false,
       message: 'CPF inválido',

@@ -1,8 +1,16 @@
 import { randomUUID } from 'crypto';
 import { normalizeCpfDigits, isValidCpfDigits, maskCpf } from '../utils/cpf.js';
 import { fetchCpfFromBrasilApi, type CpfBrasilInternalCode } from './cpfBrasilClient.js';
+import {
+  createManualCpfProof,
+  isManualCpfWhenNotFoundEnabled,
+} from './cpfLookupProof.js';
 
-export type LookupCpfCode = 'OK' | 'LOCAL_INVALID_FORMAT' | CpfBrasilInternalCode;
+export type LookupCpfCode =
+  | 'OK'
+  | 'CPF_NOT_IN_REGISTRY'
+  | 'LOCAL_INVALID_FORMAT'
+  | CpfBrasilInternalCode;
 
 export interface LookupCpfSuccessData {
   cpf: string;
@@ -14,11 +22,12 @@ export interface LookupCpfSuccessData {
 
 export interface LookupCpfResult {
   success: boolean;
-  /** Sempre "CPF inválido" em falha (política v2). */
   message: string;
   code: LookupCpfCode;
   requestId: string;
-  data?: LookupCpfSuccessData;
+  data?: LookupCpfSuccessData | null;
+  manual_entry_allowed?: boolean;
+  proof?: string;
 }
 
 /** Mapeia SEXO da API para texto armazenado em profiles.gender. */
@@ -27,6 +36,35 @@ export function mapSexoToProfileGender(sexoRaw: string): { gender: string; locke
   if (s === 'M' || s.startsWith('MASC')) return { gender: 'M', locked: true };
   if (s === 'F' || s.startsWith('FEM')) return { gender: 'F', locked: true };
   return { gender: '', locked: false };
+}
+
+/**
+ * Trata falha da API após CPF válido localmente.
+ * EXTERNAL_NOT_FOUND + flag → sucesso parcial com proof manual.
+ */
+export function buildLookupFailureResult(
+  apiCode: CpfBrasilInternalCode,
+  digits: string,
+  requestId: string
+): LookupCpfResult {
+  if (apiCode === 'EXTERNAL_NOT_FOUND' && isManualCpfWhenNotFoundEnabled()) {
+    return {
+      success: true,
+      message: 'OK',
+      code: 'CPF_NOT_IN_REGISTRY',
+      requestId,
+      data: null,
+      manual_entry_allowed: true,
+      proof: createManualCpfProof(digits),
+    };
+  }
+
+  return {
+    success: false,
+    message: 'CPF inválido',
+    code: apiCode,
+    requestId,
+  };
 }
 
 /**
@@ -56,12 +94,7 @@ export async function lookupCpfForRegistration(rawCpf: string): Promise<LookupCp
       cpf: maskCpf(digits),
       httpStatus: api.httpStatus,
     });
-    return {
-      success: false,
-      message: 'CPF inválido',
-      code: api.internalCode,
-      requestId,
-    };
+    return buildLookupFailureResult(api.internalCode, digits, requestId);
   }
 
   const mappedGender = mapSexoToProfileGender(api.payload.sexoRaw);

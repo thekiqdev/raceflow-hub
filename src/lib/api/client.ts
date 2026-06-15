@@ -31,6 +31,8 @@ export interface ApiResponse<T = any> {
   details?: unknown;
   /** JWT de lookup CPF (sucesso). */
   proof?: string;
+  /** CPF válido não encontrado na base nacional — permite preenchimento manual. */
+  manual_entry_allowed?: boolean;
   meta?: { request_id?: string; code?: string };
 }
 

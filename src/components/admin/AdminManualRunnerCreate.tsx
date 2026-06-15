@@ -15,6 +15,8 @@ import { Loader2, ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
 import { createManualRunner } from "@/lib/api/userManagement";
 import { getAdminPath } from "@/lib/utils/navigation";
+import { maskCpf } from "@/lib/utils/masks";
+import { validateCpf } from "@/lib/utils/validators";
 
 const emptyForm = {
   full_name: "",
@@ -46,6 +48,7 @@ export default function AdminManualRunnerCreate() {
   const validateRequired = () => {
     if (!form.full_name.trim()) return "Nome completo é obrigatório";
     if (!form.cpf.trim()) return "CPF é obrigatório";
+    if (!validateCpf(form.cpf)) return "CPF inválido. Verifique os dígitos informados.";
     if (!form.email.trim()) return "E-mail é obrigatório";
     if (!form.phone.trim()) return "Telefone é obrigatório";
     if (!form.birth_date) return "Data de nascimento é obrigatória";
@@ -104,7 +107,15 @@ export default function AdminManualRunnerCreate() {
         </CardHeader>
         <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div><Label>Nome completo *</Label><Input value={form.full_name} onChange={(e) => setForm((p) => ({ ...p, full_name: e.target.value }))} /></div>
-          <div><Label>CPF *</Label><Input value={form.cpf} onChange={(e) => setForm((p) => ({ ...p, cpf: e.target.value }))} /></div>
+          <div>
+            <Label>CPF *</Label>
+            <Input
+              value={form.cpf}
+              placeholder="000.000.000-00"
+              maxLength={14}
+              onChange={(e) => setForm((p) => ({ ...p, cpf: maskCpf(e.target.value) }))}
+            />
+          </div>
           <div><Label>E-mail *</Label><Input type="email" value={form.email} onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))} /></div>
           <div><Label>Telefone *</Label><Input value={form.phone} onChange={(e) => setForm((p) => ({ ...p, phone: e.target.value }))} /></div>
           <div><Label>Data de nascimento *</Label><Input type="date" value={form.birth_date} onChange={(e) => setForm((p) => ({ ...p, birth_date: e.target.value }))} /></div>

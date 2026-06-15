@@ -19,6 +19,7 @@ export const ADMIN_SECTION_TO_PATH: Record<string, string> = {
   banners: 'banners',
   settings: 'configuracoes',
   support: 'suporte',
+  'audit-cpf': 'auditoria/cpf',
 };
 
 /** Labels em português para cada seção admin (breadcrumb, título) */
@@ -38,6 +39,7 @@ export const ADMIN_SECTION_LABELS: Record<string, string> = {
   banners: 'Banners',
   settings: 'Configurações',
   support: 'Suporte',
+  'audit-cpf': 'Auditoria — CPF',
 };
 
 const ADMIN_PATH_TO_SECTION: Record<string, string> = Object.fromEntries(
@@ -46,15 +48,19 @@ const ADMIN_PATH_TO_SECTION: Record<string, string> = Object.fromEntries(
 
 /** URL completa da seção admin (ex.: /admin/configuracoes) */
 export function getAdminPath(sectionId: string): string {
+  if (sectionId === 'audit-cpf') {
+    return '/admin/auditoria/cpf';
+  }
   const segment = ADMIN_SECTION_TO_PATH[sectionId] ?? 'visao-geral';
   return `/admin/${segment}`;
 }
 
 /** Lê o pathname (ex.: /admin/configuracoes) e retorna o sectionId (ex.: settings) */
 export function getAdminSectionFromPath(pathname: string): string {
-  const segment = pathname.replace(/^\/admin\/?/, '') || 'visao-geral';
-  if (segment === 'dashboard') return 'overview';
-  return ADMIN_PATH_TO_SECTION[segment] ?? 'overview';
+  const rest = pathname.replace(/^\/admin\/?/, '') || 'visao-geral';
+  if (rest === 'dashboard') return 'overview';
+  if (rest === 'auditoria/cpf' || rest.startsWith('auditoria/cpf')) return 'audit-cpf';
+  return ADMIN_PATH_TO_SECTION[rest] ?? 'overview';
 }
 
 /** Label da seção admin (ex.: settings → "Configurações") */
@@ -172,6 +178,9 @@ export function getBreadcrumbForPath(pathname: string): { area: string; sectionL
       return { area: 'Admin', sectionLabel: 'Inscrições do evento' };
     }
     const sectionId = getAdminSectionFromPath(pathname);
+    if (sectionId === 'audit-cpf') {
+      return { area: 'Admin', sectionLabel: 'Auditoria — CPF' };
+    }
     return { area: 'Admin', sectionLabel: getAdminSectionLabel(sectionId) };
   }
   if (pathname.startsWith('/organizador')) {

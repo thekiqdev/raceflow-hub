@@ -34,6 +34,7 @@ import invitationsRouter from './routes/invitations.js';
 import settingsPublicRouter from './routes/settingsPublic.js';
 import { updateRegistrationStatuses } from './services/registrationStatusService.js';
 import { cancelExpiredRegistrations } from './services/expiredRegistrationsService.js';
+import { purgeCpfLookupMetricsOlderThan } from './services/cpfAuditService.js';
 
 // Load environment variables — caminho absoluto para funcionar com qualquer cwd (ex.: monorepo na raiz)
 const _serverFileForEnv = fileURLToPath(import.meta.url);
@@ -373,6 +374,25 @@ app.listen(PORT, () => {
   }, EXPIRED_REGISTRATIONS_CHECK_INTERVAL_MS);
   
   console.log(`✅ Cancelamento automático de inscrições expiradas configurado`);
+
+  const CPF_AUDIT_PURGE_INTERVAL_MS = parseInt(
+    process.env.CPF_AUDIT_PURGE_INTERVAL_MS || String(24 * 60 * 60 * 1000),
+    10
+  );
+  const runCpfAuditPurge = () => {
+    purgeCpfLookupMetricsOlderThan()
+      .then((deleted) => {
+        if (deleted > 0) {
+          console.log(`🧹 [cpf-audit] removidos ${deleted} registros antigos de métricas CPF`);
+        }
+      })
+      .catch((error) => {
+        console.error('❌ Erro na limpeza de métricas CPF:', error);
+      });
+  };
+  runCpfAuditPurge();
+  setInterval(runCpfAuditPurge, CPF_AUDIT_PURGE_INTERVAL_MS);
+  console.log('✅ Retenção de auditoria CPF configurada (90 dias)');
 });
 
 export default app;

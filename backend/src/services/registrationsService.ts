@@ -10,6 +10,7 @@ import {
 } from './kitSelectionPolicyService.js';
 import { RegistrationStatus, PaymentStatus, PaymentMethod } from '../types/index.js';
 import { hashPassword } from './authService.js';
+import { isValidCpfDigits } from '../utils/cpf.js';
 
 /**
  * Estoque restante da variante no evento (consumo derivado por inscrições em status que consomem estoque).
@@ -1386,7 +1387,7 @@ export const createRunnerByOrganizer = async (
   runner_data: RunnerDataByOrganizer
 ): Promise<{ id: string }> => {
   const cleanCpf = cpf.replace(/[^0-9]/g, '');
-  if (cleanCpf.length !== 11) {
+  if (!isValidCpfDigits(cleanCpf)) {
     throw new Error('CPF inválido');
   }
 

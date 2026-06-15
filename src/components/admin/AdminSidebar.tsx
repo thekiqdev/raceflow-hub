@@ -1,4 +1,4 @@
-import { LayoutDashboard, Users, Calendar, DollarSign, FileText, Settings, MessageSquare, Building2, Palette, ArrowRightLeft, UserCog, Calculator, ClipboardList, Image } from "lucide-react";
+import { LayoutDashboard, Users, Calendar, DollarSign, FileText, Settings, MessageSquare, Building2, Palette, ArrowRightLeft, UserCog, Calculator, ClipboardList, Image, FileSearch, ChevronRight, Mail, Webhook, CreditCard, RotateCcw, ScrollText } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import {
@@ -9,8 +9,12 @@ import {
   SidebarMenu,
   SidebarMenuItem,
   SidebarMenuButton,
+  SidebarMenuSub,
+  SidebarMenuSubItem,
+  SidebarMenuSubButton,
   useSidebar,
 } from "@/components/ui/sidebar";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Separator } from "@/components/ui/separator";
 import { getSystemSettings } from "@/lib/api/systemSettings";
 import { getNewQuotesCount } from "@/lib/api/quotes";
@@ -39,6 +43,15 @@ const menuItems = [
   { id: "support", title: "Suporte", icon: MessageSquare, badge: true }, // Badge para documentos e contatos pendentes
 ];
 
+const auditSubItems = [
+  { id: "audit-cpf", title: "CPF", icon: FileSearch, enabled: true },
+  { id: "audit-emails", title: "Emails", icon: Mail, enabled: false },
+  { id: "audit-webhooks", title: "Webhooks", icon: Webhook, enabled: false },
+  { id: "audit-payments", title: "Pagamentos", icon: CreditCard, enabled: false },
+  { id: "audit-restore", title: "Restore", icon: RotateCcw, enabled: false },
+  { id: "audit-logs", title: "Logs", icon: ScrollText, enabled: false },
+];
+
 export function AdminSidebar({ activeSection }: AdminSidebarProps) {
   const navigate = useNavigate();
   const { open } = useSidebar();
@@ -47,6 +60,7 @@ export function AdminSidebar({ activeSection }: AdminSidebarProps) {
   const [newQuotesCount, setNewQuotesCount] = useState(0);
   const [newContactMessagesCount, setNewContactMessagesCount] = useState(0);
   const [pendingDocumentsCount, setPendingDocumentsCount] = useState(0);
+  const [auditOpen, setAuditOpen] = useState(activeSection.startsWith("audit-"));
   
   // Total de notificações para o menu Suporte (documentos + contatos)
   const supportNotificationsCount = pendingDocumentsCount + newContactMessagesCount;
@@ -105,6 +119,12 @@ export function AdminSidebar({ activeSection }: AdminSidebarProps) {
       clearInterval(interval);
     };
   }, []);
+
+  useEffect(() => {
+    if (activeSection.startsWith("audit-")) {
+      setAuditOpen(true);
+    }
+  }, [activeSection]);
 
   const loadAdminLogo = () => {
     const savedLogo = localStorage.getItem('admin-logo');
@@ -244,6 +264,48 @@ export function AdminSidebar({ activeSection }: AdminSidebarProps) {
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 ))}
+              <Collapsible open={auditOpen} onOpenChange={setAuditOpen} className="group/collapsible">
+                <SidebarMenuItem>
+                  <CollapsibleTrigger asChild>
+                    <SidebarMenuButton
+                      className="hover:bg-muted/50"
+                      isActive={activeSection.startsWith("audit-")}
+                    >
+                      <FileSearch className="h-4 w-4" />
+                      {open && (
+                        <>
+                          <span>Auditoria</span>
+                          <ChevronRight className="ml-auto h-4 w-4 transition-transform group-data-[state=open]/collapsible:rotate-90" />
+                        </>
+                      )}
+                    </SidebarMenuButton>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <SidebarMenuSub>
+                      {auditSubItems.map((item) => (
+                        <SidebarMenuSubItem key={item.id}>
+                          <SidebarMenuSubButton
+                            isActive={activeSection === item.id}
+                            className={
+                              item.enabled
+                                ? "cursor-pointer"
+                                : "opacity-50 cursor-not-allowed"
+                            }
+                            onClick={() => {
+                              if (item.enabled) {
+                                navigate(getAdminPath(item.id));
+                              }
+                            }}
+                          >
+                            <item.icon className="h-4 w-4" />
+                            {open && <span>{item.title}</span>}
+                          </SidebarMenuSubButton>
+                        </SidebarMenuSubItem>
+                      ))}
+                    </SidebarMenuSub>
+                  </CollapsibleContent>
+                </SidebarMenuItem>
+              </Collapsible>
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>

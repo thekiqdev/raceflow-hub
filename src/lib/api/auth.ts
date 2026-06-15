@@ -77,11 +77,12 @@ export interface LookupCpfData {
 
 export interface LookupCpfResponseBody {
   success: boolean;
-  data?: LookupCpfData;
+  data?: LookupCpfData | null;
   proof?: string;
+  manual_entry_allowed?: boolean;
   message?: string;
   code?: string;
-  meta?: { request_id?: string };
+  meta?: { request_id?: string; code?: string };
 }
 
 /** Consulta CPF no backend (chave da API só no servidor). Opcional `signal` para cancelar requisição anterior. */
@@ -103,6 +104,7 @@ export interface CpfRegistrationConfig {
   registration_requires_lookup_proof: boolean;
   cpf_brasil_integration_configured: boolean;
   cpf_brasil_enabled: boolean;
+  cpf_allow_manual_when_not_found: boolean;
 }
 
 export const getCpfRegistrationConfig = async () => {

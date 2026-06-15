@@ -142,6 +142,7 @@ const migrations = [
   '112_organizer_liquid_value_canonical.sql',
   '113_protect_event_kits_from_destructive_delete.sql',
   '114_add_event_kits_is_visible.sql',
+  '115_cpf_lookup_metrics.sql',
 ];
 
 // Create migrations tracking table

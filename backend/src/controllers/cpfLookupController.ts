@@ -7,8 +7,13 @@ import {
   isCpfBrasilFeatureEnabled,
   isCpfBrasilIntegrationConfigured,
 } from '../services/cpfBrasilClient.js';
-import { issueCpfLookupProof, registerRequiresCpfLookupProof } from '../services/cpfLookupProof.js';
+import {
+  issueCpfLookupProof,
+  isManualCpfWhenNotFoundEnabled,
+  registerRequiresCpfLookupProof,
+} from '../services/cpfLookupProof.js';
 import { recordCpfLookupOutcome } from '../services/cpfLookupMetricsService.js';
+import { recordCpfLookupMetric } from '../services/cpfAuditService.js';
 import { notifyCpfLookupFailureWebhook } from '../services/cpfLookupAlerts.js';
 import { isCpfRegisteredInPlatform } from '../services/authService.js';
 import { isValidCpfDigits, normalizeCpfDigits } from '../utils/cpf.js';
@@ -25,6 +30,12 @@ const bodySchema = z.object({
 export const lookupCpfController = asyncHandler(async (req: Request, res: Response) => {
   const parsed = bodySchema.safeParse(req.body);
   if (!parsed.success) {
+    const rawCpf = typeof req.body?.cpf === 'string' ? req.body.cpf : '';
+    void recordCpfLookupMetric({
+      cpf: rawCpf,
+      resultCode: 'LOCAL_INVALID_FORMAT',
+      source: 'lookup-cpf',
+    });
     res.status(400).json({
       success: false,
       message: 'CPF inválido',
@@ -37,6 +48,13 @@ export const lookupCpfController = asyncHandler(async (req: Request, res: Respon
   const result = await lookupCpfForRegistration(parsed.data.cpf);
 
   await recordCpfLookupOutcome(result.success);
+  void recordCpfLookupMetric({
+    cpf: parsed.data.cpf,
+    resultCode: result.code,
+    source: 'lookup-cpf',
+    provider: 'cpf_brasil',
+    requestId: result.requestId,
+  });
 
   if (!result.success) {
     if (result.code !== 'LOCAL_INVALID_FORMAT') {
@@ -50,6 +68,18 @@ export const lookupCpfController = asyncHandler(async (req: Request, res: Respon
       message: result.message,
       code: result.code,
       meta: { request_id: result.requestId },
+    });
+    return;
+  }
+
+  if (result.manual_entry_allowed && result.proof) {
+    res.json({
+      success: true,
+      manual_entry_allowed: true,
+      code: 'CPF_NOT_IN_REGISTRY',
+      proof: result.proof,
+      data: null,
+      meta: { request_id: result.requestId, code: result.code },
     });
     return;
   }
@@ -86,6 +116,7 @@ export const cpfRegistrationConfigController = asyncHandler(async (_req: Request
       registration_requires_lookup_proof: registerRequiresCpfLookupProof(),
       cpf_brasil_integration_configured: isCpfBrasilIntegrationConfigured(),
       cpf_brasil_enabled: isCpfBrasilFeatureEnabled(),
+      cpf_allow_manual_when_not_found: isManualCpfWhenNotFoundEnabled(),
     },
   });
 });
