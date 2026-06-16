@@ -3794,12 +3794,15 @@ export const exportRegistrationsController = asyncHandler(async (req: AuthReques
     'NUMERO',
     'NOME MINUSCULO',
     'NOME',
+    'APELIDO',
     'CPF',
     'E-MAIL',
     'TELEFONE',
     'EQUIPE',
     'SEXO',
     'NASCIMENTO',
+    'CIDADE',
+    'ESTADO',
     'CATEGORIA',
     'KIT',
     'VARIAÇÃO',
@@ -4014,12 +4017,15 @@ export const exportRegistrationsController = asyncHandler(async (req: AuthReques
     const runnerName = reg.runner_name || '';
     const runnerNameLower = runnerName.toLowerCase();
     const runnerNameUpper = runnerName.toUpperCase();
+    const runnerPreferredName = String(reg.runner_preferred_name ?? '').trim();
     const runnerCpf = formatCPF(reg.runner_cpf);
     const runnerEmail = reg.runner_email || '';
     const runnerPhone = reg.runner_phone ?? '';
     const runnerTeam = reg.runner_team || '';
     const gender = formatGender(reg.runner_gender);
     const birthDate = formatDate(reg.runner_birth_date);
+    const runnerCity = String(reg.runner_city ?? '').trim();
+    const runnerState = String(reg.runner_state ?? '').trim().toUpperCase();
     const categoryName = reg.category_name || '';
     const kitName = getKitName(reg);
     const kitVariation = await getProductVariationsSummary(reg.id);
@@ -4041,12 +4047,15 @@ export const exportRegistrationsController = asyncHandler(async (req: AuthReques
       index + 1, // NUMERO (sequential number)
       runnerNameLower, // NOME MINUSCULO
       runnerNameUpper, // NOME
+      runnerPreferredName, // APELIDO
       runnerCpf, // CPF
       runnerEmail, // E-MAIL
       runnerPhone, // TELEFONE
       runnerTeam, // EQUIPE
       gender, // SEXO
       birthDate, // NASCIMENTO
+      runnerCity, // CIDADE
+      runnerState, // ESTADO
       categoryName, // CATEGORIA
       kitName, // KIT
       kitVariation, // VARIAÇÃO

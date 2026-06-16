@@ -518,6 +518,7 @@ export async function getRegistrations(
       p.cpf as runner_cpf,
       p.gender as runner_gender,
       p.birth_date as runner_birth_date,
+      p.preferred_name as runner_preferred_name,
       p.city as runner_city,
       p.state as runner_state,
       p.team as runner_team,
