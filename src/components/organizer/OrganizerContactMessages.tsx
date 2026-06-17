@@ -1,6 +1,5 @@
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -13,10 +12,11 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Search, Eye, Calendar, Mail, Phone, MessageSquare, Trophy, Loader2 } from "lucide-react";
+import { Search, Calendar, Mail, Phone, MessageSquare, Trophy, Loader2 } from "lucide-react";
 import { getContactMessages, getContactMessageById, updateContactMessage, type ContactMessage } from "@/lib/api/contactMessages";
 import { getFormConfigurations, type FormFieldConfiguration } from "@/lib/api/formConfigurations";
 import { useToast } from "@/hooks/use-toast";
+import { ContactMessageRowActions } from "@/components/contact-messages/ContactMessageRowActions";
 
 const OrganizerContactMessages = () => {
   const [loading, setLoading] = useState(true);
@@ -225,14 +225,13 @@ const OrganizerContactMessages = () => {
                     <TableCell>{getStatusBadge(message.status)}</TableCell>
                     <TableCell>{formatDate(message.created_at)}</TableCell>
                     <TableCell>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleViewMessage(message.id)}
-                      >
-                        <Eye className="h-4 w-4 mr-2" />
-                        Ver
-                      </Button>
+                      <ContactMessageRowActions
+                        message={message}
+                        onView={handleViewMessage}
+                        onMarkViewed={(id) => updateMessageStatus(id, "viewed")}
+                        onResolve={(id) => updateMessageStatus(id, "closed")}
+                        updating={updating}
+                      />
                     </TableCell>
                   </TableRow>
                 ))}

@@ -15,6 +15,7 @@ import { getOwnProfile } from "@/lib/api/profiles";
 import { useToast } from "@/hooks/use-toast";
 import { createContactMessage } from "@/lib/api/contactMessages";
 import { getPublicFormConfigurations, type PublicFormFieldConfiguration } from "@/lib/api/formConfigurations";
+import { buildContactWhatsAppMessage, buildWhatsAppUrl } from "@/lib/utils/whatsapp";
 
 interface ContactDialogProps {
   open: boolean;
@@ -23,12 +24,13 @@ interface ContactDialogProps {
   organizerEmail?: string;
   organizerName?: string;
   eventId?: string;
+  eventSlug?: string;
 }
 
 type ContactStep = "select" | "form";
 type ContactType = "event" | "platform" | null;
 
-export const ContactDialog = ({ open, onOpenChange, eventTitle, organizerEmail, organizerName, eventId }: ContactDialogProps) => {
+export const ContactDialog = ({ open, onOpenChange, eventTitle, organizerEmail, organizerName, eventId, eventSlug }: ContactDialogProps) => {
   const { user, isAuthenticated } = useAuth();
   const [step, setStep] = useState<ContactStep>("select");
   const [contactType, setContactType] = useState<ContactType>(null);
@@ -234,9 +236,10 @@ export const ContactDialog = ({ open, onOpenChange, eventTitle, organizerEmail, 
       const response = await createContactMessage(apiData);
 
       if (response.success) {
+        const whatsappPhone = response.whatsapp?.phone;
+
         toast({
-          title: "Mensagem enviada!",
-          description: "Sua mensagem foi enviada com sucesso. Entraremos em contato em breve.",
+          title: "Mensagem enviada com sucesso.",
         });
         
         // Trigger event to update messages count in admin/organizer sidebar
@@ -244,6 +247,33 @@ export const ContactDialog = ({ open, onOpenChange, eventTitle, organizerEmail, 
         
         onOpenChange(false);
         resetForm();
+
+        if (whatsappPhone) {
+          const eventName =
+            contactType === "event" ? (eventTitle || "Evento") : "Plataforma Cronoteam";
+          const eventUrl =
+            contactType === "event"
+              ? `${window.location.origin}/evento/${eventSlug || eventId || ""}`
+              : window.location.origin;
+
+          const text = buildContactWhatsAppMessage({
+            eventName,
+            name: apiData.name,
+            email: apiData.email,
+            phone: apiData.phone,
+            subject: apiData.subject,
+            message: apiData.message,
+            eventUrl,
+          });
+
+          setTimeout(() => {
+            window.open(
+              buildWhatsAppUrl(whatsappPhone, text),
+              "_blank",
+              "noopener,noreferrer"
+            );
+          }, 800);
+        }
       } else {
         toast({
           title: "Erro ao enviar",

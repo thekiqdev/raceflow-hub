@@ -1,4 +1,4 @@
-import { apiClient } from './client.js';
+import { apiClient, type ApiResponse } from './client.js';
 
 export interface ContactMessage {
   id: string;
@@ -32,9 +32,22 @@ export interface UpdateContactMessageData {
   status?: 'new' | 'viewed' | 'replied' | 'closed';
 }
 
+export interface ContactMessageWhatsappInfo {
+  phone: string;
+  source: 'organizer' | 'admin';
+}
+
+export type CreateContactMessageResponse = ApiResponse<ContactMessage> & {
+  whatsapp?: ContactMessageWhatsappInfo | null;
+};
+
 // Create a new contact message (public)
-export const createContactMessage = async (data: CreateContactMessageData) => {
-  return apiClient.post<ContactMessage>('/contact-messages', data, { hasToken: false });
+export const createContactMessage = async (
+  data: CreateContactMessageData
+): Promise<CreateContactMessageResponse> => {
+  return apiClient.post<ContactMessage>('/contact-messages', data, {
+    hasToken: false,
+  }) as Promise<CreateContactMessageResponse>;
 };
 
 // Get all contact messages (admin/organizer only)

@@ -1531,6 +1531,7 @@ const EventDetails = () => {
         organizerEmail={event?.organizer_contact_email}
         organizerName={event?.organizer_organization_name || event?.organizer_name}
         eventId={event?.id}
+        eventSlug={slug || event?.slug}
       />
 
       {/* Route Image Dialog */}

@@ -13,6 +13,7 @@ import { z } from 'zod';
 import { hasRole } from '../services/userRolesService.js';
 import { getEventById } from '../services/eventsService.js';
 import { sendNotificationSafely, getAdminEmail, getOrganizerEmail } from '../services/notificationService.js';
+import { resolveWhatsAppForContactMessage } from '../services/contactWhatsAppService.js';
 
 const createContactMessageSchema = z.object({
   type: z.enum(['event', 'platform']),
@@ -115,10 +116,22 @@ export const createContactMessageController = asyncHandler(async (req: AuthReque
     console.error('❌ Erro ao enviar notificação de mensagem de contato:', error);
   }
 
+  let whatsapp = null;
+  try {
+    whatsapp = await resolveWhatsAppForContactMessage({
+      type: data.type,
+      organizerId: message.organizer_id,
+    });
+  } catch (error) {
+    console.error('[CONTACT_WHATSAPP]', error);
+    whatsapp = null;
+  }
+
   res.json({
     success: true,
     data: message,
     message: 'Mensagem enviada com sucesso! Entraremos em contato em breve.',
+    whatsapp,
   });
 });
 
