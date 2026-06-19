@@ -1,6 +1,7 @@
 import { createHash } from 'crypto';
 import { query } from '../config/database.js';
 import { normalizeCpfDigits } from '../utils/cpf.js';
+import { toDateKey } from '../utils/dateKey.js';
 
 export const CPF_AUDIT_RETENTION_DAYS = 90;
 export const CPF_AUDIT_DEFAULT_PERIOD_DAYS = 30;
@@ -169,7 +170,7 @@ export async function getCpfAuditDaily(days = CPF_AUDIT_DEFAULT_PERIOD_DAYS): Pr
   );
 
   return result.rows.map((row) => ({
-    day: String(row.day).slice(0, 10),
+    day: toDateKey(row.day),
     success: parseInt(String(row.success), 10) || 0,
     manual: parseInt(String(row.manual), 10) || 0,
     invalid: parseInt(String(row.invalid), 10) || 0,

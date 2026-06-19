@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { format, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { formatChartDayLabel } from "@/lib/utils/chartDate";
 import { Loader2, IdCard, AlertTriangle, CheckCircle2, Clock, ShieldAlert } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -131,7 +132,7 @@ export default function AuditCpfPage() {
 
   const chartData = daily.map((row) => ({
     ...row,
-    label: format(parseISO(row.day), "dd/MM", { locale: ptBR }),
+    label: formatChartDayLabel(row.day),
   }));
 
   return (

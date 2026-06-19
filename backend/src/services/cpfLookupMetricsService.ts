@@ -1,4 +1,5 @@
 import { query } from '../config/database.js';
+import { toDateKey } from '../utils/dateKey.js';
 
 export interface CpfLookupMetricDayRow {
   day: string;
@@ -59,7 +60,7 @@ export async function getCpfLookupMetricsSummary(days: number): Promise<CpfLooku
     const failure_rate_pct =
       total > 0 ? Math.round((failure_count / total) * 1000) / 10 : 0;
     return {
-      day: String(row.day).slice(0, 10),
+      day: toDateKey(row.day),
       success_count,
       failure_count,
       total,
