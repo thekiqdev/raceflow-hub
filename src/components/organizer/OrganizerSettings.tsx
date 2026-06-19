@@ -8,6 +8,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Building2, Trash2, Loader2, Save } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
+import { maskPhone } from "@/lib/utils/masks";
+import { validatePhone, PHONE_VALIDATION_MESSAGE, validateContactEmail, EMAIL_VALIDATION_MESSAGE } from "@/lib/utils/profileValidation";
+import { normalizePhoneDigits, normalizeEmail } from "@/lib/utils/profileNormalization";
 import {
   getOrganizerSettings,
   updateOrganizerSettings,
@@ -30,7 +33,9 @@ export default function OrganizerSettings() {
   const [contactPhone, setContactPhone] = useState("");
   const [bio, setBio] = useState("");
   const [websiteUrl, setWebsiteUrl] = useState("");
-  const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const [initialPhone, setInitialPhone] = useState("");
+  const [initialContactPhone, setInitialContactPhone] = useState("");
+  const [initialContactEmail, setInitialContactEmail] = useState("");
 
   useEffect(() => {
     if (user) {
@@ -48,10 +53,13 @@ export default function OrganizerSettings() {
       if (response.success && response.data) {
         setSettings(response.data);
         setFullName(response.data.full_name || "");
-        setPhone(response.data.phone || "");
+        setPhone(response.data.phone ? maskPhone(response.data.phone) : "");
         setOrganizationName(response.data.organization_name || "");
         setContactEmail(response.data.contact_email || "");
-        setContactPhone(response.data.contact_phone || "");
+        setContactPhone(response.data.contact_phone ? maskPhone(response.data.contact_phone) : "");
+        setInitialPhone(response.data.phone || "");
+        setInitialContactPhone(response.data.contact_phone || "");
+        setInitialContactEmail(response.data.contact_email || "");
         setBio(response.data.bio || "");
         setWebsiteUrl(response.data.website_url || "");
         setLogoUrl(response.data.logo_url || null);
@@ -139,14 +147,41 @@ export default function OrganizerSettings() {
   const handleSaveGeneral = async () => {
     if (!user) return;
 
+    const normalizedPhone = normalizePhoneDigits(phone);
+    if (normalizedPhone !== normalizePhoneDigits(initialPhone)) {
+      const phoneCheck = validatePhone(normalizedPhone, { allowEmpty: true });
+      if (!phoneCheck.valid) {
+        toast.error(phoneCheck.message ?? PHONE_VALIDATION_MESSAGE);
+        return;
+      }
+    }
+
+    const normalizedContactPhone = normalizePhoneDigits(contactPhone);
+    if (normalizedContactPhone !== normalizePhoneDigits(initialContactPhone)) {
+      const contactPhoneCheck = validatePhone(normalizedContactPhone, { allowEmpty: true });
+      if (!contactPhoneCheck.valid) {
+        toast.error(contactPhoneCheck.message ?? PHONE_VALIDATION_MESSAGE);
+        return;
+      }
+    }
+
+    const normalizedContactEmail = normalizeEmail(contactEmail);
+    if (normalizedContactEmail !== normalizeEmail(initialContactEmail)) {
+      const emailCheck = validateContactEmail(normalizedContactEmail, { allowEmpty: true });
+      if (!emailCheck.valid) {
+        toast.error(emailCheck.message ?? EMAIL_VALIDATION_MESSAGE);
+        return;
+      }
+    }
+
     try {
       setSaving(true);
       const response = await updateOrganizerSettings({
         full_name: fullName,
-        phone: phone,
+        phone: normalizedPhone || undefined,
         organization_name: organizationName,
-        contact_email: contactEmail,
-        contact_phone: contactPhone,
+        contact_email: normalizedContactEmail || undefined,
+        contact_phone: normalizedContactPhone || undefined,
         bio: bio,
         website_url: websiteUrl,
       });
@@ -292,7 +327,7 @@ export default function OrganizerSettings() {
                   type="tel" 
                   placeholder="(00) 00000-0000"
                   value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
+                  onChange={(e) => setPhone(maskPhone(e.target.value))}
                 />
               </div>
               <div className="space-y-2">
@@ -312,7 +347,7 @@ export default function OrganizerSettings() {
                   type="tel" 
                   placeholder="(00) 00000-0000"
                   value={contactPhone}
-                  onChange={(e) => setContactPhone(e.target.value)}
+                  onChange={(e) => setContactPhone(maskPhone(e.target.value))}
                 />
               </div>
               <div className="space-y-2">

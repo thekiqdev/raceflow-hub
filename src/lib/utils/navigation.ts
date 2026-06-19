@@ -20,6 +20,7 @@ export const ADMIN_SECTION_TO_PATH: Record<string, string> = {
   settings: 'configuracoes',
   support: 'suporte',
   'audit-cpf': 'auditoria/cpf',
+  'audit-data-quality': 'auditoria/data-quality',
 };
 
 /** Labels em português para cada seção admin (breadcrumb, título) */
@@ -40,6 +41,7 @@ export const ADMIN_SECTION_LABELS: Record<string, string> = {
   settings: 'Configurações',
   support: 'Suporte',
   'audit-cpf': 'Auditoria — CPF',
+  'audit-data-quality': 'Auditoria — Qualidade dos Dados',
 };
 
 const ADMIN_PATH_TO_SECTION: Record<string, string> = Object.fromEntries(
@@ -51,6 +53,9 @@ export function getAdminPath(sectionId: string): string {
   if (sectionId === 'audit-cpf') {
     return '/admin/auditoria/cpf';
   }
+  if (sectionId === 'audit-data-quality') {
+    return '/admin/auditoria/data-quality';
+  }
   const segment = ADMIN_SECTION_TO_PATH[sectionId] ?? 'visao-geral';
   return `/admin/${segment}`;
 }
@@ -60,6 +65,9 @@ export function getAdminSectionFromPath(pathname: string): string {
   const rest = pathname.replace(/^\/admin\/?/, '') || 'visao-geral';
   if (rest === 'dashboard') return 'overview';
   if (rest === 'auditoria/cpf' || rest.startsWith('auditoria/cpf')) return 'audit-cpf';
+  if (rest === 'auditoria/data-quality' || rest.startsWith('auditoria/data-quality')) {
+    return 'audit-data-quality';
+  }
   return ADMIN_PATH_TO_SECTION[rest] ?? 'overview';
 }
 
@@ -180,6 +188,9 @@ export function getBreadcrumbForPath(pathname: string): { area: string; sectionL
     const sectionId = getAdminSectionFromPath(pathname);
     if (sectionId === 'audit-cpf') {
       return { area: 'Admin', sectionLabel: 'Auditoria — CPF' };
+    }
+    if (sectionId === 'audit-data-quality') {
+      return { area: 'Admin', sectionLabel: 'Auditoria — Qualidade dos Dados' };
     }
     return { area: 'Admin', sectionLabel: getAdminSectionLabel(sectionId) };
   }

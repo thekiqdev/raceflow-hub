@@ -31,6 +31,8 @@ import {
 import { getRunnerProfileByCpfForOrganizer, type Profile } from "@/lib/api/profiles";
 import { maskCpf, maskPhone, unmask } from "@/lib/utils/masks";
 import { validateCpf } from "@/lib/utils/validators";
+import { validateFullName, FULL_NAME_VALIDATION_MESSAGE, validatePhone, PHONE_VALIDATION_MESSAGE, validateCity, CITY_VALIDATION_MESSAGE } from "@/lib/utils/profileValidation";
+import { normalizePersonName, normalizePlaceName, normalizePhoneDigits } from "@/lib/utils/profileNormalization";
 import { getModalities, type Modality } from "@/lib/api/modalities";
 import { getCategories, type Category } from "@/lib/api/categories";
 import { getEventKits, type EventKit, type KitProduct, type ProductVariant } from "@/lib/api/eventKits";
@@ -270,19 +272,33 @@ export function RegisterAthleteStaffDialog({
 
   const handleAthleteFormNext = () => {
     const err: Record<string, string> = {};
-    if (!athleteFormData.full_name?.trim()) err.full_name = "Nome é obrigatório";
+    const normalizedName = normalizePersonName(athleteFormData.full_name);
+    const fullNameCheck = validateFullName(normalizedName);
+    if (!fullNameCheck.valid) {
+      err.full_name = fullNameCheck.message ?? FULL_NAME_VALIDATION_MESSAGE;
+    }
     if (athleteFormData.email?.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(athleteFormData.email))
       err.email = "Email inválido";
+    if (!athleteFormData.city?.trim()) {
+      err.city = "Cidade é obrigatória";
+    } else {
+      const cityCheck = validateCity(athleteFormData.city);
+      if (!cityCheck.valid) err.city = cityCheck.message ?? CITY_VALIDATION_MESSAGE;
+    }
+    if (athleteFormData.phone?.trim()) {
+      const phoneCheck = validatePhone(athleteFormData.phone);
+      if (!phoneCheck.valid) err.phone = phoneCheck.message ?? PHONE_VALIDATION_MESSAGE;
+    }
     setAthleteFormErrors(err);
     if (Object.keys(err).length > 0) return;
     setRunnerData({
-      full_name: athleteFormData.full_name.trim(),
+      full_name: normalizedName,
       birth_date: athleteFormData.birth_date?.trim() || undefined,
-      city: athleteFormData.city?.trim() || undefined,
+      city: normalizePlaceName(athleteFormData.city) || undefined,
       gender: athleteFormData.gender || undefined,
       team: athleteFormData.team?.trim() || undefined,
       email: athleteFormData.email?.trim() || undefined,
-      phone: athleteFormData.phone?.trim() ? unmask(athleteFormData.phone) : undefined,
+      phone: athleteFormData.phone?.trim() ? normalizePhoneDigits(athleteFormData.phone) : undefined,
     });
     setRegisterStep(3);
   };
@@ -341,8 +357,9 @@ export function RegisterAthleteStaffDialog({
       return;
     }
     if (athleteFound === false && runnerData) {
-      if (!runnerData.full_name?.trim()) {
-        toast.error("Nome completo do atleta é obrigatório.");
+      const fullNameCheck = validateFullName(runnerData.full_name);
+      if (!fullNameCheck.valid) {
+        toast.error(fullNameCheck.message ?? FULL_NAME_VALIDATION_MESSAGE);
         return;
       }
       if (!runnerData.birth_date) {

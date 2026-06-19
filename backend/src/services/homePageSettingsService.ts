@@ -1,4 +1,6 @@
 import { query } from '../config/database.js';
+import { normalizePhoneDigits } from '../utils/profileNormalization.js';
+import { assertValidPhone } from '../utils/profileValidation.js';
 
 // Get home page settings
 export const getHomePageSettings = async () => {
@@ -33,11 +35,29 @@ export const getHomePageSettings = async () => {
 
 // Update home page settings
 export const updateHomePageSettings = async (data: any) => {
+  const normalized = { ...data };
+
+  if (normalized.whatsapp_number !== undefined && normalized.whatsapp_number !== null) {
+    normalized.whatsapp_number = normalizePhoneDigits(String(normalized.whatsapp_number));
+  }
+
+  const existing = await getHomePageSettings();
+  if (normalized.whatsapp_number !== undefined) {
+    const newValue = normalized.whatsapp_number ?? '';
+    const currentValue = normalizePhoneDigits(existing.whatsapp_number);
+    if (newValue !== currentValue) {
+      assertValidPhone(newValue, {
+        allowEmpty: true,
+        source: 'homePageSettings.whatsapp_number',
+      });
+    }
+  }
+
   const fields: string[] = [];
   const values: any[] = [];
   let paramIndex = 1;
 
-  Object.entries(data).forEach(([key, value]) => {
+  Object.entries(normalized).forEach(([key, value]) => {
     if (value !== undefined && key !== 'id') {
       fields.push(`${key} = $${paramIndex}`);
       values.push(value);
@@ -50,7 +70,6 @@ export const updateHomePageSettings = async (data: any) => {
   }
 
   // Get or create settings
-  const existing = await getHomePageSettings();
   const settingsId = existing.id || '00000000-0000-0000-0000-000000000001';
 
   // Try to update, if fails, insert
@@ -65,10 +84,10 @@ export const updateHomePageSettings = async (data: any) => {
   if (result.rows.length === 0) {
     // Insert new settings
     const insertResult = await query(
-      `INSERT INTO home_page_settings (id, ${Object.keys(data).filter(k => k !== 'id').join(', ')})
-       VALUES ($1, ${Object.keys(data).filter(k => k !== 'id').map((_, i) => `$${i + 2}`).join(', ')})
+      `INSERT INTO home_page_settings (id, ${Object.keys(normalized).filter(k => k !== 'id').join(', ')})
+       VALUES ($1, ${Object.keys(normalized).filter(k => k !== 'id').map((_, i) => `$${i + 2}`).join(', ')})
        RETURNING *`,
-      [settingsId, ...Object.values(data).filter((_, i) => Object.keys(data)[i] !== 'id')]
+      [settingsId, ...Object.values(normalized).filter((_, i) => Object.keys(normalized)[i] !== 'id')]
     );
     return insertResult.rows[0];
   }

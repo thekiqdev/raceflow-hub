@@ -2,6 +2,15 @@ import { query, getClient } from '../config/database.js';
 import { AppRole } from '../types/index.js';
 import bcrypt from 'bcrypt';
 import { isValidCpfDigits, normalizeCpfDigits } from '../utils/cpf.js';
+import {
+  normalizeEmail,
+  normalizePersonName,
+  normalizePhoneDigits,
+  normalizePlaceName,
+  normalizePostalCode,
+  normalizeStreet,
+} from '../utils/profileNormalization.js';
+import { assertValidFullName, assertValidPhone, assertValidPostalCode, assertValidCity, assertValidNeighborhood, assertValidBirthDateRange, assertValidGender, normalizeGender } from '../utils/profileValidation.js';
 
 export interface UserWithStats {
   id: string;
@@ -759,7 +768,7 @@ export const createManualRunner = async (data: CreateManualRunnerData): Promise<
   try {
     await client.query('BEGIN');
 
-    const cleanEmail = String(data.email || '').trim().toLowerCase();
+    const cleanEmail = normalizeEmail(data.email);
     const cleanCpf = normalizeCpfDigits(data.cpf);
     if (!isValidCpfDigits(cleanCpf)) {
       throw new Error('CPF_INVALID');
@@ -783,6 +792,32 @@ export const createManualRunner = async (data: CreateManualRunnerData): Promise<
     if (cpfCheck.rows.length > 0) {
       throw new Error('CPF_ALREADY_EXISTS');
     }
+
+    const fullName = normalizePersonName(data.full_name);
+    assertValidFullName(fullName);
+
+    const normalizedPhone = normalizePhoneDigits(data.phone);
+    const normalizedPostalCode = data.postal_code
+      ? normalizePostalCode(data.postal_code)
+      : null;
+    const normalizedNeighborhood = data.neighborhood
+      ? normalizePlaceName(data.neighborhood)
+      : null;
+    const normalizedCity = data.city ? normalizePlaceName(data.city) : null;
+
+    assertValidPhone(normalizedPhone);
+    if (normalizedPostalCode) {
+      assertValidPostalCode(normalizedPostalCode);
+    }
+    if (normalizedNeighborhood) {
+      assertValidNeighborhood(normalizedNeighborhood);
+    }
+    if (normalizedCity) {
+      assertValidCity(normalizedCity, { source: 'userManagement.createManualRunner' });
+    }
+
+    assertValidBirthDateRange(data.birth_date, { source: 'userManagement.createManualRunner' });
+    assertValidGender(data.gender, { source: 'userManagement.createManualRunner' });
 
     const saltRounds = 10;
     const passwordHash = await bcrypt.hash(data.password, saltRounds);
@@ -808,22 +843,22 @@ export const createManualRunner = async (data: CreateManualRunnerData): Promise<
       )`,
       [
         userId,
-        data.full_name.trim(),
+        fullName,
         cleanCpf,
-        data.phone.trim(),
-        data.gender ?? null,
+        normalizedPhone,
+        normalizeGender(data.gender) || null,
         data.birth_date,
         data.lgpd_consent,
         data.preferred_name?.trim() || null,
         data.profession?.trim() || null,
         data.cbat?.trim() || null,
         data.team?.trim() || null,
-        data.postal_code?.trim() || null,
-        data.street?.trim() || null,
+        normalizedPostalCode,
+        data.street ? normalizeStreet(data.street) : null,
         data.address_number?.trim() || null,
         data.address_complement?.trim() || null,
-        data.neighborhood?.trim() || null,
-        data.city?.trim() || null,
+        normalizedNeighborhood,
+        normalizedCity,
         data.state?.trim() || null,
       ]
     );

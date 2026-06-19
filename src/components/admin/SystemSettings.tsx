@@ -11,6 +11,9 @@ import { Separator } from "@/components/ui/separator";
 import { Building2, Trash2, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { getSystemSettings, updateSystemSettings, testEmail, type SystemSettings as SystemSettingsType } from "@/lib/api/systemSettings";
+import { maskPhone } from "@/lib/utils/masks";
+import { validatePhone, PHONE_VALIDATION_MESSAGE, validateContactEmail, EMAIL_VALIDATION_MESSAGE } from "@/lib/utils/profileValidation";
+import { normalizePhoneDigits, normalizeEmail } from "@/lib/utils/profileNormalization";
 import FormConfigurations from "./FormConfigurations";
 import NotificationTemplatesManagement from "./NotificationTemplatesManagement";
 import { DocumentTypesManagement } from "./DocumentTypesManagement";
@@ -245,12 +248,26 @@ const SystemSettings = () => {
   };
   
   const handleSaveGeneral = async () => {
+    const normalizedPhone = normalizePhoneDigits(generalForm.contact_phone);
+    const phoneCheck = validatePhone(normalizedPhone, { allowEmpty: true });
+    if (!phoneCheck.valid) {
+      toast.error(phoneCheck.message ?? PHONE_VALIDATION_MESSAGE);
+      return;
+    }
+
+    const normalizedEmail = normalizeEmail(generalForm.contact_email);
+    const emailCheck = validateContactEmail(normalizedEmail, { allowEmpty: true });
+    if (!emailCheck.valid) {
+      toast.error(emailCheck.message ?? EMAIL_VALIDATION_MESSAGE);
+      return;
+    }
+
     setSaving(true);
     try {
       const response = await updateSystemSettings({
         platform_name: generalForm.platform_name,
-        contact_email: generalForm.contact_email || null,
-        contact_phone: generalForm.contact_phone || null,
+        contact_email: normalizedEmail || null,
+        contact_phone: normalizedPhone || null,
         company_address: generalForm.company_address || null,
         company_city: generalForm.company_city || null,
         company_state: generalForm.company_state || null,
@@ -530,7 +547,7 @@ const SystemSettings = () => {
                 <Input 
                   id="contact_phone"
                   value={generalForm.contact_phone}
-                  onChange={(e) => setGeneralForm({ ...generalForm, contact_phone: e.target.value })}
+                  onChange={(e) => setGeneralForm({ ...generalForm, contact_phone: maskPhone(e.target.value) })}
                   className="mt-2" 
                 />
               </div>

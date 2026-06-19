@@ -15,8 +15,29 @@ import { Loader2, ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
 import { createManualRunner } from "@/lib/api/userManagement";
 import { getAdminPath } from "@/lib/utils/navigation";
-import { maskCpf } from "@/lib/utils/masks";
+import { maskCpf, maskPhone, maskCep } from "@/lib/utils/masks";
 import { validateCpf } from "@/lib/utils/validators";
+import {
+  validateFullName,
+  FULL_NAME_VALIDATION_MESSAGE,
+  validatePhone,
+  PHONE_VALIDATION_MESSAGE,
+  validatePostalCode,
+  POSTAL_CODE_VALIDATION_MESSAGE,
+  validateCity,
+  CITY_VALIDATION_MESSAGE,
+  validateNeighborhood,
+  NEIGHBORHOOD_VALIDATION_MESSAGE,
+  validateBirthDateRange,
+  BIRTH_DATE_VALIDATION_MESSAGE,
+  normalizeGender,
+} from "@/lib/utils/profileValidation";
+import {
+  normalizePersonName,
+  normalizePlaceName,
+  normalizePhoneDigits,
+  normalizePostalCode,
+} from "@/lib/utils/profileNormalization";
 
 const emptyForm = {
   full_name: "",
@@ -46,13 +67,31 @@ export default function AdminManualRunnerCreate() {
   const [form, setForm] = useState(emptyForm);
 
   const validateRequired = () => {
-    if (!form.full_name.trim()) return "Nome completo é obrigatório";
+    const fullNameCheck = validateFullName(normalizePersonName(form.full_name));
+    if (!fullNameCheck.valid) return fullNameCheck.message ?? FULL_NAME_VALIDATION_MESSAGE;
     if (!form.cpf.trim()) return "CPF é obrigatório";
     if (!validateCpf(form.cpf)) return "CPF inválido. Verifique os dígitos informados.";
     if (!form.email.trim()) return "E-mail é obrigatório";
-    if (!form.phone.trim()) return "Telefone é obrigatório";
+    const phoneCheck = validatePhone(form.phone);
+    if (!phoneCheck.valid) return phoneCheck.message ?? PHONE_VALIDATION_MESSAGE;
     if (!form.birth_date) return "Data de nascimento é obrigatória";
+    const birthCheck = validateBirthDateRange(form.birth_date);
+    if (!birthCheck.valid) return birthCheck.message ?? BIRTH_DATE_VALIDATION_MESSAGE;
+    const genderCheck = validateGender(form.gender);
+    if (!genderCheck.valid) return genderCheck.message ?? GENDER_VALIDATION_MESSAGE;
     if (!form.password) return "Senha é obrigatória";
+    if (form.postal_code.trim()) {
+      const postalCheck = validatePostalCode(form.postal_code);
+      if (!postalCheck.valid) return postalCheck.message ?? POSTAL_CODE_VALIDATION_MESSAGE;
+    }
+    if (form.neighborhood.trim()) {
+      const neighborhoodCheck = validateNeighborhood(form.neighborhood);
+      if (!neighborhoodCheck.valid) return neighborhoodCheck.message ?? NEIGHBORHOOD_VALIDATION_MESSAGE;
+    }
+    if (form.city.trim()) {
+      const cityCheck = validateCity(form.city);
+      if (!cityCheck.valid) return cityCheck.message ?? CITY_VALIDATION_MESSAGE;
+    }
     return null;
   };
 
@@ -64,8 +103,15 @@ export default function AdminManualRunnerCreate() {
     }
     try {
       setSaving(true);
+      const normalizedName = normalizePersonName(form.full_name);
       const response = await createManualRunner({
         ...form,
+        full_name: normalizedName,
+        phone: normalizePhoneDigits(form.phone),
+        postal_code: normalizePostalCode(form.postal_code) || undefined,
+        neighborhood: normalizePlaceName(form.neighborhood) || undefined,
+        city: normalizePlaceName(form.city) || undefined,
+        gender: normalizeGender(form.gender) as "M" | "F" | "O",
         cpf: form.cpf.replace(/\D/g, ""),
       });
       if (!response.success) {
@@ -117,7 +163,7 @@ export default function AdminManualRunnerCreate() {
             />
           </div>
           <div><Label>E-mail *</Label><Input type="email" value={form.email} onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))} /></div>
-          <div><Label>Telefone *</Label><Input value={form.phone} onChange={(e) => setForm((p) => ({ ...p, phone: e.target.value }))} /></div>
+          <div><Label>Telefone *</Label><Input value={form.phone} onChange={(e) => setForm((p) => ({ ...p, phone: maskPhone(e.target.value) }))} /></div>
           <div><Label>Data de nascimento *</Label><Input type="date" value={form.birth_date} onChange={(e) => setForm((p) => ({ ...p, birth_date: e.target.value }))} /></div>
           <div>
             <Label>Sexo/Gênero</Label>
@@ -135,7 +181,7 @@ export default function AdminManualRunnerCreate() {
           <div><Label>Profissão</Label><Input value={form.profession} onChange={(e) => setForm((p) => ({ ...p, profession: e.target.value }))} /></div>
           <div><Label>CBAT</Label><Input value={form.cbat} onChange={(e) => setForm((p) => ({ ...p, cbat: e.target.value }))} /></div>
           <div><Label>Equipe</Label><Input value={form.team} onChange={(e) => setForm((p) => ({ ...p, team: e.target.value }))} /></div>
-          <div><Label>CEP</Label><Input value={form.postal_code} onChange={(e) => setForm((p) => ({ ...p, postal_code: e.target.value }))} /></div>
+          <div><Label>CEP</Label><Input value={form.postal_code} onChange={(e) => setForm((p) => ({ ...p, postal_code: maskCep(e.target.value) }))} /></div>
           <div><Label>Rua</Label><Input value={form.street} onChange={(e) => setForm((p) => ({ ...p, street: e.target.value }))} /></div>
           <div><Label>Número</Label><Input value={form.address_number} onChange={(e) => setForm((p) => ({ ...p, address_number: e.target.value }))} /></div>
           <div><Label>Complemento</Label><Input value={form.address_complement} onChange={(e) => setForm((p) => ({ ...p, address_complement: e.target.value }))} /></div>

@@ -45,6 +45,7 @@ const menuItems = [
 
 const auditSubItems = [
   { id: "audit-cpf", title: "CPF", icon: FileSearch, enabled: true },
+  { id: "audit-data-quality", title: "Qualidade dos Dados", icon: ScrollText, enabled: true },
   { id: "audit-emails", title: "Emails", icon: Mail, enabled: false },
   { id: "audit-webhooks", title: "Webhooks", icon: Webhook, enabled: false },
   { id: "audit-payments", title: "Pagamentos", icon: CreditCard, enabled: false },

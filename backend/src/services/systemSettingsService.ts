@@ -1,4 +1,9 @@
 import { query } from '../config/database.js';
+import { normalizeEmail, normalizePhoneDigits } from '../utils/profileNormalization.js';
+import {
+  assertValidPhone,
+  assertValidContactEmail,
+} from '../utils/profileValidation.js';
 
 export interface SystemSettings {
   id: string;
@@ -131,12 +136,58 @@ export const getSystemSettings = async (): Promise<SystemSettings> => {
 export const updateSystemSettings = async (
   data: Partial<SystemSettings>
 ): Promise<SystemSettings> => {
+  const normalized: Partial<SystemSettings> = { ...data };
+  const phoneFields = ['contact_phone', 'support_phone'] as const;
+  const emailFields = ['contact_email', 'support_email', 'smtp_from_email'] as const;
+
+  for (const key of emailFields) {
+    const value = normalized[key];
+    if (value !== undefined && value !== null) {
+      normalized[key] = normalizeEmail(String(value));
+    }
+  }
+
+  for (const key of phoneFields) {
+    const value = normalized[key];
+    if (value !== undefined && value !== null) {
+      normalized[key] = normalizePhoneDigits(String(value));
+    }
+  }
+
+  const current = await getSystemSettings();
+
+  for (const key of phoneFields) {
+    if (normalized[key] !== undefined) {
+      const newValue = (normalized[key] as string) ?? '';
+      const currentValue = normalizePhoneDigits(current[key]);
+      if (newValue !== currentValue) {
+        assertValidPhone(newValue, {
+          allowEmpty: true,
+          source: `systemSettings.${key}`,
+        });
+      }
+    }
+  }
+
+  for (const key of emailFields) {
+    if (normalized[key] !== undefined) {
+      const newValue = (normalized[key] as string) ?? '';
+      const currentValue = current[key] ? normalizeEmail(current[key]) : '';
+      if (newValue !== currentValue) {
+        assertValidContactEmail(newValue, {
+          allowEmpty: true,
+          source: `systemSettings.${key}`,
+        });
+      }
+    }
+  }
+
   const fields: string[] = [];
   const values: any[] = [];
   let paramIndex = 1;
 
   // Build update query dynamically
-  Object.entries(data).forEach(([key, value]) => {
+  Object.entries(normalized).forEach(([key, value]) => {
     if (key === 'id' || key === 'created_at' || key === 'updated_at') {
       return; // Skip these fields
     }

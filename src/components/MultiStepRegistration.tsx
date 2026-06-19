@@ -14,11 +14,33 @@ import { maskCpf, maskPhone, maskCep, unmask } from "@/lib/utils/masks";
 import {
   validateCpf,
   validateCep,
-  validatePhone,
   validateEmail,
   validatePassword,
   normalizeBirthDateForCompare,
 } from "@/lib/utils/validators";
+import {
+  validateFullName,
+  FULL_NAME_VALIDATION_MESSAGE,
+  validatePhone,
+  PHONE_VALIDATION_MESSAGE,
+  validatePostalCode,
+  POSTAL_CODE_VALIDATION_MESSAGE,
+  validateCity,
+  CITY_VALIDATION_MESSAGE,
+  validateNeighborhood,
+  NEIGHBORHOOD_VALIDATION_MESSAGE,
+  validateBirthDateRange,
+  BIRTH_DATE_VALIDATION_MESSAGE,
+  validateGender,
+  GENDER_VALIDATION_MESSAGE,
+  normalizeGender,
+} from "@/lib/utils/profileValidation";
+import {
+  normalizePersonName,
+  normalizePlaceName,
+  normalizePhoneDigits,
+  normalizePostalCode,
+} from "@/lib/utils/profileNormalization";
 import { fetchAddressByCep } from "@/lib/api/viacep";
 import { useCpfBrasilLookup } from "@/hooks/useCpfBrasilLookup";
 import type { LookupCpfData } from "@/lib/api/auth";
@@ -326,22 +348,31 @@ export function MultiStepRegistration({ open, onOpenChange }: MultiStepRegistrat
         }
         if (!formData.birthDate) {
           newErrors.birthDate = 'Data de nascimento é obrigatória';
+        } else {
+          const birthCheck = validateBirthDateRange(formData.birthDate);
+          if (!birthCheck.valid) {
+            newErrors.birthDate = birthCheck.message ?? BIRTH_DATE_VALIDATION_MESSAGE;
+          }
         }
-        if (!formData.phone || !validatePhone(formData.phone)) {
-          newErrors.phone = 'Telefone inválido';
+        const phoneCheck = validatePhone(formData.phone);
+        if (!phoneCheck.valid) {
+          newErrors.phone = phoneCheck.message ?? PHONE_VALIDATION_MESSAGE;
         }
-        if (!formData.fullName || formData.fullName.trim().length < 3) {
-          newErrors.fullName = 'Nome completo deve ter pelo menos 3 caracteres';
+        const fullNameCheck = validateFullName(normalizePersonName(formData.fullName));
+        if (!fullNameCheck.valid) {
+          newErrors.fullName = fullNameCheck.message ?? FULL_NAME_VALIDATION_MESSAGE;
         }
-        if (!formData.gender) {
-          newErrors.gender = 'Selecione o sexo';
+        const genderCheck = validateGender(formData.gender);
+        if (!genderCheck.valid) {
+          newErrors.gender = genderCheck.message ?? GENDER_VALIDATION_MESSAGE;
         }
         break;
 
       case 2:
         // Validar Etapa 2: Endereço
-        if (!formData.postalCode || !validateCep(formData.postalCode)) {
-          newErrors.postalCode = 'CEP inválido';
+        const postalCodeCheck = validatePostalCode(formData.postalCode);
+        if (!postalCodeCheck.valid) {
+          newErrors.postalCode = postalCodeCheck.message ?? POSTAL_CODE_VALIDATION_MESSAGE;
         }
         if (!formData.street || formData.street.trim().length < 3) {
           newErrors.street = 'Logradouro é obrigatório';
@@ -349,11 +380,13 @@ export function MultiStepRegistration({ open, onOpenChange }: MultiStepRegistrat
         if (!formData.addressNumber || formData.addressNumber.trim().length === 0) {
           newErrors.addressNumber = 'Número é obrigatório';
         }
-        if (!formData.neighborhood || formData.neighborhood.trim().length < 2) {
-          newErrors.neighborhood = 'Bairro é obrigatório';
+        const neighborhoodCheck = validateNeighborhood(formData.neighborhood);
+        if (!neighborhoodCheck.valid) {
+          newErrors.neighborhood = neighborhoodCheck.message ?? NEIGHBORHOOD_VALIDATION_MESSAGE;
         }
-        if (!formData.city || formData.city.trim().length < 2) {
-          newErrors.city = 'Cidade é obrigatória';
+        const cityCheck = validateCity(formData.city);
+        if (!cityCheck.valid) {
+          newErrors.city = cityCheck.message ?? CITY_VALIDATION_MESSAGE;
         }
         if (!formData.state || formData.state.length !== 2) {
           newErrors.state = 'Estado é obrigatório';
@@ -417,24 +450,25 @@ export function MultiStepRegistration({ open, onOpenChange }: MultiStepRegistrat
     setLoading(true);
 
     try {
+      const normalizedName = normalizePersonName(formData.fullName);
       const success = await register({
         email: formData.email,
         password: formData.password,
-        full_name: formData.fullName,
+        full_name: normalizedName,
         cpf: unmask(formData.cpf),
-        phone: unmask(formData.phone),
-        gender: formData.gender as 'M' | 'F',
+        phone: normalizePhoneDigits(formData.phone),
+        gender: normalizeGender(formData.gender) as 'M' | 'F' | 'O',
         birth_date: formData.birthDate,
         preferred_name: formData.preferredName || undefined,
         profession: formData.profession || undefined,
         cbat: formData.cbat || undefined,
         team: formData.team || undefined,
-        postal_code: unmask(formData.postalCode) || undefined,
+        postal_code: normalizePostalCode(formData.postalCode) || undefined,
         street: formData.street || undefined,
         address_number: formData.addressNumber || undefined,
         address_complement: formData.addressComplement || undefined,
-        neighborhood: formData.neighborhood || undefined,
-        city: formData.city || undefined,
+        neighborhood: normalizePlaceName(formData.neighborhood) || undefined,
+        city: normalizePlaceName(formData.city) || undefined,
         state: formData.state || undefined,
         lgpd_consent: formData.lgpdConsent,
         referral_code: referralCode || undefined,
@@ -585,11 +619,7 @@ export function MultiStepRegistration({ open, onOpenChange }: MultiStepRegistrat
 
         {cpfProofReady && (
           <div className="space-y-4 rounded-lg border border-border bg-muted/30 p-4">
-            {isManualMode ? (
-              <div className="rounded-lg border bg-muted/50 p-3 text-sm text-muted-foreground">
-                CPF válido, mas não encontrado na base nacional. Preencha seus dados manualmente para continuar.
-              </div>
-            ) : (
+            {!isManualMode && (
               <p className="text-sm font-medium text-foreground">Dados confirmados</p>
             )}
 
@@ -623,6 +653,7 @@ export function MultiStepRegistration({ open, onOpenChange }: MultiStepRegistrat
                   <SelectContent>
                     <SelectItem value="M">Masculino</SelectItem>
                     <SelectItem value="F">Feminino</SelectItem>
+                    <SelectItem value="O">Outro / Não informar</SelectItem>
                   </SelectContent>
                 </Select>
               )}
@@ -1043,7 +1074,7 @@ export function MultiStepRegistration({ open, onOpenChange }: MultiStepRegistrat
               </div>
               <div>
                 <span className="text-muted-foreground">Sexo:</span>
-                <p className="font-medium">{formData.gender === 'M' ? 'Masculino' : formData.gender === 'F' ? 'Feminino' : '-'}</p>
+                <p className="font-medium">{formData.gender === 'M' ? 'Masculino' : formData.gender === 'F' ? 'Feminino' : formData.gender === 'O' ? 'Outro / Não informar' : '-'}</p>
               </div>
             </div>
           </div>

@@ -42,6 +42,8 @@ import { type Registration } from "@/lib/api/registrations";
 import { getPublicProfileByCpf, type Profile } from "@/lib/api/profiles";
 import { maskCpf, maskPhone, unmask } from "@/lib/utils/masks";
 import { validateCpf } from "@/lib/utils/validators";
+import { validateFullName, FULL_NAME_VALIDATION_MESSAGE, validatePhone, PHONE_VALIDATION_MESSAGE, validateCity, CITY_VALIDATION_MESSAGE } from "@/lib/utils/profileValidation";
+import { normalizePersonName, normalizePlaceName, normalizePhoneDigits } from "@/lib/utils/profileNormalization";
 import { createRegistrationByLeader } from "@/lib/api/registrations";
 import { getModalities, type Modality } from "@/lib/api/modalities";
 import { getCategories, type Category } from "@/lib/api/categories";
@@ -678,9 +680,18 @@ export function LeaderDashboard() {
 
     if (inviteAthleteFound === false) {
       const err: Record<string, string> = {};
-      if (!inviteRunnerFormData.full_name?.trim()) err.full_name = "Nome completo é obrigatório";
+      const normalizedName = normalizePersonName(inviteRunnerFormData.full_name);
+      const fullNameCheck = validateFullName(normalizedName);
+      if (!fullNameCheck.valid) {
+        err.full_name = fullNameCheck.message ?? FULL_NAME_VALIDATION_MESSAGE;
+      }
       if (!inviteRunnerFormData.birth_date?.trim()) err.birth_date = "Data de nascimento é obrigatória";
-      if (!inviteRunnerFormData.city?.trim()) err.city = "Cidade é obrigatória";
+      const cityCheck = validateCity(inviteRunnerFormData.city);
+      if (!cityCheck.valid) err.city = cityCheck.message ?? CITY_VALIDATION_MESSAGE;
+      if (inviteRunnerFormData.phone?.trim()) {
+        const phoneCheck = validatePhone(inviteRunnerFormData.phone);
+        if (!phoneCheck.valid) err.phone = phoneCheck.message ?? PHONE_VALIDATION_MESSAGE;
+      }
       if (!inviteRunnerFormData.gender?.trim()) err.gender = "Sexo é obrigatório";
       setInviteRunnerFormErrors(err);
       if (Object.keys(err).length > 0) {
@@ -714,13 +725,15 @@ export function LeaderDashboard() {
       };
       if (inviteAthleteFound === false) {
         payload.runner_data = {
-          full_name: inviteRunnerFormData.full_name.trim(),
+          full_name: normalizePersonName(inviteRunnerFormData.full_name),
           birth_date: inviteRunnerFormData.birth_date.trim(),
-          city: inviteRunnerFormData.city.trim(),
+          city: normalizePlaceName(inviteRunnerFormData.city.trim()),
           gender: inviteRunnerFormData.gender.trim(),
           team: inviteRunnerFormData.team?.trim() || undefined,
           email: inviteRunnerFormData.email?.trim() || undefined,
-          phone: inviteRunnerFormData.phone?.trim() || undefined,
+          phone: inviteRunnerFormData.phone?.trim()
+            ? normalizePhoneDigits(inviteRunnerFormData.phone)
+            : undefined,
         };
       }
       if (!inviteRunnerChoosesCategoryModalityKit) {
@@ -2284,7 +2297,10 @@ export function LeaderDashboard() {
               disabled={
                 sendingInvitation ||
                 (inviteStep === 1 && (inviteCpfLookupLoading || unmask(runnerCpf).length !== 11)) ||
-                (inviteStep === 2 && inviteAthleteFound === false && !inviteRunnerFormData.full_name?.trim()) ||
+                (inviteStep === 2 &&
+                  inviteAthleteFound === false &&
+                  (!validateFullName(normalizePersonName(inviteRunnerFormData.full_name)).valid ||
+                    !validateCity(inviteRunnerFormData.city).valid)) ||
                 (inviteStep === 2 && !inviteRunnerChoosesCategoryModalityKit && !inviteCategoryId?.trim())
               }
             >

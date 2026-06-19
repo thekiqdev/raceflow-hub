@@ -11,6 +11,24 @@ import {
   verifyManualCpfProof,
 } from './cpfLookupProof.js';
 import { isValidCpfDigits, normalizeCpfDigits } from '../utils/cpf.js';
+import {
+  normalizeEmail,
+  normalizePersonName,
+  normalizePhoneDigits,
+  normalizePlaceName,
+  normalizePostalCode,
+  normalizeStreet,
+} from '../utils/profileNormalization.js';
+import {
+  assertValidFullName,
+  assertValidPhone,
+  assertValidPostalCode,
+  assertValidCity,
+  assertValidNeighborhood,
+  assertValidBirthDateRange,
+  assertValidGender,
+  normalizeGender,
+} from '../utils/profileValidation.js';
 import { getSystemSettings } from './systemSettingsService.js';
 
 export interface RegisterData {
@@ -108,6 +126,34 @@ export const register = async (data: RegisterData): Promise<AuthResponse> => {
     await client.query('BEGIN');
 
     const cleanCpf = String(data.cpf).replace(/\D/g, '');
+    const normalizedEmail = normalizeEmail(data.email);
+    const normalizedFullName = normalizePersonName(data.full_name);
+    assertValidFullName(normalizedFullName);
+    const normalizedPhone = normalizePhoneDigits(data.phone);
+    const normalizedPostalCode = data.postal_code
+      ? normalizePostalCode(data.postal_code)
+      : data.postal_code;
+    const normalizedStreet = data.street ? normalizeStreet(data.street) : data.street;
+    const normalizedNeighborhood = data.neighborhood
+      ? normalizePlaceName(data.neighborhood)
+      : data.neighborhood;
+    const normalizedCity = data.city ? normalizePlaceName(data.city) : data.city;
+
+    assertValidPhone(normalizedPhone, { source: 'auth.register' });
+    if (normalizedPostalCode) {
+      assertValidPostalCode(normalizedPostalCode, { source: 'auth.register' });
+    }
+    if (normalizedCity) {
+      assertValidCity(normalizedCity, { source: 'auth.register' });
+    }
+    if (normalizedNeighborhood) {
+      assertValidNeighborhood(normalizedNeighborhood, { source: 'auth.register' });
+    }
+
+    assertValidBirthDateRange(data.birth_date, { source: 'auth.register' });
+    if (data.gender) {
+      assertValidGender(data.gender, { source: 'auth.register' });
+    }
 
     let cpfValidatedAt: string | null = null;
     let cpfLookupSource: string | null = null;
@@ -123,7 +169,7 @@ export const register = async (data: RegisterData): Promise<AuthResponse> => {
         if (
           !proofMatchesRegisterBody(apiProof, {
             cpf: cleanCpf,
-            full_name: data.full_name,
+            full_name: normalizedFullName,
             birth_date: data.birth_date,
             gender: data.gender,
           })
@@ -149,7 +195,7 @@ export const register = async (data: RegisterData): Promise<AuthResponse> => {
     // Check if email already exists
     const emailCheck = await client.query(
       'SELECT id FROM users WHERE email = $1',
-      [data.email]
+      [normalizedEmail]
     );
 
     if (emailCheck.rows.length > 0) {
@@ -174,7 +220,7 @@ export const register = async (data: RegisterData): Promise<AuthResponse> => {
       `INSERT INTO users (email, password_hash, email_verified)
        VALUES ($1, $2, false)
        RETURNING id, email`,
-      [data.email, passwordHash]
+      [normalizedEmail, passwordHash]
     );
 
     const user = userResult.rows[0];
@@ -191,22 +237,22 @@ export const register = async (data: RegisterData): Promise<AuthResponse> => {
        RETURNING id, full_name, cpf, phone`,
       [
         user.id,
-        data.full_name,
+        normalizedFullName,
         cleanCpf,
-        data.phone,
-        data.gender || null,
+        normalizedPhone,
+        data.gender ? normalizeGender(data.gender) || null : null,
         data.birth_date,
         data.lgpd_consent,
         data.preferred_name || null,
         data.profession || null,
         data.cbat || null,
         data.team || null,
-        data.postal_code || null,
-        data.street || null,
+        normalizedPostalCode || null,
+        normalizedStreet || null,
         data.address_number || null,
         data.address_complement || null,
-        data.neighborhood || null,
-        data.city || null,
+        normalizedNeighborhood || null,
+        normalizedCity || null,
         data.state || null,
         cpfValidatedAt,
         cpfLookupSource,

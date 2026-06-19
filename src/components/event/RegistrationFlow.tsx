@@ -31,7 +31,9 @@ import { getEffectiveRegistrationStatus, getRegistrationStatusMessage, isRegistr
 import type { Event } from "@/lib/api/events";
 import { getReferralCoupon, saveReferralCoupon, clearReferralCoupon } from "@/lib/referralCouponCache";
 import { maskCpf, maskEmailOrCpf, maskPhone } from "@/lib/utils/masks";
-import { validateCpf, validatePhone, normalizeBirthDateForCompare } from "@/lib/utils/validators";
+import { validateCpf, normalizeBirthDateForCompare } from "@/lib/utils/validators";
+import { validateFullName, FULL_NAME_VALIDATION_MESSAGE, validatePhone, PHONE_VALIDATION_MESSAGE, validateBirthDateRange, BIRTH_DATE_VALIDATION_MESSAGE, validateGender, GENDER_VALIDATION_MESSAGE, normalizeGender } from "@/lib/utils/profileValidation";
+import { normalizePersonName, normalizePhoneDigits } from "@/lib/utils/profileNormalization";
 import { useCpfBrasilLookup } from "@/hooks/useCpfBrasilLookup";
 import type { LookupCpfData } from "@/lib/api/auth";
 
@@ -1040,8 +1042,24 @@ export function RegistrationFlow({
       toast.error("Por favor, preencha todos os campos obrigatórios");
       return;
     }
-    if (!validatePhone(registerData.phone)) {
-      toast.error("Telefone inválido");
+    const normalizedName = normalizePersonName(registerData.fullName);
+    const fullNameCheck = validateFullName(normalizedName);
+    if (!fullNameCheck.valid) {
+      toast.error(fullNameCheck.message ?? FULL_NAME_VALIDATION_MESSAGE);
+      return;
+    }
+    if (!validatePhone(registerData.phone).valid) {
+      toast.error(PHONE_VALIDATION_MESSAGE);
+      return;
+    }
+    const birthCheck = validateBirthDateRange(registerData.birthDate);
+    if (!birthCheck.valid) {
+      toast.error(birthCheck.message ?? BIRTH_DATE_VALIDATION_MESSAGE);
+      return;
+    }
+    const genderCheck = validateGender(registerData.gender);
+    if (!genderCheck.valid) {
+      toast.error(genderCheck.message ?? GENDER_VALIDATION_MESSAGE);
       return;
     }
 
@@ -1063,11 +1081,11 @@ export function RegistrationFlow({
       const success = await register({
         email: registerData.email,
         password: registerData.password,
-        full_name: registerData.fullName,
+        full_name: normalizedName,
         cpf: registerData.cpf.replace(/\D/g, ""),
-        phone: registerData.phone.replace(/\D/g, ""),
+        phone: normalizePhoneDigits(registerData.phone),
         birth_date: registerData.birthDate || undefined,
-        gender: (registerData.gender === "M" || registerData.gender === "F" ? registerData.gender : undefined) as "M" | "F" | undefined,
+        gender: normalizeGender(registerData.gender) as "M" | "F" | "O" | undefined,
         lgpd_consent: lgpdConsent,
         referral_code: referralCodeFromUrl ? referralCodeFromUrl.toUpperCase().trim() : undefined,
         cpf_lookup_proof: registerData.cpfLookupProof,
@@ -1999,11 +2017,6 @@ export function RegistrationFlow({
                       </div>
                       {cpfProofReady && (
                         <>
-                          {isManualMode && (
-                            <div className="rounded-lg border bg-muted/50 p-3 text-sm text-muted-foreground">
-                              CPF válido, mas não localizado na base nacional. Complete seus dados para continuar.
-                            </div>
-                          )}
                           <div>
                             <Label htmlFor="registerFullName">Nome completo *</Label>
                             <Input
@@ -2044,6 +2057,7 @@ export function RegistrationFlow({
                                 <option value="">Selecione</option>
                                 <option value="M">Masculino</option>
                                 <option value="F">Feminino</option>
+                                <option value="O">Outro / Não informar</option>
                               </select>
                             )}
                           </div>
@@ -2117,10 +2131,10 @@ export function RegistrationFlow({
                         onClick={handleRegister}
                         disabled={
                           !registerData.cpfLookupProof ||
-                          !registerData.fullName ||
+                          !validateFullName(normalizePersonName(registerData.fullName)).valid ||
                           !registerData.birthDate ||
                           !registerData.gender ||
-                          !validatePhone(registerData.phone) ||
+                          !validatePhone(registerData.phone).valid ||
                           !registerData.email ||
                           !registerData.password ||
                           !registerData.confirmPassword ||

@@ -21,6 +21,7 @@ import QuotesManagement from "@/components/admin/QuotesManagement";
 import AdminRegistrations from "@/components/admin/AdminRegistrations";
 import AdminBanners from "@/components/admin/AdminBanners";
 import AuditCpfPage from "@/pages/admin/AuditCpfPage";
+import AuditDataQualityPage from "@/pages/admin/AuditDataQualityPage";
 import { getSystemSettings } from "@/lib/api/systemSettings";
 import { getAdminPath, getAdminSectionFromPath, getBreadcrumbForPath } from "@/lib/utils/navigation";
 
@@ -135,6 +136,8 @@ const AdminDashboard = () => {
         return <QuotesManagement />;
       case "audit-cpf":
         return <AuditCpfPage />;
+      case "audit-data-quality":
+        return <AuditDataQualityPage />;
       default:
         return <DashboardOverview />;
     }

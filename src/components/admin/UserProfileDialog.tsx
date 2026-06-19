@@ -27,6 +27,9 @@ import {
 } from "@/lib/api/userManagement";
 import { getRegistrations } from "@/lib/api/registrations";
 import { formatDateOnlyBrasilia } from "@/lib/utils";
+import { validateFullName, FULL_NAME_VALIDATION_MESSAGE, validatePhone, PHONE_VALIDATION_MESSAGE, validatePostalCode, POSTAL_CODE_VALIDATION_MESSAGE, validateCity, CITY_VALIDATION_MESSAGE, validateNeighborhood, NEIGHBORHOOD_VALIDATION_MESSAGE, validateBirthDateRange, BIRTH_DATE_VALIDATION_MESSAGE, validateGender, GENDER_VALIDATION_MESSAGE, validateContactEmail, EMAIL_VALIDATION_MESSAGE, normalizeGender } from "@/lib/utils/profileValidation";
+import { normalizePersonName, normalizePlaceName, normalizePhoneDigits, normalizePostalCode, normalizeEmail } from "@/lib/utils/profileNormalization";
+import { maskPhone, maskCep } from "@/lib/utils/masks";
 
 interface UserProfileDialogProps {
   open: boolean;
@@ -47,6 +50,14 @@ export function UserProfileDialog({
   const [generatedPassword, setGeneratedPassword] = useState<string | null>(null);
   const [passwordCopied, setPasswordCopied] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
+  const [initialFullName, setInitialFullName] = useState("");
+  const [initialPhone, setInitialPhone] = useState("");
+  const [initialPostalCode, setInitialPostalCode] = useState("");
+  const [initialCity, setInitialCity] = useState("");
+  const [initialNeighborhood, setInitialNeighborhood] = useState("");
+  const [initialBirthDate, setInitialBirthDate] = useState("");
+  const [initialGender, setInitialGender] = useState("");
+  const [initialContactEmail, setInitialContactEmail] = useState("");
 
   const [formData, setFormData] = useState({
     full_name: "",
@@ -101,7 +112,7 @@ export function UserProfileDialog({
           full_name: data.full_name || "",
           email: data.email || "",
           cpf: data.cpf || "",
-          phone: data.phone || "",
+          phone: data.phone ? maskPhone(data.phone) : "",
           gender: data.gender || "",
           birth_date: data.birth_date
             ? new Date(data.birth_date).toISOString().split("T")[0]
@@ -112,7 +123,7 @@ export function UserProfileDialog({
           profession: data.profession || "",
           cbat: data.cbat || "",
           team: data.team || "",
-          postal_code: data.postal_code || "",
+          postal_code: data.postal_code ? maskCep(data.postal_code) : "",
           street: data.street || "",
           address_number: data.address_number || "",
           address_complement: data.address_complement || "",
@@ -127,6 +138,16 @@ export function UserProfileDialog({
         
         console.log('📋 Dados mapeados para formData:', profileData);
         setFormData(profileData);
+        setInitialFullName(data.full_name || "");
+        setInitialPhone(data.phone || "");
+        setInitialPostalCode(data.postal_code || "");
+        setInitialCity(data.city || "");
+        setInitialNeighborhood(data.neighborhood || "");
+        setInitialBirthDate(
+          data.birth_date ? new Date(data.birth_date).toISOString().split("T")[0] : ""
+        );
+        setInitialGender(data.gender || "");
+        setInitialContactEmail(data.contact_email || "");
         
         // Load user registrations if user is a runner
         if (data.role === 'runner' || !data.role) {
@@ -176,7 +197,19 @@ export function UserProfileDialog({
       
       // Only include fields that have values
       if (formData.full_name && formData.full_name.trim() !== '') {
-        updateData.full_name = formData.full_name;
+        const trimmedName = normalizePersonName(formData.full_name);
+        const nameChanged =
+          trimmedName.replace(/\s+/g, " ") !==
+          initialFullName.trim().replace(/\s+/g, " ");
+        if (nameChanged) {
+          const fullNameCheck = validateFullName(trimmedName);
+          if (!fullNameCheck.valid) {
+            toast.error(fullNameCheck.message ?? FULL_NAME_VALIDATION_MESSAGE);
+            setSaving(false);
+            return;
+          }
+        }
+        updateData.full_name = trimmedName;
       }
       if (formData.email && formData.email.trim() !== '') {
         updateData.email = formData.email.trim();
@@ -185,12 +218,39 @@ export function UserProfileDialog({
         updateData.cpf = formData.cpf;
       }
       if (formData.phone && formData.phone.trim() !== '') {
-        updateData.phone = formData.phone;
+        const normalizedPhone = normalizePhoneDigits(formData.phone);
+        if (normalizedPhone !== normalizePhoneDigits(initialPhone)) {
+          const phoneCheck = validatePhone(normalizedPhone);
+          if (!phoneCheck.valid) {
+            toast.error(phoneCheck.message ?? PHONE_VALIDATION_MESSAGE);
+            setSaving(false);
+            return;
+          }
+        }
+        updateData.phone = normalizedPhone;
       }
       if (formData.gender) {
-        updateData.gender = formData.gender;
+        const normalizedGender = normalizeGender(formData.gender);
+        if (normalizedGender !== normalizeGender(initialGender)) {
+          const genderCheck = validateGender(normalizedGender);
+          if (!genderCheck.valid) {
+            toast.error(genderCheck.message ?? GENDER_VALIDATION_MESSAGE);
+            setSaving(false);
+            return;
+          }
+        }
+        updateData.gender = normalizedGender;
       }
       if (formData.birth_date && formData.birth_date.trim() !== '') {
+        const birthChanged = formData.birth_date !== initialBirthDate;
+        if (birthChanged) {
+          const birthCheck = validateBirthDateRange(formData.birth_date);
+          if (!birthCheck.valid) {
+            toast.error(birthCheck.message ?? BIRTH_DATE_VALIDATION_MESSAGE);
+            setSaving(false);
+            return;
+          }
+        }
         updateData.birth_date = formData.birth_date;
       }
       if (formData.status) {
@@ -212,7 +272,18 @@ export function UserProfileDialog({
         updateData.team = formData.team || null;
       }
       if (formData.postal_code !== undefined) {
-        updateData.postal_code = formData.postal_code || null;
+        const normalizedPostalCode = normalizePostalCode(formData.postal_code);
+        if (normalizedPostalCode !== normalizePostalCode(initialPostalCode)) {
+          if (normalizedPostalCode) {
+            const postalCheck = validatePostalCode(normalizedPostalCode);
+            if (!postalCheck.valid) {
+              toast.error(postalCheck.message ?? POSTAL_CODE_VALIDATION_MESSAGE);
+              setSaving(false);
+              return;
+            }
+          }
+        }
+        updateData.postal_code = normalizedPostalCode || null;
       }
       if (formData.street !== undefined) {
         updateData.street = formData.street || null;
@@ -224,10 +295,32 @@ export function UserProfileDialog({
         updateData.address_complement = formData.address_complement || null;
       }
       if (formData.neighborhood !== undefined) {
-        updateData.neighborhood = formData.neighborhood || null;
+        const normalizedNeighborhood = normalizePlaceName(formData.neighborhood);
+        if (normalizedNeighborhood !== normalizePlaceName(initialNeighborhood)) {
+          if (normalizedNeighborhood) {
+            const neighborhoodCheck = validateNeighborhood(normalizedNeighborhood);
+            if (!neighborhoodCheck.valid) {
+              toast.error(neighborhoodCheck.message ?? NEIGHBORHOOD_VALIDATION_MESSAGE);
+              setSaving(false);
+              return;
+            }
+          }
+        }
+        updateData.neighborhood = normalizedNeighborhood || null;
       }
       if (formData.city !== undefined) {
-        updateData.city = formData.city || null;
+        const normalizedCity = normalizePlaceName(formData.city);
+        if (normalizedCity !== normalizePlaceName(initialCity)) {
+          if (normalizedCity) {
+            const cityCheck = validateCity(normalizedCity);
+            if (!cityCheck.valid) {
+              toast.error(cityCheck.message ?? CITY_VALIDATION_MESSAGE);
+              setSaving(false);
+              return;
+            }
+          }
+        }
+        updateData.city = normalizedCity || null;
       }
       if (formData.state !== undefined) {
         updateData.state = formData.state || null;
@@ -389,7 +482,7 @@ export function UserProfileDialog({
                   id="phone"
                   value={formData.phone}
                   onChange={(e) =>
-                    setFormData({ ...formData, phone: e.target.value })
+                    setFormData({ ...formData, phone: maskPhone(e.target.value) })
                   }
                   disabled={!isEditing}
                 />
@@ -560,7 +653,7 @@ export function UserProfileDialog({
                     id="postal_code"
                     value={formData.postal_code}
                     onChange={(e) =>
-                      setFormData({ ...formData, postal_code: e.target.value })
+                      setFormData({ ...formData, postal_code: maskCep(e.target.value) })
                     }
                     disabled={!isEditing}
                   />

@@ -87,6 +87,14 @@ const App = () => (
             } 
           />
           <Route 
+            path="/admin/auditoria/data-quality" 
+            element={
+              <ProtectedRoute requiredRole="admin">
+                <AdminDashboard />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
             path="/admin/:section" 
             element={
               <ProtectedRoute requiredRole="admin">

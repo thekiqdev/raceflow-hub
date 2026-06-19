@@ -2,6 +2,19 @@ import { query } from '../config/database.js';
 import { Profile } from '../types/index.js';
 import { comparePassword } from './authService.js';
 import { isValidCpfDigits } from '../utils/cpf.js';
+import { normalizePersonName, normalizePhoneDigits, normalizePostalCode, normalizePlaceName, normalizeProfileUpdateFields, normalizeEmail } from '../utils/profileNormalization.js';
+import {
+  assertValidFullName,
+  assertValidPhone,
+  assertValidContactPhone,
+  assertValidPostalCode,
+  assertValidCity,
+  assertValidNeighborhood,
+  assertValidBirthDateRange,
+  assertValidGender,
+  assertValidContactEmail,
+  normalizeGender,
+} from '../utils/profileValidation.js';
 
 export interface UpdateProfileData {
   full_name?: string;
@@ -61,13 +74,149 @@ export const verifyUserPassword = async (userId: string, password: string): Prom
   return await comparePassword(password, passwordHash);
 };
 
+async function validateProfileFieldsOnUpdate(
+  userId: string,
+  data: UpdateProfileData,
+  normalizedData: ReturnType<typeof normalizeProfileUpdateFields>
+) {
+  const trackedFields = [
+    'phone',
+    'postal_code',
+    'city',
+    'neighborhood',
+    'contact_phone',
+    'contact_email',
+    'birth_date',
+    'gender',
+  ] as const;
+
+  if (!trackedFields.some((field) => data[field] !== undefined)) {
+    return;
+  }
+
+  const currentResult = await query(
+    `SELECT phone, postal_code, city, neighborhood, contact_phone, contact_email, birth_date, gender
+     FROM profiles WHERE id = $1`,
+    [userId]
+  );
+  const current = currentResult.rows[0] ?? {};
+
+  if (data.phone !== undefined) {
+    const newValue = normalizedData.phone ?? '';
+    const currentValue = normalizePhoneDigits(current.phone);
+    if (newValue !== currentValue) {
+      assertValidPhone(newValue, { allowEmpty: true, source: 'profiles.updateProfile.phone' });
+    }
+  }
+
+  if (data.contact_phone !== undefined) {
+    const newValue = normalizedData.contact_phone ?? '';
+    const currentValue = normalizePhoneDigits(current.contact_phone);
+    if (newValue !== currentValue) {
+      assertValidContactPhone(newValue, {
+        allowEmpty: true,
+        source: 'profiles.updateProfile.contact_phone',
+      });
+    }
+  }
+
+  if (data.contact_email !== undefined) {
+    const newValue = normalizedData.contact_email ?? '';
+    const currentValue = current.contact_email
+      ? normalizeEmail(current.contact_email)
+      : '';
+    if (newValue !== currentValue) {
+      assertValidContactEmail(newValue, {
+        allowEmpty: true,
+        source: 'profiles.updateProfile.contact_email',
+      });
+    }
+  }
+
+  if (data.postal_code !== undefined) {
+    const newValue = normalizedData.postal_code ?? '';
+    const currentValue = normalizePostalCode(current.postal_code);
+    if (newValue !== currentValue) {
+      assertValidPostalCode(newValue, {
+        allowEmpty: true,
+        source: 'profiles.updateProfile.postal_code',
+      });
+    }
+  }
+
+  if (data.city !== undefined) {
+    const newValue = normalizedData.city ?? '';
+    const currentValue = current.city ? normalizePlaceName(current.city) : '';
+    if (newValue !== currentValue) {
+      assertValidCity(newValue, { allowEmpty: true, source: 'profiles.updateProfile.city' });
+    }
+  }
+
+  if (data.neighborhood !== undefined) {
+    const newValue = normalizedData.neighborhood ?? '';
+    const currentValue = current.neighborhood
+      ? normalizePlaceName(current.neighborhood)
+      : '';
+    if (newValue !== currentValue) {
+      assertValidNeighborhood(newValue, {
+        allowEmpty: true,
+        source: 'profiles.updateProfile.neighborhood',
+      });
+    }
+  }
+
+  if (data.birth_date !== undefined) {
+    const newValue = data.birth_date ? String(data.birth_date).split('T')[0] : '';
+    const currentValue = current.birth_date
+      ? String(current.birth_date).split('T')[0]
+      : '';
+    if (newValue !== currentValue) {
+      assertValidBirthDateRange(newValue, {
+        allowEmpty: true,
+        source: 'profiles.updateProfile.birth_date',
+      });
+    }
+  }
+
+  if (data.gender !== undefined) {
+    const newValue = data.gender ? normalizeGender(data.gender) : '';
+    const currentValue = current.gender ? normalizeGender(current.gender) : '';
+    if (newValue !== currentValue) {
+      assertValidGender(newValue, { allowEmpty: true, source: 'profiles.updateProfile.gender' });
+    }
+  }
+}
+
 // Update profile
 export const updateProfile = async (userId: string, data: UpdateProfileData) => {
+  const normalizedData = normalizeProfileUpdateFields(data);
+
+  if (data.full_name !== undefined) {
+    const currentResult = await query(
+      'SELECT full_name FROM profiles WHERE id = $1',
+      [userId]
+    );
+    const currentFullName = currentResult.rows[0]?.full_name as string | undefined;
+    const normalizedCurrent = currentFullName
+      ? normalizePersonName(currentFullName)
+      : '';
+    const normalizedNew = normalizedData.full_name ?? '';
+    if (normalizedNew !== normalizedCurrent) {
+      assertValidFullName(normalizedNew, { source: 'profiles.updateProfile.full_name' });
+    }
+  }
+
+  if (data.gender !== undefined) {
+    normalizedData.gender = normalizeGender(data.gender) || undefined;
+  }
+
+  await validateProfileFieldsOnUpdate(userId, data, normalizedData);
+
   const fields: string[] = [];
   const values: any[] = [];
   let paramIndex = 1;
 
-  Object.entries(data).forEach(([key, value]) => {
+  Object.entries(normalizedData).forEach(([key, value]) => {
     if (value !== undefined && key !== 'password') {
       // Clean CPF: remove formatting
       if (key === 'cpf' && value) {

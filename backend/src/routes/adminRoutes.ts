@@ -173,6 +173,12 @@ import {
   getCpfAuditDailyController,
   getCpfRecentErrorsController,
 } from '../controllers/cpfAuditController.js';
+import {
+  getProfileQualityOverviewController,
+  getProfileQualityDailyController,
+  getProfileQualityTopErrorsController,
+  getProfileQualityBySourceController,
+} from '../controllers/profileQualityAuditController.js';
 
 const router = Router();
 
@@ -251,6 +257,12 @@ router.get('/reports/cpf-lookup-metrics', getCpfLookupMetricsController);
 router.get('/audit/cpf/overview', getCpfAuditOverviewController);
 router.get('/audit/cpf/daily', getCpfAuditDailyController);
 router.get('/audit/cpf/recent-errors', getCpfRecentErrorsController);
+
+// Sprint 6 — auditoria qualidade dos dados de perfil (super admin)
+router.get('/audit/data-quality/overview', getProfileQualityOverviewController);
+router.get('/audit/data-quality/daily', getProfileQualityDailyController);
+router.get('/audit/data-quality/top-errors', getProfileQualityTopErrorsController);
+router.get('/audit/data-quality/by-source', getProfileQualityBySourceController);
 router.get(
   '/reports/leaders-invitations-granted/:eventId',
   getLeadersInvitationsGrantedByEventController

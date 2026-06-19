@@ -11,7 +11,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Loader2 } from "lucide-react";
 import { maskCpf, maskEmailOrCpf, maskPhone } from "@/lib/utils/masks";
 import { getPublicBranding } from "@/lib/api/systemSettings";
-import { validatePhone, normalizeBirthDateForCompare } from "@/lib/utils/validators";
+import { validatePhone as validatePhoneStrict, PHONE_VALIDATION_MESSAGE, validateFullName, FULL_NAME_VALIDATION_MESSAGE, validateBirthDateRange, BIRTH_DATE_VALIDATION_MESSAGE, validateGender, GENDER_VALIDATION_MESSAGE, normalizeGender } from "@/lib/utils/profileValidation";
+import { normalizePhoneDigits, normalizePersonName } from "@/lib/utils/profileNormalization";
 import { useCpfBrasilLookup } from "@/hooks/useCpfBrasilLookup";
 import { toast } from "sonner";
 
@@ -147,17 +148,36 @@ const Auth = () => {
       return;
     }
 
+    const normalizedName = normalizePersonName(fullName);
+    const fullNameCheck = validateFullName(normalizedName);
+    if (!fullNameCheck.valid) {
+      toast.error(fullNameCheck.message ?? FULL_NAME_VALIDATION_MESSAGE);
+      return;
+    }
+
+    const birthDateCheck = validateBirthDateRange(birthDate);
+    if (!birthDateCheck.valid) {
+      toast.error(birthDateCheck.message ?? BIRTH_DATE_VALIDATION_MESSAGE);
+      return;
+    }
+
+    const genderCheck = validateGender(gender);
+    if (!genderCheck.valid) {
+      toast.error(genderCheck.message ?? GENDER_VALIDATION_MESSAGE);
+      return;
+    }
+
     setLoading(true);
 
     try {
       const success = await register({
         email: signupEmail,
         password: signupPassword,
-        full_name: fullName,
+        full_name: normalizedName,
         cpf: cpf.replace(/\D/g, ""),
-        phone: phone.replace(/\D/g, ""),
+        phone: normalizePhoneDigits(phone),
         birth_date: birthDate,
-        gender: (gender === "M" || gender === "F" ? gender : undefined) as "M" | "F" | undefined,
+        gender: normalizeGender(gender) as "M" | "F" | "O",
         lgpd_consent: lgpdConsent,
         cpf_lookup_proof: cpfLookupProof,
       });
@@ -175,10 +195,10 @@ const Auth = () => {
 
   const canSubmitSignUp =
     Boolean(cpfLookupProof) &&
-    Boolean(fullName) &&
-    Boolean(birthDate) &&
-    Boolean(gender) &&
-    validatePhone(phone) &&
+    validateFullName(normalizePersonName(fullName)).valid &&
+    validateBirthDateRange(birthDate).valid &&
+    validateGender(gender).valid &&
+    validatePhoneStrict(phone).valid &&
     Boolean(signupEmail) &&
     signupPassword.length >= 6 &&
     lgpdConsent;
@@ -309,13 +329,6 @@ const Auth = () => {
 
                 {cpfProofReady && (
                   <>
-                    {isManualMode && (
-                      <div className="rounded-lg border bg-muted/50 p-3 text-sm text-muted-foreground">
-                        CPF válido, mas não encontrado na base nacional. Preencha seus dados manualmente para
-                        continuar.
-                      </div>
-                    )}
-
                     <div className="space-y-2">
                       <Label htmlFor="signup-name">Nome completo *</Label>
                       <Input
@@ -351,6 +364,7 @@ const Auth = () => {
                           <option value="">Selecione</option>
                           <option value="M">Masculino</option>
                           <option value="F">Feminino</option>
+                          <option value="O">Outro / Não informar</option>
                         </select>
                       )}
                     </div>

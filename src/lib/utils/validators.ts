@@ -191,7 +191,8 @@ export const validateCVV = (cvv: string): boolean => {
  */
 export const validateCep = (cep: string): boolean => {
   const cleanCep = cep.replace(/\D/g, '');
-  return cleanCep.length === 8;
+  if (cleanCep.length !== 8) return false;
+  return !/^(\d)\1+$/.test(cleanCep);
 };
 
 /**
@@ -201,8 +202,8 @@ export const validateCep = (cep: string): boolean => {
  */
 export const validatePhone = (phone: string): boolean => {
   const cleanPhone = phone.replace(/\D/g, '');
-  // Brazilian phone: 10 digits (landline) or 11 digits (mobile)
-  return cleanPhone.length === 10 || cleanPhone.length === 11;
+  if (cleanPhone.length !== 10 && cleanPhone.length !== 11) return false;
+  return !/^(\d)\1+$/.test(cleanPhone);
 };
 
 /**

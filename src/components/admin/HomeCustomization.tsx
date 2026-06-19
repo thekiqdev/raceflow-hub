@@ -6,6 +6,9 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { getHomePageSettings, updateHomePageSettings } from "@/lib/api/homePageSettings";
+import { maskPhone } from "@/lib/utils/masks";
+import { validatePhone, PHONE_VALIDATION_MESSAGE } from "@/lib/utils/profileValidation";
+import { normalizePhoneDigits } from "@/lib/utils/profileNormalization";
 import { toast } from "sonner";
 import { Loader2, Image as ImageIcon, Eye, Edit } from "lucide-react";
 import { VisualEditorProvider } from "@/contexts/VisualEditorContext";
@@ -71,9 +74,19 @@ const HomeCustomization = () => {
   };
 
   const handleSave = async () => {
+    const normalizedWhatsapp = normalizePhoneDigits(settings.whatsapp_number);
+    const whatsappCheck = validatePhone(normalizedWhatsapp, { allowEmpty: true });
+    if (!whatsappCheck.valid) {
+      toast.error(whatsappCheck.message ?? PHONE_VALIDATION_MESSAGE);
+      return;
+    }
+
     setSaving(true);
     try {
-      const response = await updateHomePageSettings(settings);
+      const response = await updateHomePageSettings({
+        ...settings,
+        whatsapp_number: normalizedWhatsapp || settings.whatsapp_number,
+      });
 
       if (response.success) {
         toast.success("Configurações salvas com sucesso!");
@@ -371,7 +384,7 @@ const HomeCustomization = () => {
                     <Input
                       id="whatsapp_number"
                       value={settings.whatsapp_number}
-                      onChange={(e) => handleChange("whatsapp_number", e.target.value)}
+                      onChange={(e) => handleChange("whatsapp_number", maskPhone(e.target.value))}
                       placeholder="Ex: +55 85 99108-4183"
                     />
                   </div>

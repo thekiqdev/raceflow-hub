@@ -1,0 +1,418 @@
+{
+  "meta": {
+    "title": "AUDIT_PROFILE_DATA_NORMALIZATION_AND_INPUT_HARDENING",
+    "mode": "read_only",
+    "date": "2026-06-03",
+    "scope": "Cadastro, perfil, inscrição, convites, admin, organizador",
+    "no_code_changes": true
+  },
+  "risk_classification": {
+    "full_name": { "risk": "ALTO", "impact": "certificados, rankings, PDFs, exportações CSV, check-in" },
+    "email": { "risk": "ALTO", "impact": "login, notificações, Asaas, recuperação de acesso" },
+    "birth_date": { "risk": "ALTO", "impact": "categorias por idade, desconto sênior, elegibilidade" },
+    "phone": { "risk": "MEDIO", "impact": "WhatsApp, contato, pagamento (cartão)" },
+    "gender": { "risk": "MEDIO", "impact": "categorias por sexo" },
+    "cpf": { "risk": "ALTO", "impact": "identidade, lookup, inscrições (já hardened em sprints CPF)" },
+    "postal_code": { "risk": "BAIXO", "impact": "endereço, ViaCEP" },
+    "city": { "risk": "BAIXO", "impact": "relatórios, exibição pública" },
+    "neighborhood": { "risk": "BAIXO", "impact": "endereço" },
+    "street": { "risk": "BAIXO", "impact": "logística" },
+    "state": { "risk": "BAIXO", "impact": "filtros, exibição" },
+    "contact_phone": { "risk": "MEDIO", "impact": "WhatsApp organizador, página do evento" },
+    "whatsapp_number": { "risk": "MEDIO", "impact": "contato plataforma (home_page_settings)" }
+  },
+  "database": {
+    "table": "profiles",
+    "migration_address": "backend/migrations/029_add_address_fields_to_profiles.sql",
+    "columns": {
+      "full_name": { "type": "TEXT NOT NULL", "notes": "sem CHECK de formato" },
+      "phone": { "type": "TEXT NOT NULL", "notes": "sem normalização no banco" },
+      "cpf": { "type": "TEXT UNIQUE NOT NULL", "notes": "dígitos na prática após hardening CPF" },
+      "gender": { "type": "TEXT nullable" },
+      "birth_date": { "type": "DATE NOT NULL" },
+      "preferred_name": { "type": "VARCHAR(100)" },
+      "postal_code": { "type": "VARCHAR(10)", "comment": "formato 00000-000 sugerido, não enforced" },
+      "street": { "type": "TEXT" },
+      "address_number": { "type": "TEXT" },
+      "address_complement": { "type": "TEXT" },
+      "neighborhood": { "type": "VARCHAR(100)" },
+      "city": { "type": "TEXT" },
+      "state": { "type": "TEXT" },
+      "contact_phone": { "type": "TEXT", "migration": "012_organizer_settings.sql" },
+      "contact_email": { "type": "TEXT" }
+    },
+    "users_table": {
+      "email": { "type": "TEXT UNIQUE NOT NULL", "notes": "case-sensitive no INSERT legado; login usa lower(trim)" }
+    }
+  },
+  "shared_utils": {
+    "frontend": {
+      "masks": "src/lib/utils/masks.ts",
+      "validators": "src/lib/utils/validators.ts",
+      "whatsapp_digits": "src/lib/utils/whatsapp.ts"
+    },
+    "backend": {
+      "cpf": "backend/src/utils/cpf.js",
+      "proposed_profile_normalization": "backend/src/utils/profileNormalization.ts"
+    }
+  },
+  "masks_existing": {
+    "cpf": ["maskCpf", "maskEmailOrCpf"],
+    "phone": ["maskPhone"],
+    "cep": ["maskCep"],
+    "credit_card": ["maskCreditCard"],
+    "unmask": "remove non-digits"
+  },
+  "fields_without_mask": [
+    "full_name",
+    "preferred_name",
+    "city",
+    "neighborhood",
+    "street",
+    "address_number",
+    "email (texto livre exceto MultiStep/Profile lower on change)",
+    "organization_name",
+    "bio"
+  ],
+  "backend_services": [
+    {
+      "file": "backend/src/services/authService.ts",
+      "function": "register",
+      "fields": ["full_name", "cpf", "phone", "gender", "birth_date", "postal_code", "neighborhood", "city", "state", "email"],
+      "normalization": {
+        "cpf": "digits only",
+        "email": "none (stored as received)",
+        "phone": "none",
+        "full_name": "none",
+        "address": "optional passthrough"
+      },
+      "validation": "CPF proof when enabled; uniqueness email/cpf; required fields in controller only"
+    },
+    {
+      "file": "backend/src/services/profilesService.ts",
+      "function": "updateProfile",
+      "normalization": { "cpf": "digits + isValidCpfDigits" },
+      "validation": "cpf only; other fields raw UPDATE"
+    },
+    {
+      "file": "backend/src/services/registrationsService.ts",
+      "function": "createRunnerByOrganizer",
+      "normalization": {
+        "cpf": "digits + isValidCpfDigits",
+        "email": "toLowerCase when provided",
+        "full_name": "trim only (empty string allowed)",
+        "phone": "trim only"
+      }
+    },
+    {
+      "file": "backend/src/services/userManagementService.ts",
+      "function": "createManualRunner",
+      "normalization": {
+        "email": "trim + toLowerCase",
+        "cpf": "normalizeCpfDigits + isValidCpfDigits",
+        "full_name": "trim",
+        "phone": "trim (mask not stripped)",
+        "address_fields": "trim"
+      }
+    },
+    {
+      "file": "backend/src/services/adminAthleteRegistrationService.ts",
+      "function": "registerAthleteByStaff",
+      "delegates": "createRunnerByOrganizer",
+      "validation": "CPF via isValidCpfDigits"
+    },
+    {
+      "file": "backend/src/services/leaderInvitationsService.ts",
+      "function": "sendInvitationByCpf / pre-register flow",
+      "delegates": "createRunnerByOrganizer",
+      "validation": "full_name trim required when creating runner"
+    },
+    {
+      "file": "backend/src/controllers/organizerController.ts",
+      "function": "updateOrganizerSettings",
+      "schema": "updateOrganizerSettingsSchema (zod)",
+      "fields": ["full_name", "phone", "contact_phone", "contact_email"],
+      "validation": "min length on full_name; email url optional; no phone format"
+    },
+    {
+      "file": "backend/src/controllers/profilesController.ts",
+      "function": "updateOwnProfile",
+      "normalization": { "email": "trim + toLowerCase + regex" },
+      "validation": "identity fields locked for non-admin runners"
+    },
+    {
+      "file": "backend/src/controllers/userManagementController.ts",
+      "function": "createManualRunnerController / updateUserProfile",
+      "schema": "createManualRunnerSchema, updateProfileSchema (zod)",
+      "validation": "email format; min lengths; no name/phone/city rules"
+    },
+    {
+      "file": "backend/src/controllers/authController.ts",
+      "function": "registerUser",
+      "validation": "presence only; lgpd_consent"
+    }
+  ],
+  "frontend_surfaces": [
+    {
+      "id": "auth_signup",
+      "file": "src/pages/Auth.tsx",
+      "flow": "cadastro público simplificado",
+      "masks": ["cpf", "phone"],
+      "validators": ["validatePhone"],
+      "full_name_rules": "required boolean only",
+      "email_rules": "no lowercase on input",
+      "submit": { "phone": "digits only", "cpf": "digits only" }
+    },
+    {
+      "id": "multi_step_registration",
+      "file": "src/components/MultiStepRegistration.tsx",
+      "flow": "cadastro completo com endereço",
+      "masks": ["cpf", "phone", "cep"],
+      "validators": ["validateCpf", "validatePhone", "validateCep", "validateEmail"],
+      "full_name_rules": "min 3 chars, no digit block, single word allowed",
+      "city_neighborhood_rules": "min 2 chars, numbers allowed",
+      "email_rules": "toLowerCase on onChange",
+      "submit": { "phone": "unmask", "postal_code": "unmask" }
+    },
+    {
+      "id": "registration_flow",
+      "file": "src/components/event/RegistrationFlow.tsx",
+      "flow": "inscrição + cadastro inline no evento",
+      "masks": ["cpf", "phone", "emailOrCpf login"],
+      "validators": ["validateCpf", "validatePhone"],
+      "full_name_rules": "required on register; no min words",
+      "submit": { "phone": "replace non-digits" }
+    },
+    {
+      "id": "register_athlete_staff",
+      "file": "src/components/registration/RegisterAthleteStaffDialog.tsx",
+      "flow": "organizador/super admin inscreve atleta",
+      "masks": ["cpf", "phone optional"],
+      "full_name_rules": "trim required",
+      "city": "free text"
+    },
+    {
+      "id": "admin_manual_runner",
+      "file": "src/components/admin/AdminManualRunnerCreate.tsx",
+      "flow": "admin cria corredor manual",
+      "masks": ["cpf only"],
+      "phone": "NO mask, NO validatePhone",
+      "full_name_rules": "trim non-empty"
+    },
+    {
+      "id": "profile_edit",
+      "file": "src/components/runner/profile/ProfileEditDialog.tsx",
+      "flow": "atleta edita perfil",
+      "masks": ["cpf", "phone", "cep"],
+      "email_rules": "trim + toLowerCase on save",
+      "phone_submit": "unmask",
+      "identity_lock": "full_name, birth_date, gender, cpf for non-admin"
+    },
+    {
+      "id": "admin_user_profile",
+      "file": "src/components/admin/UserProfileDialog.tsx",
+      "flow": "admin edita usuário",
+      "masks": "none",
+      "email": "trim only on save",
+      "phone": "raw"
+    },
+    {
+      "id": "organizer_settings",
+      "file": "src/components/organizer/OrganizerSettings.tsx",
+      "fields": ["phone", "contact_phone"],
+      "masks": "none",
+      "placeholder": "(00) 00000-0000"
+    },
+    {
+      "id": "admin_system_settings",
+      "file": "src/components/admin/SystemSettings.tsx",
+      "fields": ["contact_phone", "support_phone"],
+      "masks": "none"
+    },
+    {
+      "id": "leader_invitations",
+      "file": "src/components/runner/leader/LeaderDashboard.tsx",
+      "flow": "convite + pré-cadastro CPF",
+      "masks": ["cpf", "phone optional"],
+      "full_name_rules": "trim required when CPF not found"
+    },
+    {
+      "id": "credit_card_checkout",
+      "file": "src/components/payment/CreditCardForm.tsx",
+      "masks": ["card", "cep", "phone", "cpf"],
+      "validators": ["validateCep", "validatePhone", "validateCpf"]
+    }
+  ],
+  "fragile_points": [
+    {
+      "id": "name_digits",
+      "severity": "high",
+      "description": "Nenhuma camada bloqueia dígitos ou telefone em full_name",
+      "affected": ["authService.register", "createRunnerByOrganizer", "MultiStepRegistration", "AdminManualRunnerCreate"]
+    },
+    {
+      "id": "name_single_word",
+      "severity": "medium",
+      "description": "Nome com uma palavra aceito (ex: João) — min 3 chars em MultiStep apenas",
+      "affected": ["MultiStepRegistration", "Auth.tsx", "createRunnerByOrganizer"]
+    },
+    {
+      "id": "name_uppercase",
+      "severity": "medium",
+      "description": "MAIÚSCULAS persistidas sem normalização Title Case",
+      "affected": "todos os fluxos de escrita"
+    },
+    {
+      "id": "city_neighborhood_numeric",
+      "severity": "medium",
+      "description": "city/neighborhood aceitam '123456' ou '11' com min length 2",
+      "affected": ["MultiStepRegistration", "updateProfile", "createRunnerByOrganizer"]
+    },
+    {
+      "id": "email_case_auth",
+      "severity": "medium",
+      "description": "authService.register não normaliza email; login usa lower(trim) — risco de duplicata case",
+      "affected": ["authService.register", "Auth.tsx", "RegistrationFlow"]
+    },
+    {
+      "id": "email_spaces_admin",
+      "severity": "low",
+      "description": "UserProfileDialog trim sem toLowerCase",
+      "affected": ["UserProfileDialog.tsx", "userManagementController update"]
+    },
+    {
+      "id": "phone_admin_manual",
+      "severity": "high",
+      "description": "AdminManualRunnerCreate sem máscara nem validatePhone",
+      "affected": ["AdminManualRunnerCreate.tsx", "createManualRunner"]
+    },
+    {
+      "id": "phone_masked_persist",
+      "severity": "medium",
+      "description": "createManualRunner phone.trim() pode persistir '(85) 99999-9999' com máscara",
+      "affected": ["createManualRunner", "organizer createRunner phone trim"]
+    },
+    {
+      "id": "empty_runner_name",
+      "severity": "high",
+      "description": "createRunnerByOrganizer permite full_name '' após trim",
+      "affected": ["registrationsService.createRunnerByOrganizer"]
+    },
+    {
+      "id": "organizer_contact_phone",
+      "severity": "medium",
+      "description": "contact_phone texto livre; usado em tel: e WhatsApp sem validação",
+      "affected": ["OrganizerSettings", "contactWhatsAppService"]
+    },
+    {
+      "id": "birth_date_range",
+      "severity": "medium",
+      "description": "Sem faixa 8–120 anos no cadastro; só validateAgeRequirement na escolha de categoria",
+      "affected": ["Auth", "MultiStepRegistration", "RegistrationFlow"]
+    },
+    {
+      "id": "legacy_data",
+      "severity": "info",
+      "description": "Validações novas devem ser write-time only; leitura/export usa dados como estão",
+      "affected": ["registrationsController export", "rankings", "certificados"]
+    }
+  ],
+  "can_save_today_analysis": {
+    "name_11999999999": true,
+    "name_123456": true,
+    "name_0000": true,
+    "name_JOAO123": true,
+    "name_JOAO_with_phone": true,
+    "city_123456": true,
+    "city_phone_digits": true,
+    "neighborhood_numeric": true,
+    "email_uppercase_spaces": "partial — MultiStep lowercases on input; Auth/RegistrationFlow may store JOAO@GMAIL.COM",
+    "phone_cep_confusion": "possible — no cross-field validation; mask limits length but wrong field assignment possible",
+    "single_word_name": true,
+    "all_caps_city": true,
+    "notes": "Conclusão baseada em regras de código; não executou INSERT em produção"
+  },
+  "normalization_candidates": {
+    "backend": [
+      { "function": "normalizePersonName", "apply_on": ["register", "updateProfile", "createRunnerByOrganizer", "createManualRunner"] },
+      { "function": "normalizeEmail", "apply_on": ["register", "updateProfile", "createRunnerByOrganizer", "createManualRunner", "profilesController"] },
+      { "function": "normalizePhoneDigits", "apply_on": ["register", "updateProfile", "createRunnerByOrganizer", "createManualRunner"] },
+      { "function": "normalizePostalCode", "apply_on": ["register", "updateProfile"] },
+      { "function": "normalizePlaceName", "apply_on": ["city", "neighborhood"] },
+      { "function": "validateFullName", "apply_on": "all write paths — min 2 words, no digits" },
+      { "function": "validateBirthDateRange", "apply_on": "register, createManualRunner", "range_years": [8, 120] }
+    ],
+    "frontend": [
+      { "function": "normalizePersonName", "ux": "onBlur format title case" },
+      { "function": "maskPhone + validatePhone", "surfaces": ["AdminManualRunnerCreate", "UserProfileDialog", "OrganizerSettings"] },
+      { "function": "maskCep + validateCep", "surfaces": ["AdminManualRunnerCreate address fields"] },
+      { "function": "blockDigitsInName", "surfaces": "all name inputs" }
+    ]
+  },
+  "compatibility_constraints": {
+    "do_not_revalidate_on_read": [
+      "export registrations CSV",
+      "rankings display",
+      "certificates PDF",
+      "check-in lists",
+      "Asaas customer data already sent",
+      "financial reports",
+      "public APIs returning profile as stored"
+    ],
+    "strategy": "normalize on write (create/update); optional admin bulk cleanup script later; grandfather existing rows"
+  },
+  "recommended_sprints": [
+    {
+      "sprint": 1,
+      "title": "Normalização automática (soft)",
+      "actions": ["email trim+lower backend", "phone digits backend", "title case name optional soft"]
+    },
+    {
+      "sprint": 2,
+      "title": "Nome completo obrigatório",
+      "actions": ["min 2 words frontend+backend", "fix createRunnerByOrganizer empty name"]
+    },
+    {
+      "sprint": 3,
+      "title": "Bloqueio de números no nome",
+      "actions": ["regex reject digits in full_name/preferred_name"]
+    },
+    {
+      "sprint": 4,
+      "title": "Cidade, bairro, CEP",
+      "actions": ["block pure numeric place names", "cep 8 digits", "masks on admin surfaces"]
+    },
+    {
+      "sprint": 5,
+      "title": "Hardening completo",
+      "actions": ["birth_date range", "gender enum strict", "organizer contact_phone validate", "shared profileNormalization utils"]
+    }
+  ],
+  "file_inventory": [
+    "src/pages/Auth.tsx",
+    "src/components/MultiStepRegistration.tsx",
+    "src/components/event/RegistrationFlow.tsx",
+    "src/components/registration/RegisterAthleteStaffDialog.tsx",
+    "src/components/admin/AdminManualRunnerCreate.tsx",
+    "src/components/admin/UserProfileDialog.tsx",
+    "src/components/runner/profile/ProfileEditDialog.tsx",
+    "src/components/runner/leader/LeaderDashboard.tsx",
+    "src/components/organizer/OrganizerSettings.tsx",
+    "src/components/admin/SystemSettings.tsx",
+    "src/components/payment/CreditCardForm.tsx",
+    "src/lib/utils/masks.ts",
+    "src/lib/utils/validators.ts",
+    "backend/src/services/authService.ts",
+    "backend/src/services/profilesService.ts",
+    "backend/src/services/registrationsService.ts",
+    "backend/src/services/userManagementService.ts",
+    "backend/src/services/adminAthleteRegistrationService.ts",
+    "backend/src/services/leaderInvitationsService.ts",
+    "backend/src/controllers/authController.ts",
+    "backend/src/controllers/profilesController.ts",
+    "backend/src/controllers/userManagementController.ts",
+    "backend/src/controllers/organizerController.ts",
+    "backend/migrations/029_add_address_fields_to_profiles.sql",
+    "backend/migrations/012_organizer_settings.sql"
+  ]
+}

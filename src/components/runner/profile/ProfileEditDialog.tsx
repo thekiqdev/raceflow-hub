@@ -10,6 +10,8 @@ import { updateOwnProfile, type Profile, type UpdateProfileData } from "@/lib/ap
 import { maskPhone, maskCep, maskCpf, unmask } from "@/lib/utils/masks";
 import { fetchAddressByCep } from "@/lib/api/viacep";
 import { useAuth } from "@/contexts/AuthContext";
+import { validateFullName, FULL_NAME_VALIDATION_MESSAGE, validatePhone, PHONE_VALIDATION_MESSAGE, validatePostalCode, POSTAL_CODE_VALIDATION_MESSAGE, validateCity, CITY_VALIDATION_MESSAGE, validateNeighborhood, NEIGHBORHOOD_VALIDATION_MESSAGE, validateBirthDateRange, BIRTH_DATE_VALIDATION_MESSAGE, validateGender, GENDER_VALIDATION_MESSAGE, validateContactEmail, EMAIL_VALIDATION_MESSAGE, normalizeGender } from "@/lib/utils/profileValidation";
+import { normalizePersonName, normalizePlaceName, normalizePhoneDigits, normalizePostalCode, normalizeEmail } from "@/lib/utils/profileNormalization";
 
 interface ProfileEditDialogProps {
   open: boolean;
@@ -144,19 +146,53 @@ export function ProfileEditDialog({ open, onOpenChange, profile }: ProfileEditDi
         }
       }
 
+      const normalizedPhone = normalizePhoneDigits(formData.phone);
+      const phoneCheck = validatePhone(normalizedPhone);
+      if (!phoneCheck.valid) {
+        toast.error(phoneCheck.message ?? PHONE_VALIDATION_MESSAGE);
+        return;
+      }
+
+      const normalizedPostalCode = normalizePostalCode(formData.postal_code);
+      if (normalizedPostalCode) {
+        const postalCheck = validatePostalCode(normalizedPostalCode);
+        if (!postalCheck.valid) {
+          toast.error(postalCheck.message ?? POSTAL_CODE_VALIDATION_MESSAGE);
+          return;
+        }
+      }
+
+      const normalizedNeighborhood = normalizePlaceName(formData.neighborhood);
+      if (normalizedNeighborhood) {
+        const neighborhoodCheck = validateNeighborhood(normalizedNeighborhood);
+        if (!neighborhoodCheck.valid) {
+          toast.error(neighborhoodCheck.message ?? NEIGHBORHOOD_VALIDATION_MESSAGE);
+          return;
+        }
+      }
+
+      const normalizedCity = normalizePlaceName(formData.city);
+      if (normalizedCity) {
+        const cityCheck = validateCity(normalizedCity);
+        if (!cityCheck.valid) {
+          toast.error(cityCheck.message ?? CITY_VALIDATION_MESSAGE);
+          return;
+        }
+      }
+
       setSaving(true);
       const updateData: Record<string, unknown> = {
         preferred_name: formData.preferred_name || undefined,
-        phone: unmask(formData.phone),
+        phone: normalizedPhone,
         profession: formData.profession || undefined,
         cbat: formData.cbat || undefined,
         team: formData.team || undefined,
-        postal_code: unmask(formData.postal_code) || undefined,
+        postal_code: normalizedPostalCode || undefined,
         street: formData.street || undefined,
         address_number: formData.address_number || undefined,
         address_complement: formData.address_complement || undefined,
-        neighborhood: formData.neighborhood || undefined,
-        city: formData.city || undefined,
+        neighborhood: normalizedNeighborhood || undefined,
+        city: normalizedCity || undefined,
         state: formData.state || undefined,
       };
 
@@ -165,9 +201,41 @@ export function ProfileEditDialog({ open, onOpenChange, profile }: ProfileEditDi
       }
 
       if (!identityLocked) {
-        updateData.full_name = formData.full_name;
+        const normalizedName = normalizePersonName(formData.full_name);
+        const fullNameChanged =
+          normalizedName.replace(/\s+/g, " ") !==
+          normalizePersonName(profile.full_name || "");
+        if (fullNameChanged) {
+          const fullNameCheck = validateFullName(normalizedName);
+          if (!fullNameCheck.valid) {
+            toast.error(fullNameCheck.message ?? FULL_NAME_VALIDATION_MESSAGE);
+            return;
+          }
+        }
+
+        const birthChanged =
+          (formData.birth_date || "").split("T")[0] !==
+          (profile.birth_date || "").split("T")[0];
+        if (birthChanged && formData.birth_date) {
+          const birthCheck = validateBirthDateRange(formData.birth_date);
+          if (!birthCheck.valid) {
+            toast.error(birthCheck.message ?? BIRTH_DATE_VALIDATION_MESSAGE);
+            return;
+          }
+        }
+
+        const genderChanged = normalizeGender(formData.gender) !== normalizeGender(profile.gender);
+        if (genderChanged && formData.gender) {
+          const genderCheck = validateGender(formData.gender);
+          if (!genderCheck.valid) {
+            toast.error(genderCheck.message ?? GENDER_VALIDATION_MESSAGE);
+            return;
+          }
+        }
+
+        updateData.full_name = normalizedName;
         updateData.birth_date = formData.birth_date;
-        updateData.gender = formData.gender || undefined;
+        updateData.gender = normalizeGender(formData.gender) || undefined;
         if (cpfChanged) {
           updateData.cpf = unmask(formData.cpf);
         }
@@ -356,6 +424,7 @@ export function ProfileEditDialog({ open, onOpenChange, profile }: ProfileEditDi
                   <SelectContent>
                     <SelectItem value="M">Masculino</SelectItem>
                     <SelectItem value="F">Feminino</SelectItem>
+                    <SelectItem value="O">Outro / Não informar</SelectItem>
                   </SelectContent>
                 </Select>
               )}

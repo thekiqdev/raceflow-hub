@@ -1009,16 +1009,16 @@ const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
   return (
     <div className="space-y-6 bg-gray-50 rounded-2xl p-4 md:p-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-4">
-          <Button variant="ghost" size="sm" onClick={onBack}>
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            Voltar
-          </Button>
-          <div>
+      <div className="flex items-center gap-4">
+        <Button variant="ghost" size="sm" onClick={onBack}>
+          <ArrowLeft className="h-4 w-4 mr-2" />
+          Voltar
+        </Button>
+        <div>
             <h2 className="text-2xl font-bold text-gray-900">{eventTitle}</h2>
             <p className="text-sm text-gray-500">Relatório detalhado · dashboard do evento</p>
-          </div>
         </div>
+      </div>
 
         {(isAdmin || isOrganizer) && (
           isAdmin ? (
@@ -1064,7 +1064,7 @@ const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
             </Button>
           )
         )}
-      </div>
+            </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
         <KpiCard
@@ -1119,14 +1119,14 @@ const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
           iconClass="text-purple-600"
           valueClassName="text-purple-600"
         />
-      </div>
+            </div>
 
       {generalStats && (
         <section className="mb-6 space-y-4">
           <div className="flex items-center gap-2">
             <LayoutGrid className="h-5 w-5 text-primary" />
             <h3 className="text-lg font-semibold text-gray-900">Resumo Geral do Evento</h3>
-          </div>
+            </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
             <SummaryStatCard title="Inscrições">
@@ -1170,7 +1170,7 @@ const EventDetailedReport = ({ eventId, onBack }: EventDetailedReportProps) => {
               <StatRow label="Via convite" value={generalStats.from_invitation_count} />
               <StatRow label="Free bonus admin" value={generalStats.free_bonus_admin_count} />
             </SummaryStatCard>
-          </div>
+            </div>
         </section>
       )}
 

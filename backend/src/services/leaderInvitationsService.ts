@@ -2,6 +2,8 @@ import jwt from 'jsonwebtoken';
 import { query } from '../config/database.js';
 import { createRunnerByOrganizer, type RunnerDataByOrganizer } from './registrationsService.js';
 import { isValidCpfDigits } from '../utils/cpf.js';
+import { normalizePersonName } from '../utils/profileNormalization.js';
+import { assertValidFullName } from '../utils/profileValidation.js';
 
 export interface LeaderInvitation {
   id: string;
@@ -261,6 +263,7 @@ export const sendInvitationByCpf = async (
         'CPF não cadastrado. Preencha os dados abaixo para pré-cadastro e envio do convite.'
       );
     }
+    assertValidFullName(normalizePersonName(runnerData.full_name));
     const created = await createRunnerByOrganizer(cleanCpf, {
       full_name: runnerData.full_name.trim(),
       birth_date: runnerData.birth_date || '',

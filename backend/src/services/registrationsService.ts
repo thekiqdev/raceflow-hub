@@ -11,6 +11,12 @@ import {
 import { RegistrationStatus, PaymentStatus, PaymentMethod } from '../types/index.js';
 import { hashPassword } from './authService.js';
 import { isValidCpfDigits } from '../utils/cpf.js';
+import {
+  normalizePersonName,
+  normalizePhoneDigits,
+  normalizePlaceName,
+} from '../utils/profileNormalization.js';
+import { assertValidFullName, assertValidPhone, assertValidCity, assertValidGender, normalizeGender } from '../utils/profileValidation.js';
 
 /**
  * Estoque restante da variante no evento (consumo derivado por inscrições em status que consomem estoque).
@@ -1397,6 +1403,26 @@ export const createRunnerByOrganizer = async (
     throw new Error('Já existe cadastro para este CPF');
   }
 
+  const fullName = normalizePersonName(runner_data.full_name);
+  assertValidFullName(fullName);
+
+  const normalizedCity = runner_data.city
+    ? normalizePlaceName(runner_data.city)
+    : null;
+  const normalizedPhone = runner_data.phone
+    ? normalizePhoneDigits(runner_data.phone)
+    : null;
+
+  if (normalizedPhone) {
+    assertValidPhone(normalizedPhone);
+  }
+  if (normalizedCity) {
+    assertValidCity(normalizedCity, { source: 'registrations.createRunnerByOrganizer' });
+  }
+  if (runner_data.gender?.trim()) {
+    assertValidGender(runner_data.gender, { source: 'registrations.createRunnerByOrganizer' });
+  }
+
   let email: string;
   const rawEmail = runner_data.email?.trim();
   if (rawEmail) {
@@ -1428,13 +1454,13 @@ export const createRunnerByOrganizer = async (
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
       [
         userId,
-        runner_data.full_name?.trim() || '',
+        fullName,
         cleanCpf,
         runner_data.birth_date || null,
-        runner_data.city?.trim() || null,
-        runner_data.gender?.trim() || null,
+        normalizedCity,
+        runner_data.gender ? normalizeGender(runner_data.gender) || null : null,
         runner_data.team?.trim() || null,
-        runner_data.phone?.trim() || null,
+        normalizedPhone,
       ]
     );
 

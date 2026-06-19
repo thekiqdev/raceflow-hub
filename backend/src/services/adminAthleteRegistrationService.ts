@@ -13,6 +13,8 @@ import {
 import { getEventById, getEffectiveRegistrationStatus } from './eventsService.js';
 import { getCategoryById } from './categoriesService.js';
 import { calculateRegistrationTotal } from './registrationTotalService.js';
+import { normalizePersonName } from '../utils/profileNormalization.js';
+import { assertValidFullName } from '../utils/profileValidation.js';
 import { isValidCpfDigits } from '../utils/cpf.js';
 
 export type StaffAthleteActorType = 'organizer' | 'super_admin';
@@ -113,6 +115,7 @@ export async function registerAthleteByStaff(params: RegisterAthleteByStaffParam
     if (!runner_data || !runner_data.full_name) {
       throw new Error('CPF_NOT_REGISTERED');
     }
+    assertValidFullName(normalizePersonName(runner_data.full_name));
     const created = await createRunnerByOrganizer(cleanCpf, runner_data);
     athlete = { id: created.id, full_name: runner_data.full_name, cpf: cleanCpf };
   }
