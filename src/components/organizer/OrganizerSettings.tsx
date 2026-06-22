@@ -36,6 +36,7 @@ export default function OrganizerSettings() {
   const [initialPhone, setInitialPhone] = useState("");
   const [initialContactPhone, setInitialContactPhone] = useState("");
   const [initialContactEmail, setInitialContactEmail] = useState("");
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
 
   useEffect(() => {
     if (user) {
@@ -183,7 +184,7 @@ export default function OrganizerSettings() {
         contact_email: normalizedContactEmail || undefined,
         contact_phone: normalizedContactPhone || undefined,
         bio: bio,
-        website_url: websiteUrl,
+        website_url: websiteUrl.trim() || undefined,
       });
 
       if (response.success && response.data) {
@@ -349,6 +350,9 @@ export default function OrganizerSettings() {
                   value={contactPhone}
                   onChange={(e) => setContactPhone(maskPhone(e.target.value))}
                 />
+                <p className="text-xs text-muted-foreground">
+                  Este número será utilizado no botão &quot;Entrar em Contato&quot; dos seus eventos e para abrir o WhatsApp dos participantes.
+                </p>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="website">Site</Label>

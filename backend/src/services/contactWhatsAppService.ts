@@ -44,33 +44,53 @@ export function normalizeWhatsAppDigits(raw?: string | null): string | null {
 async function resolveOrganizerWhatsApp(
   organizerId: string
 ): Promise<ResolvedWhatsApp | null> {
-  const result = await query('SELECT contact_phone FROM profiles WHERE id = $1', [
-    organizerId,
-  ]);
+  const result = await query(
+    'SELECT contact_phone, phone FROM profiles WHERE id = $1',
+    [organizerId]
+  );
 
-  const phone = normalizeWhatsAppDigits(result.rows[0]?.contact_phone);
-  if (!phone) {
+  const row = result.rows[0];
+  if (!row) {
     return null;
   }
 
-  return { phone, source: 'organizer' };
+  const fromContactPhone = normalizeWhatsAppDigits(row.contact_phone);
+  if (fromContactPhone) {
+    console.log(
+      `[CONTACT_WHATSAPP] source=organizer_contact_phone organizerId=${organizerId}`
+    );
+    return { phone: fromContactPhone, source: 'organizer' };
+  }
+
+  const fromPhone = normalizeWhatsAppDigits(row.phone);
+  if (fromPhone) {
+    console.log(`[CONTACT_WHATSAPP] source=organizer_phone organizerId=${organizerId}`);
+    return { phone: fromPhone, source: 'organizer' };
+  }
+
+  return null;
 }
 
-async function resolveAdminWhatsApp(): Promise<ResolvedWhatsApp | null> {
+async function resolveAdminWhatsApp(
+  organizerId?: string | null
+): Promise<ResolvedWhatsApp | null> {
   const [homeSettings, systemSettings] = await Promise.all([
     getHomePageSettings(),
     getSystemSettings(),
   ]);
 
-  const candidates = [
-    homeSettings?.whatsapp_number,
-    systemSettings.support_phone,
-    systemSettings.contact_phone,
+  const organizerSuffix = organizerId ? ` organizerId=${organizerId}` : '';
+
+  const candidates: Array<{ raw: string | null | undefined; logSource: string }> = [
+    { raw: homeSettings?.whatsapp_number, logSource: 'admin_home' },
+    { raw: systemSettings.support_phone, logSource: 'admin_support' },
+    { raw: systemSettings.contact_phone, logSource: 'admin_contact' },
   ];
 
-  for (const raw of candidates) {
+  for (const { raw, logSource } of candidates) {
     const phone = normalizeWhatsAppDigits(raw);
     if (phone) {
+      console.log(`[CONTACT_WHATSAPP] source=${logSource}${organizerSuffix}`);
       return { phone, source: 'admin' };
     }
   }
@@ -93,5 +113,5 @@ export async function resolveWhatsAppForContactMessage(params: {
     }
   }
 
-  return resolveAdminWhatsApp();
+  return resolveAdminWhatsApp(params.organizerId);
 }

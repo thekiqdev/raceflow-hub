@@ -241,7 +241,6 @@ export const getOrganizerSettingsController = async (
         p.id,
         p.full_name,
         p.phone,
-        p.email,
         p.logo_url,
         p.organization_name,
         p.contact_email,
@@ -301,7 +300,10 @@ const updateOrganizerSettingsSchema = z.object({
   contact_email: z.string().email().optional(),
   contact_phone: z.string().optional(),
   bio: z.string().optional(),
-  website_url: z.string().url().optional(),
+  website_url: z
+    .union([z.string().url(), z.literal('')])
+    .optional()
+    .transform((v) => v || undefined),
 });
 
 export const updateOrganizerSettingsController = async (

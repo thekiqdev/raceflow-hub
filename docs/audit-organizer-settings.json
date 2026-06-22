@@ -1,0 +1,330 @@
+{
+  "meta": {
+    "title": "AUDIT_ORGANIZER_SETTINGS_AND_CONTACT_WHATSAPP_ROUTING",
+    "mode": "read_only",
+    "date": "2026-06-03",
+    "audited_at": "2026-06-22",
+    "no_code_changes": true,
+    "no_migrations": true,
+    "no_database_writes": true
+  },
+  "executive_summary": {
+    "organizer_settings_save_blocked": {
+      "root_cause": "Schema Zod em updateOrganizerSettingsController rejeita website_url vazio ('') com z.string().url().optional(). O frontend sempre envia website_url no PUT, inclusive quando o campo Site está em branco.",
+      "error_message": "Invalid url (exibido ao usuário como erro de validação / URL inválida via apiClient)",
+      "severity": "alta",
+      "blocks_other_fields": true
+    },
+    "whatsapp_wrong_number": {
+      "root_cause": "resolveWhatsAppForContactMessage usa exclusivamente profiles.contact_phone do organizador. Se vazio ou inválido após normalizeWhatsAppDigits, cai no fallback admin (home_page_settings.whatsapp_number → system_settings.support_phone → system_settings.contact_phone). O campo phone do perfil NÃO entra na resolução.",
+      "severity": "alta",
+      "typical_user_confusion": "Organizador preenche Telefone principal mas deixa Telefone de Contato vazio; evento exibe contact_phone na página mas WhatsApp abre número admin."
+    }
+  },
+  "etapa1_organizer_settings": {
+    "frontend": {
+      "file": "src/components/organizer/OrganizerSettings.tsx",
+      "endpoint_get": "GET /api/organizer/settings",
+      "endpoint_put": "PUT /api/organizer/settings",
+      "save_behavior": "handleSaveGeneral envia todos os campos do formulário geral em um único PUT; validação de telefone/e-mail só no frontend quando o valor mudou em relação ao inicial."
+    },
+    "backend": {
+      "get_controller": "backend/src/controllers/organizerController.ts::getOrganizerSettingsController",
+      "put_controller": "backend/src/controllers/organizerController.ts::updateOrganizerSettingsController",
+      "persist_service": "backend/src/services/profilesService.ts::updateProfile",
+      "zod_schema": "updateOrganizerSettingsSchema"
+    },
+    "fields_not_in_ui": [
+      "Instagram",
+      "Facebook",
+      "YouTube",
+      "Cidade",
+      "Estado"
+    ],
+    "note": "Campos sociais e endereço listados no escopo da auditoria não existem em OrganizerSettings.tsx nem em migration 012; cidade/estado existem em profiles para corredores, não nesta tela."
+  },
+  "etapa2_field_inventory": [
+    {
+      "label_ui": "Nome Completo",
+      "api_field": "full_name",
+      "db_column": "profiles.full_name",
+      "type": "string",
+      "required_ui": false,
+      "required_backend_zod": "opcional, mas se presente exige min(1)",
+      "required_profiles_service": "assertValidFullName se valor mudou (não aceita vazio)",
+      "empty_behavior": "Frontend envia '' → Zod falha min(1) antes de chegar ao service",
+      "validation": ["Zod min(1)", "assertValidFullName no updateProfile"],
+      "error_message": "Validation Error / mensagem de nome completo"
+    },
+    {
+      "label_ui": "Nome da Organização",
+      "api_field": "organization_name",
+      "db_column": "profiles.organization_name",
+      "type": "string",
+      "required": false,
+      "empty_behavior": "Aceito; persiste string vazia ou omitido",
+      "validation": "nenhuma semântica"
+    },
+    {
+      "label_ui": "Telefone",
+      "api_field": "phone",
+      "db_column": "profiles.phone",
+      "type": "tel / dígitos",
+      "required": false,
+      "empty_behavior": "Frontend envia undefined se vazio após normalizePhoneDigits",
+      "validation": ["Frontend validatePhone allowEmpty se mudou", "Backend assertValidPhone allowEmpty em updateProfile"],
+      "whatsapp_used": false,
+      "error_message": "Telefone inválido."
+    },
+    {
+      "label_ui": "E-mail de Contato",
+      "api_field": "contact_email",
+      "db_column": "profiles.contact_email",
+      "type": "email",
+      "required": false,
+      "empty_behavior": "Frontend envia undefined se vazio",
+      "validation": ["Frontend validateContactEmail allowEmpty se mudou", "Zod z.string().email().optional() — rejeita '' se enviado", "Backend assertValidContactEmail allowEmpty"],
+      "error_message": "E-mail inválido."
+    },
+    {
+      "label_ui": "Telefone de Contato",
+      "api_field": "contact_phone",
+      "db_column": "profiles.contact_phone",
+      "type": "tel / dígitos",
+      "required": false,
+      "empty_behavior": "Frontend envia undefined se vazio",
+      "validation": ["Frontend validatePhone allowEmpty se mudou", "Backend assertValidContactPhone allowEmpty"],
+      "whatsapp_used": true,
+      "error_message": "Telefone inválido.",
+      "note": "Único campo do organizador usado em resolveOrganizerWhatsApp"
+    },
+    {
+      "label_ui": "Site",
+      "api_field": "website_url",
+      "db_column": "profiles.website_url",
+      "type": "url",
+      "required": false,
+      "empty_behavior": "Frontend envia '' sempre → Zod url() FALHA",
+      "validation": "Zod z.string().url().optional() — não aceita string vazia nem URL sem esquema",
+      "error_message": "Invalid url",
+      "blocks_save": true,
+      "severity": "critica"
+    },
+    {
+      "label_ui": "Biografia",
+      "api_field": "bio",
+      "db_column": "profiles.bio",
+      "type": "text",
+      "required": false,
+      "empty_behavior": "Aceito"
+    },
+    {
+      "label_ui": "Logo",
+      "api_field": "logo_url",
+      "db_column": "profiles.logo_url",
+      "type": "text (URL ou data:image base64)",
+      "required": false,
+      "upload_separate": true,
+      "validation": "Zod z.string().url().nullable().optional() — data: URLs passam; null aceito na remoção",
+      "error_message": "Invalid url (improvável em upload base64 atual)"
+    },
+    {
+      "label_ui": "E-mail de login (somente leitura)",
+      "api_field": "email",
+      "db_column": "users.email",
+      "in_settings_get": true,
+      "editable_in_organizer_settings": false
+    }
+  ],
+  "etapa3_url_invalida": {
+    "primary_trigger": {
+      "field": "website_url",
+      "location": "backend/src/controllers/organizerController.ts:303",
+      "schema": "z.string().url().optional()",
+      "trigger_value": "",
+      "zod_message": "Invalid url",
+      "repro": "Salvar configurações gerais com campo Site vazio; request inclui website_url: \"\""
+    },
+    "secondary_triggers": [
+      {
+        "field": "website_url",
+        "trigger_value": "www.exemplo.com",
+        "reason": "Zod exige URL com esquema http/https"
+      },
+      {
+        "field": "full_name",
+        "trigger_value": "",
+        "schema": "z.string().min(1).optional()",
+        "reason": "Chave presente com string vazia"
+      },
+      {
+        "field": "contact_email",
+        "trigger_value": "",
+        "schema": "z.string().email().optional()",
+        "reason": "Só se enviado explicitamente como ''; frontend atual omite com || undefined"
+      }
+    ],
+    "not_url_validated": [
+      "phone",
+      "contact_phone",
+      "bio",
+      "organization_name"
+    ],
+    "reference_pattern_ok": "backend/src/controllers/homeBannersController.ts — z.union([z.string().url(), z.literal(''), z.null()]).optional()",
+    "verified_with_zod": {
+      "website_empty": "safeParse falha",
+      "website_undefined": "safeParse ok",
+      "logo_data_url": "safeParse ok para data:image/png;base64,..."
+    }
+  },
+  "etapa4_whatsapp_resolution": {
+    "service": "backend/src/services/contactWhatsAppService.ts",
+    "entry": "resolveWhatsAppForContactMessage({ type, organizerId })",
+    "priority": [
+      {
+        "order": 1,
+        "condition": "type === 'event' && organizerId",
+        "source": "organizer",
+        "query": "SELECT contact_phone FROM profiles WHERE id = $organizerId",
+        "field_used": "profiles.contact_phone only"
+      },
+      {
+        "order": 2,
+        "condition": "organizer null ou contact_phone inválido",
+        "source": "admin",
+        "candidates": [
+          "home_page_settings.whatsapp_number",
+          "system_settings.support_phone",
+          "system_settings.contact_phone"
+        ]
+      }
+    ],
+    "normalizeWhatsAppDigits_rules": {
+      "null_if": ["raw null", "sem dígitos", "menos de 10 dígitos"],
+      "brazil_local": "10 ou 11 dígitos → prefixo 55",
+      "already_55": "mantém se startsWith 55 e length >= 12",
+      "other_international": "length >= 12 retorna dígitos"
+    },
+    "default_home_whatsapp_if_no_row": "+5511999999999",
+    "default_home_service": "backend/src/services/homePageSettingsService.ts:18",
+    "profiles_phone_not_used": true,
+    "event_page_displays": "organizer_contact_phone from eventsService JOIN profiles.contact_phone"
+  },
+  "etapa5_contact_form_chain": {
+    "steps": [
+      { "step": 1, "component": "EventDetails.tsx", "action": "Render ContactDialog com eventId, organizer_contact_email" },
+      { "step": 2, "component": "ContactDialog.tsx", "action": "POST createContactMessage com type event + event_id" },
+      { "step": 3, "api": "POST /api/contact-messages", "controller": "createContactMessageController" },
+      { "step": 4, "controller": "getEventById → data.organizer_id = event.organizer_id" },
+      { "step": 5, "service": "createContactMessage persiste mensagem + organizer_id" },
+      { "step": 6, "controller": "resolveWhatsAppForContactMessage({ type, organizerId: message.organizer_id })" },
+      { "step": 7, "response": "{ success, data: message, whatsapp: { phone, source } }" },
+      { "step": 8, "frontend": "ContactDialog window.open(buildWhatsAppUrl(whatsappPhone, text)) após 800ms" }
+    ],
+    "cache": "Nenhum cache de WhatsApp no frontend; número vem da resposta do POST",
+    "whatsapp_phone_in_response": "Normalizado com DDI 55 no backend",
+    "inbox_whatsapp_button": {
+      "file": "src/components/contact-messages/ContactMessageRowActions.tsx",
+      "uses": "message.phone (telefone do remetente da mensagem)",
+      "not_organizer_phone": true
+    }
+  },
+  "etapa6_database": {
+    "status": "consulta_read_only_nao_concluida",
+    "reason": "Conexão PostgreSQL local indisponível ou timeout durante auditoria (pool não respondeu em ~95s)",
+    "queries_for_manual_verification": [
+      "SELECT p.id, p.full_name, p.phone, p.contact_phone, p.organization_name FROM profiles p JOIN user_roles ur ON ur.user_id = p.id AND ur.role = 'organizer' ORDER BY p.updated_at DESC LIMIT 10;",
+      "SELECT whatsapp_number FROM home_page_settings ORDER BY created_at DESC LIMIT 1;",
+      "SELECT contact_phone, support_phone FROM system_settings ORDER BY created_at DESC LIMIT 1;",
+      "SELECT e.id, e.title, e.organizer_id, p.contact_phone, p.phone FROM events e JOIN profiles p ON p.id = e.organizer_id WHERE e.id = '<EVENT_ID_TESTE>';"
+    ],
+    "interpretation": {
+      "if_contact_phone_null_and_phone_set": "WhatsApp do formulário usará fallback admin, não phone",
+      "if_contact_phone_valid": "whatsapp.source deve ser organizer",
+      "if_all_organizer_invalid": "primeiro candidato admin válido em home_page_settings.whatsapp_number"
+    }
+  },
+  "etapa7_priority_matrix": {
+    "blocking_empty_fields": [
+      {
+        "field": "website_url",
+        "empty_blocks_save": true,
+        "severity": "critica",
+        "fix_complexity": "baixa"
+      },
+      {
+        "field": "full_name",
+        "empty_blocks_save": true,
+        "severity": "media",
+        "fix_complexity": "baixa"
+      }
+    ],
+    "incorrect_validations": [
+      {
+        "issue": "website_url Zod não trata '' como opcional",
+        "file": "organizerController.ts",
+        "pattern_to_follow": "homeBannersController linkUrlSchema"
+      },
+      {
+        "issue": "UX: Telefone principal vs Telefone de Contato sem explicar qual vai para WhatsApp",
+        "severity": "media"
+      }
+    ],
+    "whatsapp_origin_mismatch": [
+      {
+        "scenario": "phone preenchido, contact_phone vazio",
+        "expected_by_user": "WhatsApp do organizador",
+        "actual": "admin fallback (ex.: home_page_settings.whatsapp_number)",
+        "source_returned": "admin"
+      },
+      {
+        "scenario": "contact_phone preenchido corretamente",
+        "expected": "profiles.contact_phone normalizado",
+        "source_returned": "organizer"
+      }
+    ]
+  },
+  "etapa8_compatibility": {
+    "safe_to_change": [
+      "Relaxar Zod website_url para aceitar '' sem alterar persistência",
+      "Frontend omitir website_url quando vazio (defesa em profundidade)",
+      "Documentar na UI que Telefone de Contato é usado no WhatsApp do evento"
+    ],
+    "requires_care": [
+      "Incluir profiles.phone no fallback de WhatsApp — pode mudar comportamento para organizadores que já dependem do admin fallback",
+      "Alterar ordem dos candidatos admin — impacta contato plataforma e eventos sem contact_phone"
+    ],
+    "must_not_break": [
+      "createContactMessage e notificações por e-mail",
+      "Badges e contadores contact-messages-updated",
+      "Inbox admin (type platform) e organizador (type event)",
+      "Fallback admin quando organizador sem número",
+      "Upload/remoção de logo (logo_url null / data URL)"
+    ]
+  },
+  "correction_plan": {
+    "phase_1_quick_wins": [
+      "Alterar updateOrganizerSettingsSchema: website_url → z.union([z.string().url(), z.literal('')]).optional().transform(v => v === '' ? undefined : v) ou equivalente",
+      "OrganizerSettings.tsx: enviar website_url: websiteUrl.trim() || undefined",
+      "OrganizerSettings.tsx: enviar full_name: fullName.trim() || undefined (ou tornar obrigatório na UI)",
+      "Label/helper text: 'Telefone de Contato — usado no WhatsApp do formulário Entrar em Contato dos seus eventos'"
+    ],
+    "phase_2_whatsapp": [
+      "Opção A (recomendada UX): resolveOrganizerWhatsApp tentar contact_phone, depois phone do mesmo perfil, depois admin",
+      "Opção B (só documentação): exigir contact_phone e avisar na tela de configurações",
+      "Adicionar log estruturado [CONTACT_WHATSAPP] com source e organizerId (sem PII) para suporte"
+    ],
+    "phase_3_optional": [
+      "Campos sociais (Instagram etc.) — fora do escopo atual; não existem no schema",
+      "Unificar normalizeWhatsAppDigits backend/frontend"
+    ],
+    "testing_checklist": [
+      "Salvar settings com Site vazio + telefone de contato preenchido",
+      "Salvar apenas telefone sem alterar site vazio existente",
+      "Enviar contato em evento com contact_phone válido → source organizer",
+      "Enviar contato em evento sem contact_phone → source admin, número de home_page_settings",
+      "Upload logo base64 continua funcionando",
+      "Notificação e-mail organizador após contato evento"
+    ]
+  }
+}
