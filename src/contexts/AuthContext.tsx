@@ -123,7 +123,14 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
 
   const login = async (emailOrCpf: string, password: string): Promise<boolean> => {
     try {
-      const response = await apiLogin({ email: emailOrCpf.trim(), password });
+      const trimmed = emailOrCpf.trim();
+      const identifier = trimmed.includes('@')
+        ? trimmed
+        : (() => {
+            const digits = trimmed.replace(/\D/g, '');
+            return digits.length === 11 ? digits : trimmed;
+          })();
+      const response = await apiLogin({ email: identifier, password });
       
       if (response.success && response.data) {
         const { user: loggedUser, token } = response.data;

@@ -335,7 +335,10 @@ export const register = async (data: RegisterData): Promise<AuthResponse> => {
   }
 };
 
-function resolveLoginIdentifier(raw: string): { kind: 'cpf'; cpfDigits: string } | { kind: 'email'; email: string } {
+function resolveLoginIdentifier(
+  raw: string,
+  options?: { loginCpfOnly?: boolean }
+): { kind: 'cpf'; cpfDigits: string } | { kind: 'email'; email: string } {
   const trimmed = String(raw || '').trim();
   if (!trimmed) {
     return { kind: 'email', email: '' };
@@ -344,18 +347,20 @@ function resolveLoginIdentifier(raw: string): { kind: 'cpf'; cpfDigits: string }
     return { kind: 'email', email: trimmed };
   }
   const digits = normalizeCpfDigits(trimmed);
-  if (digits.length === 11 && isValidCpfDigits(digits)) {
-    return { kind: 'cpf', cpfDigits: digits };
+  if (digits.length === 11) {
+    if (options?.loginCpfOnly || isValidCpfDigits(digits)) {
+      return { kind: 'cpf', cpfDigits: digits };
+    }
   }
   return { kind: 'email', email: trimmed };
 }
 
 // Login user (e-mail **ou** CPF válido de 11 dígitos)
 export const login = async (data: LoginData): Promise<AuthResponse> => {
-  const resolved = resolveLoginIdentifier(data.email);
-
   const settings = await getSystemSettings();
   const loginCpfOnly = settings.enabled_modules?.login_cpf_only === true;
+  const resolved = resolveLoginIdentifier(data.email, { loginCpfOnly });
+
   if (loginCpfOnly && resolved.kind !== 'cpf') {
     throw new Error('LOGIN_CPF_ONLY');
   }
