@@ -179,6 +179,11 @@ import {
   getProfileQualityTopErrorsController,
   getProfileQualityBySourceController,
 } from '../controllers/profileQualityAuditController.js';
+import {
+  createExternalEventController,
+  updateExternalEventController,
+  getExternalEventController,
+} from '../controllers/externalEventsController.js';
 
 const router = Router();
 
@@ -373,6 +378,11 @@ router.get('/invitation-bonus/assisted-audits/:auditId/detail', getAssistedAudit
 // Event organizer migration (change event owner)
 router.post('/events/:eventId/change-organizer', changeEventOrganizerController);
 router.get('/events/:eventId/migration-log', getEventMigrationLogsController);
+
+// Eventos externos (somente admin cria/edita)
+router.post('/events/external', createExternalEventController);
+router.put('/events/external/:id', updateExternalEventController);
+router.get('/events/external/:id', getExternalEventController);
 router.get('/migration-log/:migrationId', getMigrationLogByIdController);
 router.post('/migration-rollback', rollbackMigrationController);
 

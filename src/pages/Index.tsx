@@ -15,6 +15,8 @@ import { getHomePageSettings, updateHomePageSettings } from "@/lib/api/homePageS
 import { getActiveBanners } from "@/lib/api/homeBanners";
 import { getEvents } from "@/lib/api/events";
 import { getEffectiveRegistrationStatus, getRegistrationStatusLabel, getRegistrationStatusVariant, isRegistrationClosed } from "@/lib/utils/eventRegistration";
+import { isExternalEvent } from "@/lib/utils/eventType";
+import { hasPublishedResults, openEventFromCard, openPublishedResults, openExternalRegistrationUrl } from "@/lib/utils/resolveEventDestination";
 import { getPublicBranding } from "@/lib/api/systemSettings";
 import { VisualEditorProvider } from "@/contexts/VisualEditorContext";
 import { EditableText } from "@/components/visual-editor/EditableText";
@@ -34,6 +36,12 @@ interface Event {
   banner_url: string | null;
   result_url: string | null;
   status: string;
+  registration_status?: 'not_open' | 'open' | 'closed' | null;
+  registration_start_date?: string | null;
+  registration_end_date?: string | null;
+  registration_auto_mode?: boolean;
+  event_type?: string;
+  external_url?: string | null;
   registration_status?: 'not_open' | 'open' | 'closed' | null;
   registration_start_date?: string | null;
   registration_end_date?: string | null;
@@ -315,7 +323,7 @@ const Index = () => {
               const EventCard = () => {
                 const [imageError, setImageError] = useState(false);
                 return (
-                  <Card key={event.id} className="overflow-hidden hover:shadow-xl transition-all hover:-translate-y-1 cursor-pointer" onClick={() => navigate(event.slug ? `/evento/${event.slug}` : `/events/${event.id}`)}>
+                  <Card key={event.id} className="overflow-hidden hover:shadow-xl transition-all hover:-translate-y-1 cursor-pointer" onClick={() => openEventFromCard(event, navigate)}>
                     <div className="h-48 bg-gradient-hero flex items-center justify-center relative overflow-hidden">
                       {event.banner_url && !imageError ? (
                         <img 
@@ -333,14 +341,14 @@ const Index = () => {
                         <h3 className="font-bold text-base line-clamp-2 flex-1">{event.title}</h3>
                         {(() => {
                           const effectiveStatus = getEffectiveRegistrationStatus(event);
-                          if (effectiveStatus !== null) {
-                            return (
-                              <Badge variant={getRegistrationStatusVariant(event)} className="text-xs shrink-0">
-                                {getRegistrationStatusLabel(event)}
-                              </Badge>
-                            );
+                          if (isExternalEvent(event) || effectiveStatus === null) {
+                            return null;
                           }
-                          return null;
+                          return (
+                            <Badge variant={getRegistrationStatusVariant(event)} className="text-xs shrink-0">
+                              {getRegistrationStatusLabel(event)}
+                            </Badge>
+                          );
                         })()}
                       </div>
                       <div className="flex items-center gap-2 text-xs text-muted-foreground mb-3">
@@ -356,47 +364,61 @@ const Index = () => {
                         </div>
                       </div>
                       <div className="flex gap-2">
-                        {event.result_url ? (
-                          <Button 
-                            size="sm" 
-                            className="flex-1 text-xs" 
-                            onClick={e => {
+                        {hasPublishedResults(event) ? (
+                          <Button
+                            size="sm"
+                            className="flex-1 text-xs"
+                            onClick={(e) => {
                               e.stopPropagation();
-                              let urlToOpen = event.result_url!;
-                              if (urlToOpen.includes('${')) {
-                                const port = window.location.port || '3001';
-                                urlToOpen = urlToOpen.replace(/\$\{API_PORT\}/g, port);
-                                if (urlToOpen.includes('${')) {
-                                  urlToOpen = urlToOpen.replace(/http:\/\/localhost:\$\{API_PORT\}/g, 'http://localhost:3001');
-                                }
-                              }
-                              window.open(urlToOpen, '_blank');
+                              openPublishedResults(event);
                             }}
                           >
                             <Trophy className="h-3 w-3 mr-1" />
                             RESULTADOS
                           </Button>
                         ) : null}
-                        {isRegistrationClosed(event) ? (
-                          <Button 
-                            size="sm" 
+                        {isExternalEvent(event) ? (
+                          isRegistrationClosed(event) ? (
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              className="flex-1 text-xs bg-muted hover:bg-muted/90 text-muted-foreground"
+                              disabled
+                            >
+                              Inscrições Encerradas
+                            </Button>
+                          ) : event.external_url ? (
+                            <Button
+                              size="sm"
+                              className="flex-1 text-xs"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openExternalRegistrationUrl(event.external_url!);
+                              }}
+                            >
+                              Inscrever-se
+                            </Button>
+                          ) : null
+                        ) : isRegistrationClosed(event) ? (
+                          <Button
+                            size="sm"
                             variant="secondary"
-                            className="flex-1 text-xs bg-muted hover:bg-muted/90 text-muted-foreground" 
-                            onClick={e => {
+                            className="flex-1 text-xs bg-muted hover:bg-muted/90 text-muted-foreground"
+                            onClick={(e) => {
                               e.stopPropagation();
-                              navigate(event.slug ? `/evento/${event.slug}` : `/events/${event.id}`);
+                              openEventFromCard(event, navigate);
                             }}
                           >
                             Inscrições Encerradas
                           </Button>
                         ) : (
-                          !event.result_url && (
-                            <Button 
-                              size="sm" 
-                              className="flex-1 text-xs" 
-                              onClick={e => {
+                          !hasPublishedResults(event) && (
+                            <Button
+                              size="sm"
+                              className="flex-1 text-xs"
+                              onClick={(e) => {
                                 e.stopPropagation();
-                                navigate(event.slug ? `/evento/${event.slug}` : `/events/${event.id}`);
+                                openEventFromCard(event, navigate);
                               }}
                             >
                               Inscrever-se

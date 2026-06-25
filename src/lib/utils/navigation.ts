@@ -60,10 +60,21 @@ export function getAdminPath(sectionId: string): string {
   return `/admin/${segment}`;
 }
 
+/** Cadastro de evento externo (página dedicada) */
+export function getAdminCreateExternalEventPath(): string {
+  return '/admin/eventos/novo-externo';
+}
+
+/** Edição de evento externo (página dedicada) */
+export function getAdminEditExternalEventPath(eventId: string): string {
+  return `/admin/eventos/${eventId}/editar-externo`;
+}
+
 /** Lê o pathname (ex.: /admin/configuracoes) e retorna o sectionId (ex.: settings) */
 export function getAdminSectionFromPath(pathname: string): string {
   const rest = pathname.replace(/^\/admin\/?/, '') || 'visao-geral';
   if (rest === 'dashboard') return 'overview';
+  if (rest === 'eventos/novo-externo' || rest.startsWith('eventos/')) return 'events';
   if (rest === 'auditoria/cpf' || rest.startsWith('auditoria/cpf')) return 'audit-cpf';
   if (rest === 'auditoria/data-quality' || rest.startsWith('auditoria/data-quality')) {
     return 'audit-data-quality';
@@ -184,6 +195,12 @@ export function getBreadcrumbForPath(pathname: string): { area: string; sectionL
     const eventInsc = pathname.match(/^\/admin\/evento\/([^/]+)\/inscritos\/?$/);
     if (eventInsc) {
       return { area: 'Admin', sectionLabel: 'Inscrições do evento' };
+    }
+    if (pathname === '/admin/eventos/novo-externo') {
+      return { area: 'Admin', sectionLabel: 'Novo Evento Externo' };
+    }
+    if (/^\/admin\/eventos\/[^/]+\/editar-externo\/?$/.test(pathname)) {
+      return { area: 'Admin', sectionLabel: 'Editar Evento Externo' };
     }
     const sectionId = getAdminSectionFromPath(pathname);
     if (sectionId === 'audit-cpf') {

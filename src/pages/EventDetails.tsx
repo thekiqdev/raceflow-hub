@@ -32,6 +32,8 @@ import { getEventPickupLocations } from "@/lib/api/kitPickup";
 import { getModalities, Modality } from "@/lib/api/modalities";
 import { toast } from "sonner";
 import { getEffectiveRegistrationStatus, getRegistrationStatusMessage, getRegistrationStatusLabel, getRegistrationStatusVariant } from "@/lib/utils/eventRegistration";
+import { isExternalEvent } from "@/lib/utils/eventType";
+import { applyEventDestination, resolveEventDestination } from "@/lib/utils/resolveEventDestination";
 import { sanitizeHtml } from "@/lib/utils/sanitizeHtml";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -189,9 +191,17 @@ const EventDetails = () => {
 
       try {
         setLoading(true);
-        setOrganizerLogoError(false); // Reset logo error when loading new event
-        const [eventResponse, categoriesResponse, kitsResponse, modalitiesResponse, pickupResponse] = await Promise.all([
-          getEventById(eventIdOrSlug),
+        setOrganizerLogoError(false);
+        const eventResponse = await getEventById(eventIdOrSlug);
+
+        if (eventResponse.success && eventResponse.data) {
+          if (isExternalEvent(eventResponse.data)) {
+            applyEventDestination(resolveEventDestination(eventResponse.data), navigate, { replace: true });
+            return;
+          }
+        }
+
+        const [categoriesResponse, kitsResponse, modalitiesResponse, pickupResponse] = await Promise.all([
           getCategories(eventIdOrSlug),
           getEventKits(eventIdOrSlug, { context: 'public' }),
           getModalities(eventIdOrSlug).catch(() => ({ success: true, data: [] })),

@@ -12,6 +12,7 @@ import { EventFilters, EventFiltersState } from "@/components/event/EventFilters
 import { Header } from "@/components/Header";
 import { getEvents } from "@/lib/api/events";
 import { getEffectiveRegistrationStatus, getRegistrationStatusLabel, getRegistrationStatusVariant } from "@/lib/utils/eventRegistration";
+import { openEventFromCard } from "@/lib/utils/resolveEventDestination";
 
 interface Event {
   id: string;
@@ -28,6 +29,9 @@ interface Event {
   registration_start_date?: string | null;
   registration_end_date?: string | null;
   registration_auto_mode?: boolean;
+  event_type?: string;
+  external_url?: string | null;
+  result_url?: string | null;
 }
 
 const Events = () => {
@@ -335,7 +339,7 @@ const Events = () => {
                     <CardFooter>
                       <Button 
                         className="w-full"
-                        onClick={() => navigate(event.slug ? `/evento/${event.slug}` : `/events/${event.id}`)}
+                        onClick={() => openEventFromCard(event, navigate)}
                       >
                         Ver Detalhes
                       </Button>

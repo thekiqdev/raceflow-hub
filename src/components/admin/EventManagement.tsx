@@ -30,7 +30,9 @@ import { ChangeOrganizerModal } from "./ChangeOrganizerModal";
 import { RegisterAthleteStaffDialog } from "@/components/registration/RegisterAthleteStaffDialog";
 import { useNavigate } from "react-router-dom";
 import { getEffectiveRegistrationStatus, getRegistrationStatusLabel, getRegistrationStatusVariant } from "@/lib/utils/eventRegistration";
-import { getAdminEventRegistrationsPath } from "@/lib/utils/navigation";
+import { getAdminEventRegistrationsPath, getAdminCreateExternalEventPath, getAdminEditExternalEventPath } from "@/lib/utils/navigation";
+import { isExternalEvent, EXTERNAL_EVENT_BADGE_LABEL } from "@/lib/utils/eventType";
+import { openEventFromCard } from "@/lib/utils/resolveEventDestination";
 
 const EventManagement = () => {
   const navigate = useNavigate();
@@ -99,6 +101,8 @@ const EventManagement = () => {
             revenue,
             avgTicket,
             platformFeeRevenue: event.platform_fee_revenue || 0,
+            event_type: event.event_type || "NORMAL",
+            external_url: event.external_url,
           };
         });
 
@@ -180,8 +184,12 @@ const EventManagement = () => {
     setDialogOpen(true);
   };
 
-  const handleEditEvent = (eventId: string) => {
-    setSelectedEventId(eventId);
+  const handleEditEvent = (event: { id: string; event_type?: string }) => {
+    if (isExternalEvent(event)) {
+      navigate(getAdminEditExternalEventPath(event.id));
+      return;
+    }
+    setSelectedEventId(event.id);
     setDialogMode("edit");
     setDialogOpen(true);
   };
@@ -261,6 +269,63 @@ const EventManagement = () => {
         variant: "destructive",
       });
     }
+  };
+
+  const handleToggleExternalRegistrations = async (event: { id: string; registration_status?: string | null; status?: string }) => {
+    const isPaused = getEffectiveRegistrationStatus(event as any) === "closed";
+    try {
+      const response = await updateEvent(event.id, {
+        registration_status: isPaused ? "open" : "closed",
+        registration_auto_mode: false,
+      });
+      if (response.success) {
+        toast({
+          title: "Sucesso",
+          description: isPaused
+            ? "Inscrições externas retomadas."
+            : "Inscrições externas pausadas.",
+        });
+        loadEvents();
+      } else {
+        throw new Error(response.error || "Erro ao atualizar status");
+      }
+    } catch (error: any) {
+      toast({
+        title: "Erro",
+        description: error.message || "Erro ao atualizar inscrições",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const renderExternalEventActions = (event: any) => {
+    const registrationsPaused = getEffectiveRegistrationStatus(event) === "closed";
+    return (
+      <>
+        <DropdownMenuItem onClick={() => navigate(getAdminEditExternalEventPath(event.id))}>
+          <Edit className="mr-2 h-4 w-4" />
+          Editar
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          onClick={() => {
+            setEventForResult(event);
+            setResultUrl(event.result_url || "");
+            setIsResultDialogOpen(true);
+          }}
+        >
+          <Award className="mr-2 h-4 w-4 text-yellow-500" />
+          Enviar Resultado
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => handleToggleExternalRegistrations(event)}>
+          <Ban className="mr-2 h-4 w-4" />
+          {registrationsPaused ? "Retomar inscrições" : "Pausar inscrições"}
+        </DropdownMenuItem>
+        <DropdownMenuItem className="text-destructive" onClick={() => handleDeleteEvent(event)}>
+          <Trash2 className="mr-2 h-4 w-4" />
+          Excluir
+        </DropdownMenuItem>
+      </>
+    );
   };
 
   const formatCurrency = (value: number) => {
@@ -356,9 +421,17 @@ const EventManagement = () => {
                 <Download className="mr-2 h-4 w-4" />
                 Exportar
               </Button>
-              <Button onClick={() => setIsCreateDialogOpen(true)} className="flex-1 sm:flex-none">
+              <Button className="flex-1 sm:flex-none" onClick={() => setIsCreateDialogOpen(true)}>
                 <Plus className="mr-2 h-4 w-4" />
-                Criar Evento
+                Novo Evento
+              </Button>
+              <Button
+                variant="outline"
+                className="flex-1 sm:flex-none"
+                onClick={() => navigate(getAdminCreateExternalEventPath())}
+              >
+                <ExternalLink className="mr-2 h-4 w-4" />
+                Evento Externo
               </Button>
             </div>
           </div>
@@ -398,7 +471,16 @@ const EventManagement = () => {
                 ) : (
                   events.map((event) => (
                     <TableRow key={event.id}>
-                      <TableCell className="font-medium">{event.title}</TableCell>
+                      <TableCell className="font-medium">
+                        <div className="flex flex-col gap-1">
+                          <span>{event.title}</span>
+                          {isExternalEvent(event) && (
+                            <Badge variant="outline" className="w-fit text-xs">
+                              {EXTERNAL_EVENT_BADGE_LABEL}
+                            </Badge>
+                          )}
+                        </div>
+                      </TableCell>
                       <TableCell>{event.organizer}</TableCell>
                       <TableCell>{new Date(event.date).toLocaleDateString('pt-BR')}</TableCell>
                       <TableCell>{event.city}</TableCell>
@@ -482,7 +564,7 @@ const EventManagement = () => {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end" side="bottom" collisionPadding={12}>
-                            {event.status === "draft" ? (
+                            {event.status === "draft" && !isExternalEvent(event) ? (
                               <>
                                 <DropdownMenuItem onClick={() => handleApprove(event.id)}>
                                   <CheckCircle className="mr-2 h-4 w-4 text-green-500" />
@@ -493,9 +575,11 @@ const EventManagement = () => {
                                   Reprovar
                                 </DropdownMenuItem>
                               </>
+                            ) : isExternalEvent(event) ? (
+                              renderExternalEventActions(event)
                             ) : (
                               <>
-                                <DropdownMenuItem onClick={() => navigate(event.slug ? `/evento/${event.slug}` : `/events/${event.id}`)}>
+                                <DropdownMenuItem onClick={() => openEventFromCard(event, navigate)}>
                                   <ExternalLink className="mr-2 h-4 w-4" />
                                   Visualizar Evento (Página Pública)
                                 </DropdownMenuItem>
@@ -507,7 +591,7 @@ const EventManagement = () => {
                                   <Users className="mr-2 h-4 w-4" />
                                   Visualizar inscritos
                                 </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => handleEditEvent(event.id)}>
+                                <DropdownMenuItem onClick={() => handleEditEvent(event)}>
                                   <Edit className="mr-2 h-4 w-4" />
                                   Editar
                                 </DropdownMenuItem>
@@ -573,7 +657,14 @@ const EventManagement = () => {
                     <Card key={event.id} className="p-4">
                       <div className="space-y-3">
                         <div className="flex justify-between items-start gap-2">
-                          <h3 className="font-medium text-sm line-clamp-2">{event.title}</h3>
+                          <div className="flex flex-col gap-1 min-w-0">
+                            <h3 className="font-medium text-sm line-clamp-2">{event.title}</h3>
+                            {isExternalEvent(event) && (
+                              <Badge variant="outline" className="w-fit text-xs">
+                                {EXTERNAL_EVENT_BADGE_LABEL}
+                              </Badge>
+                            )}
+                          </div>
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                               <Button variant="outline" size="sm" className="h-8 w-8 p-0 shrink-0 touch-manipulation">
@@ -581,7 +672,7 @@ const EventManagement = () => {
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end" side="bottom" collisionPadding={12}>
-                              {event.status === "draft" ? (
+                              {event.status === "draft" && !isExternalEvent(event) ? (
                                 <>
                                   <DropdownMenuItem onClick={() => handleApprove(event.id)}>
                                     <CheckCircle className="mr-2 h-4 w-4 text-green-500" />
@@ -592,9 +683,11 @@ const EventManagement = () => {
                                     Reprovar
                                   </DropdownMenuItem>
                                 </>
+                              ) : isExternalEvent(event) ? (
+                                renderExternalEventActions(event)
                               ) : (
                                 <>
-                                  <DropdownMenuItem onClick={() => navigate(event.slug ? `/evento/${event.slug}` : `/events/${event.id}`)}>
+                                  <DropdownMenuItem onClick={() => openEventFromCard(event, navigate)}>
                                     <ExternalLink className="mr-2 h-4 w-4" />
                                     Ver página pública
                                   </DropdownMenuItem>
@@ -606,7 +699,7 @@ const EventManagement = () => {
                                     <Users className="mr-2 h-4 w-4" />
                                     Inscritos
                                   </DropdownMenuItem>
-                                  <DropdownMenuItem onClick={() => handleEditEvent(event.id)}>
+                                  <DropdownMenuItem onClick={() => handleEditEvent(event)}>
                                     <Edit className="mr-2 h-4 w-4" />
                                     Editar
                                   </DropdownMenuItem>
@@ -880,6 +973,7 @@ const EventManagement = () => {
         }}
         isAdmin={true}
       />
+
     </div>
   );
 };

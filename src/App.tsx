@@ -95,6 +95,22 @@ const App = () => (
             } 
           />
           <Route 
+            path="/admin/eventos/novo-externo" 
+            element={
+              <ProtectedRoute requiredRole="admin">
+                <AdminDashboard />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/admin/eventos/:eventId/editar-externo" 
+            element={
+              <ProtectedRoute requiredRole="admin">
+                <AdminDashboard />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
             path="/admin/:section" 
             element={
               <ProtectedRoute requiredRole="admin">

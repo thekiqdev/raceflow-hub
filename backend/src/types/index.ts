@@ -166,6 +166,8 @@ export interface Event {
   transfers_enabled: boolean | null;
   /** Último dia em que o corredor pode transferir (DATE); null = sem limite. */
   transfer_until?: string | Date | null;
+  event_type?: 'NORMAL' | 'EXTERNAL';
+  external_url?: string | null;
   created_at: Date | null;
   updated_at: Date | null;
   premiacao?: string | null;

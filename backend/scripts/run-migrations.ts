@@ -143,6 +143,7 @@ const migrations = [
   '113_protect_event_kits_from_destructive_delete.sql',
   '114_add_event_kits_is_visible.sql',
   '115_cpf_lookup_metrics.sql',
+  '116_add_external_events.sql',
 ];
 
 // Create migrations tracking table

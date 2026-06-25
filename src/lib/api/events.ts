@@ -2,6 +2,8 @@ import { apiClient } from './client.js';
 
 export type EventRegistrationStatus = 'not_open' | 'open' | 'closed';
 
+export type EventType = 'NORMAL' | 'EXTERNAL';
+
 /** Item da timeline de cronograma (horário, título, descrição). */
 export interface CronogramaItem {
   id: string;
@@ -64,6 +66,8 @@ export interface Event {
   cronograma?: string | null;
   /** Itens da timeline do cronograma, ordenados por display_order. */
   cronograma_items?: CronogramaItem[];
+  event_type?: EventType;
+  external_url?: string | null;
 }
 
 export interface CreateEventData {

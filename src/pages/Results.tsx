@@ -10,6 +10,7 @@ import { ptBR } from "date-fns/locale";
 import { formatDateOnlyBrasilia } from "@/lib/utils";
 import { getEvents } from "@/lib/api/events";
 import { toast } from "sonner";
+import { openEventFromCard, openPublishedResults } from "@/lib/utils/resolveEventDestination";
 
 interface Event {
   id: string;
@@ -23,6 +24,8 @@ interface Event {
   banner_url: string | null;
   result_url: string | null;
   status: string;
+  event_type?: string;
+  external_url?: string | null;
 }
 
 interface EventCardProps {
@@ -151,19 +154,7 @@ export default function Results() {
   });
 
   const handleOpenResults = (event: Event) => {
-    if (event.result_url) {
-      // Corrigir URL se contiver template strings
-      let urlToOpen = event.result_url;
-      if (urlToOpen.includes('${')) {
-        const port = window.location.port || '3001';
-        urlToOpen = urlToOpen.replace(/\$\{API_PORT\}/g, port);
-        // Se ainda tiver template strings, usar localhost:3001 como padrão
-        if (urlToOpen.includes('${')) {
-          urlToOpen = urlToOpen.replace(/http:\/\/localhost:\$\{API_PORT\}/g, 'http://localhost:3001');
-        }
-      }
-      window.open(urlToOpen, '_blank');
-    }
+    openPublishedResults(event);
   };
 
   return (
@@ -218,7 +209,7 @@ export default function Results() {
                 key={event.id}
                 event={event}
                 onViewResults={handleOpenResults}
-                onCardClick={() => navigate(event.slug ? `/evento/${event.slug}` : `/events/${event.id}`)}
+                onCardClick={() => openEventFromCard(event, navigate)}
               />
             ))}
           </div>

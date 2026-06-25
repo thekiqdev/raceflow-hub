@@ -13,6 +13,7 @@ import { getEvents, type Event } from "@/lib/api/events";
 import { toast } from "sonner";
 import { useDebounce } from "@/hooks/useDebounce";
 import { Input } from "@/components/ui/input";
+import { openEventFromCard } from "@/lib/utils/resolveEventDestination";
 
 export function ExploreEvents() {
   const navigate = useNavigate();
@@ -228,7 +229,7 @@ export function ExploreEvents() {
           <Card
             key={event.id}
             className="overflow-hidden hover:shadow-lg transition-shadow cursor-pointer"
-            onClick={() => navigate(event.slug ? `/evento/${event.slug}` : `/events/${event.id}`)}
+            onClick={() => openEventFromCard(event, navigate)}
           >
             <div className="flex">
               <div className="w-28 h-28 flex-shrink-0 bg-gradient-hero relative">

@@ -27,7 +27,7 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Search, MoreVertical, Edit, Eye, Trash2, BarChart3, Calendar, Loader2, ExternalLink, ArrowRightLeft, Users } from "lucide-react";
+import { Plus, Search, MoreVertical, Edit, Trash2, BarChart3, Calendar, Loader2, ArrowRightLeft, Users } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { formatDateShortBrasilia } from "@/lib/utils";
@@ -39,6 +39,7 @@ import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import { getEffectiveRegistrationStatus, getRegistrationStatusLabel, getRegistrationStatusVariant } from "@/lib/utils/eventRegistration";
 import { getOrganizerEventRegistrationsPath } from "@/lib/utils/navigation";
+import { isExternalEvent, EXTERNAL_EVENT_BADGE_LABEL } from "@/lib/utils/eventType";
 
 const OrganizerEvents = () => {
   const navigate = useNavigate();
@@ -276,7 +277,16 @@ const OrganizerEvents = () => {
                 <TableBody>
                   {events.map((event) => (
                     <TableRow key={event.id}>
-                      <TableCell className="font-medium">{event.title}</TableCell>
+                      <TableCell className="font-medium">
+                        <div className="flex flex-col gap-1">
+                          <span>{event.title}</span>
+                          {isExternalEvent(event) && (
+                            <Badge variant="outline" className="w-fit text-xs">
+                              {EXTERNAL_EVENT_BADGE_LABEL}
+                            </Badge>
+                          )}
+                        </div>
+                      </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
                           <Calendar className="h-4 w-4 text-muted-foreground" />
@@ -288,7 +298,9 @@ const OrganizerEvents = () => {
                       </TableCell>
                       <TableCell>{getStatusBadge(event.status || "draft")}</TableCell>
                       <TableCell>
-                        {(() => {
+                        {isExternalEvent(event) ? (
+                          <span className="text-muted-foreground text-sm">Inscrição externa</span>
+                        ) : (() => {
                           const effectiveStatus = getEffectiveRegistrationStatus(event);
                           if (effectiveStatus !== null) {
                             return editingRegistrationStatus === event.id ? (
@@ -342,14 +354,19 @@ const OrganizerEvents = () => {
                         })()}
                       </TableCell>
                       <TableCell className="text-right">
-                        <span className="font-medium">{event.confirmed_registrations || event.registration_count || 0}</span>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <span className="font-semibold text-secondary">
-                          R$ {(event.revenue || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        <span className="font-medium">
+                          {isExternalEvent(event) ? "—" : (event.confirmed_registrations || event.registration_count || 0)}
                         </span>
                       </TableCell>
                       <TableCell className="text-right">
+                        <span className="font-semibold text-secondary">
+                          {isExternalEvent(event) ? "—" : `R$ ${(event.revenue || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                        </span>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {isExternalEvent(event) ? (
+                          <span className="text-muted-foreground text-sm">—</span>
+                        ) : (
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <Button variant="ghost" size="icon" disabled={isDeleting === event.id}>
@@ -361,10 +378,6 @@ const OrganizerEvents = () => {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => navigate(event.slug ? `/evento/${event.slug}` : `/events/${event.id}`)}>
-                              <ExternalLink className="mr-2 h-4 w-4" />
-                              Visualizar Evento
-                            </DropdownMenuItem>
                             <DropdownMenuItem onClick={() => {
                               setSelectedEvent(event);
                               setIsDialogOpen(true);
@@ -394,6 +407,7 @@ const OrganizerEvents = () => {
                             </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
+                        )}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -460,6 +474,7 @@ const OrganizerEvents = () => {
           await loadEvents();
         }}
       />
+
     </div>
   );
 };

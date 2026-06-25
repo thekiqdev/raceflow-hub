@@ -22,6 +22,8 @@ import AdminRegistrations from "@/components/admin/AdminRegistrations";
 import AdminBanners from "@/components/admin/AdminBanners";
 import AuditCpfPage from "@/pages/admin/AuditCpfPage";
 import AuditDataQualityPage from "@/pages/admin/AuditDataQualityPage";
+import CreateExternalEventPage from "@/pages/admin/CreateExternalEventPage";
+import EditExternalEventPage from "@/pages/admin/EditExternalEventPage";
 import { getSystemSettings } from "@/lib/api/systemSettings";
 import { getAdminPath, getAdminSectionFromPath, getBreadcrumbForPath } from "@/lib/utils/navigation";
 
@@ -103,6 +105,15 @@ const AdminDashboard = () => {
   };
 
   const renderContent = () => {
+    if (location.pathname === "/admin/eventos/novo-externo") {
+      return <CreateExternalEventPage />;
+    }
+
+    const editExternalMatch = location.pathname.match(/^\/admin\/eventos\/([^/]+)\/editar-externo\/?$/);
+    if (editExternalMatch) {
+      return <EditExternalEventPage />;
+    }
+
     switch (activeSection) {
       case "overview":
         return <DashboardOverview />;
