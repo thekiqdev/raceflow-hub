@@ -3783,11 +3783,15 @@ export const exportRegistrationsController = asyncHandler(async (req: AuthReques
   }
   const sanitizeHeader = (s: string) => String(s ?? '').replace(/[;\r\n]/g, ' ').trim() || 'Campo';
 
-  // Get platform fee settings to calculate value without fee
+  // Mesma regra do relatório financeiro (PDF): getLiquidRegistrationValue
   const { getSystemSettings } = await import('../services/systemSettingsService.js');
+  const { getLiquidRegistrationValue } = await import('../services/financialReportingService.js');
   const systemSettings = await getSystemSettings();
-  const platformFee = systemSettings.platform_fee || 0;
-  const platformFeeType = systemSettings.platform_fee_type || 'fixed';
+  const liquidFallback = {
+    platformFee: systemSettings.platform_fee || 0,
+    platformFeeType: (systemSettings.platform_fee_type || 'fixed') as 'fixed' | 'percentage',
+    platformFeeMin: systemSettings.platform_fee_min ?? 0,
+  };
 
   // Generate CSV in the requested format (fixed headers + custom field columns)
   const headers = [
@@ -3955,22 +3959,6 @@ export const exportRegistrationsController = asyncHandler(async (req: AuthReques
     }
   };
 
-  // Helper function to calculate value without platform fee
-  const calculateValueWithoutFee = (totalAmount: number): number => {
-    if (!totalAmount || totalAmount <= 0 || !platformFee || platformFee <= 0) {
-      return totalAmount;
-    }
-    
-    if (platformFeeType === 'percentage') {
-      // If fee is percentage: value_without_fee = total_amount / (1 + fee/100)
-      // Example: if total is 110 and fee is 10%, then original = 110 / 1.10 = 100
-      return totalAmount / (1 + platformFee / 100);
-    } else {
-      // If fee is fixed: value_without_fee = total_amount - fee
-      return Math.max(0, totalAmount - platformFee);
-    }
-  };
-
   // Helper function to format gender
   const formatGender = (gender: string | null | undefined): string => {
     // Se não houver valor, retornar string vazia
@@ -4034,10 +4022,9 @@ export const exportRegistrationsController = asyncHandler(async (req: AuthReques
     const modality = getModalityName(reg);
     const registrationDateTime = formatDateTime(reg.created_at);
     const paymentMethod = formatPaymentMethod(reg.payment_method);
-    // Calculate value without platform fee
-    const totalAmountValue = reg.total_amount ? Number(reg.total_amount) : 0;
-    const valueWithoutFee = calculateValueWithoutFee(totalAmountValue);
-    const totalAmount = valueWithoutFee.toFixed(2).replace('.', ',');
+    // Valor líquido canônico (igual ao PDF / eventFinancialReportService)
+    const liquidValue = getLiquidRegistrationValue(reg, liquidFallback);
+    const totalAmount = liquidValue.toFixed(2).replace('.', ',');
     const leaderName = reg.leader_name || '';
     const customValues = (reg.custom_field_values as Record<string, string> | undefined) ?? {};
     const sanitizeCell = (v: string) => String(v ?? '').replace(/[;\r\n]/g, ' ').trim();
