@@ -13,7 +13,9 @@ import { maskCpf, maskEmailOrCpf, maskPhone } from "@/lib/utils/masks";
 import { getPublicBranding } from "@/lib/api/systemSettings";
 import { validatePhone as validatePhoneStrict, PHONE_VALIDATION_MESSAGE, validateFullName, FULL_NAME_VALIDATION_MESSAGE, validateBirthDateRange, BIRTH_DATE_VALIDATION_MESSAGE, validateGender, GENDER_VALIDATION_MESSAGE, normalizeGender } from "@/lib/utils/profileValidation";
 import { normalizePhoneDigits, normalizePersonName } from "@/lib/utils/profileNormalization";
+import { normalizeBirthDateForCompare } from "@/lib/utils/validators";
 import { useCpfBrasilLookup } from "@/hooks/useCpfBrasilLookup";
+import type { LookupCpfData } from "@/lib/api/auth";
 import { toast } from "sonner";
 
 const Auth = () => {
@@ -36,6 +38,11 @@ const Auth = () => {
   const [genderLockedFromLookup, setGenderLockedFromLookup] = useState(false);
   const [lgpdConsent, setLgpdConsent] = useState(false);
   const [cpfLookupProof, setCpfLookupProof] = useState<string | null>(null);
+  /** CPF encontrado na API — aguarda confirmação da data de nascimento antes de liberar o proof. */
+  const [pendingApiLookup, setPendingApiLookup] = useState<{
+    data: LookupCpfData;
+    proof: string;
+  } | null>(null);
 
   const birthDateRef = useRef(birthDate);
   useEffect(() => {
@@ -44,34 +51,49 @@ const Auth = () => {
 
   const clearLookupCompletedRef = useRef(() => {});
 
+  const applyApiLookupSuccess = useCallback((data: LookupCpfData, proof: string) => {
+    const apiBd = normalizeBirthDateForCompare(data.birth_date);
+    setFullName(data.full_name);
+    setBirthDate(apiBd);
+    const recognizedGender = data.gender === "M" || data.gender === "F";
+    setGender(recognizedGender ? data.gender : "");
+    setGenderLockedFromLookup(Boolean(data.gender_locked && recognizedGender));
+    setCpfLookupProof(proof);
+    setPendingApiLookup(null);
+  }, []);
+
   const onLookupSuccess = useCallback(
-    (data: { full_name: string; birth_date: string; gender: string }, proof: string) => {
+    (data: LookupCpfData, proof: string) => {
       const userBd = normalizeBirthDateForCompare(birthDateRef.current);
       const apiBd = normalizeBirthDateForCompare(data.birth_date);
+
       if (!userBd) {
-        toast.error("Informe sua data de nascimento antes de consultar.");
+        // Consulta só com CPF: pede a data para confirmar sem expor dados ainda via proof.
+        setPendingApiLookup({ data, proof });
+        setCpfLookupProof(null);
+        setFullName("");
+        setGender("");
+        setGenderLockedFromLookup(false);
         clearLookupCompletedRef.current();
         return;
       }
+
       if (userBd !== apiBd) {
         toast.error(
           "A data de nascimento não confere com o CPF consultado. Verifique e tente novamente."
         );
         clearLookupCompletedRef.current();
+        setPendingApiLookup(null);
         setFullName("");
         setGender("");
         setGenderLockedFromLookup(false);
         setCpfLookupProof(null);
         return;
       }
-      setFullName(data.full_name);
-      setBirthDate(apiBd);
-      const recognizedGender = data.gender === "M" || data.gender === "F";
-      setGender(recognizedGender ? data.gender : "");
-      setGenderLockedFromLookup(Boolean(data.gender_locked && recognizedGender));
-      setCpfLookupProof(proof);
+
+      applyApiLookupSuccess(data, proof);
     },
-    []
+    [applyApiLookupSuccess]
   );
 
   const onLookupInvalidate = useCallback(() => {
@@ -80,10 +102,15 @@ const Auth = () => {
     setGender("");
     setGenderLockedFromLookup(false);
     setCpfLookupProof(null);
+    setPendingApiLookup(null);
   }, []);
 
   const onManualEntry = useCallback((proof: string) => {
+    // Not-found: libera preenchimento manual e preserva a data já informada.
+    setPendingApiLookup(null);
     setGenderLockedFromLookup(false);
+    setFullName("");
+    setGender("");
     setCpfLookupProof(proof);
   }, []);
 
@@ -93,12 +120,22 @@ const Auth = () => {
       onSuccess: onLookupSuccess,
       onInvalidate: onLookupInvalidate,
       onManualEntry,
-      canAutoLookup: () => Boolean(birthDate.trim()),
     });
 
   useEffect(() => {
     clearLookupCompletedRef.current = clearLookupCompleted;
   }, [clearLookupCompleted]);
+
+  // Confirma CPF encontrado quando o usuário informa a data após a consulta.
+  useEffect(() => {
+    if (!pendingApiLookup) return;
+    const userBd = normalizeBirthDateForCompare(birthDate);
+    if (!userBd) return;
+    const apiBd = normalizeBirthDateForCompare(pendingApiLookup.data.birth_date);
+    if (userBd === apiBd) {
+      applyApiLookupSuccess(pendingApiLookup.data, pendingApiLookup.proof);
+    }
+  }, [birthDate, pendingApiLookup, applyApiLookupSuccess]);
 
   const cpfProofReady = Boolean(cpfLookupProof);
   const fieldsReadOnlyFromApi = cpfProofReady && !isManualMode;
@@ -288,10 +325,14 @@ const Auth = () => {
                       )}
                     </div>
                   )}
-                  {!cpfProofReady && (
+                  {!cpfProofReady && !pendingApiLookup && (
                     <p className="text-xs text-muted-foreground">
-                      Informe o CPF e a data de nascimento e clique em Consultar. A data será conferida com a
-                      consulta.
+                      Informe o CPF e clique em Consultar.
+                    </p>
+                  )}
+                  {isManualMode && cpfProofReady && (
+                    <p className="text-xs text-muted-foreground">
+                      Preencha nome, sexo e a data de nascimento.
                     </p>
                   )}
                 </div>
@@ -305,11 +346,17 @@ const Auth = () => {
                     readOnly={fieldsReadOnlyFromApi}
                     onChange={(e) => !fieldsReadOnlyFromApi && setBirthDate(e.target.value)}
                     required
+                    max={new Date().toISOString().split("T")[0]}
                     className={fieldsReadOnlyFromApi ? "bg-muted" : ""}
                   />
-                  {!cpfProofReady && (
+                  {pendingApiLookup && !cpfProofReady && (
                     <p className="text-xs text-muted-foreground">
                       Deve ser a mesma data que consta no seu documento de identificação.
+                    </p>
+                  )}
+                  {isManualMode && cpfProofReady && (
+                    <p className="text-xs text-muted-foreground">
+                      Informe a data do seu documento.
                     </p>
                   )}
                   <Button
@@ -319,8 +366,7 @@ const Auth = () => {
                     disabled={
                       loading ||
                       lookupLoading ||
-                      cpf.replace(/\D/g, "").length !== 11 ||
-                      !birthDate.trim()
+                      cpf.replace(/\D/g, "").length !== 11
                     }
                   >
                     {lookupLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Consultar"}

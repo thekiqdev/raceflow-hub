@@ -97,6 +97,10 @@ export function MultiStepRegistration({ open, onOpenChange }: MultiStepRegistrat
   const [loadingCep, setLoadingCep] = useState(false);
   const [genderLockedFromLookup, setGenderLockedFromLookup] = useState(false);
   const [referralCode, setReferralCode] = useState<string>("");
+  const [pendingApiLookup, setPendingApiLookup] = useState<{
+    data: LookupCpfData;
+    proof: string;
+  } | null>(null);
 
   // Estado para todos os dados do formulário
   const [formData, setFormData] = useState<RegistrationData>({
@@ -138,28 +142,8 @@ export function MultiStepRegistration({ open, onOpenChange }: MultiStepRegistrat
 
   const clearLookupCompletedRef = useRef(() => {});
 
-  const onCpfLookupSuccess = useCallback((data: LookupCpfData, proof: string) => {
-    const userBd = normalizeBirthDateForCompare(birthDateRef.current);
+  const applyApiLookupSuccess = useCallback((data: LookupCpfData, proof: string) => {
     const apiBd = normalizeBirthDateForCompare(data.birth_date);
-    if (!userBd) {
-      toast.error("Informe sua data de nascimento antes de consultar.");
-      clearLookupCompletedRef.current();
-      return;
-    }
-    if (userBd !== apiBd) {
-      toast.error(
-        "A data de nascimento não confere com o CPF consultado. Verifique e tente novamente."
-      );
-      clearLookupCompletedRef.current();
-      setFormData((prev) => ({
-        ...prev,
-        fullName: "",
-        gender: "",
-        cpfLookupProof: "",
-      }));
-      setGenderLockedFromLookup(false);
-      return;
-    }
     const recognizedGender = data.gender === "M" || data.gender === "F";
     setFormData((prev) => ({
       ...prev,
@@ -169,7 +153,44 @@ export function MultiStepRegistration({ open, onOpenChange }: MultiStepRegistrat
       cpfLookupProof: proof,
     }));
     setGenderLockedFromLookup(Boolean(data.gender_locked && recognizedGender));
+    setPendingApiLookup(null);
   }, []);
+
+  const onCpfLookupSuccess = useCallback((data: LookupCpfData, proof: string) => {
+    const userBd = normalizeBirthDateForCompare(birthDateRef.current);
+    const apiBd = normalizeBirthDateForCompare(data.birth_date);
+
+    if (!userBd) {
+      setPendingApiLookup({ data, proof });
+      setFormData((prev) => ({
+        ...prev,
+        fullName: "",
+        gender: "",
+        cpfLookupProof: "",
+      }));
+      setGenderLockedFromLookup(false);
+      clearLookupCompletedRef.current();
+      return;
+    }
+
+    if (userBd !== apiBd) {
+      toast.error(
+        "A data de nascimento não confere com o CPF consultado. Verifique e tente novamente."
+      );
+      clearLookupCompletedRef.current();
+      setPendingApiLookup(null);
+      setFormData((prev) => ({
+        ...prev,
+        fullName: "",
+        gender: "",
+        cpfLookupProof: "",
+      }));
+      setGenderLockedFromLookup(false);
+      return;
+    }
+
+    applyApiLookupSuccess(data, proof);
+  }, [applyApiLookupSuccess]);
 
   const onCpfLookupInvalidate = useCallback(() => {
     setFormData((prev) => ({
@@ -180,12 +201,16 @@ export function MultiStepRegistration({ open, onOpenChange }: MultiStepRegistrat
       cpfLookupProof: "",
     }));
     setGenderLockedFromLookup(false);
+    setPendingApiLookup(null);
   }, []);
 
   const onCpfManualEntry = useCallback((proof: string) => {
+    setPendingApiLookup(null);
     setGenderLockedFromLookup(false);
     setFormData((prev) => ({
       ...prev,
+      fullName: "",
+      gender: "",
       cpfLookupProof: proof,
     }));
   }, []);
@@ -196,12 +221,21 @@ export function MultiStepRegistration({ open, onOpenChange }: MultiStepRegistrat
       onSuccess: onCpfLookupSuccess,
       onInvalidate: onCpfLookupInvalidate,
       onManualEntry: onCpfManualEntry,
-      canAutoLookup: () => Boolean(formData.birthDate?.trim()),
     });
 
   useEffect(() => {
     clearLookupCompletedRef.current = clearLookupCompleted;
   }, [clearLookupCompleted]);
+
+  useEffect(() => {
+    if (!pendingApiLookup) return;
+    const userBd = normalizeBirthDateForCompare(formData.birthDate);
+    if (!userBd) return;
+    const apiBd = normalizeBirthDateForCompare(pendingApiLookup.data.birth_date);
+    if (userBd === apiBd) {
+      applyApiLookupSuccess(pendingApiLookup.data, pendingApiLookup.proof);
+    }
+  }, [formData.birthDate, pendingApiLookup, applyApiLookupSuccess]);
 
   const cpfProofReady = Boolean(formData.cpfLookupProof);
   const fieldsReadOnlyFromApi = cpfProofReady && !isManualMode;
@@ -278,6 +312,7 @@ export function MultiStepRegistration({ open, onOpenChange }: MultiStepRegistrat
         setCurrentStep(1);
         setErrors({});
         setGenderLockedFromLookup(false);
+        setPendingApiLookup(null);
       }, 500);
     }
   }, [open]);
@@ -577,10 +612,14 @@ export function MultiStepRegistration({ open, onOpenChange }: MultiStepRegistrat
             </div>
           )}
           {errors.cpf && <p className="text-sm text-destructive">{errors.cpf}</p>}
-          {!cpfProofReady && !lookupLoading && (
+          {!cpfProofReady && !lookupLoading && !pendingApiLookup && (
             <p className="text-xs text-muted-foreground">
-              Informe o CPF e a data de nascimento (como no documento) e clique em Consultar. A data será
-              conferida com a consulta.
+              Informe o CPF e clique em Consultar.
+            </p>
+          )}
+          {isManualMode && cpfProofReady && (
+            <p className="text-xs text-muted-foreground">
+              Preencha nome, sexo e a data de nascimento.
             </p>
           )}
         </div>
@@ -594,12 +633,18 @@ export function MultiStepRegistration({ open, onOpenChange }: MultiStepRegistrat
             onChange={(e) => !fieldsReadOnlyFromApi && updateField("birthDate", e.target.value)}
             readOnly={fieldsReadOnlyFromApi}
             disabled={loading}
+            max={new Date().toISOString().split("T")[0]}
             className={`${fieldsReadOnlyFromApi ? "bg-muted" : ""} ${errors.birthDate ? "border-destructive" : ""}`}
           />
           {errors.birthDate && <p className="text-sm text-destructive">{errors.birthDate}</p>}
-          {!cpfProofReady && (
+          {pendingApiLookup && !cpfProofReady && (
             <p className="text-xs text-muted-foreground">
               Deve ser exatamente a mesma data que consta no seu documento de identificação.
+            </p>
+          )}
+          {isManualMode && cpfProofReady && (
+            <p className="text-xs text-muted-foreground">
+              Informe a data do seu documento.
             </p>
           )}
           <Button
@@ -609,8 +654,7 @@ export function MultiStepRegistration({ open, onOpenChange }: MultiStepRegistrat
             disabled={
               loading ||
               lookupLoading ||
-              formData.cpf.replace(/\D/g, "").length !== 11 ||
-              !formData.birthDate?.trim()
+              formData.cpf.replace(/\D/g, "").length !== 11
             }
           >
             {lookupLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Consultar"}
@@ -621,6 +665,9 @@ export function MultiStepRegistration({ open, onOpenChange }: MultiStepRegistrat
           <div className="space-y-4 rounded-lg border border-border bg-muted/30 p-4">
             {!isManualMode && (
               <p className="text-sm font-medium text-foreground">Dados confirmados</p>
+            )}
+            {isManualMode && (
+              <p className="text-sm font-medium text-foreground">Preenchimento manual</p>
             )}
 
             <div className="space-y-2">

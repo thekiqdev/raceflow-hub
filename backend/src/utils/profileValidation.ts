@@ -311,7 +311,8 @@ export function validateBirthDateRange(
   value: string | null | undefined,
   options?: ProfileValidationAssertOptions & { minAge?: number; maxAge?: number }
 ): ProfileFieldValidationResult {
-  const minAge = options?.minAge ?? 8;
+  // minAge 0: permite crianças/bebês no cadastro; maxAge mantém sanity check.
+  const minAge = options?.minAge ?? 0;
   const maxAge = options?.maxAge ?? 120;
 
   if (value == null || String(value).trim() === '') {
@@ -323,6 +324,14 @@ export function validateBirthDateRange(
 
   const parsed = parseBirthDate(String(value));
   if (!parsed) {
+    return { valid: false, message: BIRTH_DATE_VALIDATION_MESSAGE };
+  }
+
+  const today = new Date();
+  const todayNoon = new Date(
+    `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}T12:00:00`
+  );
+  if (parsed.getTime() > todayNoon.getTime()) {
     return { valid: false, message: BIRTH_DATE_VALIDATION_MESSAGE };
   }
 

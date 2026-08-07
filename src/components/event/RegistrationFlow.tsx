@@ -241,6 +241,10 @@ export function RegistrationFlow({
   });
   const [isRegistering, setIsRegistering] = useState(false); // Toggle between login and register
   const [registerGenderLockedFromLookup, setRegisterGenderLockedFromLookup] = useState(false);
+  const [pendingRegisterApiLookup, setPendingRegisterApiLookup] = useState<{
+    data: LookupCpfData;
+    proof: string;
+  } | null>(null);
   const [registerData, setRegisterData] = useState({
     fullName: "",
     email: "",
@@ -260,28 +264,8 @@ export function RegistrationFlow({
 
   const clearLookupCompletedRef = useRef(() => {});
 
-  const onRegisterCpfLookupSuccess = useCallback((data: LookupCpfData, proof: string) => {
-    const userBd = normalizeBirthDateForCompare(registerBirthDateRef.current);
+  const applyRegisterApiLookupSuccess = useCallback((data: LookupCpfData, proof: string) => {
     const apiBd = normalizeBirthDateForCompare(data.birth_date);
-    if (!userBd) {
-      toast.error("Informe sua data de nascimento antes de consultar.");
-      clearLookupCompletedRef.current();
-      return;
-    }
-    if (userBd !== apiBd) {
-      toast.error(
-        "A data de nascimento não confere com o CPF consultado. Verifique e tente novamente."
-      );
-      clearLookupCompletedRef.current();
-      setRegisterData((prev) => ({
-        ...prev,
-        fullName: "",
-        gender: "",
-        cpfLookupProof: "",
-      }));
-      setRegisterGenderLockedFromLookup(false);
-      return;
-    }
     const recognizedGender = data.gender === "M" || data.gender === "F";
     setRegisterData((prev) => ({
       ...prev,
@@ -291,7 +275,44 @@ export function RegistrationFlow({
       cpfLookupProof: proof,
     }));
     setRegisterGenderLockedFromLookup(Boolean(data.gender_locked && recognizedGender));
+    setPendingRegisterApiLookup(null);
   }, []);
+
+  const onRegisterCpfLookupSuccess = useCallback((data: LookupCpfData, proof: string) => {
+    const userBd = normalizeBirthDateForCompare(registerBirthDateRef.current);
+    const apiBd = normalizeBirthDateForCompare(data.birth_date);
+
+    if (!userBd) {
+      setPendingRegisterApiLookup({ data, proof });
+      setRegisterData((prev) => ({
+        ...prev,
+        fullName: "",
+        gender: "",
+        cpfLookupProof: "",
+      }));
+      setRegisterGenderLockedFromLookup(false);
+      clearLookupCompletedRef.current();
+      return;
+    }
+
+    if (userBd !== apiBd) {
+      toast.error(
+        "A data de nascimento não confere com o CPF consultado. Verifique e tente novamente."
+      );
+      clearLookupCompletedRef.current();
+      setPendingRegisterApiLookup(null);
+      setRegisterData((prev) => ({
+        ...prev,
+        fullName: "",
+        gender: "",
+        cpfLookupProof: "",
+      }));
+      setRegisterGenderLockedFromLookup(false);
+      return;
+    }
+
+    applyRegisterApiLookupSuccess(data, proof);
+  }, [applyRegisterApiLookupSuccess]);
 
   const onRegisterCpfLookupInvalidate = useCallback(() => {
     setRegisterData((prev) => ({
@@ -302,12 +323,16 @@ export function RegistrationFlow({
       cpfLookupProof: "",
     }));
     setRegisterGenderLockedFromLookup(false);
+    setPendingRegisterApiLookup(null);
   }, []);
 
   const onRegisterCpfManualEntry = useCallback((proof: string) => {
+    setPendingRegisterApiLookup(null);
     setRegisterGenderLockedFromLookup(false);
     setRegisterData((prev) => ({
       ...prev,
+      fullName: "",
+      gender: "",
       cpfLookupProof: proof,
     }));
   }, []);
@@ -318,12 +343,21 @@ export function RegistrationFlow({
       onSuccess: onRegisterCpfLookupSuccess,
       onInvalidate: onRegisterCpfLookupInvalidate,
       onManualEntry: onRegisterCpfManualEntry,
-      canAutoLookup: () => Boolean(registerData.birthDate?.trim()),
     });
 
   useEffect(() => {
     clearLookupCompletedRef.current = clearLookupCompleted;
   }, [clearLookupCompleted]);
+
+  useEffect(() => {
+    if (!pendingRegisterApiLookup) return;
+    const userBd = normalizeBirthDateForCompare(registerData.birthDate);
+    if (!userBd) return;
+    const apiBd = normalizeBirthDateForCompare(pendingRegisterApiLookup.data.birth_date);
+    if (userBd === apiBd) {
+      applyRegisterApiLookupSuccess(pendingRegisterApiLookup.data, pendingRegisterApiLookup.proof);
+    }
+  }, [registerData.birthDate, pendingRegisterApiLookup, applyRegisterApiLookupSuccess]);
 
   const cpfProofReady = Boolean(registerData.cpfLookupProof);
   const fieldsReadOnlyFromApi = cpfProofReady && !isManualMode;
@@ -1974,10 +2008,14 @@ export function RegistrationFlow({
                             )}
                           </div>
                         )}
-                        {!cpfProofReady && (
+                        {!cpfProofReady && !pendingRegisterApiLookup && (
                           <p className="mt-1 text-xs text-muted-foreground">
-                            Informe o CPF e a data de nascimento e clique em Consultar. A data será conferida com
-                            a consulta.
+                            Informe o CPF e clique em Consultar.
+                          </p>
+                        )}
+                        {isManualMode && cpfProofReady && (
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            Preencha nome, sexo e a data de nascimento.
                           </p>
                         )}
                       </div>
@@ -1996,9 +2034,14 @@ export function RegistrationFlow({
                           className={`mt-1 ${fieldsReadOnlyFromApi ? "bg-muted" : ""}`}
                           disabled={isRegisteringAccount}
                         />
-                        {!cpfProofReady && (
+                        {pendingRegisterApiLookup && !cpfProofReady && (
                           <p className="mt-1 text-xs text-muted-foreground">
                             Deve ser a mesma data que consta no seu documento de identificação.
+                          </p>
+                        )}
+                        {isManualMode && cpfProofReady && (
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            Informe a data do seu documento.
                           </p>
                         )}
                         <Button
@@ -2008,8 +2051,7 @@ export function RegistrationFlow({
                           disabled={
                             isRegisteringAccount ||
                             lookupLoading ||
-                            registerData.cpf.replace(/\D/g, "").length !== 11 ||
-                            !registerData.birthDate?.trim()
+                            registerData.cpf.replace(/\D/g, "").length !== 11
                           }
                         >
                           {lookupLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Consultar"}
@@ -2132,7 +2174,7 @@ export function RegistrationFlow({
                         disabled={
                           !registerData.cpfLookupProof ||
                           !validateFullName(normalizePersonName(registerData.fullName)).valid ||
-                          !registerData.birthDate ||
+                          !validateBirthDateRange(registerData.birthDate).valid ||
                           !registerData.gender ||
                           !validatePhone(registerData.phone).valid ||
                           !registerData.email ||

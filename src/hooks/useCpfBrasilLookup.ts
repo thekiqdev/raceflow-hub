@@ -12,13 +12,13 @@ export const CPF_LOOKUP_DEBOUNCE_MS = 400;
 export interface UseCpfBrasilLookupOptions {
   cpfMasked: string;
   onSuccess: (data: LookupCpfData, proof: string) => void;
-  /** CPF alterado após sucesso ou lookup inválido — limpar campos bloqueados */
+  /** CPF alterado após sucesso ou lookup inválido — limpar campos vindos da API */
   onInvalidate: () => void;
   /** CPF válido não encontrado na base nacional — proof manual_proof_v1 */
   onManualEntry?: (proof: string) => void;
   /**
    * Se definido, a consulta automática (debounce ao completar 11 dígitos) só roda quando retorna true.
-   * Ex.: exigir data de nascimento preenchida antes de consultar.
+   * Ex.: exigir data de nascimento preenchida antes de consultar (conferência com a API).
    */
   canAutoLookup?: () => boolean;
 }
@@ -45,6 +45,7 @@ export function useCpfBrasilLookup({
   const [lookupError, setLookupError] = useState<string | null>(null);
   const [cpfAlreadyRegistered, setCpfAlreadyRegistered] = useState(false);
   const [isManualMode, setIsManualMode] = useState(false);
+  /** Só para UX/hints — o modo manual segue a resposta do backend (`manual_entry_allowed`). */
   const [allowManualWhenNotFound, setAllowManualWhenNotFound] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -53,13 +54,11 @@ export function useCpfBrasilLookup({
   const onInvalidateRef = useRef(onInvalidate);
   const onManualEntryRef = useRef(onManualEntry);
   const canAutoLookupRef = useRef(canAutoLookup);
-  const allowManualRef = useRef(allowManualWhenNotFound);
 
   onSuccessRef.current = onSuccess;
   onInvalidateRef.current = onInvalidate;
   onManualEntryRef.current = onManualEntry;
   canAutoLookupRef.current = canAutoLookup;
-  allowManualRef.current = allowManualWhenNotFound;
 
   useEffect(() => {
     let cancelled = false;
@@ -112,12 +111,13 @@ export function useCpfBrasilLookup({
       const res = await lookupCpfRequest(digits, ac.signal);
       if (ac.signal.aborted) return;
 
+      // Confiar no backend: se a API já liberou manual_entry_allowed, não revalidar a flag local
+      // (evita race com getCpfRegistrationConfig e limpeza indevida da data de nascimento).
       if (
         res.success &&
         res.manual_entry_allowed === true &&
         res.code === "CPF_NOT_IN_REGISTRY" &&
-        res.proof &&
-        allowManualRef.current
+        res.proof
       ) {
         lastOkDigitsRef.current = digits;
         setIsManualMode(true);
@@ -220,5 +220,6 @@ export function useCpfBrasilLookup({
     cpfAlreadyRegistered,
     clearLookupCompleted,
     isManualMode,
+    allowManualWhenNotFound,
   };
 }

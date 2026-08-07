@@ -34,10 +34,14 @@ describe('profileFinalHardening — birth_date', () => {
     assert.equal(result.valid, true);
   });
 
-  it('rejects 2 years old', () => {
+  it('accepts 2 years old (criança)', () => {
     const result = validateBirthDateRange(birthDateYearsAgo(2));
-    assert.equal(result.valid, false);
-    assert.equal(result.message, BIRTH_DATE_VALIDATION_MESSAGE);
+    assert.equal(result.valid, true);
+  });
+
+  it('accepts newborn (0 years)', () => {
+    const result = validateBirthDateRange(birthDateYearsAgo(0));
+    assert.equal(result.valid, true);
   });
 
   it('rejects 130 years old', () => {
