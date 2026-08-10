@@ -30,6 +30,8 @@ import {
   NEIGHBORHOOD_VALIDATION_MESSAGE,
   validateBirthDateRange,
   BIRTH_DATE_VALIDATION_MESSAGE,
+  validateGender,
+  GENDER_VALIDATION_MESSAGE,
   normalizeGender,
 } from "@/lib/utils/profileValidation";
 import {
