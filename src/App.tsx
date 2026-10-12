@@ -2,13 +2,14 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { createBrowserRouter, createRoutesFromElements, RouterProvider, Route, Navigate } from "react-router-dom";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
 import Events from "./pages/Events";
 import EventDetails from "./pages/EventDetails";
+import EventCheckout from "./pages/EventCheckout";
 import OrganizerDashboard from "./pages/OrganizerDashboard";
 import RunnerDashboard from "./pages/RunnerDashboard";
 import AdminDashboard from "./pages/AdminDashboard";
@@ -24,18 +25,18 @@ import ResetPassword from "./pages/ResetPassword";
 import CompletarCadastro from "./pages/CompletarCadastro";
 import Results from "./pages/Results";
 import NotFound from "./pages/NotFound";
+import CheckoutPurchasesPage from './pages/CheckoutPurchasesPage';
+import CheckoutTicketPage from './pages/CheckoutTicketPage';
 
 const queryClient = new QueryClient();
 
-const App = () => (
-  <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <BrowserRouter>
-        <Routes>
+const router = createBrowserRouter(createRoutesFromElements(
+        <>
           {/* Public routes */}
           <Route path="/" element={<Index />} />
+          <Route path="/ingresso" element={<CheckoutTicketPage />} />
+          <Route path="/minhas-compras" element={<ProtectedRoute><CheckoutPurchasesPage /></ProtectedRoute>} />
+          <Route path="/corredor/minhas-inscricoes" element={<ProtectedRoute><RunnerDashboard personalTickets /></ProtectedRoute>} />
           <Route path="/auth" element={<Auth />} />
           <Route path="/cadastro" element={<Cadastro />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
@@ -43,6 +44,8 @@ const App = () => (
           <Route path="/completar-cadastro" element={<CompletarCadastro />} />
           <Route path="/events" element={<Events />} />
           <Route path="/evento/:slug" element={<EventDetails />} />
+          <Route path="/evento/:slug/inscricao" element={<ProtectedRoute><EventCheckout /></ProtectedRoute>} />
+          <Route path="/events/:id/inscricao" element={<ProtectedRoute><EventCheckout /></ProtectedRoute>} />
           <Route path="/events/:id" element={<EventDetails />} /> {/* Compatibilidade com UUID */}
           <Route path="/results" element={<Results />} />
           <Route path="/orcamento" element={<Quote />} />
@@ -168,8 +171,15 @@ const App = () => (
           
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
-        </Routes>
-      </BrowserRouter>
+        </>
+));
+
+const App = () => (
+  <QueryClientProvider client={queryClient}>
+    <TooltipProvider>
+      <Toaster />
+      <Sonner />
+      <RouterProvider router={router} />
     </TooltipProvider>
   </QueryClientProvider>
 );

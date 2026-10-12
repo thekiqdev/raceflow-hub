@@ -25,6 +25,8 @@ export interface ApiResponse<T = any> {
   success: boolean;
   data?: T;
   error?: string;
+  /** Status HTTP conhecido; ausente quando não foi possível receber uma resposta. */
+  httpStatus?: number;
   message?: string;
   /** Presente em algumas respostas de erro (ex.: lookup CPF). */
   code?: string;
@@ -105,6 +107,7 @@ class ApiClient {
           `Request failed with status ${response.status}`;
         return {
           success: false,
+          httpStatus: response.status,
           error: userMessage,
           message: userMessage,
           details: errorDetails,
@@ -195,4 +198,3 @@ class ApiClient {
 }
 
 export const apiClient = new ApiClient(API_URL);
-

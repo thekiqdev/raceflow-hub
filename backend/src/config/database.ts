@@ -1,9 +1,36 @@
 import pg from 'pg';
-import dotenv from 'dotenv';
+import './environment.js';
+import { AsyncLocalStorage } from 'node:async_hooks';
 
-dotenv.config();
 
 const { Pool } = pg;
+const transactionContext = new AsyncLocalStorage<pg.PoolClient>();
+
+/** Reutiliza a conexão da operação inteira, inclusive nos serviços auxiliares. */
+export function withTransactionContext<T>(client: pg.PoolClient, work: () => Promise<T>): Promise<T> {
+  return transactionContext.run(client, work);
+}
+
+/** Cliente da transação atual (AsyncLocalStorage), se houver. */
+export function getTransactionClient(): pg.PoolClient | undefined {
+  return transactionContext.getStore();
+}
+
+export async function withTransaction<T>(work: () => Promise<T>): Promise<T> {
+  if (transactionContext.getStore()) return work();
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const result = await withTransactionContext(client, work);
+    await client.query('COMMIT');
+    return result;
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
 const isProduction = process.env.NODE_ENV === 'production';
 const sqlSlowMs = parseInt(process.env.SQL_SLOW_QUERY_MS || '300', 10);
 const logSqlAll = process.env.LOG_SQL_ALL === 'true' && !isProduction;
@@ -41,7 +68,7 @@ pool.on('error', (err) => {
 export const query = async (text: string, params?: any[]) => {
   const start = Date.now();
   try {
-    const res = await pool.query(text, params);
+    const res = await (transactionContext.getStore() ?? pool).query(text, params);
     const duration = Date.now() - start;
     if (logSqlAll) {
       console.log('Executed query', { text, duration, rows: res.rowCount });

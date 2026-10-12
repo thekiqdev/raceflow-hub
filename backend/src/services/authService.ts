@@ -1,4 +1,9 @@
 import bcrypt from 'bcrypt';
+import { linkVerifiedCheckoutTickets } from './checkoutTicketsService.js';
+async function linkCheckoutTicketsAfterAuth(userId:string) {
+  try { await linkVerifiedCheckoutTickets(userId); }
+  catch { console.error('Vínculo de ingressos pendente; será retomado ao consultar compras.'); }
+}
 import jwt, { SignOptions } from 'jsonwebtoken';
 import { query, getClient } from '../config/database.js';
 import { AppRole } from '../types/index.js';
@@ -231,9 +236,9 @@ export const register = async (data: RegisterData): Promise<AuthResponse> => {
         id, full_name, cpf, phone, gender, birth_date, lgpd_consent,
         preferred_name, profession, cbat, team, postal_code, street, address_number, address_complement,
         neighborhood, city, state,
-        cpf_validated_at, cpf_lookup_source
+        cpf_validated_at, cpf_lookup_source, is_public
       )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19::timestamptz, $20)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19::timestamptz, $20, TRUE)
        RETURNING id, full_name, cpf, phone`,
       [
         user.id,
@@ -312,6 +317,7 @@ export const register = async (data: RegisterData): Promise<AuthResponse> => {
     const token = generateToken(user.id, user.email);
 
     await client.query('COMMIT');
+    await linkCheckoutTicketsAfterAuth(user.id);
 
     return {
       user: {
@@ -416,6 +422,7 @@ export const login = async (data: LoginData): Promise<AuthResponse> => {
 
   // Generate token
   const token = generateToken(user.id, user.email);
+  await linkCheckoutTicketsAfterAuth(user.id);
 
   return {
     user: {

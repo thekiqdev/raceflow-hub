@@ -166,6 +166,7 @@ export const checkAndGrantInvitationBonus = async (
           console.log(`🔄 [checkAndGrantInvitationBonus] Atualizado: timesGranted=${timesGranted} para comissão ${bonus.id}`);
         } catch (error: any) {
           console.error(`❌ [checkAndGrantInvitationBonus] Erro na concessão atômica (já com rollback se aplicável):`, error.message);
+          if(triggerCtx.source==='checkout_delivery') throw error;
           break;
         }
       }
@@ -303,6 +304,7 @@ export const triggerInvitationBonusAfterPaidWithCoupon = async (
       message: err?.message,
     });
     console.error('❌ [triggerInvitationBonusAfterPaidWithCoupon] Erro:', err.message);
+    if(triggerCtx.source==='checkout_delivery') throw err;
   }
 };
 
@@ -326,6 +328,7 @@ export const checkAllInvitationBonuses = async (
     // Log error but don't fail the registration process
     console.error('❌ [checkAllInvitationBonuses] Erro ao verificar bônus de convite:', error.message);
     console.error('❌ [checkAllInvitationBonuses] Stack:', error.stack);
+    if(ctx?.source==='checkout_delivery') throw error;
   }
 };
 
@@ -415,6 +418,7 @@ export const checkInvitationBonusForCommission = async (
         );
         timesGranted = parseInt(updated.rows[0].count) || 0;
       } catch (err: any) {
+        if(triggerCtx.source==='checkout_delivery') throw err;
         console.error(
           `❌ [checkInvitationBonusForCommission] Erro na concessão atômica (rollback se aplicável):`,
           err.message

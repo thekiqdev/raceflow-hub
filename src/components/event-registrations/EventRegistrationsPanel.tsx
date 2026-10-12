@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { OrderRegistrationDetailSheet } from './OrderRegistrationDetailSheet';
 import { useNavigate } from "react-router-dom";
 import { format, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -75,7 +76,8 @@ import { maskCpf } from "@/lib/utils/masks";
 import { getRegistrationListTypeBadge } from "@/lib/utils/registrationOrigin";
 import { getAdminPath, getOrganizerPath } from "@/lib/utils/navigation";
 import { EventRegistrationDetailSheet } from "./EventRegistrationDetailSheet";
-import { TransferRegistrationAdminDialog, canAdminTransferRegistration } from "@/components/admin/TransferRegistrationAdminDialog";
+import { TransferRegistrationAdminDialog, canAdminTransferRegistration, isCheckoutOrderRegistration } from "@/components/admin/TransferRegistrationAdminDialog";
+import { AdminCheckoutTransferDialog } from "@/components/admin/AdminCheckoutTransferDialog";
 import { cn } from "@/lib/utils";
 import { getEnabledModules } from "@/lib/api/systemSettings";
 import { getCanonicalRegistrationDisplayValue } from "@/lib/utils/feeCalculations";
@@ -182,6 +184,7 @@ export function EventRegistrationsPanel({ eventId, rolePage, backPath }: EventRe
   const [exporting, setExporting] = useState(false);
   const [registerOpen, setRegisterOpen] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
+  const [orderDetailId, setOrderDetailId] = useState<string|null>(null);
   const [detailRegistrationId, setDetailRegistrationId] = useState<string | null>(null);
   const [detailRefreshToken, setDetailRefreshToken] = useState(0);
 
@@ -604,6 +607,7 @@ export function EventRegistrationsPanel({ eventId, rolePage, backPath }: EventRe
 
   return (
     <div className="mx-auto w-full min-w-0 max-w-[1400px] space-y-6">
+
       <div className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0 flex-1 space-y-1">
           <Button variant="ghost" size="sm" className="w-fit -ml-2 text-muted-foreground" onClick={() => navigate(backPath)}>
@@ -924,7 +928,7 @@ export function EventRegistrationsPanel({ eventId, rolePage, backPath }: EventRe
                       <TableRow
                         key={reg.id}
                         className={cn("text-sm cursor-pointer hover:bg-muted/60")}
-                        onClick={() => openDetail(reg.id)}
+                        onClick={() => reg.order_id ? setOrderDetailId(reg.id) : openDetail(reg.id)}
                       >
                         <TableCell className="font-medium max-w-[200px]">
                           <span className="line-clamp-2" title={reg.runner_name || ""}>
@@ -975,7 +979,30 @@ export function EventRegistrationsPanel({ eventId, rolePage, backPath }: EventRe
                           </div>
                         </TableCell>
                         <TableCell className="text-right p-1" onClick={(e) => e.stopPropagation()}>
-                          <DropdownMenu>
+                          {reg.order_id ? (
+                            <div className="flex flex-wrap justify-end gap-1">
+                              <Button variant="outline" size="sm" onClick={()=>setOrderDetailId(reg.id)}>Ver detalhes</Button>
+                              {rolePage === "admin" &&
+                                ["paid", "partially_paid"].includes(reg.payment_status || "") &&
+                                !["cancelled", "refunded", "transferred"].includes(reg.status || "") && (
+                                <Button variant="outline" size="sm" onClick={() => openDetail(reg.id)}>
+                                  Editar escolhas
+                                </Button>
+                              )}
+                              {rolePage === "admin" && canAdminTransferRegistration(reg) && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => {
+                                    setRegistrationToTransfer(reg);
+                                    setTransferDialogOpen(true);
+                                  }}
+                                >
+                                  Transferir
+                                </Button>
+                              )}
+                            </div>
+                          ) : <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                               <Button size="icon" variant="ghost" className="h-8 w-8 shrink-0" aria-label="Ações">
                                 <MoreHorizontal className="h-4 w-4" />
@@ -1048,7 +1075,7 @@ export function EventRegistrationsPanel({ eventId, rolePage, backPath }: EventRe
                                 </DropdownMenuItem>
                               )}
                             </DropdownMenuContent>
-                          </DropdownMenu>
+                          </DropdownMenu>}
                         </TableCell>
                       </TableRow>
                     );
@@ -1080,23 +1107,43 @@ export function EventRegistrationsPanel({ eventId, rolePage, backPath }: EventRe
         </CardContent>
       </Card>
 
-      <TransferRegistrationAdminDialog
-        open={transferDialogOpen}
-        onOpenChange={(open) => {
-          setTransferDialogOpen(open);
-          if (!open) setRegistrationToTransfer(null);
-        }}
-        registrationId={registrationToTransfer?.id ?? null}
-        subtitle={
-          registrationToTransfer
-            ? `${registrationToTransfer.runner_name || "—"} • ${registrationToTransfer.confirmation_code || registrationToTransfer.id}`
-            : undefined
-        }
-        onSuccess={() => {
-          setDetailRefreshToken((t) => t + 1);
-          void loadList();
-        }}
-      />
+      {isCheckoutOrderRegistration(registrationToTransfer) ? (
+        <AdminCheckoutTransferDialog
+          open={transferDialogOpen}
+          onOpenChange={(open) => {
+            setTransferDialogOpen(open);
+            if (!open) setRegistrationToTransfer(null);
+          }}
+          registrationId={registrationToTransfer?.id ?? null}
+          subtitle={
+            registrationToTransfer
+              ? `${registrationToTransfer.runner_name || "—"} • ${registrationToTransfer.confirmation_code || registrationToTransfer.id}`
+              : undefined
+          }
+          onSuccess={() => {
+            setDetailRefreshToken((t) => t + 1);
+            void loadList();
+          }}
+        />
+      ) : (
+        <TransferRegistrationAdminDialog
+          open={transferDialogOpen}
+          onOpenChange={(open) => {
+            setTransferDialogOpen(open);
+            if (!open) setRegistrationToTransfer(null);
+          }}
+          registrationId={registrationToTransfer?.id ?? null}
+          subtitle={
+            registrationToTransfer
+              ? `${registrationToTransfer.runner_name || "—"} • ${registrationToTransfer.confirmation_code || registrationToTransfer.id}`
+              : undefined
+          }
+          onSuccess={() => {
+            setDetailRefreshToken((t) => t + 1);
+            void loadList();
+          }}
+        />
+      )}
 
       <RegisterAthleteStaffDialog
         mode={rolePage === "admin" ? "super_admin" : "organizer"}
@@ -1110,6 +1157,7 @@ export function EventRegistrationsPanel({ eventId, rolePage, backPath }: EventRe
         }}
       />
 
+      <OrderRegistrationDetailSheet key={orderDetailId ?? 'closed'} registrationId={orderDetailId} eventId={eventId} allowAdminTransfer={rolePage==='admin'} onClose={()=>setOrderDetailId(null)} onRefreshList={()=>void loadList()}/>
       <EventRegistrationDetailSheet
         open={detailOpen}
         onOpenChange={(o) => {

@@ -4,6 +4,7 @@
  */
 
 export type InvitationBonusTriggerSource =
+  | 'checkout_delivery'
   | 'asaas_webhook'
   | 'commissions_service_create_commission'
   | 'commissions_service_invitation_only'

@@ -834,12 +834,12 @@ export const createManualRunner = async (data: CreateManualRunnerData): Promise<
       `INSERT INTO profiles (
         id, full_name, cpf, phone, gender, birth_date, lgpd_consent,
         preferred_name, profession, cbat, team, postal_code, street, address_number, address_complement,
-        neighborhood, city, state, status, cpf_validated_at, cpf_lookup_source
+        neighborhood, city, state, status, cpf_validated_at, cpf_lookup_source, is_public
       )
        VALUES (
         $1, $2, $3, $4, $5, $6, $7,
         $8, $9, $10, $11, $12, $13, $14, $15,
-        $16, $17, $18, 'active', NULL, NULL
+        $16, $17, $18, 'active', NULL, NULL, TRUE
       )`,
       [
         userId,
@@ -935,4 +935,3 @@ export const convertAthleteToOrganizer = async (userId: string): Promise<void> =
     client.release();
   }
 };
-

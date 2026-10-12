@@ -20,11 +20,12 @@ export async function cancelExpiredRegistrations(expirationMinutes: number = 20)
     // Incluir asaas_payment_id para verificar status no Asaas
     const expiredRegistrationsResult = await query(
       `SELECT id, created_at, payment_status, status, runner_id, event_id, asaas_payment_id
-       FROM registrations
+       FROM registrations r
        WHERE payment_status = 'pending'
        AND (status IS NULL OR status = 'pending')
        AND created_at < $1
        AND created_at IS NOT NULL
+       AND (to_jsonb(r)->>'order_id') IS NULL
        ORDER BY created_at ASC`,
       [expirationTime]
     );

@@ -1,4 +1,6 @@
 import { Request, Response } from 'express';
+import { checkoutPayments } from '../services/checkoutPaymentsService.js';
+import { checkoutTransfers } from '../services/checkoutTransferWorkflow.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { query } from '../config/database.js';
 import {
@@ -61,6 +63,14 @@ export const handleWebhook = asyncHandler(async (req: Request, res: Response) =>
   }
 
   const { event, payment } = payload;
+  if(await checkoutTransfers.webhook(payload)) {
+    res.status(200).json({success:true,message:'Transfer payment reconciled'});
+    return;
+  }
+  if(await checkoutPayments.webhook(payload)) {
+    res.status(200).json({success:true,message:'Order payment queued/reconciled'});
+    return;
+  }
   const asaasPaymentId = payment.id;
 
   // Enhanced logging
@@ -1079,5 +1089,3 @@ async function processWebhookEvent(
       break;
   }
 }
-
-

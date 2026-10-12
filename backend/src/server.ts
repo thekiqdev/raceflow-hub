@@ -1,6 +1,6 @@
+import { isEnvironmentFlagEnabled } from './config/environment.js';
 import express, { Express, Request, Response, NextFunction } from 'express';
 import cors from 'cors';
-import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
@@ -9,6 +9,15 @@ import { securityLogger } from './middleware/securityLogger.js';
 import { rateLimiter, writeRateLimiter } from './middleware/rateLimiter.js';
 import healthRouter from './routes/health.js';
 import authRouter from './routes/auth.js';
+import checkoutParticipantsRouter from './routes/checkoutParticipants.js';
+import checkoutOrdersRouter from './routes/checkoutOrders.js';
+import checkoutDeliveryRouter from './routes/checkoutDelivery.js';
+import checkoutTransfersRouter from './routes/checkoutTransfers.js';
+import {checkoutTransfers} from './services/checkoutTransferWorkflow.js';
+import myTicketsRouter from './routes/myTickets.js';
+import { checkoutDelivery } from './services/checkoutDeliveryService.js';
+import { expireCheckoutOrders } from './services/checkoutOrdersService.js';
+import { checkoutPayments } from './services/checkoutPaymentsService.js';
 import eventsRouter from './routes/events.js';
 import profilesRouter from './routes/profiles.js';
 import registrationsRouter from './routes/registrations.js';
@@ -36,13 +45,7 @@ import { updateRegistrationStatuses } from './services/registrationStatusService
 import { cancelExpiredRegistrations } from './services/expiredRegistrationsService.js';
 import { purgeCpfLookupMetricsOlderThan } from './services/cpfAuditService.js';
 
-// Load environment variables — caminho absoluto para funcionar com qualquer cwd (ex.: monorepo na raiz)
-const _serverFileForEnv = fileURLToPath(import.meta.url);
-const _serverDirForEnv = path.dirname(_serverFileForEnv);
-const _backendRootEnv = path.join(_serverDirForEnv, '../.env');
-const _repoRootEnv = path.join(_serverDirForEnv, '../../.env');
-dotenv.config({ path: _backendRootEnv });
-dotenv.config({ path: _repoRootEnv });
+console.log('Checkout em grupo:',isEnvironmentFlagEnabled('MULTI_REGISTRATION_CHECKOUT_ENABLED')?'habilitado':'desabilitado');
 
 // Debug: Log if Asaas key is loaded
 if (process.env.ASAAS_API_KEY) {
@@ -263,6 +266,11 @@ app.use((req: Request, _res: Response, next) => {
 app.use('/api/webhooks', webhooksRouter);
 app.use('/api/health', healthRouter);
 app.use('/api/auth', authRouter);
+app.use('/api/checkout-participants', checkoutParticipantsRouter);
+app.use('/api/checkout-orders', checkoutOrdersRouter);
+app.use('/api/checkout-delivery', checkoutDeliveryRouter);
+app.use('/api/checkout-transfers', checkoutTransfersRouter);
+app.use('/api/tickets', myTicketsRouter);
 app.use('/api/quotes', quotesRouter);
 app.use('/api/contact-messages', contactMessagesRouter);
 app.use('/api/form-configurations', formConfigurationsRouter);
@@ -364,10 +372,22 @@ app.listen(PORT, () => {
   cancelExpiredRegistrations(EXPIRATION_MINUTES).catch((error) => {
     console.error('❌ Erro no cancelamento inicial de inscrições expiradas:', error);
   });
+  const expireGroupReservations=()=> {
+    checkoutPayments.sweep().catch(()=>console.error('Erro na conciliação dos pagamentos de pedidos.'));
+    checkoutTransfers.sweep().catch(()=>console.error('Erro na conciliação das taxas de transferência.'));
+    expireCheckoutOrders().catch(error=>console.error('Erro ao expirar reservas de pedidos:',error));
+  };
+  expireGroupReservations();
+  const deliverCheckout=()=>{
+    if(isEnvironmentFlagEnabled('CHECKOUT_DELIVERY_ENABLED')) checkoutDelivery.sweep().catch(()=>console.error('Falha no processamento da entrega de pedidos.'));
+  };
+  deliverCheckout();
+  setInterval(deliverCheckout,60000);
   
   // Schedule periodic checks
   setInterval(() => {
     console.log('🔄 Executando verificação de inscrições expiradas...');
+    expireGroupReservations();
     cancelExpiredRegistrations(EXPIRATION_MINUTES).catch((error) => {
       console.error('❌ Erro no cancelamento automático de inscrições expiradas:', error);
     });
@@ -396,4 +416,3 @@ app.listen(PORT, () => {
 });
 
 export default app;
-

@@ -40,6 +40,7 @@ import type { LookupCpfData } from "@/lib/api/auth";
 // Re-export ProductVariant type for use in component
 type ProductVariantType = ProductVariant;
 import { toast } from "sonner";
+import { GroupRegistrationFlow } from '@/components/registration/GroupRegistrationFlow';
 
 // Utility function to calculate age from birth date
 const calculateAge = (birthDate: string): number => {
@@ -150,6 +151,16 @@ interface Kit extends EventKit {
   products?: KitProduct[];
 }
 
+interface RegistrationPricingReview {
+  categoryPrice: number;
+  kitPrice: number;
+  subtotal: number;
+  seniorDiscount: number;
+  couponDiscount: number;
+  platformFee: number;
+  total: number;
+}
+
 interface EventInfo {
   id: string;
   title: string;
@@ -184,7 +195,16 @@ const formatPrice = (price: number): string => {
   return `R$ ${price.toFixed(2).replace('.', ',')}`;
 };
 
-export function RegistrationFlow({
+export function RegistrationFlow(props:RegistrationFlowProps) {
+  const {user}=useAuth();
+  // Login/cadastro inline permanecem disponíveis antes de abrir a compra em grupo.
+  if(import.meta.env.VITE_MULTI_REGISTRATION_CHECKOUT_ENABLED==='true' && user) {
+    return <GroupRegistrationFlow key={`${user.id}:${props.event.id}`} open={props.open} onOpenChange={props.onOpenChange} event={props.event} buyerId={user.id}/>;
+  }
+  return <LegacyRegistrationFlow {...props}/>;
+}
+
+function LegacyRegistrationFlow({
   open,
   onOpenChange,
   event,
@@ -434,11 +454,28 @@ export function RegistrationFlow({
   const [platformFeeType, setPlatformFeeType] = useState<'fixed' | 'percentage'>('fixed');
   const [platformFeeMin, setPlatformFeeMin] = useState<number>(0);
   const [platformFeesEnabled, setPlatformFeesEnabled] = useState(false);
+  const [pricingReview, setPricingReview] = useState<RegistrationPricingReview | null>(null);
+
+  useEffect(() => {
+    setPricingReview(null);
+  }, [open, event.id, selectedCategoryId, selectedBatch, selectedKit, appliedCoupon, otherPersonId, user?.id]);
+
+  const reviewUpdatedPrice = (response: { code?: string; details?: unknown }): boolean => {
+    if (response.code !== 'REGISTRATION_PRICE_CHANGED') return false;
+    const pricing = (response.details as { pricing?: RegistrationPricingReview } | undefined)?.pricing;
+    if (!pricing || !Number.isFinite(pricing.total)) return false;
+    setPricingReview(pricing);
+    setCreditCardData(null);
+    setSelectedPaymentMethod(null);
+    setStep(5);
+    toast.info('O valor foi atualizado. Revise o resumo e confirme novamente para continuar.');
+    return true;
+  };
 
   // Calculate total price based on selected batch or category price
-  const categoryPrice = selectedBatch?.price || selectedCategory?.price || 0;
-  const kitPrice = selectedKit?.price || 0;
-  const subtotal = categoryPrice + kitPrice;
+  const categoryPrice = pricingReview?.categoryPrice ?? selectedBatch?.price ?? selectedCategory?.price ?? 0;
+  const kitPrice = pricingReview?.kitPrice ?? selectedKit?.price ?? 0;
+  const subtotal = Math.round((categoryPrice + kitPrice) * 100) / 100;
   
   // Calculate discounts
   let discountAmount = 0;
@@ -450,38 +487,42 @@ export function RegistrationFlow({
   if (seniorDiscountEnabled && profileToCheck?.birth_date) {
     const age = calculateAge(profileToCheck.birth_date);
     if (age >= 60) {
-      seniorDiscountAmount = subtotal * 0.5; // 50% discount
+      seniorDiscountAmount = Math.round(subtotal * 0.5 * 100) / 100;
     }
   }
   
-  // Apply coupon discount (if any)
+  seniorDiscountAmount = pricingReview?.seniorDiscount ?? seniorDiscountAmount;
+  const totalAfterSeniorDiscount = Math.max(0, subtotal - seniorDiscountAmount);
+
+  // Cupom percentual incide sobre o saldo após o desconto por idade, como no backend.
   if (appliedCoupon) {
     if (appliedCoupon.type === 'percentage') {
-      discountAmount = (subtotal * appliedCoupon.discount) / 100;
+      discountAmount = Math.round(totalAfterSeniorDiscount * appliedCoupon.discount) / 100;
     } else {
       discountAmount = appliedCoupon.discount;
     }
     // Ensure discount doesn't exceed subtotal
-    discountAmount = Math.min(discountAmount, subtotal);
+    discountAmount = Math.round(Math.min(discountAmount, totalAfterSeniorDiscount) * 100) / 100;
   }
   
   // Calculate total: subtotal - senior discount - coupon discount
   // Senior discount is applied first, then coupon discount on the remaining amount
-  const totalAfterSeniorDiscount = Math.max(0, subtotal - seniorDiscountAmount);
+  discountAmount = pricingReview?.couponDiscount ?? discountAmount;
   const totalAfterDiscounts = Math.max(0, totalAfterSeniorDiscount - discountAmount);
   
   // Calculate platform fee (applied after discounts). Evento gratuito (preço = 0): não cobra taxa.
   let platformFeeAmount = 0;
   if (platformFeesEnabled && platformFee > 0 && totalAfterDiscounts > 0) {
     if (platformFeeType === 'percentage') {
-      const feeFromPercent = (totalAfterDiscounts * platformFee) / 100;
+      const feeFromPercent = Math.round(totalAfterDiscounts * platformFee) / 100;
       platformFeeAmount = platformFeeMin > 0 ? Math.max(feeFromPercent, platformFeeMin) : feeFromPercent;
     } else {
       platformFeeAmount = platformFee;
     }
   }
 
-  const totalPrice = Math.max(0, totalAfterDiscounts + platformFeeAmount);
+  platformFeeAmount = pricingReview?.platformFee ?? platformFeeAmount;
+  const totalPrice = pricingReview?.total ?? Math.max(0, Math.round((totalAfterDiscounts + platformFeeAmount) * 100) / 100);
 
   // Função helper para verificar se um método de pagamento está habilitado
   const isPaymentMethodEnabled = useCallback((method: 'pix' | 'credit_card'): boolean => {
@@ -977,14 +1018,14 @@ export function RegistrationFlow({
   const handleProductSelect = (productId: string, kitId: string) => {
     setSelectedProducts(prev => {
       const newMap = new Map(prev);
-      const current = newMap.get(kitId);
+      const current = newMap.get(`${kitId}-${productId}`);
       
       // If clicking the same product, deselect it
       if (current?.productId === productId) {
-        newMap.delete(kitId);
+        newMap.delete(`${kitId}-${productId}`);
       } else {
         // Select new product (clear variant if it was a variable product)
-        newMap.set(kitId, { productId });
+        newMap.set(`${kitId}-${productId}`, { productId });
       }
       return newMap;
     });
@@ -993,12 +1034,27 @@ export function RegistrationFlow({
   const handleVariantSelect = (variantId: string, productId: string, kitId: string) => {
     setSelectedProducts(prev => {
       const newMap = new Map(prev);
-      newMap.set(kitId, { productId, variantId });
+      newMap.set(`${kitId}-${productId}`, { productId, variantId });
       return newMap;
     });
     // Also update shirtSize for compatibility
     setShirtSize(variantId);
   };
+
+  const hasCompleteKitSelections = (kit: Kit) => (kit.products || [])
+    .filter(product => product.type === 'variable')
+    .every(product => product.variants?.some(variant =>
+      variant.id === selectedProducts.get(`${kit.id}-${product.id}`)?.variantId));
+
+  const buildProductSelections = () => (selectedKit?.products || []).flatMap(product => {
+    const key = `${selectedKit!.id}-${product.id}`;
+    const selection = selectedProducts.get(key);
+    return selection?.variantId ? [{
+      product_id: product.id,
+      variant_id: selection.variantId,
+      attribute_selections: variantSelections.get(key),
+    }] : [];
+  });
 
   const handleKitSelect = (kit: Kit, skipValidation = false) => {
     // If skipValidation is true, just select the kit (used when expanding to show products)
@@ -1007,20 +1063,8 @@ export function RegistrationFlow({
       return;
     }
     
-    // Check if kit has variable products that need variant selection
-    if (kit.products && kit.products.length > 0) {
-      const variableProducts = kit.products.filter(p => p.type === 'variable' && p.variants && p.variants.length > 0);
-      if (variableProducts.length > 0) {
-        const selectedProduct = selectedProducts.get(kit.id);
-        // Only allow selection if at least one variant is selected (since we don't require product selection anymore)
-        if (!selectedProduct?.variantId) {
-          // Don't show error, just don't allow final selection
-          // User can still expand to see products and select variants
-          return;
-        }
-      }
-    }
-    
+    if (!hasCompleteKitSelections(kit)) return;
+
     setSelectedKit(kit);
   };
 
@@ -1241,17 +1285,9 @@ export function RegistrationFlow({
         toast.error("Selecione um kit");
         return;
       }
-      if (selectedKit.products && selectedKit.products.length > 0) {
-        const variableProducts = selectedKit.products.filter(
-          (p) => p.type === "variable" && p.variants && p.variants.length > 0
-        );
-        if (variableProducts.length > 0) {
-          const selectedProduct = selectedProducts.get(selectedKit.id);
-          if (!selectedProduct?.variantId) {
-            toast.error("Selecione as opções do kit");
-            return;
-          }
-        }
+      if (!hasCompleteKitSelections(selectedKit)) {
+        toast.error("Selecione as opções de todos os produtos do kit");
+        return;
       }
     }
 
@@ -1406,27 +1442,13 @@ export function RegistrationFlow({
       // Use otherPersonId if registering for someone else, otherwise use logged user id
       const runnerId = otherPersonId || user.id;
       
-      // Build product_selections from selectedProducts and variantSelections
-      const productSelections: Array<{ product_id: string; variant_id?: string; attribute_selections?: Record<string, string> }> = [];
-      
-      if (selectedKit?.id && selectedProducts.has(selectedKit.id)) {
-        const selection = selectedProducts.get(selectedKit.id);
-        if (selection) {
-          const kitKey = `${selectedKit.id}-${selection.productId}`;
-          const variantSelection = variantSelections.get(kitKey);
-          
-          productSelections.push({
-            product_id: selection.productId,
-            variant_id: selection.variantId,
-            attribute_selections: variantSelection || undefined,
-          });
-        }
-      }
-      
+      const productSelections = buildProductSelections();
+
       const registrationData: any = {
         event_id: event.id,
         runner_id: runnerId,
         category_id: selectedCategory.id,
+        category_batch_id: selectedBatch?.id ?? null,
         kit_id: selectedKit?.id,
         modality_id: selectedModality?.id ?? null,
         payment_method: selectedPaymentMethod || "pix", // Use selected payment method
@@ -1445,6 +1467,7 @@ export function RegistrationFlow({
       const response = await createRegistration(registrationData);
 
       if (!response.success) {
+        if (reviewUpdatedPrice(response)) return;
         throw new Error(response.error || "Erro ao criar inscrição");
       }
 
@@ -1691,18 +1714,13 @@ export function RegistrationFlow({
         doc.text(`Kit: ${selectedKit.name}`, margin, yPos);
         yPos += 7;
       }
-      // Product Attributes
-      if (selectedKit?.id && selectedProducts.has(selectedKit.id)) {
-        const selection = selectedProducts.get(selectedKit.id);
-        if (selection) {
-          const kitKey = `${selectedKit.id}-${selection.productId}`;
-          const variantSelection = variantSelections.get(kitKey);
-          if (variantSelection && Object.keys(variantSelection).length > 0) {
-            Object.entries(variantSelection).forEach(([attrName, attrValue]) => {
-              doc.text(`${attrName}: ${attrValue}`, margin, yPos);
-              yPos += 7;
-            });
-          }
+      // Todas as escolhas do kit, inclusive quando há mais de um produto variável.
+      for (const selection of buildProductSelections()) {
+        const product = selectedKit?.products?.find(p => p.id === selection.product_id);
+        const variant = product?.variants?.find(v => v.id === selection.variant_id);
+        if (product && variant) {
+          doc.text(`${product.name}: ${variant.name}`, margin, yPos);
+          yPos += 7;
         }
       }
       doc.text(`Valor: R$ ${totalPrice.toFixed(2).replace('.', ',')}`, margin, yPos);
@@ -2669,10 +2687,6 @@ export function RegistrationFlow({
                     const isSelected = selectedKit?.id === kit.id;
                     const kitProducts = kit.products || [];
                     const hasVariableProducts = kitProducts.some(p => p.type === 'variable');
-                    const selectedProduct = selectedProducts.get(kit.id);
-                    const selectedProductData = selectedProduct ? kitProducts.find(p => p.id === selectedProduct.productId) : null;
-                    const needsVariantSelection = selectedProductData?.type === 'variable' && !selectedProduct?.variantId;
-                    
                     return (
                       <Card
                         key={kit.id}
@@ -2876,7 +2890,12 @@ export function RegistrationFlow({
                                                       attributeOrder.slice(attrIndex + 1).forEach(clearAttr => {
                                                         delete newSelections[clearAttr];
                                                       });
-                                                      setVariantSelections(new Map(variantSelections.set(productKey, newSelections)));
+                                                      setVariantSelections(prev => new Map(prev).set(productKey, newSelections));
+                                                      setSelectedProducts(prev => {
+                                                        const next = new Map(prev);
+                                                        next.delete(productKey);
+                                                        return next;
+                                                      });
                                                       if (Object.keys(newSelections).length === attributeOrder.length) {
                                                         const finalVariant = product.variants.find(v => {
                                                           const variantValues = v.name.split(' - ').map(val => val.trim());
@@ -2989,23 +3008,7 @@ export function RegistrationFlow({
               </Button>
               <Button
                 onClick={handleNextStep}
-                disabled={(() => {
-                  if (!selectedKit) return true;
-                  
-                  // Check if kit has variable products that need variant selection
-                  if (selectedKit.products && selectedKit.products.length > 0) {
-                    const variableProducts = selectedKit.products.filter(p => p.type === 'variable' && p.variants && p.variants.length > 0);
-                    if (variableProducts.length > 0) {
-                      // Check if at least one variant is selected (since we don't require product selection anymore)
-                      const selectedProduct = selectedProducts.get(selectedKit.id);
-                      if (!selectedProduct?.variantId) {
-                        return true; // Disable if no variant is selected
-                      }
-                    }
-                  }
-                  
-                  return false;
-                })()}
+                disabled={!selectedKit || !hasCompleteKitSelections(selectedKit)}
                 className="min-w-32"
               >
                 Próximo
@@ -3139,54 +3142,22 @@ export function RegistrationFlow({
                     <span className="font-medium">{selectedKit?.name}</span>
                   </div>
                   {/* Display selected product and variant attributes */}
-                  {selectedKit && selectedKit.products && selectedKit.products.length > 0 && (() => {
-                    const selectedProduct = selectedProducts.get(selectedKit.id);
-                    if (selectedProduct?.variantId) {
-                      // Find the selected variant
-                      const product = selectedKit.products.find(p => p.id === selectedProduct.productId);
-                      const variant = product?.variants?.find(v => v.id === selectedProduct.variantId);
-                      
-                      if (variant && product) {
-                        // Get attribute names from product
-                        const attributeNames = (product as any).variant_attributes as string[] | undefined;
-                        
-                        // Parse variant name to get values
-                        const variantValues = variant.name.split(' - ').map(v => v.trim());
-                        
-                        // Build compact display string
-                        if (product.type === 'variable' && attributeNames && attributeNames.length > 0) {
-                          const variantDetails = attributeNames
-                            .map((attrName, idx) => {
-                              const value = variantValues[idx];
-                              return value ? `${attrName}: ${value}` : null;
-                            })
-                            .filter(Boolean)
-                            .join(', ');
-                          
-                          return (
-                            <div className="flex justify-between text-xs">
-                              <span className="text-foreground/80">{product.name}</span>
-                              <span className="text-muted-foreground">{variantDetails}</span>
-                            </div>
-                          );
-                        } else if (variant) {
-                          // Fallback: show product and variant name
-                          return (
-                            <div className="flex justify-between text-xs">
-                              <span className="text-foreground/80">{product.name}</span>
-                              <span className="text-muted-foreground">{variant.name}</span>
-                            </div>
-                          );
-                        }
-                      }
-                    }
-                    return null;
-                  })()}
+                  {selectedKit?.products?.map(product => {
+                    const selection = selectedProducts.get(`${selectedKit.id}-${product.id}`);
+                    const variant = product.variants?.find(v => v.id === selection?.variantId);
+                    if (!variant) return null;
+                    return (
+                      <div key={product.id} className="flex justify-between gap-3 text-xs">
+                        <span className="text-foreground/80">{product.name}</span>
+                        <span className="text-muted-foreground text-right">{variant.name}</span>
+                      </div>
+                    );
+                  })}
                   <Separator />
                   <div className="flex justify-between items-center">
                     <span>Valor da modalidade:</span>
                     <span>
-                      {formatPrice(selectedBatch?.price || selectedCategory?.price || 0)}
+                      {formatPrice(categoryPrice)}
                       {selectedBatch && (() => {
                         // Mostrar nome do lote se disponível
                         if (selectedBatch.name) {
@@ -3213,10 +3184,10 @@ export function RegistrationFlow({
                       })()}
                     </span>
                   </div>
-                  {selectedKit && selectedKit.price > 0 && (
+                  {selectedKit && kitPrice > 0 && (
                     <div className="flex justify-between items-center">
                       <span>Valor do kit:</span>
-                      <span>{formatPrice(selectedKit.price)}</span>
+                      <span>{formatPrice(kitPrice)}</span>
                     </div>
                   )}
                   <Separator />
@@ -3516,25 +3487,13 @@ export function RegistrationFlow({
                           try {
                             const runnerId = otherPersonId || user.id;
 
-                            // Incluir variação e atributos do kit (mesmo critério do handleSubmit)
-                            const productSelections: Array<{ product_id: string; variant_id?: string; attribute_selections?: Record<string, string> }> = [];
-                            if (selectedKit?.id && selectedProducts.has(selectedKit.id)) {
-                              const selection = selectedProducts.get(selectedKit.id);
-                              if (selection) {
-                                const kitKey = `${selectedKit.id}-${selection.productId}`;
-                                const variantSelection = variantSelections.get(kitKey);
-                                productSelections.push({
-                                  product_id: selection.productId,
-                                  variant_id: selection.variantId,
-                                  attribute_selections: variantSelection || undefined,
-                                });
-                              }
-                            }
+                            const productSelections = buildProductSelections();
 
                             const registrationData: any = {
                               event_id: event.id,
                               runner_id: runnerId,
                               category_id: selectedCategory.id,
+                              category_batch_id: selectedBatch?.id ?? null,
                               kit_id: selectedKit?.id,
                               modality_id: selectedModality?.id ?? null,
                               payment_method: 'credit_card',
@@ -3549,6 +3508,7 @@ export function RegistrationFlow({
                             const response = await createRegistration(registrationData);
 
                             if (!response.success) {
+                              if (reviewUpdatedPrice(response)) return;
                               throw new Error(response.error || "Erro ao criar inscrição");
                             }
 
@@ -3840,49 +3800,17 @@ export function RegistrationFlow({
                     <span className="font-medium">{selectedKit?.name}</span>
                   </div>
                   {/* Display selected product and variant attributes */}
-                  {selectedKit && selectedKit.products && selectedKit.products.length > 0 && (() => {
-                    const selectedProduct = selectedProducts.get(selectedKit.id);
-                    if (selectedProduct?.variantId) {
-                      // Find the selected variant
-                      const product = selectedKit.products.find(p => p.id === selectedProduct.productId);
-                      const variant = product?.variants?.find(v => v.id === selectedProduct.variantId);
-                      
-                      if (variant && product) {
-                        // Get attribute names from product
-                        const attributeNames = (product as any).variant_attributes as string[] | undefined;
-                        
-                        // Parse variant name to get values
-                        const variantValues = variant.name.split(' - ').map(v => v.trim());
-                        
-                        // Build compact display string
-                        if (product.type === 'variable' && attributeNames && attributeNames.length > 0) {
-                          const variantDetails = attributeNames
-                            .map((attrName, idx) => {
-                              const value = variantValues[idx];
-                              return value ? `${attrName}: ${value}` : null;
-                            })
-                            .filter(Boolean)
-                            .join(', ');
-                          
-                          return (
-                            <div className="flex justify-between text-xs">
-                              <span className="text-foreground/80">{product.name}</span>
-                              <span className="text-muted-foreground">{variantDetails}</span>
-                            </div>
-                          );
-                        } else if (variant) {
-                          // Fallback: show product and variant name
-                          return (
-                            <div className="flex justify-between text-xs">
-                              <span className="text-foreground/80">{product.name}</span>
-                              <span className="text-muted-foreground">{variant.name}</span>
-                            </div>
-                          );
-                        }
-                      }
-                    }
-                    return null;
-                  })()}
+                  {selectedKit?.products?.map(product => {
+                    const selection = selectedProducts.get(`${selectedKit.id}-${product.id}`);
+                    const variant = product.variants?.find(v => v.id === selection?.variantId);
+                    if (!variant) return null;
+                    return (
+                      <div key={product.id} className="flex justify-between gap-3 text-xs">
+                        <span className="text-foreground/80">{product.name}</span>
+                        <span className="text-muted-foreground text-right">{variant.name}</span>
+                      </div>
+                    );
+                  })}
                   <div className="flex justify-between text-sm font-bold pt-2">
                     <span>Total Pago:</span>
                     <span className="text-primary">{formatPrice(totalPrice)}</span>
@@ -3993,5 +3921,3 @@ export function RegistrationFlow({
     </Dialog>
   );
 }
-
-

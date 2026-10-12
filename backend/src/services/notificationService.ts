@@ -18,6 +18,8 @@ export interface SendNotificationOptions {
 }
 
 export interface SendEmailOptions {
+  /** Identificador estável para rastrear retentativas da fila de pedidos. */
+  messageId?: string;
   to: string;
   subject: string;
   html: string;
@@ -171,6 +173,7 @@ export const sendEmail = async (options: SendEmailOptions): Promise<boolean> => 
 
     // Send email
     const info = await transporter.sendMail({
+      messageId: options.messageId,
       from: `"${fromName}" <${fromEmail}>`,
       to: options.to,
       subject: options.subject,
@@ -542,4 +545,3 @@ Acesse: ${siteUrl}
     return false;
   }
 };
-

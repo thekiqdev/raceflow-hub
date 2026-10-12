@@ -2,6 +2,20 @@ import { apiClient, type ApiResponse } from './client.js';
 import type { KitProduct } from './eventKits.js';
 
 export interface Registration {
+  order_id?: string | null;
+  order_status?: string | null;
+  order_total_cents?: number | null;
+  order_participant_count?: number | null;
+  order_participants?: Array<{
+    id: string;
+    status: string;
+    payment_status: string;
+    total_amount: number;
+    confirmation_code?: string | null;
+    position: number;
+    runner_name: string;
+    cpf_masked: string | null;
+  }> | null;
   id: string;
   event_id: string;
   runner_id: string;
@@ -13,11 +27,16 @@ export interface Registration {
   payment_method?: 'pix' | 'credit_card' | 'boleto' | 'free_bonus' | 'admin_transfer';
   total_amount: number;
   confirmation_code?: string;
+  /** Validade informada pela consulta pública legada, inclusive após transferência. */
+  ticket_available?: boolean;
   created_at?: string;
   updated_at?: string;
   event_title?: string;
   event_date?: string;
   event_banner_url?: string | null;
+  location?: string | null;
+  city?: string | null;
+  state?: string | null;
   category_name?: string;
   category_distance?: string;
   modality_id?: string | null;
@@ -91,6 +110,7 @@ export interface CreateRegistrationData {
   event_id: string;
   runner_id?: string;
   category_id: string;
+  category_batch_id?: string | null;
   kit_id?: string;
   modality_id?: string | null;
   payment_method?: 'pix' | 'credit_card' | 'boleto' | 'free_bonus';
@@ -651,5 +671,3 @@ export const exportRegistrations = async (filters?: ExportRegistrationsFilters, 
   window.URL.revokeObjectURL(url);
   document.body.removeChild(a);
 };
-
-

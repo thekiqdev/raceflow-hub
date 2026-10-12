@@ -43,7 +43,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { saveReferralCoupon } from "@/lib/referralCouponCache";
+import { getReferralCoupon, saveReferralCoupon } from "@/lib/referralCouponCache";
 
 interface EventDetail {
   id: string;
@@ -168,6 +168,19 @@ const EventDetails = () => {
   const [kits, setKits] = useState<Kit[]>([]);
   const [pickupLocations, setPickupLocations] = useState<any[]>([]);
   const [isRegistrationOpen, setIsRegistrationOpen] = useState(false);
+  const startRegistration = () => {
+    if(import.meta.env.VITE_MULTI_REGISTRATION_CHECKOUT_ENABLED==='true') {
+      const path=slug?`/evento/${encodeURIComponent(slug)}/inscricao`:`/events/${encodeURIComponent(id || '')}/inscricao`;
+      const cached=event?getReferralCoupon(event.id):null;
+      const cupom=searchParams.get('cupom')?.trim() || cached?.cupom?.trim();
+      const ref=searchParams.get('ref')?.trim() || cached?.ref?.trim();
+      const q=new URLSearchParams();
+      if(cupom) q.set('cupom',cupom);
+      if(ref) q.set('ref',ref);
+      const qs=q.toString();
+      navigate(qs?`${path}?${qs}`:path,{viewTransition:true});
+    } else setIsRegistrationOpen(true);
+  };
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
   const [showBottomBar, setShowBottomBar] = useState(false);
   const [isContactOpen, setIsContactOpen] = useState(false);
@@ -1188,7 +1201,7 @@ const EventDetails = () => {
                               <Button
                                 className="w-full"
                                 size="lg"
-                                onClick={() => setIsRegistrationOpen(true)}
+                                onClick={startRegistration}
                                 disabled={isDisabled}
                               >
                                 {isDisabled ? (
@@ -1506,7 +1519,7 @@ const EventDetails = () => {
                       <span>
                         <Button
                           size="lg"
-                          onClick={() => setIsRegistrationOpen(true)}
+                          onClick={startRegistration}
                           className="px-8"
                           disabled={!canRegister}
                         >

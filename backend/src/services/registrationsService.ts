@@ -1,13 +1,9 @@
 import { randomBytes } from 'crypto';
 import type { PoolClient } from 'pg';
-import { query, getClient } from '../config/database.js';
-import { registrationConsumesVariantStockSql } from './variantStockPolicyService.js';
-import {
-  isStrictKitSelectionsEnabled,
-  kitRequiresPersistedProductSelections,
-  validateCreateRegistrationKitSelectionsStrict,
-  countRegistrationProductSelectionRows,
-} from './kitSelectionPolicyService.js';
+import { query, getClient, withTransaction, withTransactionContext } from '../config/database.js';
+import { resolveRegistrationSelections, reserveSelectionStock, saveCanonicalSelections } from './registrationSelectionsWriteService.js';
+import { calculateRegistrationTotal, registrationPriceMatches } from './registrationTotalService.js';
+import { registrationConsumesVariantStockSql,registrationConsumesCapacitySql } from './variantStockPolicyService.js';
 import { RegistrationStatus, PaymentStatus, PaymentMethod } from '../types/index.js';
 import { hashPassword } from './authService.js';
 import { isValidCpfDigits } from '../utils/cpf.js';
@@ -58,82 +54,14 @@ export async function replaceRegistrationProductSelectionsForEdit(
   eventId: string,
   productSelections: ProductSelection[]
 ): Promise<void> {
-  const run = (text: string, params?: unknown[]) => executor.query(text, params);
-
-  for (const selection of productSelections) {
-    const variantIdToCheck = selection.variant_id;
-    if (variantIdToCheck) {
-      const remaining = await getVariantRemainingStock(variantIdToCheck, eventId, registrationId);
-      if (remaining !== null && remaining <= 0) {
-        throw new Error('Estoque desta variante chegou a zero; não é possível selecioná-la.');
-      }
-    }
-  }
-
-  await run(`DELETE FROM registration_product_selections WHERE registration_id = $1`, [registrationId]);
-
-  for (const selection of productSelections) {
-    if (selection.attribute_selections && Object.keys(selection.attribute_selections).length > 0) {
-      for (const [attributeName, attributeValue] of Object.entries(selection.attribute_selections)) {
-        await run(
-          `INSERT INTO registration_product_selections 
-           (registration_id, product_id, variant_id, attribute_name, attribute_value)
-           VALUES ($1, $2, $3, $4, $5)`,
-          [
-            registrationId,
-            selection.product_id,
-            selection.variant_id || null,
-            attributeName,
-            attributeValue,
-          ]
-        );
-      }
-    } else if (selection.variant_id) {
-      const variantResult = await run(`SELECT name, product_id FROM product_variants WHERE id = $1`, [
-        selection.variant_id,
-      ]);
-
-      if (variantResult.rows.length > 0) {
-        const variant = variantResult.rows[0] as { name: string; product_id: string };
-        let inserted = false;
-        const productResult = await run(`SELECT variant_attributes FROM kit_products WHERE id = $1`, [
-          selection.product_id,
-        ]);
-
-        if (productResult.rows.length > 0) {
-          const variantAttributes = productResult.rows[0].variant_attributes as string[] | null;
-
-          if (variantAttributes && variantAttributes.length > 0) {
-            const variantValues = variant.name.split(' - ').map((v: string) => v.trim());
-
-            for (let i = 0; i < variantAttributes.length && i < variantValues.length; i++) {
-              await run(
-                `INSERT INTO registration_product_selections 
-                 (registration_id, product_id, variant_id, attribute_name, attribute_value)
-                 VALUES ($1, $2, $3, $4, $5)`,
-                [
-                  registrationId,
-                  selection.product_id,
-                  selection.variant_id,
-                  variantAttributes[i],
-                  variantValues[i],
-                ]
-              );
-              inserted = true;
-            }
-          }
-        }
-        if (!inserted) {
-          await run(
-            `INSERT INTO registration_product_selections 
-             (registration_id, product_id, variant_id, attribute_name, attribute_value)
-             VALUES ($1, $2, $3, 'Variante', $4)`,
-            [registrationId, selection.product_id, selection.variant_id, variant.name || selection.variant_id]
-          );
-        }
-      }
-    }
-  }
+  await withTransactionContext(executor as PoolClient, async () => {
+    const row = await query('SELECT kit_id FROM registrations WHERE id = $1 FOR UPDATE', [registrationId]);
+    if (!row.rows.length) throw new Error('Inscrição não encontrada.');
+    const selections = await resolveRegistrationSelections(row.rows[0].kit_id, eventId, productSelections);
+    await reserveSelectionStock(selections, eventId, registrationId);
+    await query('DELETE FROM registration_product_selections WHERE registration_id = $1', [registrationId]);
+    await saveCanonicalSelections(registrationId, selections);
+  });
 }
 
 // Credit Card Data Types
@@ -167,6 +95,9 @@ export interface CreateRegistrationData {
   runner_id: string;
   registered_by: string;
   category_id: string;
+  category_batch_id?: string | null;
+  /** Política interna do checkout público; não é aceita diretamente do cliente. */
+  require_valid_coupon?: boolean;
   kit_id?: string;
   /** Modalidade escolhida na inscrição (deve ser da categoria) */
   modality_id?: string | null;
@@ -403,8 +334,28 @@ async function mapRegistrationRows(
     getRegistrationCustomFieldValuesMap(ids),
   ]);
   const registrationEditFee = settings.registration_edit_fee ?? 0;
+  const orderLinkedIds=resultRows.filter(row=>row.order_id).map(row=>row.id);
+  const orderSnapshots=new Map<string,any>();
+  const orderParticipantCounts=new Map<string,number>();
+  if(orderLinkedIds.length) {
+    const items=await query("SELECT i.registration_id,i.snapshot,to_jsonb(r)->'checkout_current_identity' AS current_identity,r.order_id FROM checkout_order_items i JOIN registrations r ON r.id=i.registration_id WHERE i.registration_id=ANY($1::uuid[])",[orderLinkedIds]);
+    for(const item of items.rows) orderSnapshots.set(item.registration_id,{...item.snapshot,identity:item.current_identity ?? item.snapshot.identity});
+    const orderIds=[...new Set(items.rows.map((item:any)=>item.order_id).filter(Boolean))];
+    if(orderIds.length) {
+      const counts=await query('SELECT order_id, COUNT(*)::int AS n FROM registrations WHERE order_id=ANY($1::uuid[]) GROUP BY order_id',[orderIds]);
+      for(const row of counts.rows) orderParticipantCounts.set(row.order_id,Number(row.n));
+    }
+  }
 
   return resultRows.map((row: any) => {
+    const snapshot=orderSnapshots.get(row.id);
+    if(snapshot) {
+      row.runner_name=snapshot.identity.fullName;
+      row.runner_cpf=snapshot.identity.cpf;
+      row.category_name=snapshot.labels.category;
+      row.modality_name=snapshot.labels.modality;
+      row.kit_name=snapshot.labels.kit;
+    }
     let finalStatus = row.display_status || row.status;
 
     if (filters?.runner_id && row.is_transferred && row.registered_by === filters.runner_id) {
@@ -436,6 +387,7 @@ async function mapRegistrationRows(
       amount_paid: amountPaid,
       registration_edit_fee: registrationEditFee,
       custom_field_values: customFieldValuesMap.get(row.id) ?? {},
+      order_participant_count: row.order_id ? (orderParticipantCounts.get(row.order_id) ?? null) : null,
     };
   });
 }
@@ -765,6 +717,27 @@ export const getRegistrationById = async (registrationId: string, viewerId?: str
   const { getSystemSettings } = await import('./systemSettingsService.js');
 
   const row = result.rows[0];
+  if (row.order_id) {
+    const snap = await query(
+      `SELECT i.snapshot, to_jsonb(r)->'checkout_current_identity' AS current_identity
+       FROM checkout_order_items i JOIN registrations r ON r.id=i.registration_id
+       WHERE i.registration_id=$1 LIMIT 1`,
+      [registrationId]
+    );
+    const item = snap.rows[0];
+    if (item?.snapshot) {
+      const identity = item.current_identity ?? item.snapshot.identity ?? {};
+      const labels = item.snapshot.labels ?? {};
+      if (identity.fullName) row.runner_name = identity.fullName;
+      if (identity.cpf) row.runner_cpf = identity.cpf;
+      else if (row.participant_cpf) row.runner_cpf = row.participant_cpf;
+      if (labels.category) row.category_name = labels.category;
+      if (labels.modality) row.modality_name = labels.modality;
+      if (labels.kit) row.kit_name = labels.kit;
+    } else if (row.participant_cpf && !row.runner_cpf) {
+      row.runner_cpf = row.participant_cpf;
+    }
+  }
   const [pendingDifferenceAmount, amountPaid, settings, customFieldValuesMap] = await Promise.all([
     getPendingDifferenceAmountForRegistration(registrationId),
     getTotalPaidForRegistration(registrationId),
@@ -800,373 +773,280 @@ export const getRegistrationById = async (registrationId: string, viewerId?: str
   };
 };
 
+function formatParticipantCpf(value?: string | null) {
+  const digits = String(value || '').replace(/\D/g, '');
+  if (digits.length !== 11) return null;
+  return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 9)}-${digits.slice(9, 11)}`;
+}
+
+/** Participantes do mesmo pedido para detalhe operacional (admin/organizador). */
+export const getCheckoutOrderParticipants = async (orderId: string) => {
+  const order = (await query('SELECT id, status, total_cents FROM checkout_orders WHERE id=$1', [orderId])).rows[0];
+  if (!order) return null;
+  const rows = await query(
+    `SELECT r.id, r.status, r.payment_status, r.total_amount, r.confirmation_code, i.position,
+            COALESCE(to_jsonb(r)->'checkout_current_identity'->>'fullName', i.snapshot->'identity'->>'fullName', p.full_name) AS runner_name,
+            COALESCE(to_jsonb(r)->'checkout_current_identity'->>'cpf', i.snapshot->'identity'->>'cpf', p.cpf) AS runner_cpf
+     FROM registrations r
+     JOIN checkout_order_items i ON i.registration_id = r.id
+     LEFT JOIN profiles p ON p.id = r.runner_id
+     WHERE r.order_id = $1
+     ORDER BY i.position, r.created_at`,
+    [orderId]
+  );
+  return {
+    order_id: order.id,
+    order_status: order.status as string,
+    order_total_cents: Number(order.total_cents),
+    participants: rows.rows.map((row: any) => ({
+      id: row.id,
+      status: row.status,
+      payment_status: row.payment_status,
+      total_amount: Number(row.total_amount),
+      confirmation_code: row.confirmation_code,
+      position: Number(row.position),
+      runner_name: row.runner_name || 'Participante',
+      cpf_masked: formatParticipantCpf(row.runner_cpf),
+    })),
+  };
+};
+
 // Create registration
 export const createRegistration = async (data: CreateRegistrationData) => {
-  // Validate category and runner eligibility
-  const { getCategoryById } = await import('./categoriesService.js');
-  const category = await getCategoryById(data.category_id);
-  
-  if (!category) {
-    throw new Error('Categoria não encontrada');
-  }
+  const registration = await withTransaction(async () => {
+    // Serializa admissões do evento (categoria, modalidade e duplicidade) antes de contar.
+    const eventLock = await query('SELECT id, organizer_id FROM events WHERE id = $1 FOR UPDATE', [data.event_id]);
+    if (!eventLock.rows.length) throw new Error('Evento não encontrado.');
+    const categoryLock = await query('SELECT id FROM categories WHERE id = $1 AND event_id = $2 FOR SHARE', [data.category_id, data.event_id]);
+    if (!categoryLock.rows.length) throw Object.assign(new Error('Categoria não pertence ao evento.'), { statusCode: 400 });
+    // Validate category and runner eligibility
+    const { getCategoryById } = await import('./categoriesService.js');
+    const category = await getCategoryById(data.category_id);
 
-  const isInviteSlot = data.payment_method === 'free_bonus';
-  // Convites (free_bonus) não exigem validação de perfil/idade/gênero do líder
-  if (!isInviteSlot) {
-    const runnerProfile = await query(
-      `SELECT id, birth_date, gender FROM profiles WHERE id = $1`,
-      [data.runner_id]
-    );
-
-    if (runnerProfile.rows.length === 0) {
-      throw new Error('Perfil do corredor não encontrado');
+    if (!category) {
+      throw new Error('Categoria não encontrada');
     }
 
-    const runner = runnerProfile.rows[0];
+    const isInviteSlot = data.payment_method === 'free_bonus';
+    // Convites (free_bonus) não exigem validação de perfil/idade/gênero do líder
+    if (!isInviteSlot) {
+      const runnerProfile = await query(
+        `SELECT id, birth_date, gender FROM profiles WHERE id = $1`,
+        [data.runner_id]
+      );
 
-    // Validate age (if category has min_age or max_age requirement)
-    const birthDate = new Date(runner.birth_date);
-    const today = new Date();
-    const age = today.getFullYear() - birthDate.getFullYear();
-    const monthDiff = today.getMonth() - birthDate.getMonth();
-    const dayDiff = today.getDate() - birthDate.getDate();
-    
-    const actualAge = monthDiff < 0 || (monthDiff === 0 && dayDiff < 0) ? age - 1 : age;
-    
-    // Validate min_age
-    if (category.min_age !== null && category.min_age > 0) {
-      if (actualAge < category.min_age) {
-        throw new Error(`Idade mínima para esta categoria é ${category.min_age} anos. Você tem ${actualAge} anos.`);
+      if (runnerProfile.rows.length === 0) {
+        throw new Error('Perfil do corredor não encontrado');
+      }
+
+      const runner = runnerProfile.rows[0];
+
+      // Validate age (if category has min_age or max_age requirement)
+      const birthDate = new Date(runner.birth_date);
+      const today = new Date();
+      const age = today.getFullYear() - birthDate.getFullYear();
+      const monthDiff = today.getMonth() - birthDate.getMonth();
+      const dayDiff = today.getDate() - birthDate.getDate();
+
+      const actualAge = monthDiff < 0 || (monthDiff === 0 && dayDiff < 0) ? age - 1 : age;
+
+      // Validate min_age
+      if (category.min_age !== null && category.min_age > 0) {
+        if (actualAge < category.min_age) {
+          throw new Error(`Idade mínima para esta categoria é ${category.min_age} anos. Você tem ${actualAge} anos.`);
+        }
+      }
+
+      // Validate max_age
+      if (category.max_age !== null && category.max_age > 0) {
+        if (actualAge > category.max_age) {
+          throw new Error(`Idade máxima para esta categoria é ${category.max_age} anos. Você tem ${actualAge} anos.`);
+        }
+      }
+
+      // Validate gender (if category has gender restriction)
+      if (category.gender !== 'ambos') {
+        const runnerGender = runner.gender?.toLowerCase();
+        const categoryGender = category.gender.toLowerCase();
+
+        // Map common gender values
+        const genderMap: { [key: string]: string } = {
+          'm': 'masculino',
+          'masculino': 'masculino',
+          'f': 'feminino',
+          'feminino': 'feminino',
+          'o': 'ambos',
+          'outro': 'ambos',
+        };
+
+        const normalizedRunnerGender = genderMap[runnerGender || ''] || 'ambos';
+
+        if (normalizedRunnerGender !== categoryGender && normalizedRunnerGender !== 'ambos') {
+          throw new Error(`Esta categoria é exclusiva para ${categoryGender === 'masculino' ? 'homens' : 'mulheres'}.`);
+        }
       }
     }
-    
-    // Validate max_age
-    if (category.max_age !== null && category.max_age > 0) {
-      if (actualAge > category.max_age) {
-        throw new Error(`Idade máxima para esta categoria é ${category.max_age} anos. Você tem ${actualAge} anos.`);
+
+    // Validate modality_id when provided: must be linked to category and belong to event
+    if (data.modality_id) {
+      const modCheck = await query(
+        `SELECT m.max_participants FROM modalities m
+         INNER JOIN category_modalities cm ON cm.modality_id = m.id AND cm.category_id = $2
+         WHERE m.id = $1 AND m.event_id = $3 FOR SHARE OF m, cm`,
+        [data.modality_id, data.category_id, data.event_id]
+      );
+      if (modCheck.rows.length === 0) {
+        throw new Error('Modalidade inválida ou não pertence à categoria selecionada.');
+      }
+      const limit = Number(modCheck.rows[0].max_participants);
+      if (!isInviteSlot && limit > 0) {
+        const used = await query(`SELECT COUNT(*)::int AS count FROM registrations r
+          WHERE r.modality_id = $1 AND COALESCE(r.payment_method::text, '') <> 'free_bonus'
+          AND ${registrationConsumesCapacitySql('r')}`, [data.modality_id]);
+        if (used.rows[0].count >= limit) throw Object.assign(new Error('Modalidade sem vagas disponíveis.'), { statusCode: 409 });
       }
     }
 
-    // Validate gender (if category has gender restriction)
-    if (category.gender !== 'ambos') {
-      const runnerGender = runner.gender?.toLowerCase();
-      const categoryGender = category.gender.toLowerCase();
-      
-      // Map common gender values
-      const genderMap: { [key: string]: string } = {
-        'm': 'masculino',
-        'masculino': 'masculino',
-        'f': 'feminino',
-        'feminino': 'feminino',
-        'o': 'ambos',
-        'outro': 'ambos',
-      };
-      
-      const normalizedRunnerGender = genderMap[runnerGender || ''] || 'ambos';
-      
-      if (normalizedRunnerGender !== categoryGender && normalizedRunnerGender !== 'ambos') {
-        throw new Error(`Esta categoria é exclusiva para ${categoryGender === 'masculino' ? 'homens' : 'mulheres'}.`);
+    // Verificar se o corredor já tem uma inscrição ativa neste evento
+    // Exceção: convites (free_bonus) podem ser criados mesmo se o líder já tiver inscrição (são vagas para ele distribuir)
+    if (!isInviteSlot) {
+      const existingRegistration = await query(
+        `SELECT r.id, r.status, r.payment_status FROM registrations r
+         WHERE r.event_id = $1 AND r.runner_id = $2 AND r.status != 'cancelled'
+         AND (COALESCE(r.payment_method::text, '') <> 'free_bonus' OR EXISTS (
+           SELECT 1 FROM leader_invitations li WHERE li.bonus_registration_id = r.id
+             AND li.runner_id = r.runner_id AND li.status IN ('sent', 'used')
+         ))
+         AND NOT (r.status = 'transferred' AND r.transferred_to_registration_id IS NOT NULL)`,
+        [data.event_id, data.runner_id]
+      );
+
+      if (existingRegistration.rows.length > 0) {
+        throw Object.assign(new Error('Você já possui uma inscrição ativa neste evento. Cada corredor pode se inscrever apenas uma vez por evento.'), { statusCode: 409 });
       }
     }
-  }
 
-  // Validate modality_id when provided: must be linked to category and belong to event
-  if (data.modality_id) {
-    const modCheck = await query(
-      `SELECT 1 FROM modalities m
-       INNER JOIN category_modalities cm ON cm.modality_id = m.id AND cm.category_id = $2
-       WHERE m.id = $1 AND m.event_id = $3`,
-      [data.modality_id, data.category_id, data.event_id]
-    );
-    if (modCheck.rows.length === 0) {
-      throw new Error('Modalidade inválida ou não pertence à categoria selecionada.');
+    // Check max_participants if set (convites free_bonus não contam no limite)
+    if (!isInviteSlot && category.max_participants !== null && category.max_participants > 0) {
+      const currentRegistrations = await query(
+        `SELECT COUNT(*) as count FROM registrations r
+         WHERE r.category_id = $1 AND COALESCE(r.payment_method::text, '') <> 'free_bonus'
+         AND ${registrationConsumesCapacitySql('r')}`,
+        [data.category_id]
+      );
+
+      const count = parseInt(currentRegistrations.rows[0].count);
+      if (count >= category.max_participants) {
+        throw Object.assign(new Error(`Esta categoria atingiu o limite máximo de ${category.max_participants} participantes.`), { statusCode: 409 });
+      }
     }
-  }
 
-  // Verificar se o corredor já tem uma inscrição ativa neste evento
-  // Exceção: convites (free_bonus) podem ser criados mesmo se o líder já tiver inscrição (são vagas para ele distribuir)
-  if (!isInviteSlot) {
-    const existingRegistration = await query(
-      `SELECT id, status, payment_status FROM registrations 
-       WHERE event_id = $1 AND runner_id = $2 AND status != 'cancelled'
-       AND NOT (status = 'transferred' AND transferred_to_registration_id IS NOT NULL)`,
-      [data.event_id, data.runner_id]
-    );
+    const selections = await resolveRegistrationSelections(data.kit_id, data.event_id, data.product_selections);
+    await reserveSelectionStock(selections, data.event_id);
+    const confirmationCode = `REG-${randomBytes(16).toString('hex').toUpperCase()}`;
 
-    if (existingRegistration.rows.length > 0) {
-      throw new Error('Você já possui uma inscrição ativa neste evento. Cada corredor pode se inscrever apenas uma vez por evento.');
+    // Bloqueia o cupom antes da revalidação de preço e do incremento, inclusive entre eventos.
+    if (data.coupon_code) {
+      await query('SELECT id FROM coupons WHERE code = $1 AND organizer_id = $2 FOR UPDATE',
+        [data.coupon_code.trim().toUpperCase(), eventLock.rows[0].organizer_id]);
     }
-  }
-
-  // Check max_participants if set (convites free_bonus não contam no limite)
-  if (!isInviteSlot && category.max_participants !== null && category.max_participants > 0) {
-    const currentRegistrations = await query(
-      `SELECT COUNT(*) as count FROM registrations 
-       WHERE category_id = $1 AND status != 'cancelled'
-       AND NOT (status = 'transferred' AND transferred_to_registration_id IS NOT NULL)`,
-      [data.category_id]
-    );
-    
-    const count = parseInt(currentRegistrations.rows[0].count);
-    if (count >= category.max_participants) {
-      throw new Error(`Esta categoria atingiu o limite máximo de ${category.max_participants} participantes.`);
+    if (data.require_valid_coupon) {
+      const pricing = await calculateRegistrationTotal({
+        eventId: data.event_id, categoryId: data.category_id, kitId: data.kit_id ?? null,
+        modalityId: data.modality_id ?? null, batchId: data.category_batch_id,
+        runnerId: data.runner_id, couponCode: data.coupon_code, publicCheckout: true,
+      });
+      if (!registrationPriceMatches(data.total_amount, pricing.total)) {
+        throw Object.assign(new Error('O valor da inscrição foi atualizado. Revise o resumo antes de confirmar.'), {
+          statusCode: 409, code: 'REGISTRATION_PRICE_CHANGED', pricing,
+        });
+      }
+      data.total_amount = pricing.total;
+      data.platform_fee_amount = pricing.platformFee;
     }
-  }
-
-  /** Modo estrito (STRICT_KIT_SELECTIONS): exige payload completo antes de criar a linha da inscrição. */
-  await validateCreateRegistrationKitSelectionsStrict(data);
-
-  // Generate confirmation code
-  const confirmationCode = `REG-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
-
-  // Validate and apply coupon if provided
-  if (data.coupon_code) {
-    try {
-      const { getEventById } = await import('./eventsService.js');
+    if (data.coupon_code) {
       const { validateCoupon, incrementCouponUsage } = await import('./couponsService.js');
-      
-      const event = await getEventById(data.event_id);
-      if (event) {
-        const validation = await validateCoupon(
-          data.coupon_code, 
-          event.organizer_id, 
-          data.event_id
-        );
-        
-        if (!validation.valid || !validation.coupon) {
-          throw new Error(validation.error || 'Cupom inválido');
-        }
-        
-        // Increment coupon usage
-        await incrementCouponUsage(validation.coupon.id);
-        console.log(`✅ Cupom ${data.coupon_code} aplicado e uso incrementado`);
+      const validation = await validateCoupon(data.coupon_code, eventLock.rows[0].organizer_id, data.event_id);
+      if (!validation.valid || !validation.coupon) {
+        throw Object.assign(new Error(validation.error || 'Cupom inválido'), { statusCode: 400 });
       }
-    } catch (error: any) {
-      // Log error but don't fail registration if coupon validation fails
-      console.error('⚠️ Erro ao validar/aplicar cupom (não bloqueia inscrição):', error.message);
-      // Remove coupon_code if validation failed
-      data.coupon_code = undefined;
+      await incrementCouponUsage(validation.coupon.id);
     }
-  }
 
-  console.log('📝 Criando inscrição com dados:', {
-    event_id: data.event_id,
-    runner_id: data.runner_id,
-    coupon_code: data.coupon_code,
-    total_amount: data.total_amount,
+    console.log('📝 Criando inscrição com dados:', {
+      event_id: data.event_id,
+      runner_id: data.runner_id,
+      coupon_code: data.coupon_code,
+      total_amount: data.total_amount,
+    });
+
+    // Set payment_status and status
+    // If status/payment_status are explicitly provided (e.g., when organizer creates registration), use them
+    // Otherwise, use default logic: confirmed for free_bonus, pending otherwise
+    const paymentStatus = data.payment_status || (data.payment_method === 'free_bonus' ? 'convidado' : 'pending');
+    const registrationStatus = data.status || (data.payment_method === 'free_bonus' ? 'confirmed' : 'pending');
+
+    const platformFeeAmount = data.platform_fee_amount != null ? Number(data.platform_fee_amount) : 0;
+
+    const result = await query(
+      `INSERT INTO registrations (
+        event_id, runner_id, registered_by, category_id, kit_id, modality_id,
+        payment_method, total_amount, platform_fee_amount, registration_edit_fee_amount,
+        confirmation_code, status, payment_status, coupon_code, category_batch_id
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 0, $10, $11, $12, $13, $14)
+      RETURNING *`,
+      [
+        data.event_id,
+        data.runner_id,
+        data.registered_by,
+        data.category_id,
+        data.kit_id || null,
+        data.modality_id ?? null,
+        data.payment_method || null,
+        data.total_amount,
+        platformFeeAmount,
+        confirmationCode,
+        registrationStatus,
+        paymentStatus,
+        data.coupon_code || null,
+        data.category_batch_id ?? null,
+      ]
+    );
+
+    console.log('✅ Inscrição criada:', {
+      id: result.rows[0].id,
+      coupon_code: result.rows[0].coupon_code,
+    });
+
+    const registration = result.rows[0];
+
+    await saveCanonicalSelections(registration.id, selections);
+
+    // Etapa 3: persist custom field values (campos personalizados da categoria)
+    if (data.custom_field_values && Object.keys(data.custom_field_values).length > 0) {
+      const { getByCategoryId } = await import('./categoryCustomFieldsService.js');
+      const categoryFields = await getByCategoryId(data.category_id);
+      const validFieldIds = new Set(categoryFields.map((f) => f.id));
+      for (const [fieldId, value] of Object.entries(data.custom_field_values)) {
+        if (!validFieldIds.has(fieldId)) {
+          throw new Error(`Campo personalizado inválido ou não pertence à categoria: ${fieldId}`);
+        }
+        const valueStr = value != null ? String(value).trim() : '';
+        await query(
+          `INSERT INTO registration_custom_field_values (registration_id, category_custom_field_id, value)
+           VALUES ($1, $2, $3)
+           ON CONFLICT (registration_id, category_custom_field_id) DO UPDATE SET value = $3, updated_at = NOW()`,
+          [registration.id, fieldId, valueStr || null]
+        );
+      }
+      console.log(`✅ Campos personalizados salvos para inscrição ${registration.id}`);
+    }
+
+    return registration;
   });
 
-  // Set payment_status and status
-  // If status/payment_status are explicitly provided (e.g., when organizer creates registration), use them
-  // Otherwise, use default logic: confirmed for free_bonus, pending otherwise
-  const paymentStatus = data.payment_status || (data.payment_method === 'free_bonus' ? 'convidado' : 'pending');
-  const registrationStatus = data.status || (data.payment_method === 'free_bonus' ? 'confirmed' : 'pending');
-
-  const platformFeeAmount = data.platform_fee_amount != null ? Number(data.platform_fee_amount) : 0;
-
-  const result = await query(
-    `INSERT INTO registrations (
-      event_id, runner_id, registered_by, category_id, kit_id, modality_id,
-      payment_method, total_amount, platform_fee_amount, registration_edit_fee_amount,
-      confirmation_code, status, payment_status, coupon_code
-    )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 0, $10, $11, $12, $13)
-    RETURNING *`,
-    [
-      data.event_id,
-      data.runner_id,
-      data.registered_by,
-      data.category_id,
-      data.kit_id || null,
-      data.modality_id ?? null,
-      data.payment_method || null,
-      data.total_amount,
-      platformFeeAmount,
-      confirmationCode,
-      registrationStatus,
-      paymentStatus,
-      data.coupon_code || null,
-    ]
-  );
-
-  console.log('✅ Inscrição criada:', {
-    id: result.rows[0].id,
-    coupon_code: result.rows[0].coupon_code,
-  });
-
-  const registration = result.rows[0];
-
-  // Save product and variant selections if provided
-  if (data.product_selections && data.product_selections.length > 0) {
-    try {
-      // Validate stock (estoque restante considera inscrições anteriores e atuais)
-      for (const selection of data.product_selections) {
-        const variantIdToCheck = selection.variant_id;
-        if (variantIdToCheck) {
-          const remaining = await getVariantRemainingStock(variantIdToCheck, data.event_id);
-          if (remaining !== null && remaining <= 0) {
-            throw new Error('Estoque desta variante chegou a zero; não é possível selecioná-la.');
-          }
-        }
-      }
-
-      for (const selection of data.product_selections) {
-        // Priority 1: If attribute_selections is provided directly, use it (most reliable)
-        if (selection.attribute_selections && Object.keys(selection.attribute_selections).length > 0) {
-          // If attribute_selections is provided directly (for manual registration or when sent from frontend)
-          for (const [attributeName, attributeValue] of Object.entries(selection.attribute_selections)) {
-            await query(
-              `INSERT INTO registration_product_selections 
-               (registration_id, product_id, variant_id, attribute_name, attribute_value)
-               VALUES ($1, $2, $3, $4, $5)`,
-              [
-                registration.id,
-                selection.product_id,
-                selection.variant_id || null,
-                attributeName,
-                attributeValue,
-              ]
-            );
-          }
-        } else if (selection.variant_id) {
-          // Priority 2: If variant_id is provided but no attribute_selections, get variant details to extract attributes
-          const variantResult = await query(
-            `SELECT name, product_id FROM product_variants WHERE id = $1`,
-            [selection.variant_id]
-          );
-          
-          if (variantResult.rows.length > 0) {
-            const variant = variantResult.rows[0];
-            let inserted = false;
-            // Get product variant_attributes to parse variant name
-            const productResult = await query(
-              `SELECT variant_attributes FROM kit_products WHERE id = $1`,
-              [selection.product_id]
-            );
-            
-            if (productResult.rows.length > 0) {
-              const variantAttributes = productResult.rows[0].variant_attributes as string[] | null;
-              
-              if (variantAttributes && variantAttributes.length > 0) {
-                // Parse variant name (format: "Value1 - Value2 - ...")
-                const variantValues = variant.name.split(' - ').map((v: string) => v.trim());
-                
-                // Save each attribute selection
-                for (let i = 0; i < variantAttributes.length && i < variantValues.length; i++) {
-                  await query(
-                    `INSERT INTO registration_product_selections 
-                     (registration_id, product_id, variant_id, attribute_name, attribute_value)
-                     VALUES ($1, $2, $3, $4, $5)`,
-                    [
-                      registration.id,
-                      selection.product_id,
-                      selection.variant_id,
-                      variantAttributes[i],
-                      variantValues[i],
-                    ]
-                  );
-                  inserted = true;
-                }
-              }
-            }
-            // Fallback: sempre persistir variant_id para contagem de estoque (attribute_name/attribute_value NOT NULL)
-            if (!inserted) {
-              await query(
-                `INSERT INTO registration_product_selections 
-                 (registration_id, product_id, variant_id, attribute_name, attribute_value)
-                 VALUES ($1, $2, $3, 'Variante', $4)`,
-                [registration.id, selection.product_id, selection.variant_id, variant.name || selection.variant_id]
-              );
-            }
-          }
-        }
-      }
-      console.log(`✅ Seleções de produtos/variantes salvas para inscrição ${registration.id}`);
-    } catch (error: any) {
-      if (isStrictKitSelectionsEnabled()) {
-        const msg = error?.message || String(error);
-        console.error(
-          '⚠️ Erro ao salvar seleções de produtos/variantes (modo estrito):',
-          msg
-        );
-        const isInviteSlot = data.payment_method === 'free_bonus';
-        if (!isInviteSlot) {
-          try {
-            await query('DELETE FROM registrations WHERE id = $1', [registration.id]);
-          } catch (delErr: any) {
-            console.error(
-              '❌ Falha ao remover inscrição após erro nas seleções:',
-              delErr?.message || delErr
-            );
-          }
-        } else {
-          console.error(
-            '❌ Modo estrito: falha ao persistir seleções em inscrição convite/free_bonus — possível inconsistência:',
-            registration.id
-          );
-        }
-        throw new Error(
-          msg.startsWith('Estoque')
-            ? msg
-            : 'Não foi possível registrar as escolhas do kit. Tente novamente ou escolha outra variante.'
-        );
-      }
-      console.error(
-        '⚠️ Erro ao salvar seleções de produtos/variantes (não bloqueia inscrição):',
-        error.message
-      );
-    }
-  }
-
-  if (
-    isStrictKitSelectionsEnabled() &&
-    data.kit_id &&
-    (await kitRequiresPersistedProductSelections(data.kit_id))
-  ) {
-    const persistedCount = await countRegistrationProductSelectionRows(registration.id);
-    if (persistedCount === 0) {
-      const isInviteSlot = data.payment_method === 'free_bonus';
-      if (!isInviteSlot) {
-        try {
-          await query('DELETE FROM registrations WHERE id = $1', [registration.id]);
-        } catch (delErr: any) {
-          console.error(
-            '❌ Falha ao remover inscrição sem seleções persistidas:',
-            delErr?.message || delErr
-          );
-        }
-      } else {
-        console.error(
-          '❌ Modo estrito: inscrição convite sem linhas em registration_product_selections:',
-          registration.id
-        );
-      }
-      throw new Error(
-        'As escolhas do kit não foram gravadas corretamente. Verifique as variantes e tente novamente.'
-      );
-    }
-  }
-
-  // Etapa 3: persist custom field values (campos personalizados da categoria)
-  if (data.custom_field_values && Object.keys(data.custom_field_values).length > 0) {
-    const { getByCategoryId } = await import('./categoryCustomFieldsService.js');
-    const categoryFields = await getByCategoryId(data.category_id);
-    const validFieldIds = new Set(categoryFields.map((f) => f.id));
-    for (const [fieldId, value] of Object.entries(data.custom_field_values)) {
-      if (!validFieldIds.has(fieldId)) {
-        throw new Error(`Campo personalizado inválido ou não pertence à categoria: ${fieldId}`);
-      }
-      const valueStr = value != null ? String(value).trim() : '';
-      await query(
-        `INSERT INTO registration_custom_field_values (registration_id, category_custom_field_id, value)
-         VALUES ($1, $2, $3)
-         ON CONFLICT (registration_id, category_custom_field_id) DO UPDATE SET value = $3, updated_at = NOW()`,
-        [registration.id, fieldId, valueStr || null]
-      );
-    }
-    console.log(`✅ Campos personalizados salvos para inscrição ${registration.id}`);
-  }
-
+  // Efeitos externos acontecem somente depois do COMMIT.
   // Check if user has a referral OR if coupon belongs to a leader, and create commission if applicable
   // Only create commission if payment is already paid (free registrations or instant payments)
   // For pending payments, commission will be created when payment is confirmed
@@ -1450,8 +1330,8 @@ export const createRunnerByOrganizer = async (
     const userId = userResult.rows[0].id;
 
     await client.query(
-      `INSERT INTO profiles (id, full_name, cpf, birth_date, city, gender, team, phone)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      `INSERT INTO profiles (id, full_name, cpf, birth_date, city, gender, team, phone, is_public)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, TRUE)`,
       [
         userId,
         fullName,
@@ -1700,195 +1580,21 @@ export const completeRegistrationAttributes = async (
     }
   }
 
-  // Get registration and validate ownership
-  const registration = await getRegistrationById(registrationId);
-  
-  if (!registration) {
-    throw new Error('Registration not found');
-  }
-
-  // Check if user is owner
-  if (registration.runner_id !== userId && registration.registered_by !== userId) {
-    throw new Error('You do not have permission to update this registration');
-  }
-
-  // Check if registration is active (not cancelled)
-  if (registration.status === 'cancelled') {
-    throw new Error('Cannot update attributes for cancelled registration');
-  }
-
-  // Validate that kit exists
-  if (!registration.kit_id) {
-    throw new Error('Registration does not have a kit');
-  }
-
-  // Get kit products to validate product_ids
-  const kitProducts = await query(
-    `SELECT id, name, variant_attributes, type
-    FROM kit_products
-    WHERE kit_id = $1`,
-    [registration.kit_id]
-  );
-
-  const validProductIds = new Set(kitProducts.rows.map((p) => p.id));
-  const productMap = new Map(kitProducts.rows.map((p) => [p.id, p]));
-
-  // Validate all products belong to the kit
-  for (const selection of productSelections) {
-    if (!validProductIds.has(selection.product_id)) {
-      throw new Error(`Product ${selection.product_id} does not belong to the kit of this registration`);
+  return withTransaction(async () => {
+    const result = await query('SELECT * FROM registrations WHERE id = $1 FOR UPDATE', [registrationId]);
+    const registration = result.rows[0];
+    if (!registration) throw new Error('Inscrição não encontrada.');
+    if (registration.runner_id !== userId && registration.registered_by !== userId) {
+      throw new Error('Você não tem permissão para alterar esta inscrição.');
     }
-
-    const product = productMap.get(selection.product_id);
-    if (!product) continue;
-
-    // If product has variant_attributes, validate all are provided
-    if (product.variant_attributes && Array.isArray(product.variant_attributes) && product.variant_attributes.length > 0) {
-      const requiredAttributes = product.variant_attributes as string[];
-      const providedAttributes = Object.keys(selection.attribute_selections || {});
-
-      // Check if all required attributes are provided
-      const missingAttributes = requiredAttributes.filter(
-        (attr) => !providedAttributes.includes(attr)
-      );
-
-      if (missingAttributes.length > 0) {
-        throw new Error(
-          `Missing required attributes for product ${product.name}: ${missingAttributes.join(', ')}`
-        );
-      }
-
-      // Validate attribute values are valid (exist in available variants)
-      const availableVariants = await query(
-        `SELECT id, name FROM product_variants WHERE product_id = $1`,
-        [selection.product_id]
-      );
-
-      // Get all valid attribute values from variants
-      const validAttributeValues = new Map<string, Set<string>>();
-      availableVariants.rows.forEach((variant) => {
-        const variantValues = variant.name.split(' - ').map((v: string) => v.trim());
-        requiredAttributes.forEach((attrName, index) => {
-          if (index < variantValues.length) {
-            if (!validAttributeValues.has(attrName)) {
-              validAttributeValues.set(attrName, new Set());
-            }
-            validAttributeValues.get(attrName)!.add(variantValues[index]);
-          }
-        });
-      });
-
-      // Validate each provided attribute value
-      for (const [attrName, attrValue] of Object.entries(selection.attribute_selections || {})) {
-        if (!requiredAttributes.includes(attrName)) {
-          throw new Error(`Attribute "${attrName}" is not required for product ${product.name}`);
-        }
-
-        const validValues = validAttributeValues.get(attrName);
-        if (validValues && !validValues.has(attrValue)) {
-          throw new Error(
-            `Invalid value "${attrValue}" for attribute "${attrName}" in product ${product.name}. Valid values: ${Array.from(validValues).join(', ')}`
-          );
-        }
-      }
-
-      // Validate variant_id if provided and check remaining stock (inclui inscrições anteriores)
-      if (selection.variant_id) {
-        const variantResult = await query(
-          `SELECT name, product_id FROM product_variants WHERE id = $1 AND product_id = $2`,
-          [selection.variant_id, selection.product_id]
-        );
-
-        if (variantResult.rows.length === 0) {
-          throw new Error(`Variant ${selection.variant_id} does not belong to product ${selection.product_id}`);
-        }
-        const remaining = await getVariantRemainingStock(
-          selection.variant_id,
-          registration.event_id,
-          registrationId
-        );
-        if (remaining !== null && remaining <= 0) {
-          throw new Error('Estoque desta variante chegou a zero; não é possível selecioná-la.');
-        }
-      }
-    }
-  }
-
-  // Delete existing selections for these products (to allow updates)
-  for (const selection of productSelections) {
-    await query(
-      `DELETE FROM registration_product_selections
-       WHERE registration_id = $1 AND product_id = $2`,
-      [registrationId, selection.product_id]
-    );
-  }
-
-  // Resolver variant_id quando o frontend envia só attribute_selections (ex.: modal de atributos pendentes),
-  // para que o INSERT use variant_id e o estoque seja contabilizado igual à inscrição normal.
-  const productVariantAttrs = new Map<string, string[]>(
-    kitProducts.rows
-      .filter((p: any) => p.variant_attributes && Array.isArray(p.variant_attributes))
-      .map((p: any) => [p.id, p.variant_attributes])
-  );
-
-  for (const selection of productSelections) {
-    if (selection.attribute_selections && Object.keys(selection.attribute_selections).length > 0) {
-      let variantIdToUse = selection.variant_id;
-      if (!variantIdToUse) {
-        const attrOrder = productVariantAttrs.get(selection.product_id);
-        if (attrOrder && attrOrder.length > 0) {
-          const variantsResult = await query(
-            `SELECT id, name FROM product_variants WHERE product_id = $1`,
-            [selection.product_id]
-          );
-          for (const row of variantsResult.rows) {
-            const variantValues = (row.name as string).split(' - ').map((v: string) => v.trim());
-            const matches = attrOrder.every(
-              (attrName, index) => (selection.attribute_selections![attrName] ?? '').trim() === (variantValues[index] ?? '').trim()
-            );
-            if (matches) {
-              variantIdToUse = row.id;
-              break;
-            }
-          }
-        }
-      }
-
-      // Validar estoque ao completar atributos (mesmo quando variant_id veio resolvido dos attribute_selections)
-      if (variantIdToUse) {
-        const remaining = await getVariantRemainingStock(
-          variantIdToUse,
-          registration.event_id,
-          registrationId
-        );
-        if (remaining !== null && remaining <= 0) {
-          throw new Error('Estoque desta variante chegou a zero; não é possível selecioná-la. Escolha outra opção.');
-        }
-      }
-
-      for (const [attributeName, attributeValue] of Object.entries(selection.attribute_selections)) {
-        await query(
-          `INSERT INTO registration_product_selections 
-           (registration_id, product_id, variant_id, attribute_name, attribute_value)
-           VALUES ($1, $2, $3, $4, $5)`,
-          [
-            registrationId,
-            selection.product_id,
-            variantIdToUse || null,
-            attributeName,
-            attributeValue,
-          ]
-        );
-      }
-    }
-  }
-
-  console.log(`✅ Seleções de atributos completadas para inscrição ${registrationId}`);
-
-  return {
-    success: true,
-    message: 'Attribute selections saved successfully',
-  };
+    if (registration.status === 'cancelled') throw new Error('Inscrição cancelada.');
+    const selections = await resolveRegistrationSelections(registration.kit_id, registration.event_id, productSelections, false);
+    await reserveSelectionStock(selections, registration.event_id, registrationId);
+    await query('DELETE FROM registration_product_selections WHERE registration_id = $1 AND product_id = ANY($2::uuid[])',
+      [registrationId, productSelections.map(s => s.product_id)]);
+    await saveCanonicalSelections(registrationId, selections);
+    return { success: true, message: 'Attribute selections saved successfully' };
+  });
 };
 
 /**
@@ -1967,188 +1673,109 @@ export const completeInvitationRegistration = async (
     custom_field_values?: Record<string, string>;
   }
 ) => {
-  const registration = await getRegistrationById(registrationId);
-  if (!registration) {
-    throw new Error('Inscrição não encontrada.');
-  }
-  if (registration.runner_id !== userId) {
-    throw new Error('Você não tem permissão para completar esta inscrição.');
-  }
-  if (registration.payment_status !== 'convidado') {
-    throw new Error('Esta inscrição não é um convite ou já foi completada.');
-  }
-  if (registration.status === 'cancelled') {
-    throw new Error('Não é possível completar uma inscrição cancelada.');
-  }
-
-  const eventId = registration.event_id;
-  const { category_id, modality_id, kit_id, product_selections, custom_field_values } = data;
-
-  const catCheck = await query(
-    'SELECT id FROM categories WHERE id = $1 AND event_id = $2',
-    [category_id, eventId]
-  );
-  if (catCheck.rows.length === 0) {
-    throw new Error('Categoria inválida ou não pertence a este evento.');
-  }
-
-  if (modality_id) {
-    const modCheck = await query(
-      `SELECT 1 FROM modalities m
-       WHERE m.id = $1 AND m.event_id = $2
-       AND EXISTS (SELECT 1 FROM category_modalities cm WHERE cm.modality_id = m.id AND cm.category_id = $3)`,
-      [modality_id, eventId, category_id]
-    );
-    if (modCheck.rows.length === 0) {
-      throw new Error('Modalidade inválida ou não está vinculada à categoria selecionada.');
+  await withTransaction(async () => {
+    await query('SELECT id FROM registrations WHERE id = $1 FOR UPDATE', [registrationId]);
+    const registration = await getRegistrationById(registrationId);
+    if (!registration) {
+      throw new Error('Inscrição não encontrada.');
     }
-  }
-
-  if (kit_id) {
-    const { validateKitVisibleForPublicRegistration } = await import('./eventKitsService.js');
-    await validateKitVisibleForPublicRegistration(kit_id, eventId);
-    // Etapa 5: kit com produto variável exige seleção de variante
-    const kitProductsRows = await query(
-      'SELECT id, name, type FROM kit_products WHERE kit_id = $1',
-      [kit_id]
-    );
-    const variableProducts = (kitProductsRows.rows as { id: string; name: string; type: string }[]).filter(
-      (p) => p.type === 'variable'
-    );
-    if (variableProducts.length > 0) {
-      const hasSelections = product_selections && product_selections.length > 0;
-      if (!hasSelections) {
-        throw new Error(
-          'O kit selecionado possui produto(s) com variação (ex.: tamanho). Selecione a variante para cada um.'
-        );
-      }
-      const selectedProductIds = new Set((product_selections || []).map((s) => s.product_id));
-      const missing = variableProducts.filter((p) => !selectedProductIds.has(p.id));
-      if (missing.length > 0) {
-        throw new Error(`Selecione a variante para: ${missing.map((p) => p.name).join(', ')}.`);
-      }
-      for (const sel of product_selections || []) {
-        const prod = variableProducts.find((p) => p.id === sel.product_id);
-        if (prod && !sel.variant_id && (!sel.attribute_selections || Object.keys(sel.attribute_selections).length === 0)) {
-          throw new Error(`Informe a variante (tamanho) para o produto "${prod.name}".`);
-        }
-      }
+    if (registration.runner_id !== userId) {
+      throw new Error('Você não tem permissão para completar esta inscrição.');
     }
-  }
-
-  await query(
-    `UPDATE registrations 
-     SET category_id = $1, modality_id = $2, kit_id = $3, updated_at = NOW()
-     WHERE id = $4`,
-    [category_id, modality_id ?? null, kit_id ?? null, registrationId]
-  );
-
-  if (product_selections && product_selections.length > 0) {
-    if (!kit_id) {
-      throw new Error('É necessário informar o kit para definir seleções de produtos/variantes.');
+    if (registration.payment_status !== 'convidado') {
+      throw new Error('Esta inscrição não é um convite ou já foi completada.');
     }
-    const kitProducts = await query(
-      'SELECT id FROM kit_products WHERE kit_id = $1',
-      [kit_id]
-    );
-    const allowedProductIds = new Set((kitProducts.rows as { id: string }[]).map((r) => r.id));
-    for (const sel of product_selections) {
-      if (!allowedProductIds.has(sel.product_id)) {
-        throw new Error('Produto da seleção não pertence ao kit informado.');
-      }
-      if (sel.variant_id) {
-        const remaining = await getVariantRemainingStock(sel.variant_id, eventId, registrationId);
-        if (remaining !== null && remaining <= 0) {
-          throw new Error('Estoque desta variante chegou a zero; não é possível selecioná-la.');
-        }
-      }
+    if (registration.status === 'cancelled') {
+      throw new Error('Não é possível completar uma inscrição cancelada.');
     }
-    await query(
-      'DELETE FROM registration_product_selections WHERE registration_id = $1',
-      [registrationId]
-    );
-    for (const selection of product_selections) {
-      if (selection.attribute_selections && Object.keys(selection.attribute_selections).length > 0) {
-        for (const [attributeName, attributeValue] of Object.entries(selection.attribute_selections)) {
-          await query(
-            `INSERT INTO registration_product_selections 
-             (registration_id, product_id, variant_id, attribute_name, attribute_value)
-             VALUES ($1, $2, $3, $4, $5)`,
-            [
-              registrationId,
-              selection.product_id,
-              selection.variant_id || null,
-              attributeName,
-              attributeValue,
-            ]
-          );
-        }
-      } else if (selection.variant_id) {
-        const variantResult = await query(
-          'SELECT name, product_id FROM product_variants WHERE id = $1',
-          [selection.variant_id]
-        );
-        if (variantResult.rows.length > 0) {
-          const variant = variantResult.rows[0] as { name: string; product_id: string };
-          let inserted = false;
-          const productResult = await query(
-            'SELECT variant_attributes FROM kit_products WHERE id = $1',
-            [selection.product_id]
-          );
-          if (productResult.rows.length > 0) {
-            const variantAttributes = (productResult.rows[0] as { variant_attributes: string[] | null }).variant_attributes;
-            if (variantAttributes && variantAttributes.length > 0) {
-              const variantValues = variant.name.split(' - ').map((v: string) => v.trim());
-              for (let i = 0; i < variantAttributes.length && i < variantValues.length; i++) {
-                await query(
-                  `INSERT INTO registration_product_selections 
-                   (registration_id, product_id, variant_id, attribute_name, attribute_value)
-                   VALUES ($1, $2, $3, $4, $5)`,
-                  [
-                    registrationId,
-                    selection.product_id,
-                    selection.variant_id,
-                    variantAttributes[i],
-                    variantValues[i],
-                  ]
-                );
-                inserted = true;
-              }
-            }
-          }
-          // Fallback: sempre persistir variant_id para contagem de estoque
-          if (!inserted) {
-            await query(
-              `INSERT INTO registration_product_selections 
-               (registration_id, product_id, variant_id, attribute_name, attribute_value)
-               VALUES ($1, $2, $3, 'Variante', $4)`,
-              [registrationId, selection.product_id, selection.variant_id, variant.name || selection.variant_id]
-            );
-          }
-        }
-      }
-    }
-  }
 
-  if (custom_field_values !== undefined && Object.keys(custom_field_values).length > 0) {
-    const { getByCategoryId } = await import('./categoryCustomFieldsService.js');
-    const categoryFields = await getByCategoryId(category_id);
-    const validFieldIds = new Set(categoryFields.map((f) => f.id));
-    await query(
-      'DELETE FROM registration_custom_field_values WHERE registration_id = $1',
-      [registrationId]
+    const eventId = registration.event_id;
+    const { category_id, modality_id, kit_id, product_selections, custom_field_values } = data;
+
+    const catCheck = await query(
+      'SELECT id FROM categories WHERE id = $1 AND event_id = $2',
+      [category_id, eventId]
     );
-    for (const [fieldId, value] of Object.entries(custom_field_values)) {
-      if (!validFieldIds.has(fieldId)) continue;
-      const valueStr = value != null ? String(value).trim() : '';
-      await query(
-        `INSERT INTO registration_custom_field_values (registration_id, category_custom_field_id, value)
-         VALUES ($1, $2, $3)`,
-        [registrationId, fieldId, valueStr || null]
+    if (catCheck.rows.length === 0) {
+      throw new Error('Categoria inválida ou não pertence a este evento.');
+    }
+
+    if (modality_id) {
+      const modCheck = await query(
+        `SELECT 1 FROM modalities m
+         WHERE m.id = $1 AND m.event_id = $2
+         AND EXISTS (SELECT 1 FROM category_modalities cm WHERE cm.modality_id = m.id AND cm.category_id = $3)`,
+        [modality_id, eventId, category_id]
       );
+      if (modCheck.rows.length === 0) {
+        throw new Error('Modalidade inválida ou não está vinculada à categoria selecionada.');
+      }
     }
-  }
 
+    if (kit_id) {
+      const { validateKitVisibleForPublicRegistration } = await import('./eventKitsService.js');
+      await validateKitVisibleForPublicRegistration(kit_id, eventId);
+      // Etapa 5: kit com produto variável exige seleção de variante
+      const kitProductsRows = await query(
+        'SELECT id, name, type FROM kit_products WHERE kit_id = $1',
+        [kit_id]
+      );
+      const variableProducts = (kitProductsRows.rows as { id: string; name: string; type: string }[]).filter(
+        (p) => p.type === 'variable'
+      );
+      if (variableProducts.length > 0) {
+        const hasSelections = product_selections && product_selections.length > 0;
+        if (!hasSelections) {
+          throw new Error(
+            'O kit selecionado possui produto(s) com variação (ex.: tamanho). Selecione a variante para cada um.'
+          );
+        }
+        const selectedProductIds = new Set((product_selections || []).map((s) => s.product_id));
+        const missing = variableProducts.filter((p) => !selectedProductIds.has(p.id));
+        if (missing.length > 0) {
+          throw new Error(`Selecione a variante para: ${missing.map((p) => p.name).join(', ')}.`);
+        }
+        for (const sel of product_selections || []) {
+          const prod = variableProducts.find((p) => p.id === sel.product_id);
+          if (prod && !sel.variant_id && (!sel.attribute_selections || Object.keys(sel.attribute_selections).length === 0)) {
+            throw new Error(`Informe a variante (tamanho) para o produto "${prod.name}".`);
+          }
+        }
+      }
+    }
+
+    await query(
+      `UPDATE registrations
+       SET category_id = $1, modality_id = $2, kit_id = $3, updated_at = NOW()
+       WHERE id = $4`,
+      [category_id, modality_id ?? null, kit_id ?? null, registrationId]
+    );
+
+    const selections = await resolveRegistrationSelections(kit_id, eventId, product_selections);
+    await reserveSelectionStock(selections, eventId, registrationId);
+    await query('DELETE FROM registration_product_selections WHERE registration_id = $1', [registrationId]);
+    await saveCanonicalSelections(registrationId, selections);
+
+    if (custom_field_values !== undefined && Object.keys(custom_field_values).length > 0) {
+      const { getByCategoryId } = await import('./categoryCustomFieldsService.js');
+      const categoryFields = await getByCategoryId(category_id);
+      const validFieldIds = new Set(categoryFields.map((f) => f.id));
+      await query(
+        'DELETE FROM registration_custom_field_values WHERE registration_id = $1',
+        [registrationId]
+      );
+      for (const [fieldId, value] of Object.entries(custom_field_values)) {
+        if (!validFieldIds.has(fieldId)) continue;
+        const valueStr = value != null ? String(value).trim() : '';
+        await query(
+          `INSERT INTO registration_custom_field_values (registration_id, category_custom_field_id, value)
+           VALUES ($1, $2, $3)`,
+          [registrationId, fieldId, valueStr || null]
+        );
+      }
+    }
+
+  });
   return getRegistrationById(registrationId);
 };
 
@@ -2479,4 +2106,3 @@ export const deleteRegistration = async (registrationId: string) => {
 
   return result.rows[0];
 };
-

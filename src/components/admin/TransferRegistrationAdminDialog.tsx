@@ -21,14 +21,20 @@ export function canAdminTransferRegistration(reg: {
   status?: string;
   payment_status?: string | null;
   transferred_to_registration_id?: string | null;
+  order_id?: string | null;
 }): boolean {
   const s = reg.status || "";
   const p = reg.payment_status || "";
   if (s === "cancelled" || s === "refunded" || s === "transferred") return false;
   if (reg.transferred_to_registration_id) return false;
   if (p !== "paid") return false;
-  if (p === "refunded") return false;
+  // Compra em grupo: só ingresso confirmado/pago, via fluxo de pedido.
+  if (reg.order_id) return s === "confirmed";
   return true;
+}
+
+export function isCheckoutOrderRegistration(reg: { order_id?: string | null } | null | undefined) {
+  return !!reg?.order_id;
 }
 
 interface TransferRegistrationAdminDialogProps {

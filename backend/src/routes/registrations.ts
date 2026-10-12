@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { authenticate } from '../middleware/auth.js';
+import { orderRegistrationGuard } from '../middleware/orderRegistrationGuard.js';
 import {
   getAllRegistrations,
   getRegistration,
@@ -36,6 +37,7 @@ import { createTransferRequestController, generateTransferPaymentController, get
 import { getEnabledModulesController } from '../controllers/systemSettingsController.js';
 
 const router = Router();
+router.use(orderRegistrationGuard);
 
 // Public route for validation (no authentication required)
 router.get('/:id/validate', getRegistrationForValidation);
@@ -82,5 +84,4 @@ router.get('/transfer-requests/:id', getTransferRequestByIdController);
 router.post('/transfer-requests/:id/payment', generateTransferPaymentController);
 
 export default router;
-
 

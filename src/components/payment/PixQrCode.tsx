@@ -13,9 +13,10 @@ interface PixQrCodeProps {
   dueDate: string; // YYYY-MM-DD
   registrationId?: string;
   hideHeader?: boolean; // Para ocultar o header quando usado dentro de um dialog
+  hideCopy?: boolean;
 }
 
-export function PixQrCode({ pixQrCode, value, dueDate, registrationId, hideHeader = false }: PixQrCodeProps) {
+export function PixQrCode({ pixQrCode, value, dueDate, registrationId, hideHeader = false, hideCopy = false }: PixQrCodeProps) {
   const [copied, setCopied] = useState(false);
   const [isGenerating, setIsGenerating] = useState(true);
 
@@ -106,8 +107,7 @@ export function PixQrCode({ pixQrCode, value, dueDate, registrationId, hideHeade
           </div>
         </div>
 
-        {/* Copy Code Button */}
-        <Button
+        {!hideCopy && <Button
           onClick={handleCopyCode}
           variant="outline"
           className="w-full"
@@ -124,7 +124,7 @@ export function PixQrCode({ pixQrCode, value, dueDate, registrationId, hideHeade
               Copiar código PIX
             </>
           )}
-        </Button>
+        </Button>}
 
         {/* Instructions */}
         <div className="space-y-2 pt-4 border-t">

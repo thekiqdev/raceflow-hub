@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useNavigate, useLocation, Link } from "react-router-dom";
+import { checkoutReturnPath } from '@/lib/utils/checkoutReturnPath';
 import { useAuth } from "@/contexts/AuthContext";
 import { getDashboardRoute } from "@/lib/utils/navigation";
 import { Button } from "@/components/ui/button";
@@ -20,6 +21,8 @@ import { toast } from "sonner";
 
 const Auth = () => {
   const navigate = useNavigate();
+  const location = useLocation();
+  const returnTo = checkoutReturnPath(location.state?.from);
   const { login, register, isAuthenticated } = useAuth();
   const [loading, setLoading] = useState(false);
   const [isSignUp, setIsSignUp] = useState(false);
@@ -144,9 +147,9 @@ const Auth = () => {
 
   useEffect(() => {
     if (isAuthenticated && user) {
-      navigate(getDashboardRoute(user));
+      navigate(returnTo || getDashboardRoute(user), {replace:true});
     }
-  }, [isAuthenticated, user, navigate]);
+  }, [isAuthenticated, user, navigate, returnTo]);
 
   useEffect(() => {
     getPublicBranding().then((res) => {
@@ -161,13 +164,7 @@ const Auth = () => {
     setLoading(true);
 
     try {
-      const success = await login(loginEmail, loginPassword);
-      if (success) {
-        setTimeout(() => {
-          const currentUser = JSON.parse(localStorage.getItem("auth_user") || "{}");
-          navigate(getDashboardRoute(currentUser as any));
-        }, 100);
-      }
+      await login(loginEmail, loginPassword);
     } finally {
       setLoading(false);
     }
@@ -207,7 +204,7 @@ const Auth = () => {
     setLoading(true);
 
     try {
-      const success = await register({
+      await register({
         email: signupEmail,
         password: signupPassword,
         full_name: normalizedName,
@@ -219,12 +216,6 @@ const Auth = () => {
         cpf_lookup_proof: cpfLookupProof,
       });
 
-      if (success) {
-        setTimeout(() => {
-          const currentUser = JSON.parse(localStorage.getItem("auth_user") || "{}");
-          navigate(getDashboardRoute(currentUser as any));
-        }, 100);
-      }
     } finally {
       setLoading(false);
     }

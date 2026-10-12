@@ -144,6 +144,17 @@ const migrations = [
   '114_add_event_kits_is_visible.sql',
   '115_cpf_lookup_metrics.sql',
   '116_add_external_events.sql',
+  '117_make_runner_profiles_public.sql',
+  '118_registration_inventory_guards.sql',
+  '119_checkout_participants.sql',
+  '120_checkout_orders.sql',
+  '121_checkout_order_payments.sql',
+  '122_checkout_delivery.sql',
+  '123_checkout_ticket_transfers.sql',
+  '124_checkout_transfer_payments.sql',
+  '125_checkout_payment_pix_qr.sql',
+  '126_checkout_payment_keep_reservation.sql',
+  '127_checkout_transfer_payment_pix_qr.sql',
 ];
 
 // Create migrations tracking table
@@ -338,4 +349,3 @@ runMigrations()
     console.error('\n❌ Erro fatal:', error);
     process.exit(1);
   });
-

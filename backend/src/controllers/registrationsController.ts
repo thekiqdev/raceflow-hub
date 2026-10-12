@@ -3,6 +3,7 @@ import { AuthRequest } from '../middleware/auth.js';
 import {
   getRegistrations,
   getRegistrationById,
+  getCheckoutOrderParticipants,
   createRegistration,
   updateRegistration,
   replaceRegistrationProductSelectionsForEdit,
@@ -42,6 +43,7 @@ import { calculateRegistrationStatus } from '../services/eventsService.js';
 import { findRegistrationsMissingKitProductSelections } from '../services/registrationKitSelectionAuditService.js';
 import { planRegistrationKitCategorySelectionSync } from '../services/registrationKitCategorySelectionService.js';
 import { getRegistrationEditableKitContext } from '../services/registrationEditableKitContextService.js';
+import { calculateRegistrationTotal, registrationPriceMatches } from '../services/registrationTotalService.js';
 
 /**
  * Obtém o status efetivo de inscrições do evento
@@ -113,6 +115,7 @@ const createRegistrationSchema = z.object({
   event_id: z.string().uuid('ID do evento inválido'),
   runner_id: z.string().uuid('ID do corredor inválido').optional(),
   category_id: z.string().uuid('ID da categoria inválido'),
+  category_batch_id: z.string().uuid('ID do lote inválido').optional().nullable(),
   kit_id: z.string().uuid('ID do kit inválido').optional(),
   modality_id: z.string().uuid('ID da modalidade inválido').optional().nullable(),
   payment_method: z.enum(['pix', 'credit_card', 'boleto']).optional(),
@@ -821,6 +824,10 @@ export const getRegistrationForValidation = asyncHandler(async (req: Request, re
     data: {
       id: registration.id,
       confirmation_code: registration.confirmation_code,
+      ticket_available: !registration.transferred_to_registration_id &&
+        ['confirmed', 'transferred'].includes(registration.status) &&
+        ['paid', 'convidado', 'transferred'].includes(registration.payment_status) &&
+        Boolean(registration.confirmation_code),
       status: registration.status,
       payment_status: registration.payment_status,
       event_title: registration.event_title,
@@ -930,11 +937,23 @@ export const getRegistration = asyncHandler(async (req: AuthRequest, res: Respon
     console.error('⚠️ Erro ao carregar seleções de produtos/variantes:', error.message);
   }
 
+  let orderContext: Awaited<ReturnType<typeof getCheckoutOrderParticipants>> = null;
+  if (registration.order_id) {
+    try {
+      orderContext = await getCheckoutOrderParticipants(registration.order_id);
+    } catch (error: any) {
+      console.error('⚠️ Erro ao carregar participantes do pedido:', error.message);
+    }
+  }
+
   res.json({
     success: true,
     data: {
       ...registration,
       product_selections: productSelections || [],
+      order_status: orderContext?.order_status ?? null,
+      order_total_cents: orderContext?.order_total_cents ?? null,
+      order_participants: orderContext?.participants ?? null,
     },
   });
 });
@@ -1206,28 +1225,33 @@ export const createRegistrationController = asyncHandler(async (req: AuthRequest
     }
   }
 
-  // OK Etapa 1: Calcular platform_fee_amount (taxa da plataforma na inscrição inicial)
-  let platformFeeAmount = 0;
-  const totalAmount = Number(validation.data.total_amount) || 0;
-  if (totalAmount > 0) {
-    const { getSystemSettings } = await import('../services/systemSettingsService.js');
-    const { calculateValueWithoutFee } = await import('../utils/feeCalculations.js');
-    const settings = await getSystemSettings();
-    const platformFeesEnabled = settings.enabled_modules?.platform_fees === true;
-    const platformFee = Number(settings.platform_fee) || 0;
-    const platformFeeType = (settings.platform_fee_type as 'fixed' | 'percentage') || 'fixed';
-    const platformFeeMin = Number(settings.platform_fee_min) || 0;
-    if (platformFeesEnabled && platformFee > 0) {
-      const valueWithoutFee = calculateValueWithoutFee(totalAmount, platformFee, platformFeeType, platformFeeMin);
-      platformFeeAmount = Math.round((totalAmount - valueWithoutFee) * 100) / 100;
-    }
+  const pricing = await calculateRegistrationTotal({
+    eventId: event_id,
+    categoryId: category_id,
+    kitId: validation.data.kit_id ?? null,
+    modalityId: validation.data.modality_id ?? null,
+    batchId: validation.data.category_batch_id,
+    couponCode: validation.data.coupon_code,
+    runnerId: validation.data.runner_id || req.user.id,
+    publicCheckout: true,
+  });
+  if (!registrationPriceMatches(validation.data.total_amount, pricing.total)) {
+    res.status(409).json({
+      success: false,
+      error: 'O valor da inscrição foi atualizado. Revise o resumo antes de confirmar.',
+      code: 'REGISTRATION_PRICE_CHANGED',
+      pricing,
+    });
+    return;
   }
 
   const registrationData = {
     ...validation.data,
     registered_by: req.user.id,
     runner_id: validation.data.runner_id || req.user.id,
-    platform_fee_amount: platformFeeAmount,
+    total_amount: pricing.total,
+    platform_fee_amount: pricing.platformFee,
+    require_valid_coupon: true,
   };
 
   // Verificar se o corredor já tem uma inscrição ativa neste evento
@@ -4591,7 +4615,7 @@ export const getRegistrationReceiptController = asyncHandler(async (req: AuthReq
   }
 
   const { id } = req.params;
-  const registration = await getRegistrationById(id);
+  const registration = await getRegistrationById(id, req.user.id);
 
   if (!registration) {
     res.status(404).json({
@@ -4602,14 +4626,14 @@ export const getRegistrationReceiptController = asyncHandler(async (req: AuthReq
   }
 
   // Check if user owns the registration
-  const isOwner = registration.runner_id === req.user.id || registration.registered_by === req.user.id;
+  const isOwner = registration.runner_id === req.user.id;
   const isAdmin = await hasRole(req.user.id, 'admin');
   const isOrganizer = await hasRole(req.user.id, 'organizer');
 
   // Check if organizer owns the event
   let isEventOrganizer = false;
   if (isOrganizer) {
-    const event = await getEventById(registration.event_id);
+    const event = (await query('SELECT organizer_id FROM events WHERE id = $1', [registration.event_id])).rows[0];
     isEventOrganizer = event?.organizer_id === req.user.id;
   }
 
@@ -4622,7 +4646,18 @@ export const getRegistrationReceiptController = asyncHandler(async (req: AuthReq
     return;
   }
 
-  // For now, return JSON data. In the future, can generate PDF
+  // Comprovantes emitidos aqui representam um ingresso válido do titular atual.
+  const active = registration.status === 'confirmed' ||
+    (registration.status === 'transferred' && !registration.transferred_to_registration_id);
+  if (registration.order_id || !active ||
+      !['paid', 'convidado', 'transferred'].includes(registration.payment_status) || !registration.confirmation_code) {
+    res.status(409).json({ success: false, error: 'Ingresso indisponível. Atualize a lista.' });
+    return;
+  }
+  const { getRegistrationProductSelections } = await import('../services/registrationProductSelectionsService.js');
+  const productSelections = await getRegistrationProductSelections(id);
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({ success: true, data: { ...registration, product_selections: productSelections } });
 });
 
 // Create registration by group leader
@@ -5109,4 +5144,3 @@ export const createRegistrationByLeaderController = asyncHandler(async (req: Aut
     message: 'Atleta inscrito com sucesso',
   });
 });
-

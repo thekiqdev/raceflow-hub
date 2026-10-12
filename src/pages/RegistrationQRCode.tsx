@@ -1,37 +1,49 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { QRCodeSVG } from "qrcode.react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ArrowLeft, Calendar, MapPin, User, Loader2, AlertCircle, Download } from "lucide-react";
-import { format } from "date-fns";
-import { ptBR } from "date-fns/locale";
 import { formatDateTimeBrasilia } from "@/lib/utils";
 import { getRegistrationById, type Registration } from "@/lib/api/registrations";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 
+import { downloadLegacyTicket } from '@/components/runner/downloadLegacyTicket';
+
 export default function RegistrationQRCode() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
+  const requestVersion = useRef(0);
+  const [downloading, setDownloading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [registration, setRegistration] = useState<Registration | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (id) {
-      loadRegistration();
-    }
-  }, [id]);
+    if (!authLoading) void loadRegistration();
+    return () => { requestVersion.current++; };
+  }, [id, user?.id, authLoading]);
 
   const loadRegistration = async () => {
-    if (!id) return;
+    const version = ++requestVersion.current;
+    setRegistration(null);
+    if (!id || !user) {
+      setError("Entre na sua conta para acessar o ingresso.");
+      setLoading(false);
+      return;
+    }
 
     try {
       setLoading(true);
       setError(null);
       const response = await getRegistrationById(id);
+      if (version !== requestVersion.current) return;
+      if (response.code === "ORDER_REGISTRATION_REQUIRED") {
+        navigate(`/registration/validate/${encodeURIComponent(id)}`, { replace: true });
+        return;
+      }
 
       if (response.success && response.data) {
         setRegistration(response.data);
@@ -40,87 +52,28 @@ export default function RegistrationQRCode() {
         toast.error(response.error || "Erro ao carregar inscrição");
       }
     } catch (error: any) {
+      if (version !== requestVersion.current) return;
       console.error("Error loading registration:", error);
       setError(error.message || "Erro ao carregar inscrição");
       toast.error(error.message || "Erro ao carregar inscrição");
     } finally {
-      setLoading(false);
+      if (version === requestVersion.current) setLoading(false);
     }
   };
 
   const handleDownloadReceipt = async () => {
-    if (!id) return;
-
+    if (!id || !user || downloading) return;
+    setDownloading(true);
     try {
-      // For now, we'll create a simple text receipt
-      // In the future, this can be a PDF download
-      const receiptText = `
-COMPROVANTE DE INSCRIÇÃO
-${registration?.event_title || 'Evento'}
-
-Código: ${registration?.confirmation_code || id}
-Data da Inscrição: ${registration?.created_at ? format(new Date(registration.created_at), "dd/MM/yyyy", { locale: ptBR }) : 'N/A'}
-
-DADOS DO EVENTO:
-${registration?.event_title || 'Evento'}
-Data: ${registration?.event_date ? formatDateTimeBrasilia(registration.event_date) : 'N/A'}
-Local: ${registration?.location || `${registration?.city || ''}, ${registration?.state || ''}`}
-
-DADOS DO CORREDOR:
-Nome: ${registration?.runner_name || 'N/A'}
-CPF: ${registration?.runner_cpf || 'N/A'}
-
-DADOS DA INSCRIÇÃO:
-Categoria: ${registration?.category_name || 'N/A'} ${registration?.category_distance ? `(${registration.category_distance})` : ''}
-Kit: ${registration?.kit_name || 'Sem kit'}
-${registration?.product_selections && registration.product_selections.length > 0 ? (() => {
-  // Group by product
-  const productGroups = new Map<string, {
-    product_name: string;
-    attributes: Array<{ attribute_name: string; attribute_value: string }>;
-  }>();
-  
-  registration.product_selections.forEach((sel: any) => {
-    const productKey = sel.product_id;
-    if (!productGroups.has(productKey)) {
-      productGroups.set(productKey, {
-        product_name: sel.product_name || 'Produto',
-        attributes: [],
-      });
-    }
-    productGroups.get(productKey)!.attributes.push({
-      attribute_name: sel.attribute_name,
-      attribute_value: sel.attribute_value,
-    });
-  });
-
-  return Array.from(productGroups.entries()).map(([productId, productData]) => {
-    return productData.attributes.map(attr => `${attr.attribute_name}: ${attr.attribute_value}`).join('\n');
-  }).join('\n');
-})() + '\n' : ''}Valor: R$ ${registration?.total_amount.toFixed(2).replace('.', ',') || '0,00'}
-Método de Pagamento: ${registration?.payment_method === 'pix' ? 'PIX' : registration?.payment_method === 'credit_card' ? 'Cartão de Crédito' : registration?.payment_method === 'boleto' ? 'Boleto' : registration?.payment_method === 'free_bonus' ? 'Convite' : 'N/A'}
-Status: ${registration?.status === 'confirmed' ? 'Confirmada' : registration?.status || 'Pendente'}
-Status do Pagamento: ${registration?.payment_status === 'paid' ? 'Pago' : registration?.payment_status === 'convidado' ? 'Convite' : registration?.payment_status || 'Pendente'}
-      `.trim();
-
-      const blob = new Blob([receiptText], { type: 'text/plain' });
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `comprovante_${registration?.confirmation_code || id}.txt`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(url);
-      
-      toast.success("Comprovante baixado com sucesso!");
-    } catch (error: any) {
-      console.error("Error downloading receipt:", error);
-      toast.error("Erro ao baixar comprovante");
-    }
+      await downloadLegacyTicket(id, user.id);
+      toast.success("Ingresso baixado com sucesso!");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Erro ao baixar ingresso");
+      await loadRegistration();
+    } finally { setDownloading(false); }
   };
 
-  if (loading) {
+  if (loading || authLoading) {
     return (
       <div className="min-h-screen bg-background">
         <div className="bg-gradient-hero p-4 sticky top-0 z-10">
@@ -163,7 +116,7 @@ Status do Pagamento: ${registration?.payment_status === 'paid' ? 'Pago' : regist
   }
 
   // Only show QR code if registration is confirmed and paid
-  const isConfirmed = registration.status === "confirmed" && registration.payment_status === "paid";
+  const isConfirmed = registration.runner_id === user?.id && !registration.transferred_to_registration_id && registration.status === "confirmed" && ["paid", "convidado", "transferred"].includes(registration.payment_status || "");
   const validationUrl = `${window.location.origin}/registration/validate/${registration.id}`;
   const locationText = registration.location || `${registration.city || ''}, ${registration.state || ''}`.trim() || 'Local não informado';
 
@@ -192,7 +145,7 @@ Status do Pagamento: ${registration?.payment_status === 'paid' ? 'Pago' : regist
             </CardHeader>
             <CardContent className="flex flex-col items-center gap-4">
               <div className="bg-white p-4 rounded-lg">
-                <QRCodeSVG value={validationUrl} size={256} level="H" includeMargin={true} />
+                <QRCodeSVG value={validationUrl} size={256} className="h-auto w-full max-w-64" level="H" includeMargin={true} />
               </div>
               <p className="text-xs text-muted-foreground text-center">
                 Código: {registration.confirmation_code || registration.id.substring(0, 8).toUpperCase()}
@@ -275,7 +228,7 @@ Status do Pagamento: ${registration?.payment_status === 'paid' ? 'Pago' : regist
                 </span>
               </div>
             )}
-            {registration.confirmation_code && (
+            {isConfirmed && registration.confirmation_code && (
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Código:</span>
                 <span className="font-mono font-medium text-primary">{registration.confirmation_code}</span>
@@ -293,7 +246,7 @@ Status do Pagamento: ${registration?.payment_status === 'paid' ? 'Pago' : regist
             <div className="flex justify-between text-sm">
               <span className="text-muted-foreground">Valor:</span>
               <span className="font-semibold text-primary">
-                R$ {registration.total_amount.toFixed(2).replace('.', ',')}
+                R$ {Number(registration.total_amount).toFixed(2).replace('.', ',')}
               </span>
             </div>
             {registration.payment_method && (
@@ -330,12 +283,13 @@ Status do Pagamento: ${registration?.payment_status === 'paid' ? 'Pago' : regist
         {/* Download Receipt Button */}
         {isConfirmed && (
           <Button 
-            className="w-full" 
+            className="w-full min-h-11"
+            disabled={downloading}
             onClick={handleDownloadReceipt}
             variant="outline"
           >
             <Download className="h-4 w-4 mr-2" />
-            Baixar Comprovante
+            {downloading ? "Preparando ingresso…" : "Baixar ingresso (PDF)"}
           </Button>
         )}
 

@@ -35,6 +35,7 @@ import {
   type PreviewRegistrationEditResponse,
   type EditableKitIssue,
 } from "@/lib/api/registrations";
+import { previewCheckoutRegistrationEdit, updateCheckoutRegistrationChoices } from "@/lib/api/checkoutOrders";
 import { getModalities, type Modality } from "@/lib/api/modalities";
 import { getCategoriesByModality, getCategoryById, type Category, type CategoryBatch } from "@/lib/api/categories";
 import { getCategoryBatches } from "@/lib/api/categoryBatches";
@@ -450,12 +451,19 @@ export function EventRegistrationDetailSheet({
     const t = window.setTimeout(() => {
       void (async () => {
         try {
-          const res = await previewRegistrationEdit(detail.id, {
-            category_id: editCategoryId,
-            kit_id: editKitId || null,
-            modality_id: editModalityId || null,
-            batch_id: editBatchId || null,
-          });
+          const res = detail.order_id
+            ? await previewCheckoutRegistrationEdit(detail.order_id, detail.id, {
+                category_id: editCategoryId,
+                kit_id: editKitId || null,
+                modality_id: editModalityId || null,
+                category_batch_id: editBatchId || null,
+              })
+            : await previewRegistrationEdit(detail.id, {
+                category_id: editCategoryId,
+                kit_id: editKitId || null,
+                modality_id: editModalityId || null,
+                batch_id: editBatchId || null,
+              });
           if (!cancelled && res.success && res.data) setPreview(res.data as PreviewRegistrationEditResponse);
           else if (!cancelled) setPreview(null);
         } catch {
@@ -469,7 +477,7 @@ export function EventRegistrationDetailSheet({
       cancelled = true;
       window.clearTimeout(t);
     };
-  }, [editMode, detail?.id, editCategoryId, editKitId, editModalityId, editBatchId]);
+  }, [editMode, detail?.id, detail?.order_id, editCategoryId, editKitId, editModalityId, editBatchId]);
 
   const handleSaveAll = async () => {
     if (!detail) return;
@@ -483,7 +491,7 @@ export function EventRegistrationDetailSheet({
     }
     const body: UpdateRegistrationData = {};
 
-    if (isAdmin) {
+    if (isAdmin && !detail.order_id) {
       if (editStatus !== detail.status) body.status = editStatus as UpdateRegistrationData["status"];
       if (editPayment !== detail.payment_status) {
         body.payment_status = editPayment as UpdateRegistrationData["payment_status"];
@@ -504,7 +512,7 @@ export function EventRegistrationDetailSheet({
 
     const couponTrim = editCouponCode.trim();
     const prevCoupon = (detail.coupon_code || "").trim();
-    if (couponTrim !== prevCoupon) {
+    if (!detail.order_id && couponTrim !== prevCoupon) {
       body.coupon_code = couponTrim || null;
     }
 
@@ -561,6 +569,59 @@ export function EventRegistrationDetailSheet({
 
     setSavingEdit(true);
     try {
+      if (detail.order_id) {
+        if (!isAdmin) {
+          toast({
+            title: "Sem permissão",
+            description: "Apenas administradores podem editar escolhas de compra em grupo.",
+            variant: "destructive",
+          });
+          setSavingEdit(false);
+          return;
+        }
+        const orderRes = await updateCheckoutRegistrationChoices(detail.order_id, detail.id, {
+          category_id: body.category_id,
+          kit_id: body.kit_id,
+          modality_id: body.modality_id,
+          category_batch_id: body.batch_id,
+          product_selections: body.product_selections,
+          custom_field_values: body.custom_field_values,
+        });
+        if (!orderRes.success) {
+          const det = orderRes.details as { requires_product_reselection?: boolean; reasons?: string[] } | null;
+          toast({
+            title: "Não foi possível salvar",
+            description:
+              det?.requires_product_reselection && Array.isArray(det.reasons)
+                ? det.reasons.join(" ")
+                : orderRes.error || "Erro ao atualizar inscrição do pedido.",
+            variant: "destructive",
+          });
+          setSavingEdit(false);
+          return;
+        }
+        const diffPay = orderRes.data?.preview?.difference_to_pay ?? 0;
+        const diffRefund = orderRes.data?.preview?.difference_to_refund ?? 0;
+        toast({
+          title: "Inscrição do pedido atualizada",
+          description:
+            diffPay >= 0.01
+              ? "Diferença pendente de pagamento."
+              : diffRefund >= 0.01
+                ? "Reembolso manual pendente."
+                : "Escolhas salvas. A listagem será atualizada.",
+        });
+        setReselectionRequired(null);
+        setEditingProductAttributes({});
+        kitAttributesSeedKeyRef.current = null;
+        setEditMode(false);
+        setPreview(null);
+        await loadDetail();
+        onRefreshList();
+        setSavingEdit(false);
+        return;
+      }
+
       const res = await updateRegistration(detail.id, body);
       if (res.success) {
         const sync = (res as unknown as {
@@ -694,10 +755,12 @@ export function EventRegistrationDetailSheet({
             <div className="space-y-6 py-4 pr-3">
               <div className="flex flex-wrap gap-2">
                 {!editMode ? (
+                  (!detail.order_id || isAdmin) && (
                   <Button type="button" variant="default" size="sm" className="gap-1" onClick={() => void startEdit()}>
                     <Pencil className="h-3.5 w-3.5" />
-                    Editar inscrição
+                    {detail.order_id ? "Editar escolhas" : "Editar inscrição"}
                   </Button>
+                  )
                 ) : (
                   <>
                     <Button type="button" variant="outline" size="sm" onClick={cancelEdit} disabled={savingEdit}>

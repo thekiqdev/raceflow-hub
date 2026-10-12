@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { QRCodeSVG } from "qrcode.react";
 import { Button } from "@/components/ui/button";
@@ -31,7 +31,8 @@ const formatPrice = (price: number | string | undefined): string => {
 export default function ValidateRegistration() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
+  const requestVersion = useRef(0);
   const [loading, setLoading] = useState(true);
   const [registration, setRegistration] = useState<Registration | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -41,38 +42,27 @@ export default function ValidateRegistration() {
   const [verifyingPayment, setVerifyingPayment] = useState(false);
 
   useEffect(() => {
-    if (id) {
-      loadRegistration();
-    }
+    if (!authLoading) void loadRegistration();
+    return () => { requestVersion.current++; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id, user?.id]);
+  }, [id, user?.id, authLoading]);
 
   const loadRegistration = async () => {
-    if (!id) return;
+    const version = ++requestVersion.current;
+    setRegistration(null);
+    if (!id) { setLoading(false); setError("Inscrição não encontrada"); return; }
 
     try {
       setLoading(true);
       setError(null);
       
-      // If user is logged in, try authenticated endpoint first (to get runner_id)
-      // Otherwise, use public endpoint
-      let response;
-      if (user) {
-        try {
-          response = await getRegistrationById(id);
-        } catch (authError: any) {
-          // If authenticated endpoint fails, fallback to public endpoint
-          try {
-            response = await getRegistrationForValidation(id);
-          } catch (publicError: any) {
-            throw authError; // Use auth error message
-          }
-        }
-      } else {
-        // User not logged in, use public endpoint
+      let response = user ? await getRegistrationById(id) : await getRegistrationForValidation(id);
+      if (version !== requestVersion.current) return;
+      // Pedidos multi-inscrição: detalhe privado exige checkout; validate público permanece canônico.
+      if (user && (response.code === 'ORDER_REGISTRATION_REQUIRED' || response.httpStatus === 403)) {
         response = await getRegistrationForValidation(id);
       }
-
+      if (version !== requestVersion.current) return;
       if (response.success && response.data) {
         setRegistration(response.data);
       } else {
@@ -80,15 +70,16 @@ export default function ValidateRegistration() {
         toast.error(response.error || "Inscrição não encontrada");
       }
     } catch (error: any) {
+      if (version !== requestVersion.current) return;
       console.error("Error loading registration:", error);
       setError(error.message || "Erro ao carregar inscrição");
       toast.error(error.message || "Erro ao carregar inscrição");
     } finally {
-      setLoading(false);
+      if (version === requestVersion.current) setLoading(false);
     }
   };
 
-  if (loading) {
+  if (loading || authLoading) {
     return (
       <div className="min-h-screen bg-background">
         <div className="bg-gradient-hero p-4 sticky top-0 z-10">
@@ -131,7 +122,7 @@ export default function ValidateRegistration() {
   }
 
   // Inscrição confirmada: paga ou por convite (organizador inscreveu sem cobrança)
-  const isConfirmed = registration.status === "confirmed" && (registration.payment_status === "paid" || registration.payment_status === "convidado");
+  const isConfirmed = registration.ticket_available ?? (registration.status === "confirmed" && !registration.transferred_to_registration_id && ["paid", "convidado", "transferred"].includes(registration.payment_status || ""));
   const locationText = registration.location || `${registration.city || ''}, ${registration.state || ''}`.trim() || 'Local não informado';
   
   // Generate validation URL only if registration and id are available
@@ -186,7 +177,7 @@ export default function ValidateRegistration() {
     setVerifyingPayment(true);
     try {
       const response = await verifyPayment(registration.id);
-      if (response.success && response.payment_verified) {
+      if (response.success && ((response as typeof response & {payment_verified?: boolean}).payment_verified || response.data?.payment_verified)) {
         toast.success(response.message || "Pagamento confirmado.");
         loadRegistration();
       } else {

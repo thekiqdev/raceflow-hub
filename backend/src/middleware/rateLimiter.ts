@@ -20,7 +20,7 @@ setInterval(() => {
       delete store[key];
     }
   });
-}, 5 * 60 * 1000);
+}, 5 * 60 * 1000).unref();
 
 export const rateLimiter = (
   windowMs: number = 15 * 60 * 1000, // 15 minutes
@@ -86,7 +86,7 @@ setInterval(() => {
       delete cpfLookupStore[key];
     }
   });
-}, 5 * 60 * 1000);
+}, 5 * 60 * 1000).unref();
 
 /**
  * Limite defensivo por IP na consulta de CPF (abuso / scraping).
@@ -134,4 +134,3 @@ export const cpfLookupRateLimiter = (req: Request, res: Response, next: NextFunc
   cpfLookupStore[key].count++;
   next();
 };
-

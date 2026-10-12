@@ -3,6 +3,8 @@ import { Request, Response, NextFunction } from 'express';
 export interface AppError extends Error {
   statusCode?: number;
   code?: string;
+  pricing?: unknown;
+  details?: unknown;
 }
 
 export const errorHandler = (
@@ -22,6 +24,14 @@ export const errorHandler = (
   // Default error
   const statusCode = err.statusCode || 500;
   const message = err.message || 'Internal Server Error';
+  if (err.code === 'REGISTRATION_PRICE_CHANGED' && err.pricing) {
+    res.status(409).json({ success: false, error: message, code: err.code, pricing: err.pricing });
+    return;
+  }
+  if (err.code === 'CT001') {
+    res.status(409).json({ success: false, error: message });
+    return;
+  }
 
   // PostgreSQL errors
   if (err.code === '23505') {
@@ -76,6 +86,7 @@ export const errorHandler = (
   res.status(statusCode).json({
     success: false,
     error: message,
+    ...(err.details !== undefined ? { details: err.details } : {}),
     ...(process.env.NODE_ENV === 'development' && { stack: err.stack }),
   });
 };
@@ -86,4 +97,3 @@ export const asyncHandler = (fn: Function) => {
     Promise.resolve(fn(req, res, next)).catch(next);
   };
 };
-

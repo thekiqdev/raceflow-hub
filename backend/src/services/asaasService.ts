@@ -1,5 +1,6 @@
 import axios, { AxiosInstance, AxiosError } from 'axios';
 import { query } from '../config/database.js';
+import { getOrderAllocatedPaidTotals } from './checkoutPaymentAccounting.js';
 import {
   AsaasCustomerRequest,
   AsaasCustomerResponse,
@@ -1013,7 +1014,8 @@ export const getTotalPaidForRegistration = async (
      WHERE registration_id = $1 AND status IN ('CONFIRMED', 'RECEIVED', 'RECEIVED_IN_CASH', 'MANUAL_CONFIRMED')`,
     [registrationId]
   );
-  return parseFloat(result.rows[0]?.total_paid || '0') || 0;
+  const allocated=await getOrderAllocatedPaidTotals([registrationId]);
+  return (parseFloat(result.rows[0]?.total_paid || '0') || 0)+(allocated[registrationId] ?? 0);
 };
 
 /**
@@ -1035,7 +1037,8 @@ export const getAmountPaidForOrganizer = async (
       [registrationId]
     ),
   ]);
-  const totalPaid = parseFloat(paidResult.rows[0]?.total_paid || '0') || 0;
+  const allocated=await getOrderAllocatedPaidTotals([registrationId]);
+  const totalPaid = (parseFloat(paidResult.rows[0]?.total_paid || '0') || 0)+(allocated[registrationId] ?? 0);
   const platformFeeAmount = parseFloat(regResult.rows[0]?.platform_fee_amount || '0') || 0;
   const forOrganizer = Math.max(0, totalPaid - platformFeeAmount);
   return Math.round(forOrganizer * 100) / 100;
@@ -1058,6 +1061,8 @@ export const getTotalPaidForRegistrationIds = async (
   for (const row of result.rows) {
     map[row.registration_id] = parseFloat(row.total_paid || '0') || 0;
   }
+  const allocated=await getOrderAllocatedPaidTotals(registrationIds);
+  for(const [id,amount] of Object.entries(allocated)) map[id]=(map[id] ?? 0)+amount;
   return map;
 };
 
@@ -1156,25 +1161,34 @@ export const syncRegistrationPaymentStatus = async (
 ): Promise<void> => {
   const totalPaid = await getTotalPaidForRegistration(registrationId);
   const regResult = await query(
-    'SELECT total_amount, payment_status, status FROM registrations WHERE id = $1',
+    `SELECT total_amount, payment_status, status, to_jsonb(registrations)->>'order_id' AS order_id
+     FROM registrations WHERE id = $1`,
     [registrationId]
   );
   if (regResult.rows.length === 0) return;
   const totalAmount = parseFloat(regResult.rows[0].total_amount) || 0;
   const currentPaymentStatus = regResult.rows[0].payment_status;
+  const orderId = regResult.rows[0].order_id as string | null;
   const isFullyPaid = totalAmount <= 0 || totalPaid >= totalAmount - 0.005;
-  if (isFullyPaid) {
-    await query(
-      `UPDATE registrations SET payment_status = 'paid', status = 'confirmed', updated_at = NOW() WHERE id = $1`,
-      [registrationId]
-    );
-  } else {
-    if (currentPaymentStatus !== 'refunded' && currentPaymentStatus !== 'failed') {
+  const apply = async () => {
+    if (orderId) await query("SELECT set_config('cronoteam.order_write',$1,true)", [orderId]);
+    if (isFullyPaid) {
+      await query(
+        `UPDATE registrations SET payment_status = 'paid', status = 'confirmed', updated_at = NOW() WHERE id = $1`,
+        [registrationId]
+      );
+    } else if (currentPaymentStatus !== 'refunded' && currentPaymentStatus !== 'failed') {
       await query(
         `UPDATE registrations SET payment_status = 'pending', updated_at = NOW() WHERE id = $1`,
         [registrationId]
       );
     }
+  };
+  if (orderId) {
+    const { withTransaction } = await import('../config/database.js');
+    await withTransaction(apply);
+  } else {
+    await apply();
   }
 };
 

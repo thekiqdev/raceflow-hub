@@ -80,7 +80,7 @@ export interface LeaderCommission {
   id: string;
   leader_id: string;
   registration_id: string;
-  referred_user_id: string;
+  referred_user_id: string | null;
   event_id: string;
   commission_amount: number;
   commission_percentage: number;
@@ -336,7 +336,6 @@ export interface ApiResponse<T = any> {
   error?: string;
   message?: string;
 }
-
 
 
 

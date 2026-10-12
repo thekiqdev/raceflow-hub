@@ -60,7 +60,7 @@ const SETTINGS_ID = 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a12';
  */
 export const getSystemSettings = async (): Promise<SystemSettings> => {
   const result = await query(
-    'SELECT * FROM system_settings WHERE id = $1',
+    'SELECT * FROM system_settings WHERE id = $1 FOR SHARE',
     [SETTINGS_ID]
   );
 

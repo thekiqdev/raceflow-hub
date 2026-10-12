@@ -1,0 +1,14 @@
+{
+  "extends": "../../../tsconfig.app.json",
+  "compilerOptions": { "strict": true, "noEmit": true },
+  "include": [
+    "../../../src/vite-env.d.ts",
+    "../../../src/components/event-registrations/OrderRegistrationDetailSheet.tsx",
+    "../../../src/lib/api/myTickets.ts",
+    "../../../src/components/runner/MyRegistrations.tsx",
+    "../../../src/pages/EventCheckout.tsx",
+    "../../../src/pages/RegistrationQRCode.tsx",
+    "../../../src/pages/ValidateRegistration.tsx",
+    "../../../src/components/registration/GroupRegistrationFlow.tsx"
+  ]
+}

@@ -189,6 +189,12 @@ async function validateProfileFieldsOnUpdate(
 
 // Update profile
 export const updateProfile = async (userId: string, data: UpdateProfileData) => {
+  const editable = new Set(['full_name','phone','gender','birth_date','logo_url','organization_name','contact_email',
+    'contact_phone','bio','website_url','is_public','preferred_name','profession','cbat','team','postal_code','street',
+    'address_number','address_complement','neighborhood','city','state','cpf']);
+  if(Object.keys(data).some(key=>!editable.has(key))) {
+    throw Object.assign(new Error('Campo de perfil não permitido.'),{statusCode:400});
+  }
   const normalizedData = normalizeProfileUpdateFields(data);
 
   if (data.full_name !== undefined) {

@@ -1,9 +1,15 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
+import {RegistrationCard} from './RegistrationCard';
+import {downloadLegacyTicket} from './downloadLegacyTicket';
+import {OrderTicketActions} from './OrderTicketActions';
+import {CheckoutTransferDialog} from './CheckoutTransferDialog';
+import {ticketCardRegistration} from './ticketCardModel';
+import {getMyTicketEvents,getMyTickets,type EventTimeline,type MyTicket,type MyTicketEvent,type MyTicketEventsPage,type MyTicketsPage} from '@/lib/api/myTickets';
+import { useDebounce } from "@/hooks/useDebounce";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Dialog,
   DialogContent,
@@ -14,12 +20,11 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Calendar, MapPin, QrCode, RefreshCw, X, Loader2, AlertCircle, Download, CreditCard, Eye, CheckCircle2 } from "lucide-react";
-import { format, isFuture } from "date-fns";
-import { ptBR } from "date-fns/locale";
-import { formatDateOnlyBrasilia } from "@/lib/utils";
+import { Loader2, AlertCircle,Award,CheckCircle2,ChevronLeft,Clock,MapPin,Ticket } from "lucide-react";
+import { formatTimeBrasilia } from "@/lib/utils";
+import { openPublishedResults } from "@/lib/utils/resolveEventDestination";
 import { useAuth } from "@/contexts/AuthContext";
-import { getRegistrations, transferRegistration, cancelRegistration, getPaymentStatus, generatePayment, getPendingDifferencePayment, verifyPayment, type Registration } from "@/lib/api/registrations";
+import { cancelRegistration, getPaymentStatus, generatePayment, getPendingDifferencePayment, verifyPayment, type Registration } from "@/lib/api/registrations";
 import { getEnabledModules } from "@/lib/api/systemSettings";
 import { createTransferRequest, generateTransferPayment, getTransferRequestById, type TransferRequest } from "@/lib/api/transferRequests";
 import { toast } from "sonner";
@@ -27,10 +32,15 @@ import { PixQrCode } from "@/components/payment/PixQrCode";
 import { MissingAttributesModal } from "@/components/runner/MissingAttributesModal";
 import { CompleteInvitationModal } from "@/components/runner/CompleteInvitationModal";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import {
-  formatTransferDeadlineClosedMessagePtBr,
-  isPublicTransferDeadlinePassed,
-} from "@/lib/utils/eventTransferDeadline";
+
+function eventDateParts(iso:string|null|undefined) {
+  if(!iso) return null;
+  const date=typeof iso==='string'?new Date(iso):iso;
+  if(Number.isNaN(date.getTime())) return null;
+  const day=date.toLocaleDateString('pt-BR',{timeZone:'America/Sao_Paulo',day:'numeric'});
+  const month=date.toLocaleDateString('pt-BR',{timeZone:'America/Sao_Paulo',month:'long'});
+  return {day,month:month.charAt(0).toUpperCase()+month.slice(1)};
+}
 
 export function MyRegistrations() {
   const navigate = useNavigate();
@@ -39,10 +49,27 @@ export function MyRegistrations() {
   const [loading, setLoading] = useState(true);
   const [transfersEnabled, setTransfersEnabled] = useState(false);
   
-  // Get initial tab from URL parameter, default to "active"
-  const initialTab = searchParams.get("subtab") || "active";
-  const [activeSubTab, setActiveSubTab] = useState(initialTab);
-  const [registrations, setRegistrations] = useState<Registration[]>([]);
+  const [ticketPage,setTicketPage]=useState<MyTicketsPage|null>(null);
+  const [eventPage,setEventPage]=useState<MyTicketEventsPage|null>(null);
+  const [selectedEvent,setSelectedEvent]=useState<MyTicketEvent|null>(null);
+  const [page,setPage]=useState(1),[searchInput,setSearchInput]=useState(''),[loadError,setLoadError]=useState('');
+  const [timeline,setTimeline]=useState<EventTimeline>('all');
+  const debouncedSearch=useDebounce(searchInput,400);
+  // Limpar o campo aplica na hora; digitar continua com debounce.
+  const search=searchInput.trim()===''?'':debouncedSearch.trim();
+  const [groupTransfer,setGroupTransfer]=useState<MyTicket|null>(null);
+  const requestSequence=useRef(0);
+  const showEventList=!selectedEvent;
+  const statusCounts=ticketPage?.counts ?? eventPage?.counts;
+  function openEvent(event:MyTicketEvent) {setSelectedEvent(event);setPage(1);setSearchInput('');}
+  function clearSearch() {setSearchInput('');setPage(1);}
+  function setEventTimeline(next:EventTimeline) {setTimeline(next);setPage(1);}
+  const downloading=useRef(false),[downloadBusy,setDownloadBusy]=useState(false);
+  async function handleDownload(registration:Registration) {
+    if(!user || downloading.current)return;downloading.current=true;setDownloadBusy(true);
+    try {await downloadLegacyTicket(registration.id,user.id);}catch(e){toast.error(e instanceof Error?e.message:'Não foi possível baixar o ingresso.');}
+    finally{downloading.current=false;setDownloadBusy(false);}
+  }
   const [isTransferDialogOpen, setIsTransferDialogOpen] = useState(false);
   const [isCancelDialogOpen, setIsCancelDialogOpen] = useState(false);
   const [transferCpf, setTransferCpf] = useState("");
@@ -67,18 +94,15 @@ export function MyRegistrations() {
   const [showCompleteInvitationModal, setShowCompleteInvitationModal] = useState(false);
 
   useEffect(() => {
+    setPage(1);
+  }, [search, selectedEvent?.event_id]);
+
+  useEffect(() => {
     if (user) {
       loadRegistrations();
     }
-  }, [user]);
-
-  // Update active tab when URL parameter changes
-  useEffect(() => {
-    const subtabFromUrl = searchParams.get("subtab");
-    if (subtabFromUrl && ["active", "pending", "cancelled"].includes(subtabFromUrl)) {
-      setActiveSubTab(subtabFromUrl);
-    }
-  }, [searchParams]);
+    return()=>{requestSequence.current++;};
+  }, [user,page,search,timeline,selectedEvent?.event_id]);
 
   // Etapa 6: ao vir do completar-cadastro, abrir modal de atributos faltantes
   useEffect(() => {
@@ -101,34 +125,33 @@ export function MyRegistrations() {
     return () => {
       window.removeEventListener('admin-settings-updated', handleSettingsUpdate);
     };
-  }, []);
+  }, [user,page,search,timeline,selectedEvent?.event_id]);
 
   const loadRegistrations = async () => {
-    if (!user) return;
-
+    if(!user) return;
+    const listingEvents=!selectedEvent;
+    const sequence=++requestSequence.current;setLoading(true);setLoadError('');
     try {
-      setLoading(true);
-      const [registrationsResponse, settingsResponse] = await Promise.all([
-        getRegistrations({ runner_id: user.id }),
-        getEnabledModules(),
-      ]);
-
-      if (registrationsResponse.success && registrationsResponse.data) {
-        setRegistrations(registrationsResponse.data);
+      const settingsPromise=getEnabledModules();
+      if(listingEvents) {
+        const [result,settings]=await Promise.all([getMyTicketEvents({page,page_size:20,search,timeline}),settingsPromise]);
+        if(sequence!==requestSequence.current) return;
+        if(!result.success || !result.data) throw new Error(result.error || 'Não foi possível carregar os eventos.');
+        setEventPage(result.data);setTicketPage(null);
+        const last=Math.max(1,Math.ceil(result.data.total/result.data.page_size));if(page>last)setPage(last);
+        setTransfersEnabled(!!settings.data?.enabled_modules?.transfers);setTransferFee(settings.data?.transfer_fee || 0);
       } else {
-        toast.error(registrationsResponse.error || "Erro ao carregar inscrições");
+        // Detalhe do evento: ingressos não cancelados (confirmados + pendentes).
+        const [result,settings]=await Promise.all([getMyTickets({page,page_size:20,status:'all',search,event_id:selectedEvent!.event_id}),settingsPromise]);
+        if(sequence!==requestSequence.current) return;
+        if(!result.success || !result.data) throw new Error(result.error || 'Não foi possível carregar as inscrições.');
+        setTicketPage(result.data);
+        setEventPage(prev=>prev?{...prev,counts:result.data!.counts}:prev);
+        const last=Math.max(1,Math.ceil(result.data.total/result.data.page_size));if(page>last)setPage(last);
+        setTransfersEnabled(!!settings.data?.enabled_modules?.transfers);setTransferFee(settings.data?.transfer_fee || 0);
       }
-
-      if (settingsResponse.success && settingsResponse.data) {
-        setTransfersEnabled(settingsResponse.data.enabled_modules?.transfers || false);
-        setTransferFee(settingsResponse.data.transfer_fee || 0);
-      }
-    } catch (error: any) {
-      console.error("Error loading registrations:", error);
-      toast.error(error.message || "Erro ao carregar inscrições");
-    } finally {
-      setLoading(false);
-    }
+    } catch(error) {if(sequence===requestSequence.current){setTicketPage(null);if(listingEvents)setEventPage(null);setLoadError(error instanceof Error?error.message:'Não foi possível carregar as inscrições.');}}
+    finally {if(sequence===requestSequence.current)setLoading(false);}
   };
 
   const handleTransfer = async () => {
@@ -265,7 +288,7 @@ export function MyRegistrations() {
     setVerifyingPaymentId(registration.id);
     try {
       const response = await verifyPayment(registration.id);
-      if (response.success && response.payment_verified) {
+      if (response.success && ((response as typeof response & {payment_verified?:boolean}).payment_verified ?? response.data?.payment_verified)) {
         toast.success(response.message || "Pagamento confirmado. Atualizando lista.");
         loadRegistrations();
       } else {
@@ -345,9 +368,7 @@ export function MyRegistrations() {
           
           setPixData({
             qrCode: paymentData.pix_qr_code,
-            value: typeof registration.total_amount === 'number' 
-              ? registration.total_amount 
-              : parseFloat(registration.total_amount?.toString() || '0') || 0,
+            value: Number(registration.total_amount) || 0,
             dueDate: dueDateString,
           });
           return;
@@ -373,9 +394,7 @@ export function MyRegistrations() {
           
           setPixData({
             qrCode: paymentData.pix_qr_code,
-            value: typeof registration.total_amount === 'number' 
-              ? registration.total_amount 
-              : parseFloat(registration.total_amount?.toString() || '0') || 0,
+            value: Number(registration.total_amount) || 0,
             dueDate: dueDateString,
           });
           toast.success("QR Code PIX gerado com sucesso!");
@@ -396,376 +415,6 @@ export function MyRegistrations() {
     }
   };
 
-  const activeRegistrations = registrations.filter((r) =>
-    r.status === "confirmed" &&
-    (r.payment_status === "paid" ||
-      r.payment_status === "partially_paid" ||
-      r.payment_status === "convidado" ||
-      r.payment_status === "transferred")
-  );
-  const pendingRegistrations = registrations.filter((r) => 
-    r.status !== "cancelled" && r.status !== "transferred" && (r.status === "pending" || r.payment_status === "pending")
-  );
-  const transferredRegistrations = registrations.filter((r) => 
-    r.status === "transferred"
-  );
-
-  const getStatusBadge = (status: string | undefined, paymentStatus: string | undefined) => {
-    // Verificar cancelado primeiro (prioridade máxima)
-    if (status === "cancelled") {
-      return <Badge variant="destructive">Cancelada</Badge>;
-    }
-    // Verificar transferido
-    if (status === "transferred") {
-      return <Badge variant="secondary" className="bg-purple-500 hover:bg-purple-600">Transferido</Badge>;
-    }
-    // Verificar confirmado e convidado (convite)
-    if (status === "confirmed" && paymentStatus === "convidado") {
-      return <Badge className="bg-blue-500">Convite</Badge>;
-    }
-    // Verificar confirmado e pago
-    if (status === "confirmed" && paymentStatus === "paid") {
-      return <Badge className="bg-accent">Confirmada</Badge>;
-    }
-    if (status === "confirmed" && paymentStatus === "transferred") {
-      return <Badge className="bg-accent">Confirmada</Badge>;
-    }
-    if (status === "confirmed" && paymentStatus === "partially_paid") {
-      return <Badge className="bg-amber-500">Pago parcialmente</Badge>;
-    }
-    if (status === "pending" || paymentStatus === "pending") {
-      return <Badge variant="secondary">Pendente</Badge>;
-    }
-    if (paymentStatus === "refunded") {
-      return <Badge variant="outline">Reembolsado</Badge>;
-    }
-    if (paymentStatus === "failed") {
-      return <Badge variant="destructive">Falhou</Badge>;
-    }
-    return null;
-  };
-
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat("pt-BR", {
-      style: "currency",
-      currency: "BRL",
-    }).format(value);
-  };
-
-  const formatCpf = (cpf: string | undefined) => {
-    if (!cpf) return "N/A";
-    return cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
-  };
-
-  // Mostrar "Completar convite" só quando a inscrição é por convite e ainda não tem categoria (corredor não completou)
-  const needsCompleteInvitation = (reg: Registration) =>
-    reg.payment_status === "convidado" && !reg.category_id;
-
-  const RegistrationCard = ({ registration }: { registration: Registration }) => {
-    const isUpcoming = registration.event_date && isFuture(new Date(registration.event_date));
-    const eventAllowsTransfers = registration.event_transfers_enabled !== false; // Default to true if null/undefined
-    const transferDeadlinePassed =
-      eventAllowsTransfers &&
-      !!registration.event_transfer_until &&
-      isPublicTransferDeadlinePassed(registration.event_transfer_until);
-    const canTransfer = transfersEnabled &&
-                       eventAllowsTransfers &&
-                       !transferDeadlinePassed &&
-                       registration.status === "confirmed" &&
-                       (registration.payment_status === "paid" || registration.payment_status === "convidado") &&
-                       registration.status !== "transferred" &&
-                       isUpcoming;
-    const canCancel = (registration.status === "pending" ||
-                      (registration.status === "confirmed" && registration.payment_status === "paid")) &&
-                      isUpcoming;
-    const canCompleteInvitation = needsCompleteInvitation(registration);
-
-    return (
-      <Card className="overflow-hidden hover:shadow-md transition-shadow">
-        {registration.event_banner_url && (
-          <div className="relative w-full h-32 overflow-hidden bg-muted">
-            <img
-              src={registration.event_banner_url}
-              alt={registration.event_title || 'Evento'}
-              className="w-full h-full object-cover"
-              onError={(e) => {
-                const target = e.target as HTMLImageElement;
-                target.style.display = 'none';
-              }}
-            />
-          </div>
-        )}
-        <CardContent className="p-4">
-          <div className="flex justify-between items-start mb-3">
-            <h3 className="font-semibold text-sm flex-1 pr-2">{registration.event_title || 'Evento'}</h3>
-            {getStatusBadge(registration.status, registration.payment_status)}
-          </div>
-
-          <div className="space-y-2 text-xs text-muted-foreground mb-4">
-            {registration.event_date && (
-              <div className="flex items-center gap-2">
-                <Calendar className="h-3 w-3" />
-                <span>{formatDateOnlyBrasilia(registration.event_date)}</span>
-              </div>
-            )}
-            {(registration.modality_name != null && registration.modality_name !== "") && (
-              <div className="flex items-center gap-2">
-                <MapPin className="h-3 w-3" />
-                <span>{registration.modality_name}</span>
-              </div>
-            )}
-            {registration.category_name && (
-              <div className="flex items-center gap-2">
-                <MapPin className="h-3 w-3" />
-                <span>{registration.category_name} {registration.category_distance ? `(${registration.category_distance})` : ''}</span>
-              </div>
-            )}
-            {registration.confirmation_code && (
-              <div className="text-xs font-mono text-primary">
-                Código: {registration.confirmation_code}
-              </div>
-            )}
-          </div>
-
-          <div className="bg-muted/50 rounded-lg p-3 mb-3 space-y-1">
-            {(registration.modality_name != null && registration.modality_name !== "") && (
-              <div className="flex justify-between text-xs">
-                <span className="text-muted-foreground">Modalidade:</span>
-                <span className="font-medium">{registration.modality_name}</span>
-              </div>
-            )}
-            {registration.category_name && (
-              <div className="flex justify-between text-xs">
-                <span className="text-muted-foreground">Categoria:</span>
-                <span className="font-medium">{registration.category_name}</span>
-              </div>
-            )}
-            {registration.category_distance && (
-              <div className="flex justify-between text-xs">
-                <span className="text-muted-foreground">Distância:</span>
-                <span className="font-medium">{registration.category_distance}</span>
-              </div>
-            )}
-            {registration.kit_name && (
-              <div className="flex justify-between text-xs">
-                <span className="text-muted-foreground">Kit:</span>
-                <span className="font-medium">{registration.kit_name}</span>
-              </div>
-            )}
-            <div className="flex justify-between text-xs">
-              <span className="text-muted-foreground">Valor:</span>
-              <span className="font-medium">{formatCurrency(registration.total_amount)}</span>
-            </div>
-            {registration.payment_method && (
-              <div className="flex justify-between text-xs">
-                <span className="text-muted-foreground">Pagamento:</span>
-                <span className="font-medium">
-                  {registration.payment_method === 'pix' ? 'PIX' : 
-                   registration.payment_method === 'credit_card' ? 'Cartão' : 
-                   registration.payment_method === 'boleto' ? 'Boleto' : 
-                   registration.payment_method === 'free_bonus' ? 'Convite' : 
-                   registration.payment_method}
-                </span>
-              </div>
-            )}
-          </div>
-
-          {/* Resumo financeiro quando há diferença a pagar */}
-          {(registration.has_pending_difference || (registration.pending_difference_amount ?? 0) > 0) &&
-           registration.payment_status !== 'paid' && (
-            <div className="rounded-lg border border-amber-200 bg-amber-50/80 dark:border-amber-800 dark:bg-amber-950/30 p-3 mb-3 space-y-2 text-xs">
-              <div className="font-medium text-amber-800 dark:text-amber-200 mb-1.5">Resumo do pagamento</div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground" title="Total que você já pagou (inclui taxas da plataforma)">Valor já pago (incl. taxas):</span>
-                <span className="font-medium">{formatCurrency(registration.amount_paid ?? (registration.total_amount ?? 0) - (registration.pending_difference_amount ?? 0))}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Taxa de atualização:</span>
-                <span className="font-medium">{formatCurrency(registration.registration_edit_fee ?? 0)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Valor restante:</span>
-                <span className="font-semibold text-amber-700 dark:text-amber-300">{formatCurrency(registration.pending_difference_amount ?? 0)}</span>
-              </div>
-              <div className="flex justify-between pt-1 border-t border-amber-200 dark:border-amber-800">
-                <span className="font-medium text-amber-800 dark:text-amber-200">Valor total:</span>
-                <span className="font-semibold">{formatCurrency(registration.total_amount ?? 0)}</span>
-              </div>
-            </div>
-          )}
-
-          <div className="flex gap-2 flex-wrap">
-            {/* Pagar diferença - apenas quando há cobrança pendente e inscrição ainda não está paga (não mostrar após confirmação manual pelo admin) */}
-            {(registration.has_pending_difference || (registration.pending_difference_amount ?? 0) > 0) &&
-             registration.payment_status !== 'paid' && (
-              <>
-                <Button 
-                  variant="default" 
-                  size="sm" 
-                  className="flex-1"
-                  onClick={() => handlePayDifference(registration)}
-                >
-                  <QrCode className="h-3 w-3 mr-1" />
-                  Pagar diferença
-                </Button>
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  className="flex-1"
-                  onClick={() => handleVerifyPayment(registration)}
-                  disabled={verifyingPaymentId === registration.id}
-                >
-                  {verifyingPaymentId === registration.id ? (
-                    <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-                  ) : (
-                    <CheckCircle2 className="h-3 w-3 mr-1" />
-                  )}
-                  Confirmar pagamento
-                </Button>
-              </>
-            )}
-            {/* Botão Visualizar PIX - apenas para inscrições pendentes (pagamento inicial) */}
-            {(registration.status === "pending" || registration.payment_status === "pending") && !registration.has_pending_difference && (
-              <>
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  className="flex-1"
-                  onClick={() => handleViewPix(registration)}
-                >
-                  <CreditCard className="h-3 w-3 mr-1" />
-                  Visualizar PIX
-                </Button>
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  className="flex-1"
-                  onClick={() => handleVerifyPayment(registration)}
-                  disabled={verifyingPaymentId === registration.id}
-                >
-                  {verifyingPaymentId === registration.id ? (
-                    <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-                  ) : (
-                    <CheckCircle2 className="h-3 w-3 mr-1" />
-                  )}
-                  Confirmar pagamento
-                </Button>
-              </>
-            )}
-            
-            {/* Botão para completar convite (categoria/modalidade/kit) */}
-            {canCompleteInvitation && (
-              <Button
-                variant="default"
-                size="sm"
-                className="w-full mb-2"
-                onClick={() => {
-                  setCompleteInvitationRegistration(registration);
-                  setShowCompleteInvitationModal(true);
-                }}
-              >
-                <CheckCircle2 className="h-3 w-3 mr-1" />
-                Completar convite (escolher categoria, modalidade e kit)
-              </Button>
-            )}
-            {/* Botões para inscrições confirmadas (pagas ou por convite) */}
-            {registration.status === "confirmed" &&
-              (registration.payment_status === "paid" || registration.payment_status === "convidado") && (
-              <>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="flex-1"
-                  onClick={() => navigate(`/registration/validate/${registration.id}`)}
-                >
-                  <Eye className="h-3 w-3 mr-1" />
-                  Visualizar Inscrição
-                </Button>
-                {canTransfer && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="flex-1"
-                    onClick={() => {
-                      setSelectedRegistration(registration);
-                      setIsTransferDialogOpen(true);
-                    }}
-                  >
-                    <RefreshCw className="h-3 w-3 mr-1" />
-                    Transferir
-                  </Button>
-                )}
-              </>
-            )}
-
-            {/* Botões para outras situações (não confirmadas) */}
-            {!(
-              registration.status === "confirmed" &&
-              (registration.payment_status === "paid" || registration.payment_status === "convidado")
-            ) && (
-              <>
-                {canTransfer && (
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
-                    className="flex-1"
-                    onClick={() => {
-                      setSelectedRegistration(registration);
-                      setIsTransferDialogOpen(true);
-                    }}
-                  >
-                    <RefreshCw className="h-3 w-3 mr-1" />
-                    Transferir
-                  </Button>
-                )}
-                {canCancel && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="flex-1"
-                    onClick={() => {
-                      setSelectedRegistration(registration);
-                      setIsCancelDialogOpen(true);
-                    }}
-                  >
-                    <X className="h-3 w-3 mr-1" />
-                    Cancelar
-                  </Button>
-                )}
-              </>
-            )}
-          </div>
-          {transfersEnabled &&
-            transferDeadlinePassed &&
-            isUpcoming &&
-            registration.status === "confirmed" &&
-            (registration.payment_status === "paid" || registration.payment_status === "convidado") &&
-            registration.event_transfer_until && (
-              <Alert className="mt-3 border-muted-foreground/30 bg-muted/30">
-                <AlertCircle className="h-4 w-4" />
-                <AlertDescription className="text-xs">
-                  {formatTransferDeadlineClosedMessagePtBr(registration.event_transfer_until)}
-                </AlertDescription>
-              </Alert>
-            )}
-        </CardContent>
-      </Card>
-    );
-  };
-
-  if (loading) {
-    return (
-      <div className="pb-20">
-        <div className="bg-gradient-hero p-6">
-          <h1 className="text-2xl font-bold text-white">Minhas Inscrições</h1>
-        </div>
-        <div className="flex items-center justify-center py-12">
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
-        </div>
-      </div>
-    );
-  }
-
   const handleSelectAttributes = () => {
     setShowMissingAttributesModal(true);
   };
@@ -783,80 +432,190 @@ export function MyRegistrations() {
       <div className="bg-gradient-hero p-6">
         <h1 className="text-2xl font-bold text-white mb-2">Minhas Inscrições</h1>
         <p className="text-white/80 text-sm">
-          {registrations.length} {registrations.length === 1 ? 'inscrição' : 'inscrições'} total
+          {statusCounts?Object.entries(statusCounts).reduce((sum,[group,n])=>group==='cancelled'?sum:sum+n,0):'…'} inscrições
         </p>
       </div>
 
-      {/* Tabs */}
-      <div className="px-4 mt-6">
-        <Tabs value={activeSubTab} onValueChange={setActiveSubTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-3 mb-6">
-            <TabsTrigger value="active">
-              Ativas ({activeRegistrations.length})
-            </TabsTrigger>
-            <TabsTrigger value="pending">
-              Pendentes ({pendingRegistrations.length})
-            </TabsTrigger>
-            <TabsTrigger value="cancelled">
-              Transferidas ({transferredRegistrations.length})
-            </TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="active" className="space-y-4">
-            {activeRegistrations.length === 0 ? (
-              <Card>
-                <CardContent className="py-12 text-center">
-                  <Calendar className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-                  <p className="text-muted-foreground mb-4">Nenhuma inscrição ativa</p>
-                  <Button onClick={() => navigate("/corredor/inicio")}>
-                    Explorar Corridas
-                  </Button>
-                </CardContent>
-              </Card>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {activeRegistrations.map((reg) => (
-                  <RegistrationCard key={reg.id} registration={reg} />
-                ))}
+      <div className="px-4 mt-6 space-y-5 sm:px-6">
+        {showEventList && <div className="space-y-3">
+          <div className="space-y-2">
+            <Label htmlFor="ticket-search">Buscar evento</Label>
+            <Input
+              id="ticket-search"
+              className="min-h-11"
+              value={searchInput}
+              maxLength={120}
+              onChange={e=>{setSearchInput(e.target.value);}}
+              placeholder="Nome do evento"
+              autoComplete="off"
+            />
+          </div>
+          <div role="group" aria-label="Filtrar por período" className="grid grid-cols-3 gap-2">
+            {([['all','Todos'],['upcoming','Próximos'],['past','Encerrados']] as const).map(([value,label])=>(
+              <Button
+                key={value}
+                type="button"
+                variant={timeline===value?'default':'outline'}
+                className="min-h-11"
+                aria-pressed={timeline===value}
+                onClick={()=>setEventTimeline(value)}
+              >
+                {label}
+              </Button>
+            ))}
+          </div>
+        </div>}
+        {selectedEvent && <div className="sticky top-0 z-10 -mx-4 space-y-3 border-b bg-background/95 px-4 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/80 sm:-mx-6 sm:px-6">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+            <Button type="button" variant="outline" className="min-h-11 w-full shrink-0 sm:w-auto" onClick={()=>{setSelectedEvent(null);setPage(1);setSearchInput('');}}>
+              <ChevronLeft className="mr-1 h-4 w-4"/>Voltar aos eventos
+            </Button>
+            <div className="min-w-0 flex-1">
+              <Label htmlFor="ticket-search" className="sr-only">Buscar participante</Label>
+              <Input
+                id="ticket-search"
+                className="min-h-11"
+                value={searchInput}
+                maxLength={120}
+                onChange={e=>{setSearchInput(e.target.value);}}
+                placeholder="Buscar participante"
+                autoComplete="off"
+              />
+            </div>
+          </div>
+          <div>
+            <h2 className="text-lg font-semibold break-words sm:text-xl">{selectedEvent.title}</h2>
+            <p className="text-sm text-muted-foreground">
+              {selectedEvent.confirmed_count} {selectedEvent.confirmed_count===1?'confirmado':'confirmados'}
+              {selectedEvent.pending_count>0?` · ${selectedEvent.pending_count} ${selectedEvent.pending_count===1?'pendente':'pendentes'}`:''}
+              {(selectedEvent.transferred_count ?? 0)>0?` · ${selectedEvent.transferred_count} ${selectedEvent.transferred_count===1?'transferido':'transferidos'}`:''}
+            </p>
+          </div>
+        </div>}
+        {loading && <p role="status">Consultando suas inscrições…</p>}
+        {loadError && <Alert variant="destructive"><AlertDescription className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">{loadError} <Button variant="outline" className="min-h-11 shrink-0" onClick={()=>void loadRegistrations()}>Tentar novamente</Button></AlertDescription></Alert>}
+        {!loading && !loadError && showEventList && eventPage && !eventPage.items.length && (
+          <Card><CardContent className="space-y-4 py-10 text-center">
+            <p>{search?'Nenhum evento encontrado para essa busca.':timeline==='upcoming'?'Nenhuma corrida próxima com ingresso confirmado.':timeline==='past'?'Nenhuma corrida encerrada com ingresso confirmado.':'Nenhum evento com ingresso confirmado.'}</p>
+            <div className="flex flex-col justify-center gap-2 sm:flex-row">
+              {(search || timeline!=='all') && <Button type="button" variant="outline" className="min-h-11" onClick={()=>{clearSearch();setEventTimeline('all');}}>Limpar filtros</Button>}
+              <Button className="min-h-11" onClick={()=>navigate('/corredor/inicio')}>Explorar corridas</Button>
+            </div>
+          </CardContent></Card>
+        )}
+        {!loading && !loadError && !showEventList && ticketPage && !ticketPage.items.length && (
+          <Card><CardContent className="space-y-4 py-10 text-center">
+            <p>{search?'Nenhuma inscrição encontrada para essa busca.':'Nenhuma inscrição disponível neste evento.'}</p>
+            <div className="flex flex-col justify-center gap-2 sm:flex-row">
+              {search && <Button type="button" variant="outline" className="min-h-11" onClick={clearSearch}>Limpar busca</Button>}
+              <Button className="min-h-11" onClick={()=>setSelectedEvent(null)}>Voltar aos eventos</Button>
+            </div>
+          </CardContent></Card>
+        )}
+        {!loading && !loadError && showEventList && !!eventPage?.items.length && <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">{eventPage.items.map(event=>{
+          const ticketTotal=event.confirmed_count+event.pending_count+(event.transferred_count ?? 0);
+          const dateParts=eventDateParts(event.date);
+          const timeLabel=formatTimeBrasilia(event.date);
+          const ended=Boolean(event.ended);
+          const hasResults=Boolean(event.has_results && event.result_url);
+          return (
+          <article
+            key={event.event_id}
+            data-event-id={event.event_id}
+            data-ended={ended?'true':'false'}
+            role="button"
+            tabIndex={0}
+            aria-label={`Ver inscrições de ${event.title}${ended?' (encerrado)':''}`}
+            className={`group relative aspect-[4/3] min-h-[220px] cursor-pointer overflow-hidden rounded-[1.35rem] bg-zinc-800 shadow-md outline-none transition-transform hover:scale-[1.01] focus-visible:ring-2 focus-visible:ring-ring sm:min-h-[260px] ${ended?'opacity-95':''}`}
+            onClick={()=>openEvent(event)}
+            onKeyDown={e=>{if(e.key==='Enter' || e.key===' '){e.preventDefault();openEvent(event);}}}
+          >
+            {event.banner_url
+              ? <img src={event.banner_url} alt="" className={`absolute inset-0 h-full w-full object-cover transition-transform duration-300 group-hover:scale-105 ${ended?'grayscale-[35%]':''}`}/>
+              : <div className="absolute inset-0 bg-gradient-to-br from-zinc-700 to-zinc-900" aria-hidden="true"/>}
+            <div className={`absolute inset-0 bg-gradient-to-t ${ended?'from-black/85 via-black/40 to-black/25':'from-black/75 via-black/20 to-black/10'}`} aria-hidden="true"/>
+            <div className="pointer-events-none absolute left-1/2 top-0 z-20 h-3.5 w-10 -translate-x-1/2 rounded-b-full bg-background shadow-sm" aria-hidden="true"/>
+            <div className="absolute left-3 right-3 top-4 z-10 flex flex-wrap items-center gap-2 sm:left-4 sm:right-4">
+              {ended && (
+                <span className="inline-flex items-center rounded-full bg-zinc-950/75 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-white backdrop-blur-sm">
+                  Encerrado
+                </span>
+              )}
+              {hasResults && (
+                <span className="inline-flex items-center rounded-full bg-amber-500/90 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-zinc-950 backdrop-blur-sm">
+                  Resultado
+                </span>
+              )}
+            </div>
+            <div className="absolute left-3 top-[40%] z-10 flex flex-col items-start gap-2 sm:left-4">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-black/60 px-3 py-1.5 text-xs font-medium text-white backdrop-blur-sm sm:text-sm">
+                <Ticket className="h-3.5 w-3.5 shrink-0" aria-hidden="true"/>
+                {ticketTotal} {ticketTotal===1?'ingresso':'ingressos'}
+              </span>
+              {hasResults && (
+                <Button
+                  type="button"
+                  size="sm"
+                  className="min-h-9 rounded-full bg-white text-zinc-900 hover:bg-white/90"
+                  onClick={e=>{e.stopPropagation();openPublishedResults({result_url:event.result_url});}}
+                  onKeyDown={e=>e.stopPropagation()}
+                >
+                  <Award className="mr-1.5 h-3.5 w-3.5" aria-hidden="true"/>
+                  Ver resultado
+                </Button>
+              )}
+            </div>
+            <div className="absolute inset-x-0 bottom-0 z-10 p-3 sm:p-3.5">
+              <div className="flex items-stretch gap-3 rounded-2xl bg-black/60 p-3 text-white backdrop-blur-md sm:gap-3.5 sm:p-3.5">
+                <div className="min-w-0 flex-1 space-y-1.5">
+                  <h3 className="text-base font-semibold leading-snug break-words sm:text-lg">{event.title}</h3>
+                  {!!event.location && (
+                    <p className="flex items-start gap-1.5 text-xs text-white/85 sm:text-sm">
+                      <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true"/>
+                      <span className="min-w-0 break-words">{event.location}</span>
+                    </p>
+                  )}
+                  {timeLabel && !ended && (
+                    <p className="flex items-center gap-1.5 text-xs text-white/85 sm:text-sm">
+                      <Clock className="h-3.5 w-3.5 shrink-0" aria-hidden="true"/>
+                      {timeLabel}
+                    </p>
+                  )}
+                  {ended && !hasResults && (
+                    <p className="text-xs text-white/75 sm:text-sm">Corrida já realizada</p>
+                  )}
+                </div>
+                {dateParts && (
+                  <div className="flex w-[4.75rem] shrink-0 flex-col items-center justify-center rounded-xl bg-black/50 px-2 py-2.5 text-center sm:w-[5.25rem]">
+                    <span className="text-xl font-bold leading-none tracking-tight sm:text-2xl">{dateParts.day}</span>
+                    <span className="mt-1 text-[10px] font-medium capitalize text-white/85 sm:text-xs">{dateParts.month}</span>
+                  </div>
+                )}
               </div>
-            )}
-          </TabsContent>
-
-          <TabsContent value="pending" className="space-y-4">
-            {pendingRegistrations.length === 0 ? (
-              <Card>
-                <CardContent className="py-12 text-center">
-                  <AlertCircle className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-                  <p className="text-muted-foreground">Nenhuma inscrição pendente</p>
-                </CardContent>
-              </Card>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {pendingRegistrations.map((reg) => (
-                  <RegistrationCard key={reg.id} registration={reg} />
-                ))}
-              </div>
-            )}
-          </TabsContent>
-
-          <TabsContent value="cancelled" className="space-y-4">
-            {transferredRegistrations.length === 0 ? (
-              <Card>
-                <CardContent className="py-12 text-center">
-                  <RefreshCw className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-                  <p className="text-muted-foreground">Nenhuma inscrição transferida</p>
-                </CardContent>
-              </Card>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {transferredRegistrations.map((reg) => (
-                  <RegistrationCard key={reg.id} registration={reg} />
-                ))}
-              </div>
-            )}
-          </TabsContent>
-        </Tabs>
+            </div>
+          </article>
+          );
+        })}</div>}
+        {!loading && !loadError && !showEventList && !!ticketPage?.items.length && <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">{ticketPage.items.map(ticket=><RegistrationCard key={ticket.registration_id}
+          registration={ticketCardRegistration(ticket)} transfersEnabled={transfersEnabled} verifyingPaymentId={verifyingPaymentId} navigate={navigate}
+          totalLabel={ticket.amounts.total_cents===null?'Valor não informado':undefined}
+          batchName={ticket.selection.batch}
+          resultUrl={ticket.event.result_url || selectedEvent?.result_url || null}
+          onDownload={handleDownload} downloadBusy={downloadBusy}
+          handlePayDifference={handlePayDifference} handleVerifyPayment={handleVerifyPayment} handleViewPix={handleViewPix}
+          setCompleteInvitationRegistration={setCompleteInvitationRegistration} setShowCompleteInvitationModal={setShowCompleteInvitationModal}
+          setSelectedRegistration={setSelectedRegistration} setIsTransferDialogOpen={setIsTransferDialogOpen} setIsCancelDialogOpen={setIsCancelDialogOpen}
+          participant={<div><p className="font-semibold break-words">{ticket.participant.name || 'Participante cadastrado'}</p>{ticket.state.group!=='transferred' && <p className="mt-1 text-xs">{ticket.relationship.runner?'Seu ingresso':ticket.relationship.buyer?'Comprado por você':'Histórico de inscrição'}{ticket.participant.cpf_masked?' · '+ticket.participant.cpf_masked:''}</p>}</div>}
+          statusBadge={ticket.state.group==='refunded'?<Badge variant="outline" className="border-white/40 bg-white/10 text-white">Reembolsado</Badge>:ticket.state.group==='cancelled'?<Badge variant="destructive">Cancelada</Badge>:ticket.state.group==='transferred'?<Badge variant="outline" className="border-white/40 bg-white/10 text-white">Transferido</Badge>:ticket.source==='order' && !ticket.ticket.released?<Badge variant="secondary">{ticket.state.order==='needs_review'?'Em revisão':'Aguardando confirmação'}</Badge>:undefined}
+          actions={ticket.source==='order'?<OrderTicketActions ticket={ticket} transfersEnabled={transfersEnabled} onTransfer={()=>setGroupTransfer(ticket)}/>:undefined}
+        />)}</div>}
+        {(()=>{
+          const list=showEventList?eventPage:ticketPage;
+          if(!list || list.total<=list.page_size) return null;
+          return <nav aria-label="Páginas de inscrições" className="flex flex-wrap items-center justify-between gap-3 pt-1"><Button variant="outline" className="min-h-11 flex-1 sm:flex-none" disabled={loading || page===1} onClick={()=>setPage(p=>p-1)}>Anterior</Button><span className="order-first w-full text-center text-sm sm:order-none sm:w-auto">Página {page} de {Math.ceil(list.total/list.page_size)}</span><Button variant="outline" className="min-h-11 flex-1 sm:flex-none" disabled={loading || page*list.page_size>=list.total} onClick={()=>setPage(p=>p+1)}>Próxima</Button></nav>;
+        })()}
       </div>
+      {groupTransfer && user && <CheckoutTransferDialog key={groupTransfer.registration_id} ticket={groupTransfer} userId={user.id} fee={transferFee} onClose={()=>{setGroupTransfer(null);void loadRegistrations();}} onComplete={()=>void loadRegistrations()}/>}
 
       {/* Transfer Dialog */}
       <Dialog open={isTransferDialogOpen} onOpenChange={(open) => {

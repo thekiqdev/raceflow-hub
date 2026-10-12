@@ -25,11 +25,12 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Search, MoreVertical, Eye, FileDown, Loader2, Edit2, Save, X, Trash2, Link2, ChevronLeft, ChevronRight, Plus, ArrowRightLeft } from "lucide-react";
+import { Search, MoreVertical, Eye, FileDown, Loader2, Edit2, Save, X, Trash2, Link2, ChevronLeft, ChevronRight, Plus, ArrowRightLeft, Ban, Undo2 } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { useNavigate } from "react-router-dom";
 import { getRegistrations, exportRegistrations, getRegistrationById, getRegistrationEditableKitContext, updateRegistration, previewRegistrationEdit, confirmDifferencePayment, completeRegistrationAttributes, removeRegistrationAttributes, attachRegistrationToCommission, getRegistrationCommission as getRegistrationCommissionForAttach, detachCommission, type Registration, type RegistrationCommissionInfo, type PreviewRegistrationEditResponse, type EditableKitIssue } from "@/lib/api/registrations";
+import { cancelCheckoutOrder, refundCheckoutOrder, previewCheckoutRegistrationEdit, updateCheckoutRegistrationChoices } from "@/lib/api/checkoutOrders";
 import { getEventCommissionsByEvent, type EventCommissionOption } from "@/lib/api/leaderEventCommissions";
 import { getRegistrationCommission, removeCommission, type LeaderCommissionRecord } from "@/lib/api/admin";
 import { getEvents, type Event } from "@/lib/api/events";
@@ -41,7 +42,8 @@ import { getModalities, type Modality } from "@/lib/api/modalities";
 import { toast } from "sonner";
 import { useDebounce } from "@/hooks/useDebounce";
 import { getEnabledModules } from "@/lib/api/systemSettings";
-import { TransferRegistrationAdminDialog, canAdminTransferRegistration } from "@/components/admin/TransferRegistrationAdminDialog";
+import { TransferRegistrationAdminDialog, canAdminTransferRegistration, isCheckoutOrderRegistration } from "@/components/admin/TransferRegistrationAdminDialog";
+import { AdminCheckoutTransferDialog } from "@/components/admin/AdminCheckoutTransferDialog";
 import { calculateValueWithoutFee } from "@/lib/utils/feeCalculations";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -81,6 +83,7 @@ const AdminRegistrations = () => {
   const [selectedRegistration, setSelectedRegistration] = useState<Registration | null>(null);
   const [registrationDetails, setRegistrationDetails] = useState<any>(null);
   const [loadingDetails, setLoadingDetails] = useState(false);
+  const [orderActionBusy, setOrderActionBusy] = useState(false);
   const [platformFee, setPlatformFee] = useState<number>(0);
   const [platformFeeType, setPlatformFeeType] = useState<'fixed' | 'percentage'>('fixed');
   
@@ -155,12 +158,20 @@ const AdminRegistrations = () => {
     }
     let cancelled = false;
     setLoadingPreview(true);
-    previewRegistrationEdit(registrationDetails.id, {
-      category_id: categoryId,
-      kit_id: editingKitId || undefined,
-      modality_id: editingModalityId || undefined,
-      batch_id: editingBatchId || undefined,
-    })
+    const previewPromise = registrationDetails.order_id
+      ? previewCheckoutRegistrationEdit(registrationDetails.order_id, registrationDetails.id, {
+          category_id: categoryId,
+          kit_id: editingKitId || undefined,
+          modality_id: editingModalityId || undefined,
+          category_batch_id: editingBatchId || undefined,
+        })
+      : previewRegistrationEdit(registrationDetails.id, {
+          category_id: categoryId,
+          kit_id: editingKitId || undefined,
+          modality_id: editingModalityId || undefined,
+          batch_id: editingBatchId || undefined,
+        });
+    previewPromise
       .then((res) => {
         if (!cancelled && res.success && res.data) setPreviewData(res.data as PreviewRegistrationEditResponse);
         else if (!cancelled) setPreviewData(null);
@@ -172,7 +183,7 @@ const AdminRegistrations = () => {
         if (!cancelled) setLoadingPreview(false);
       });
     return () => { cancelled = true; };
-  }, [isEditMode, registrationDetails?.id, registrationDetails?.category_id, editingCategoryId, editingKitId, editingModalityId, editingBatchId]);
+  }, [isEditMode, registrationDetails?.id, registrationDetails?.order_id, registrationDetails?.category_id, editingCategoryId, editingKitId, editingModalityId, editingBatchId]);
 
   const loadPlatformFeeSettings = async () => {
     try {
@@ -244,6 +255,7 @@ const AdminRegistrations = () => {
     setSelectedRegistration(registration);
     setIsDetailsDialogOpen(true);
     setLoadingDetails(true);
+    setRegistrationDetails(null);
     setIsEditMode(false);
     setEditingProductAttributes({});
     setKitProducts([]);
@@ -267,11 +279,13 @@ const AdminRegistrations = () => {
       } else {
         toast.error(response.error || "Erro ao carregar detalhes");
       }
-      const commResponse = await getRegistrationCommission(registration.id);
-      if (commResponse.success && commResponse.data) {
-        setRegistrationCommission(commResponse.data);
-      } else {
-        setRegistrationCommission(null);
+      if (!response.data?.order_id) {
+        const commResponse = await getRegistrationCommission(registration.id);
+        if (commResponse.success && commResponse.data) {
+          setRegistrationCommission(commResponse.data);
+        } else {
+          setRegistrationCommission(null);
+        }
       }
     } catch (error: any) {
       console.error("Error loading registration details:", error);
@@ -279,6 +293,55 @@ const AdminRegistrations = () => {
       setRegistrationCommission(null);
     } finally {
       setLoadingDetails(false);
+    }
+  };
+
+  const canCancelCheckoutOrder = (details: Registration | null | undefined) =>
+    !!details?.order_id && ["draft", "reviewed", "reserved", "awaiting_payment"].includes(details.order_status || "");
+  const canRefundCheckoutParticipant = (details: Registration | null | undefined) =>
+    !!details?.order_id &&
+    details.order_status === "confirmed" &&
+    details.payment_status === "paid" &&
+    details.status !== "cancelled" &&
+    details.status !== "refunded";
+
+  const handleCancelCheckoutOrder = async () => {
+    if (!registrationDetails?.order_id || !canCancelCheckoutOrder(registrationDetails)) return;
+    if (!window.confirm("Cancelar este pedido? As reservas dos participantes serão liberadas após conferir que não houve pagamento.")) return;
+    setOrderActionBusy(true);
+    try {
+      const response = await cancelCheckoutOrder(registrationDetails.order_id);
+      if (!response.success) {
+        toast.error(response.error || "Não foi possível cancelar o pedido.");
+        return;
+      }
+      toast.success("Pedido cancelado.");
+      await handleViewDetails({ id: registrationDetails.id } as Registration);
+      void loadRegistrations();
+    } catch (error: any) {
+      toast.error(error?.message || "Não foi possível cancelar o pedido.");
+    } finally {
+      setOrderActionBusy(false);
+    }
+  };
+
+  const handleRefundCheckoutParticipant = async () => {
+    if (!registrationDetails?.order_id || !canRefundCheckoutParticipant(registrationDetails)) return;
+    if (!window.confirm(`Estornar o ingresso de ${registrationDetails.runner_name || "este participante"}? O valor alocado será devolvido no gateway.`)) return;
+    setOrderActionBusy(true);
+    try {
+      const response = await refundCheckoutOrder(registrationDetails.order_id, registrationDetails.id);
+      if (!response.success) {
+        toast.error(response.error || "Não foi possível estornar este ingresso.");
+        return;
+      }
+      toast.success(response.data?.status === "done" ? "Estorno concluído." : `Estorno registrado (${response.data?.status || "pendente"}).`);
+      await handleViewDetails({ id: registrationDetails.id } as Registration);
+      void loadRegistrations();
+    } catch (error: any) {
+      toast.error(error?.message || "Não foi possível estornar este ingresso.");
+    } finally {
+      setOrderActionBusy(false);
     }
   };
 
@@ -690,6 +753,76 @@ const AdminRegistrations = () => {
     setSaving(true);
 
     try {
+      let productSelectionsForVariableKit: Array<{
+        product_id: string;
+        variant_id?: string;
+        attribute_selections: Record<string, string>;
+      }> | null = null;
+
+      if (editingKitId && kitProducts.length > 0) {
+        const built = buildProductSelectionsForVariableKit(kitProducts, editingProductAttributes, {
+          requireAll: false,
+        });
+        if (built.length > 0) productSelectionsForVariableKit = built;
+      }
+
+      // Compra em grupo: mutação só pela API de pedido (estoque + diferença).
+      if (registrationDetails.order_id) {
+        const orderChoices: {
+          category_id?: string;
+          kit_id?: string | null;
+          modality_id?: string | null;
+          category_batch_id?: string | null;
+          product_selections?: typeof productSelectionsForVariableKit;
+          custom_field_values?: Record<string, string>;
+        } = {};
+        if (editingCategoryId && editingCategoryId !== registrationDetails.category_id) {
+          orderChoices.category_id = editingCategoryId;
+        }
+        if (editingKitId !== (registrationDetails.kit_id || "")) {
+          orderChoices.kit_id = editingKitId || null;
+        }
+        if (editingModalityId !== (registrationDetails.modality_id || "")) {
+          orderChoices.modality_id = editingModalityId || null;
+        }
+        if (editingBatchId !== ((registrationDetails as any).category_batch_id || "")) {
+          orderChoices.category_batch_id = editingBatchId || null;
+        }
+        const effectiveCategory = eventCategoriesList.find((c) => c.id === (editingCategoryId || registrationDetails.category_id));
+        if (effectiveCategory) {
+          orderChoices.custom_field_values = effectiveCategory.custom_fields?.length ? editingCustomFieldValues : {};
+        }
+        if (productSelectionsForVariableKit?.length) {
+          orderChoices.product_selections = productSelectionsForVariableKit;
+        }
+        if (Object.keys(orderChoices).length === 0) {
+          toast.message("Nenhuma alteração para salvar.");
+          setSaving(false);
+          return;
+        }
+        const orderRes = await updateCheckoutRegistrationChoices(
+          registrationDetails.order_id,
+          registrationDetails.id,
+          orderChoices
+        );
+        if (!orderRes.success) {
+          const det = orderRes.details as { requires_product_reselection?: boolean; reasons?: string[] } | null;
+          if (det?.requires_product_reselection && Array.isArray(det.reasons) && det.reasons.length > 0) {
+            toast.error(det.reasons.join("\n"));
+          } else {
+            toast.error(orderRes.error || "Erro ao atualizar inscrição do pedido");
+          }
+          setSaving(false);
+          return;
+        }
+        if (orderRes.data?.preview?.difference_to_pay && orderRes.data.preview.difference_to_pay >= 0.01) {
+          toast.success("Escolhas atualizadas. Diferença pendente de pagamento.");
+        } else if (orderRes.data?.preview?.difference_to_refund && orderRes.data.preview.difference_to_refund >= 0.01) {
+          toast.success("Escolhas atualizadas. Reembolso manual pendente.");
+        } else {
+          toast.success("Inscrição do pedido atualizada com sucesso!");
+        }
+      } else {
       // Update registration status, payment status, category and kit
       const updateData: any = {};
       if (editingStatus !== registrationDetails.status) {
@@ -724,19 +857,6 @@ const AdminRegistrations = () => {
       const effectiveCategory = eventCategoriesList.find((c) => c.id === (editingCategoryId || registrationDetails.category_id));
       if (effectiveCategory) {
         updateData.custom_field_values = effectiveCategory.custom_fields?.length ? editingCustomFieldValues : {};
-      }
-
-      let productSelectionsForVariableKit: Array<{
-        product_id: string;
-        variant_id?: string;
-        attribute_selections: Record<string, string>;
-      }> | null = null;
-
-      if (editingKitId && kitProducts.length > 0) {
-        const built = buildProductSelectionsForVariableKit(kitProducts, editingProductAttributes, {
-          requireAll: false,
-        });
-        if (built.length > 0) productSelectionsForVariableKit = built;
       }
 
       const categoryOrKitChanging =
@@ -797,6 +917,7 @@ const AdminRegistrations = () => {
       }
 
       toast.success("Inscrição atualizada com sucesso!");
+      }
       
       // Reload registration details
       const response = await getRegistrationById(registrationDetails.id);
@@ -1180,8 +1301,21 @@ const AdminRegistrations = () => {
                     </TableRow>
                   ) : (
                     registrations.map((registration) => (
-                      <TableRow key={registration.id}>
-                        <TableCell className="font-medium">{registration.runner_name || "N/A"}</TableCell>
+                      <TableRow
+                        key={registration.id}
+                        className="cursor-pointer"
+                        onClick={() => void handleViewDetails(registration)}
+                      >
+                        <TableCell className="font-medium">
+                          <div className="space-y-1">
+                            <div>{registration.runner_name || "N/A"}</div>
+                            {registration.order_id && (
+                              <Badge variant="outline" className="font-normal">
+                                Compra em grupo{registration.order_participant_count ? ` · ${registration.order_participant_count}` : ""}
+                              </Badge>
+                            )}
+                          </div>
+                        </TableCell>
                         <TableCell className="font-mono text-sm">
                           {registration.runner_cpf ? formatCPF(registration.runner_cpf) : "N/A"}
                         </TableCell>
@@ -1218,7 +1352,7 @@ const AdminRegistrations = () => {
                             ? format(new Date(registration.created_at), "dd/MM/yyyy", { locale: ptBR })
                             : "N/A"}
                         </TableCell>
-                        <TableCell className="text-right">
+                        <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                               <Button variant="ghost" size="icon">
@@ -1230,7 +1364,15 @@ const AdminRegistrations = () => {
                                 <Eye className="mr-2 h-4 w-4" />
                                 Ver Detalhes
                               </DropdownMenuItem>
-                              {canAdminTransferRegistration(registration) && (
+                              <DropdownMenuItem
+                                onClick={() =>
+                                  navigate(`/registration/validate/${registration.id}`)
+                                }
+                              >
+                                <Eye className="mr-2 h-4 w-4" />
+                                Visualizar inscrição
+                              </DropdownMenuItem>
+                              {canAdminTransferRegistration(registration) && !registration.order_id && (
                                 <DropdownMenuItem
                                   onClick={() => {
                                     setRegistrationToTransfer(registration);
@@ -1241,7 +1383,7 @@ const AdminRegistrations = () => {
                                   Transferir inscrição
                                 </DropdownMenuItem>
                               )}
-                              {registration.payment_status === "paid" && (
+                              {registration.payment_status === "paid" && !registration.order_id && (
                                 <DropdownMenuItem onClick={() => handleOpenAttachCommission(registration)}>
                                   <Link2 className="mr-2 h-4 w-4" />
                                   Atrelar a comissão
@@ -1676,7 +1818,7 @@ const AdminRegistrations = () => {
                   </div>
                   <div>
                     <Label className="text-sm text-muted-foreground">Status</Label>
-                    {isEditMode ? (
+                    {isEditMode && !registrationDetails.order_id ? (
                       <Select value={editingStatus} onValueChange={setEditingStatus}>
                         <SelectTrigger className="mt-1">
                           <SelectValue />
@@ -1695,7 +1837,7 @@ const AdminRegistrations = () => {
                   </div>
                   <div>
                     <Label className="text-sm text-muted-foreground">Status do Pagamento</Label>
-                    {isEditMode ? (
+                    {isEditMode && !registrationDetails.order_id ? (
                       <Select
                         value={editingPaymentStatus}
                         onValueChange={(v) => {
@@ -1721,7 +1863,7 @@ const AdminRegistrations = () => {
                       <div className="mt-1">{getPaymentStatusBadge(registrationDetails.payment_status || "pending")}</div>
                     )}
                   </div>
-                  {isEditMode && editingPaymentStatus !== "convidado" && (
+                  {isEditMode && !registrationDetails.order_id && editingPaymentStatus !== "convidado" && (
                     <div>
                       <Label className="text-sm text-muted-foreground">Método de pagamento</Label>
                       <p className="text-xs text-muted-foreground mb-1">
@@ -1873,6 +2015,88 @@ const AdminRegistrations = () => {
                 </div>
               )}
 
+              {registrationDetails.order_id && (
+                <div className="space-y-3 rounded-xl border border-amber-200 bg-amber-50/60 p-4">
+                  <h3 className="text-lg font-semibold border-b border-amber-200 pb-2">Pedido da compra</h3>
+                  <p className="text-sm text-amber-950">
+                    Compra em grupo. Edição e transferência legadas ficam indisponíveis; use as ações do pedido abaixo.
+                  </p>
+                  <div className="grid grid-cols-1 gap-2 text-sm md:grid-cols-2">
+                    <div>
+                      <Label className="text-sm text-muted-foreground">Referência</Label>
+                      <p className="break-all font-mono text-xs">{registrationDetails.order_id}</p>
+                    </div>
+                    <div>
+                      <Label className="text-sm text-muted-foreground">Status do pedido</Label>
+                      <p className="font-medium capitalize">{registrationDetails.order_status || "—"}</p>
+                    </div>
+                    {registrationDetails.order_total_cents != null && (
+                      <div>
+                        <Label className="text-sm text-muted-foreground">Total do pedido</Label>
+                        <p className="font-medium">{formatCurrency(registrationDetails.order_total_cents / 100)}</p>
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    {canCancelCheckoutOrder(registrationDetails) && (
+                      <Button variant="outline" className="min-h-11" disabled={orderActionBusy || loadingDetails} onClick={() => void handleCancelCheckoutOrder()}>
+                        {orderActionBusy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Ban className="mr-2 h-4 w-4" />}
+                        Cancelar pedido
+                      </Button>
+                    )}
+                    {canRefundCheckoutParticipant(registrationDetails) && (
+                      <Button variant="destructive" className="min-h-11" disabled={orderActionBusy || loadingDetails} onClick={() => void handleRefundCheckoutParticipant()}>
+                        {orderActionBusy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Undo2 className="mr-2 h-4 w-4" />}
+                        Estornar este ingresso
+                      </Button>
+                    )}
+                    {canAdminTransferRegistration(registrationDetails) && (
+                      <Button
+                        variant="outline"
+                        className="min-h-11"
+                        disabled={orderActionBusy || loadingDetails}
+                        onClick={() => {
+                          setRegistrationToTransfer(registrationDetails);
+                          setTransferDialogOpen(true);
+                        }}
+                      >
+                        <ArrowRightLeft className="mr-2 h-4 w-4" />
+                        Transferir inscrição
+                      </Button>
+                    )}
+                  </div>
+                  {!!registrationDetails.order_participants?.length && (
+                    <div className="space-y-2">
+                      <Label className="text-sm text-muted-foreground">Participantes do pedido</Label>
+                      <ul className="space-y-2">
+                        {registrationDetails.order_participants.map((participant) => {
+                          const selected = participant.id === registrationDetails.id;
+                          return (
+                            <li key={participant.id}>
+                              <button
+                                type="button"
+                                className={`w-full rounded-lg border px-3 py-2 text-left text-sm transition-colors ${selected ? "border-primary bg-primary/5" : "bg-background hover:bg-muted/40"}`}
+                                onClick={() => {
+                                  if (!selected) void handleViewDetails({ id: participant.id } as Registration);
+                                }}
+                              >
+                                <div className="flex flex-wrap items-start justify-between gap-2">
+                                  <span className="font-medium">{participant.runner_name}{selected ? " · atual" : ""}</span>
+                                  <span>{formatCurrency(participant.total_amount)}</span>
+                                </div>
+                                <div className="mt-1 text-muted-foreground">
+                                  {[participant.cpf_masked, participant.status, participant.payment_status].filter(Boolean).join(" · ")}
+                                </div>
+                              </button>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Produto e Variações Selecionadas */}
               {isEditMode && editingKitId && (
                 <div className="space-y-3">
@@ -1916,6 +2140,7 @@ const AdminRegistrations = () => {
                 <div className="space-y-3">
                   <div className="flex items-center justify-between border-b pb-2">
                     <h3 className="text-lg font-semibold">Produto e Variações Selecionadas</h3>
+                    {!registrationDetails.order_id && (
                     <Button
                       variant="outline"
                       size="sm"
@@ -1926,6 +2151,7 @@ const AdminRegistrations = () => {
                       <Trash2 className="w-4 h-4 mr-1" />
                       Remover Todos os Atributos
                     </Button>
+                    )}
                   </div>
                   <div className="space-y-4">
                     {groupRegistrationProductSelections(registrationDetails.product_selections).map((g) => (
@@ -1969,10 +2195,20 @@ const AdminRegistrations = () => {
                   <Eye className="w-4 h-4 mr-2" />
                   Visualizar Inscrição
                 </Button>
-                <Button variant="default" onClick={handleEditClick}>
-                  <Edit2 className="w-4 h-4 mr-2" />
-                  Editar
-                </Button>
+                {!registrationDetails.order_id && (
+                  <Button variant="default" onClick={handleEditClick}>
+                    <Edit2 className="w-4 h-4 mr-2" />
+                    Editar
+                  </Button>
+                )}
+                {!!registrationDetails.order_id &&
+                  ["paid", "partially_paid"].includes(registrationDetails.payment_status || "") &&
+                  !["cancelled", "refunded", "transferred"].includes(registrationDetails.status || "") && (
+                  <Button variant="default" onClick={handleEditClick}>
+                    <Edit2 className="w-4 h-4 mr-2" />
+                    Editar escolhas
+                  </Button>
+                )}
               </>
             )}
             {registrationDetails && isEditMode && (
@@ -2026,20 +2262,40 @@ const AdminRegistrations = () => {
         </DialogContent>
       </Dialog>
 
-      <TransferRegistrationAdminDialog
-        open={transferDialogOpen}
-        onOpenChange={(open) => {
-          setTransferDialogOpen(open);
-          if (!open) setRegistrationToTransfer(null);
-        }}
-        registrationId={registrationToTransfer?.id ?? null}
-        subtitle={
-          registrationToTransfer
-            ? `${registrationToTransfer.runner_name || "—"} • ${registrationToTransfer.confirmation_code || registrationToTransfer.id}`
-            : undefined
-        }
-        onSuccess={() => void loadRegistrations()}
-      />
+      {isCheckoutOrderRegistration(registrationToTransfer) ? (
+        <AdminCheckoutTransferDialog
+          open={transferDialogOpen}
+          onOpenChange={(open) => {
+            setTransferDialogOpen(open);
+            if (!open) setRegistrationToTransfer(null);
+          }}
+          registrationId={registrationToTransfer?.id ?? null}
+          subtitle={
+            registrationToTransfer
+              ? `${registrationToTransfer.runner_name || "—"} • ${registrationToTransfer.confirmation_code || registrationToTransfer.id}`
+              : undefined
+          }
+          onSuccess={() => {
+            void loadRegistrations();
+            if (registrationDetails?.id) void handleViewDetails({ id: registrationDetails.id } as Registration);
+          }}
+        />
+      ) : (
+        <TransferRegistrationAdminDialog
+          open={transferDialogOpen}
+          onOpenChange={(open) => {
+            setTransferDialogOpen(open);
+            if (!open) setRegistrationToTransfer(null);
+          }}
+          registrationId={registrationToTransfer?.id ?? null}
+          subtitle={
+            registrationToTransfer
+              ? `${registrationToTransfer.runner_name || "—"} • ${registrationToTransfer.confirmation_code || registrationToTransfer.id}`
+              : undefined
+          }
+          onSuccess={() => void loadRegistrations()}
+        />
+      )}
 
       <RegisterAthleteStaffDialog
         mode="super_admin"

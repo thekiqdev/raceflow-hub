@@ -1,7 +1,16 @@
 import { Router, Request, Response } from 'express';
 import { query } from '../config/database.js';
+import { isEnvironmentFlagEnabled } from '../config/environment.js';
 
 const router = Router();
+// Somente flags públicas de disponibilidade, sem credenciais ou conteúdo do ambiente.
+router.get('/checkout',(_req:Request,res:Response)=>{
+  res.setHeader('Cache-Control','no-store');
+  res.json({success:true,data:{
+    checkout_enabled:isEnvironmentFlagEnabled('MULTI_REGISTRATION_CHECKOUT_ENABLED'),
+    delivery_enabled:isEnvironmentFlagEnabled('CHECKOUT_DELIVERY_ENABLED'),
+  }});
+});
 
 // Health check endpoint
 router.get('/', async (_req: Request, res: Response) => {
@@ -26,4 +35,3 @@ router.get('/', async (_req: Request, res: Response) => {
 });
 
 export default router;
-

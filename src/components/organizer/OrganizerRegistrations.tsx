@@ -26,13 +26,13 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Plus, Search, MoreVertical, Eye, MessageSquare, FileDown, Loader2, Mail, ChevronDown, ChevronUp, Edit2, Save, X, Trash2, Link2, ChevronLeft, ChevronRight } from "lucide-react";
+import { Plus, Search, MoreVertical, Eye, MessageSquare, FileDown, Loader2, Mail, ChevronDown, ChevronUp, Edit2, Save, X, Trash2, Link2, ChevronLeft, ChevronRight, Ban } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { getRegistrations, exportRegistrations, getRegistrationById, updateRegistration, completeRegistrationAttributes, removeRegistrationAttributes, attachRegistrationToCommission, getRegistrationCommission, detachCommission, type Registration, type RegistrationCommissionInfo } from "@/lib/api/registrations";
-
+import { cancelCheckoutOrder } from "@/lib/api/checkoutOrders";
 const REGISTRATIONS_PAGE_SIZE = 20;
 import { maskCpf, unmask } from "@/lib/utils/masks";
 import { getEventCommissionsByEvent, type EventCommissionOption } from "@/lib/api/leaderEventCommissions";
@@ -74,6 +74,7 @@ const OrganizerRegistrations = () => {
   const [selectedRegistration, setSelectedRegistration] = useState<Registration | null>(null);
   const [registrationDetails, setRegistrationDetails] = useState<any>(null);
   const [loadingDetails, setLoadingDetails] = useState(false);
+  const [orderActionBusy, setOrderActionBusy] = useState(false);
   const [platformFee, setPlatformFee] = useState<number>(0);
   const [platformFeeType, setPlatformFeeType] = useState<'fixed' | 'percentage'>('fixed');
   const [organizerEditAttributesEnabled, setOrganizerEditAttributesEnabled] = useState<boolean>(false);
@@ -195,6 +196,7 @@ const OrganizerRegistrations = () => {
     setSelectedRegistration(registration);
     setIsDetailsDialogOpen(true);
     setLoadingDetails(true);
+    setRegistrationDetails(null);
     setIsEditMode(false);
     setEditingProductAttributes({});
     setKitProducts([]);
@@ -216,6 +218,29 @@ const OrganizerRegistrations = () => {
       toast.error("Erro ao carregar detalhes da inscrição");
     } finally {
       setLoadingDetails(false);
+    }
+  };
+
+  const canCancelCheckoutOrder = (details: Registration | null | undefined) =>
+    !!details?.order_id && ["draft", "reviewed", "reserved", "awaiting_payment"].includes(details.order_status || "");
+
+  const handleCancelCheckoutOrder = async () => {
+    if (!registrationDetails?.order_id || !canCancelCheckoutOrder(registrationDetails)) return;
+    if (!window.confirm("Cancelar este pedido? As reservas dos participantes serão liberadas após conferir que não houve pagamento.")) return;
+    setOrderActionBusy(true);
+    try {
+      const response = await cancelCheckoutOrder(registrationDetails.order_id);
+      if (!response.success) {
+        toast.error(response.error || "Não foi possível cancelar o pedido.");
+        return;
+      }
+      toast.success("Pedido cancelado.");
+      await handleViewDetails({ id: registrationDetails.id } as Registration);
+      void loadRegistrations();
+    } catch (error: any) {
+      toast.error(error?.message || "Não foi possível cancelar o pedido.");
+    } finally {
+      setOrderActionBusy(false);
     }
   };
 
@@ -765,7 +790,16 @@ const OrganizerRegistrations = () => {
                   ) : (
                     registrations.map((registration) => (
                       <TableRow key={registration.id}>
-                        <TableCell className="font-medium">{registration.runner_name || "N/A"}</TableCell>
+                        <TableCell className="font-medium">
+                          <div className="space-y-1">
+                            <div>{registration.runner_name || "N/A"}</div>
+                            {registration.order_id && (
+                              <Badge variant="outline" className="font-normal">
+                                Compra em grupo{registration.order_participant_count ? ` · ${registration.order_participant_count}` : ""}
+                              </Badge>
+                            )}
+                          </div>
+                        </TableCell>
                         <TableCell className="font-mono text-sm">
                           {registration.runner_cpf ? formatCPF(registration.runner_cpf) : "N/A"}
                         </TableCell>
@@ -809,10 +843,15 @@ const OrganizerRegistrations = () => {
                                 <Eye className="mr-2 h-4 w-4" />
                                 Ver Detalhes
                               </DropdownMenuItem>
-                              {registration.payment_status === "paid" && (
+                              {registration.payment_status === "paid" && !registration.order_id && (
                                 <DropdownMenuItem onClick={() => handleOpenAttachCommission(registration)}>
                                   <Link2 className="mr-2 h-4 w-4" />
                                   Atrelar a comissão
+                                </DropdownMenuItem>
+                              )}
+                              {registration.order_id && (
+                                <DropdownMenuItem disabled>
+                                  Compra em grupo — use Ver Detalhes
                                 </DropdownMenuItem>
                               )}
                               <DropdownMenuItem>
@@ -1342,6 +1381,66 @@ const OrganizerRegistrations = () => {
                   </div>
                 </div>
               )}
+
+              {registrationDetails.order_id && (
+                <div className="space-y-3 rounded-xl border border-amber-200 bg-amber-50/60 p-4">
+                  <h3 className="text-lg font-semibold border-b border-amber-200 pb-2">Pedido da compra</h3>
+                  <p className="text-sm text-amber-950">
+                    Compra em grupo. Edição e atrelamento legado ficam indisponíveis; use as ações do pedido abaixo.
+                  </p>
+                  <div className="grid grid-cols-1 gap-2 text-sm md:grid-cols-2">
+                    <div>
+                      <Label className="text-sm text-muted-foreground">Referência</Label>
+                      <p className="break-all font-mono text-xs">{registrationDetails.order_id}</p>
+                    </div>
+                    <div>
+                      <Label className="text-sm text-muted-foreground">Status do pedido</Label>
+                      <p className="font-medium capitalize">{registrationDetails.order_status || "—"}</p>
+                    </div>
+                    {registrationDetails.order_total_cents != null && (
+                      <div>
+                        <Label className="text-sm text-muted-foreground">Total do pedido</Label>
+                        <p className="font-medium">{formatCurrency(registrationDetails.order_total_cents / 100)}</p>
+                      </div>
+                    )}
+                  </div>
+                  {canCancelCheckoutOrder(registrationDetails) && (
+                    <Button variant="outline" className="min-h-11" disabled={orderActionBusy || loadingDetails} onClick={() => void handleCancelCheckoutOrder()}>
+                      {orderActionBusy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Ban className="mr-2 h-4 w-4" />}
+                      Cancelar pedido
+                    </Button>
+                  )}
+                  {!!registrationDetails.order_participants?.length && (
+                    <div className="space-y-2">
+                      <Label className="text-sm text-muted-foreground">Participantes do pedido</Label>
+                      <ul className="space-y-2">
+                        {registrationDetails.order_participants.map((participant) => {
+                          const selected = participant.id === registrationDetails.id;
+                          return (
+                            <li key={participant.id}>
+                              <button
+                                type="button"
+                                className={`w-full rounded-lg border px-3 py-2 text-left text-sm transition-colors ${selected ? "border-primary bg-primary/5" : "bg-background hover:bg-muted/40"}`}
+                                onClick={() => {
+                                  if (!selected) void handleViewDetails({ id: participant.id } as Registration);
+                                }}
+                              >
+                                <div className="flex flex-wrap items-start justify-between gap-2">
+                                  <span className="font-medium">{participant.runner_name}{selected ? " · atual" : ""}</span>
+                                  <span>{formatCurrency(participant.total_amount)}</span>
+                                </div>
+                                <div className="mt-1 text-muted-foreground">
+                                  {[participant.cpf_masked, participant.status, participant.payment_status].filter(Boolean).join(" · ")}
+                                </div>
+                              </button>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           ) : (
             <div className="py-8 text-center text-muted-foreground">
@@ -1362,7 +1461,7 @@ const OrganizerRegistrations = () => {
                   <Eye className="w-4 h-4 mr-2" />
                   Visualizar Inscrição
                 </Button>
-                {organizerEditAttributesEnabled && (
+                {organizerEditAttributesEnabled && !registrationDetails.order_id && (
                   <Button variant="default" onClick={handleEditClick}>
                     <Edit2 className="w-4 h-4 mr-2" />
                     Editar
@@ -1392,9 +1491,9 @@ const OrganizerRegistrations = () => {
               </>
             )}
             {!isEditMode && (
-            <Button variant="outline" onClick={() => setIsDetailsDialogOpen(false)}>
-              Fechar
-            </Button>
+              <Button variant="outline" onClick={() => setIsDetailsDialogOpen(false)}>
+                Fechar
+              </Button>
             )}
           </DialogFooter>
         </DialogContent>

@@ -10,6 +10,13 @@ export function maskCpf(digits: string): string {
   return `***.***.***-${d.slice(9, 11)}`;
 }
 
+/** CPF completo formatado para telas do titular/autorizado (não usar em logs). */
+export function formatCpf(digits: string | null | undefined): string | null {
+  const d = normalizeCpfDigits(String(digits || ''));
+  if (d.length !== 11) return null;
+  return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9, 11)}`;
+}
+
 /**
  * Valida CPF brasileiro (11 dígitos + dígitos verificadores).
  * Rejeita sequências óbvias inválidas (todos iguais).

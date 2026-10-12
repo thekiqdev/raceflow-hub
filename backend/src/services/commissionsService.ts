@@ -300,11 +300,11 @@ export const getCommissionsByLeader = async (
     SELECT lc.*, 
            e.title as event_title,
            u.email as referred_user_email,
-           p.full_name as referred_user_name
+           COALESCE(p.full_name,'Participante sem conta') as referred_user_name
     FROM leader_commissions lc
     JOIN events e ON lc.event_id = e.id
     JOIN registrations r ON lc.registration_id = r.id AND (r.status IS NULL OR r.status != 'cancelled')
-    JOIN users u ON lc.referred_user_id = u.id
+    LEFT JOIN users u ON lc.referred_user_id = u.id
     LEFT JOIN profiles p ON u.id = p.id
     WHERE lc.leader_id = $1
     AND lc.status IN ('pending', 'paid')

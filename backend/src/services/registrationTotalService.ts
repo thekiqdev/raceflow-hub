@@ -17,6 +17,10 @@ export interface CalculateRegistrationTotalParams {
   couponCode?: string | null;
   /** Runner ID for senior discount (60+ years) */
   runnerId?: string | null;
+  /** Somente serviços internos: nascimento conferido/declarado do participante sem conta. */
+  participantBirthDate?: string | null;
+  /** Checkout público: lote vigente e cupom válido são obrigatórios quando informados. */
+  publicCheckout?: boolean;
 }
 
 export interface CalculateRegistrationTotalResult {
@@ -30,6 +34,16 @@ export interface CalculateRegistrationTotalResult {
   kitPrice: number;
   /** Coupon applied (if valid) */
   couponApplied: boolean;
+}
+
+export class RegistrationPricingError extends Error {
+  readonly statusCode = 400;
+}
+
+/** O valor informado é apenas a expectativa revisada, nunca a fonte do preço cobrado. */
+export function registrationPriceMatches(expected: number, actual: number): boolean {
+  return Number.isFinite(expected) && expected >= 0 &&
+    Math.round(expected * 100) === Math.round(actual * 100);
 }
 
 function calculateAge(birthDate: Date): number {
@@ -48,24 +62,40 @@ function calculateAge(birthDate: Date): number {
 export async function calculateRegistrationTotal(
   params: CalculateRegistrationTotalParams
 ): Promise<CalculateRegistrationTotalResult> {
-  const { eventId, categoryId, kitId, batchId, couponCode, runnerId } = params;
+  const { eventId, categoryId, kitId, batchId, couponCode, runnerId, publicCheckout } = params;
 
   let categoryPrice = 0;
   let kitPrice = 0;
 
   // 1. Validate category belongs to event and get price
   const categoryResult = await query(
-    'SELECT id, event_id, price FROM categories WHERE id = $1 AND event_id = $2',
+    'SELECT id, event_id, price FROM categories WHERE id = $1 AND event_id = $2 FOR SHARE',
     [categoryId, eventId]
   );
   if (categoryResult.rows.length === 0) {
-    throw new Error('Categoria não encontrada ou não pertence ao evento');
+    throw new RegistrationPricingError('Categoria não encontrada ou não pertence ao evento');
   }
   const categoryRow = categoryResult.rows[0];
-  const categoryBasePrice = parseFloat(categoryRow.price) || 0;
+  const categoryBasePrice = publicCheckout ? Number(categoryRow.price) : parseFloat(categoryRow.price) || 0;
 
   // 2. If batchId provided, get batch price; otherwise use category base price
-  if (batchId) {
+  if (publicCheckout) {
+    const batches = await query(
+      `SELECT id, price,
+         (valid_from IS NOT NULL AND valid_from <= NOW()
+          AND (valid_to IS NULL OR valid_to >= NOW())) AS is_active
+       FROM category_batches WHERE category_id = $1 FOR SHARE`,
+      [categoryId]
+    );
+    const selected = batchId ? batches.rows.find((batch) => batch.id === batchId) : null;
+    if (batchId && (!selected || !selected.is_active)) {
+      throw new RegistrationPricingError('O lote selecionado não está disponível. Selecione um lote vigente.');
+    }
+    if (!batchId && batches.rows.some((batch) => batch.is_active)) {
+      throw new RegistrationPricingError('Selecione um lote vigente antes de finalizar a inscrição.');
+    }
+    categoryPrice = selected ? Number(selected.price) : categoryBasePrice;
+  } else if (batchId) {
     const batchResult = await query(
       'SELECT id, category_id, price FROM category_batches WHERE id = $1 AND category_id = $2',
       [batchId, categoryId]
@@ -82,26 +112,29 @@ export async function calculateRegistrationTotal(
   // 3. Kit price (optional)
   if (kitId) {
     const kitResult = await query(
-      'SELECT id, event_id, price FROM event_kits WHERE id = $1 AND event_id = $2',
+      'SELECT id, event_id, price FROM event_kits WHERE id = $1 AND event_id = $2 FOR SHARE',
       [kitId, eventId]
     );
     if (kitResult.rows.length === 0) {
-      throw new Error('Kit não encontrado ou não pertence ao evento');
+      throw new RegistrationPricingError('Kit não encontrado ou não pertence ao evento');
     }
-    kitPrice = parseFloat(kitResult.rows[0].price) || 0;
+    kitPrice = publicCheckout ? Number(kitResult.rows[0].price) : parseFloat(kitResult.rows[0].price) || 0;
   }
 
-  const subtotal = categoryPrice + kitPrice;
+  if (!Number.isFinite(categoryPrice) || categoryPrice < 0 || !Number.isFinite(kitPrice) || kitPrice < 0) {
+    throw new RegistrationPricingError('Preço inválido na categoria ou no kit. Entre em contato com o organizador.');
+  }
+  const subtotal = Math.round((categoryPrice + kitPrice) * 100) / 100;
 
   // 4. Senior discount (50% if module enabled and runner >= 60)
   let seniorDiscount = 0;
   const settings = await getSystemSettings();
   const seniorDiscountEnabled = settings.enabled_modules?.senior_discount_60_plus === true;
-  if (seniorDiscountEnabled && runnerId && subtotal > 0) {
-    const profileResult = await query(
-      'SELECT birth_date FROM profiles WHERE id = $1',
+  if (seniorDiscountEnabled && (runnerId || params.participantBirthDate) && subtotal > 0) {
+    const profileResult = runnerId ? await query(
+      'SELECT birth_date FROM profiles WHERE id = $1 FOR SHARE',
       [runnerId]
-    );
+    ) : { rows: [{ birth_date: params.participantBirthDate }] };
     if (profileResult.rows.length > 0 && profileResult.rows[0].birth_date) {
       const age = calculateAge(new Date(profileResult.rows[0].birth_date));
       if (age >= 60) {
@@ -115,7 +148,7 @@ export async function calculateRegistrationTotal(
   // 5. Coupon discount
   let couponDiscount = 0;
   let couponApplied = false;
-  if (couponCode && couponCode.trim() && totalAfterSenior > 0) {
+  if (couponCode && couponCode.trim() && (publicCheckout || totalAfterSenior > 0)) {
     const eventResult = await query(
       'SELECT organizer_id FROM events WHERE id = $1',
       [eventId]
@@ -124,6 +157,9 @@ export async function calculateRegistrationTotal(
       const organizerId = eventResult.rows[0].organizer_id;
       const { validateCoupon } = await import('./couponsService.js');
       const validation = await validateCoupon(couponCode.trim(), organizerId, eventId);
+      if (publicCheckout && (!validation.valid || !validation.coupon)) {
+        throw new RegistrationPricingError(validation.error || 'Cupom inválido');
+      }
       if (validation.valid && validation.coupon) {
         couponApplied = true;
         const coupon = validation.coupon;
@@ -135,6 +171,8 @@ export async function calculateRegistrationTotal(
         }
         couponDiscount = Math.round(couponDiscount * 100) / 100;
       }
+    } else if (publicCheckout) {
+      throw new RegistrationPricingError('Evento não encontrado para validar o cupom.');
     }
   }
 

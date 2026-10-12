@@ -116,6 +116,49 @@ All colors MUST be HSL.
   .touch-manipulation {
     touch-action: manipulation;
   }
+
+  .checkout-shell-enter {
+    animation: checkout-slide-up 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  .checkout-footer-cta {
+    animation: checkout-cta-swap 0.22s ease-out both;
+  }
+}
+
+@keyframes checkout-slide-up {
+  from { transform: translate3d(0, 12%, 0); opacity: 0.92; }
+  to { transform: translate3d(0, 0, 0); opacity: 1; }
+}
+@keyframes checkout-cta-swap {
+  from { transform: translate3d(0, 4px, 0); opacity: 0.55; }
+  to { transform: translate3d(0, 0, 0); opacity: 1; }
+}
+@keyframes checkout-fade-out {
+  to { opacity: 0; }
+}
+
+/* View Transition: detalhe do evento → /inscricao sobe como sheet */
+@supports (view-transition-name: none) {
+  ::view-transition-old(root) {
+    animation: 280ms ease-out both checkout-fade-out;
+  }
+  ::view-transition-new(root) {
+    animation: checkout-slide-up 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .checkout-shell-enter,
+  .checkout-footer-cta {
+    animation: none;
+  }
+  @supports (view-transition-name: none) {
+    ::view-transition-old(root),
+    ::view-transition-new(root) {
+      animation: none;
+    }
+  }
 }
 
 @layer utilities {

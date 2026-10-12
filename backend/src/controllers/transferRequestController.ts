@@ -1,4 +1,5 @@
 import { Response } from 'express';
+import {checkoutTransfers,isCheckoutTransfer,checkoutTransferDecision,parseTransferInput} from '../services/checkoutTransferWorkflow.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { AuthRequest } from '../middleware/auth.js';
 import { hasRole } from '../services/userRolesService.js';
@@ -233,6 +234,11 @@ export const getTransferRequestByIdController = asyncHandler(async (req: AuthReq
     return;
   }
 
+  if(await isCheckoutTransfer(id)) {
+    res.setHeader('Cache-Control','no-store');
+    res.json({success:true,data:await checkoutTransfers.read(id,req.user.id)});
+    return;
+  }
   // If payment is still pending, check Asaas directly for real-time status
   // This ensures we get the latest status even if webhook hasn't arrived yet
   console.log(`🔍 Verificando status de pagamento para transferência ${id}:`, {
@@ -490,6 +496,10 @@ export const updateTransferRequestController = asyncHandler(async (req: AuthRequ
     return;
   }
 
+  if(await isCheckoutTransfer(id)) {
+    res.json({success:true,data:await checkoutTransfers.decide(id,req.user.id,parseTransferInput(checkoutTransferDecision,req.body))});
+    return;
+  }
   // If approving, need to find or create the new runner
   let finalNewRunnerId = new_runner_id || transferRequest.new_runner_id;
   
@@ -604,6 +614,11 @@ export const generateTransferPaymentController = asyncHandler(async (req: AuthRe
     return;
   }
 
+  if(await isCheckoutTransfer(id)) {
+    res.setHeader('Cache-Control','no-store');
+    res.json({success:true,data:await checkoutTransfers.pay(id,req.user.id)});
+    return;
+  }
   // Check if payment already exists
   if (transferRequest.asaas_payment_id) {
     res.status(400).json({
