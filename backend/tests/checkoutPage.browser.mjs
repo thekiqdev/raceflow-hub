@@ -39,7 +39,8 @@ try {
       }
       if(path==='checkout-orders/order') return ok(order);
       if(path==='checkout-participants/self') return ok(self);
-      if(path.includes('/eligibility')) return ok({eligible:true});
+      if(path.endsWith('/eligibility-batch')) return ok({results:(body?.category_ids ?? []).map(category_id=>({category_id,eligible:true}))});
+      if(path.endsWith('/eligibility')) return ok({eligible:true});
       if(path==='checkout-orders/order/items') {
         if(failSave) return route.fulfill({status:503,json:{success:false,error:'Falha simulada ao salvar.'}});
         assert.equal(body.version,order.version);
@@ -89,8 +90,11 @@ try {
     assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth));checks++;
     await page.screenshot({path:`tmp/ux-stage-c/page-${width}.png`,fullPage:true});
     await button('Completar inscrição').click();
-    await page.getByRole('heading',{name:'Inscrição',exact:true}).waitFor();
+    // Completar volta à lista (não abre o resumo).
+    await page.getByRole('button',{name:/Escolhas completas/}).waitFor();
     assert.equal(await page.getByRole('group',{name:'Categoria',exact:true}).count(),0);checks++;
+    await page.getByRole('button',{name:/Escolhas completas/}).click();
+    await page.getByRole('heading',{name:'Inscrição',exact:true}).waitFor();
     page.once('dialog',dialog=>dialog.accept());
     await page.getByRole('button',{name:'Remover participante 1',exact:true}).click();
     await button('Adicionar minha inscrição').waitFor();await page.waitForTimeout(1100);

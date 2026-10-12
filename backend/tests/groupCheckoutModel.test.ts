@@ -1,9 +1,9 @@
 import { it } from 'node:test';
 import assert from 'node:assert/strict';
-import { activeBatches, categoryKits, choiceProblems, copyChoices, paymentMethodAvailable, participantProgress } from '../../src/components/registration/groupCheckoutModel.ts';
+import { activeBatches, categoryKits, choiceProblems, copyChoices, evaluateCategoryEligibility, paymentMethodAvailable, participantProgress } from '../../src/components/registration/groupCheckoutModel.ts';
 import type { Category } from '../../src/lib/api/categories.ts';
 import type { EventKit } from '../../src/lib/api/eventKits.ts';
-const category={id:'category',modality_ids:['modality'],batches:[]} as unknown as Category;
+const category={id:'category',modality_ids:['modality'],batches:[],gender:'ambos',min_age:null,max_age:null} as unknown as Category;
 const kits=[{id:'kit',category_ids:['category'],products:[{id:'product',name:'Camiseta',type:'variable',variants:[{id:'variant',available_quantity:1}]}]}] as EventKit[];
 const choices={category_id:'category',modality_id:'modality',kit_id:'kit',product_selections:[{product_id:'product',variant_id:'variant'}]};
 it('cópia não replica respostas pessoais e preserva respostas do destino da mesma categoria',()=> {
@@ -57,4 +57,14 @@ it('métodos desativados ou fora do prazo não permitem iniciar cobrança',()=> 
   assert.equal(paymentMethodAvailable({pix_enabled:false},'PIX'),false);
   assert.equal(paymentMethodAvailable({credit_card_disabled_at:'2020-01-01'},'CREDIT_CARD'),false);
   assert.equal(paymentMethodAvailable({},'PIX'),true);
+});
+it('elegibilidade de categoria filtra idade e gênero como o backend do checkout',()=> {
+  const femaleAdult={...category,gender:'feminino',min_age:18,max_age:39} as Category;
+  const ref=new Date('2026-06-15T12:00:00');
+  assert.equal(evaluateCategoryEligibility(femaleAdult,{gender:'F',birth_date:'1990-01-01',ready:true},ref).eligible,true);
+  assert.match(evaluateCategoryEligibility(femaleAdult,{gender:'M',birth_date:'1990-01-01',ready:true},ref).message || '',/feminino/i);
+  assert.match(evaluateCategoryEligibility(femaleAdult,{gender:'F',birth_date:'2015-01-01',ready:true},ref).message || '',/mínima/i);
+  assert.match(evaluateCategoryEligibility(femaleAdult,{gender:'F',birth_date:'1970-01-01',ready:true},ref).message || '',/máxima/i);
+  assert.equal(evaluateCategoryEligibility(femaleAdult,{gender:'O',birth_date:'1990-01-01',ready:true},ref).eligible,false);
+  assert.match(choiceProblems(choices,[femaleAdult],kits,{profile:{gender:'M',birth_date:'1990-01-01'}}).join(' '),/feminino/i);
 });

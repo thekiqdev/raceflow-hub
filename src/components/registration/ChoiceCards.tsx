@@ -3,7 +3,7 @@ import { CheckCircle2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
-export interface ChoiceOption {id:string;title:string;description?:string;price?:string;disabled?:boolean}
+export interface ChoiceOption {id:string;title:string;description?:string;price?:string;disabled?:boolean;disabledLabel?:string}
 
 /** Radios nativos preservam teclado, leitor de tela e fieldset disabled. */
 export function ChoiceCards({label,hint,value,options,onChange,stepId,compact=false}:{
@@ -30,7 +30,7 @@ export function ChoiceCards({label,hint,value,options,onChange,stepId,compact=fa
             <span className={`block break-words font-medium ${compact?'text-sm leading-snug':''}`}>{option.title}</span>
             {option.description && <span className={`block break-words text-muted-foreground ${compact?'line-clamp-1 text-[11px]':'text-sm'}`}>{option.description}</span>}
             {option.price && <span className={`block font-semibold ${compact?'text-xs':'text-sm'}`}>{option.price}</span>}
-            {option.disabled && <span className={`block font-medium ${compact?'text-xs':'text-sm'}`}>Esgotado</span>}
+            {option.disabled && <span className={`block font-medium ${compact?'text-xs':'text-sm'}`}>{option.disabledLabel || 'Esgotado'}</span>}
           </span>
           {value===option.id?<CheckCircle2 className={`mt-0.5 shrink-0 text-primary ${compact?'h-4 w-4':'h-5 w-5'}`} aria-hidden="true"/>:<span className={`mt-0.5 shrink-0 rounded-full border-2 border-muted-foreground/40 ${compact?'h-4 w-4':'h-5 w-5'}`} aria-hidden="true"/>}
         </span>

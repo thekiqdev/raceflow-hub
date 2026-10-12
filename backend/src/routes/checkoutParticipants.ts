@@ -35,4 +35,8 @@ router.post('/:id/eligibility', asyncHandler(async (req: AuthRequest,res:any) =>
   const body = parse(z.object({category_id:uuid}).strict(),req.body);
   res.json({success:true,data:await checkoutParticipants.eligibility(parse(uuid,req.params.id),req.user!.id,body.category_id)});
 }));
+router.post('/:id/eligibility-batch', asyncHandler(async (req: AuthRequest,res:any) => {
+  const body = parse(z.object({category_ids:z.array(uuid).max(100)}).strict(),req.body);
+  res.json({success:true,data:await checkoutParticipants.eligibilityBatch(parse(uuid,req.params.id),req.user!.id,body.category_ids)});
+}));
 export default router;

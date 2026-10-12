@@ -171,22 +171,64 @@ export function createParticipantsService(provider = fetchCpfFromBrasilApi) {
         email:row.email, deliveryMode:row.delivery_mode, identitySource:row.identity_source };
     });
   }
+  function evaluateCategoryEligibility(ready: boolean, identity: {birth_date?: unknown; gender?: unknown} | null, category: {min_age?: number|null; max_age?: number|null; gender?: string|null}) {
+    if (!ready) {
+      return { eligible: false, message: 'Complete a identificação deste participante antes de escolher a categoria.' };
+    }
+    const gender = String(identity?.gender ?? '').toUpperCase();
+    const normalized = gender === 'M' || gender === 'MASCULINO' ? 'masculino' : gender === 'F' || gender === 'FEMININO' ? 'feminino' : null;
+    const categoryGender = category.gender || 'ambos';
+    if (categoryGender !== 'ambos' && categoryGender !== normalized) {
+      return { eligible: false, message: categoryGender === 'masculino' ? 'Categoria exclusiva para masculino.' : 'Categoria exclusiva para feminino.' };
+    }
+    const hasMin = !!(category.min_age && category.min_age > 0);
+    const hasMax = !!(category.max_age && category.max_age > 0);
+    if (hasMin || hasMax) {
+      const dob = identity?.birth_date ? new Date(identity.birth_date as string | Date) : null;
+      if (!dob || Number.isNaN(dob.getTime())) {
+        return { eligible: false, message: 'Informe a data de nascimento para esta categoria.' };
+      }
+      const today = new Date();
+      let age = today.getFullYear() - dob.getFullYear();
+      if (today.getMonth() < dob.getMonth() || (today.getMonth() === dob.getMonth() && today.getDate() < dob.getDate())) age--;
+      if (hasMin && age < category.min_age!) {
+        return { eligible: false, message: `Idade mínima desta categoria: ${category.min_age} anos.` };
+      }
+      if (hasMax && age > category.max_age!) {
+        return { eligible: false, message: `Idade máxima desta categoria: ${category.max_age} anos.` };
+      }
+    }
+    return { eligible: true };
+  }
   async function eligibility(id: string, buyerId: string, categoryId: string) {
     return withTransaction(async () => {
       const { row, runnerId } = await load(id,buyerId);
       const category = (await query('SELECT min_age,max_age,gender FROM categories WHERE id=$1 AND event_id=$2', [categoryId,row.event_id])).rows[0];
       if (!category) throw fail('Categoria inválida para o evento.');
       const identity = runnerId ? (await query('SELECT birth_date,gender FROM profiles WHERE id=$1',[runnerId])).rows[0] : row;
-      const dob = identity?.birth_date ? new Date(identity.birth_date) : null;
-      const today = new Date();
-      let age = dob ? today.getFullYear()-dob.getFullYear() : NaN;
-      if (dob && (today.getMonth()<dob.getMonth() || (today.getMonth()===dob.getMonth() && today.getDate()<dob.getDate()))) age--;
-      const gender = String(identity?.gender ?? '').toUpperCase();
-      const normalized = gender === 'M' || gender === 'MASCULINO' ? 'masculino' : gender === 'F' || gender === 'FEMININO' ? 'feminino' : null;
-      const eligible = row.ready && (!(category.min_age || category.max_age) || (Number.isFinite(age)
-        && (!category.min_age || age>=category.min_age) && (!category.max_age || age<=category.max_age)))
-        && (category.gender === 'ambos' || category.gender === normalized);
-      return { eligible: Boolean(eligible), ...(!eligible ? { message:'Participante não atende aos requisitos ou possui dados pendentes para esta categoria.' } : {}) };
+      return evaluateCategoryEligibility(row.ready, identity, category);
+    });
+  }
+  /** Uma leitura de identidade; filtra a lista de categorias na UI sem N+1. */
+  async function eligibilityBatch(id: string, buyerId: string, categoryIds: string[]) {
+    const unique = [...new Set(categoryIds)];
+    if (!unique.length) return { results: [] as Array<{category_id:string;eligible:boolean;message?:string}> };
+    if (unique.length > 100) throw fail('Muitas categorias para conferir de uma vez.');
+    return withTransaction(async () => {
+      const { row, runnerId } = await load(id,buyerId);
+      const identity = runnerId ? (await query('SELECT birth_date,gender FROM profiles WHERE id=$1',[runnerId])).rows[0] : row;
+      const categories = (await query(
+        'SELECT id,min_age,max_age,gender FROM categories WHERE event_id=$1 AND id = ANY($2::uuid[])',
+        [row.event_id, unique],
+      )).rows as Array<{id:string;min_age:number|null;max_age:number|null;gender:string}>;
+      const byId = new Map(categories.map(c=>[c.id,c]));
+      return {
+        results: unique.map(categoryId => {
+          const category = byId.get(categoryId);
+          if (!category) return { category_id: categoryId, eligible: false, message: 'Categoria inválida para o evento.' };
+          return { category_id: categoryId, ...evaluateCategoryEligibility(row.ready, identity, category) };
+        }),
+      };
     });
   }
   /** O pedido deve usar esta resolução dentro da transação de fechamento, antes de reservar. */
@@ -200,6 +242,6 @@ export function createParticipantsService(provider = fetchCpfFromBrasilApi) {
       return ids.map(id=>participants.find(p=>p.participantId===id)!);
     });
   }
-  return { prepare, get, complete, resolveForCheckout, resolveManyForCheckout, eligibility };
+  return { prepare, get, complete, resolveForCheckout, resolveManyForCheckout, eligibility, eligibilityBatch };
 }
 export const checkoutParticipants = createParticipantsService();

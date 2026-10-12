@@ -23,3 +23,5 @@ export const completeParticipant = (id:string, data:{full_name?:string; gender?:
   apiClient.patch<CheckoutParticipant>(`/checkout-participants/${id}`,data);
 export const checkParticipantEligibility = (id:string, category_id:string) =>
   apiClient.post<{eligible:boolean;message?:string}>(`/checkout-participants/${id}/eligibility`,{category_id});
+export const checkParticipantEligibilityBatch = (id:string, category_ids:string[]) =>
+  apiClient.post<{results:Array<{category_id:string;eligible:boolean;message?:string}>}>(`/checkout-participants/${id}/eligibility-batch`,{category_ids});

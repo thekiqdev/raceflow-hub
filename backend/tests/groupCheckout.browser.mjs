@@ -13,7 +13,7 @@ try {
     const errors=[];page.on('pageerror',e=>errors.push(e.message));
     let order=null,payment=null,payCalls=0,reserveCalls=0,failSave=false,failReserve=false;
     const people=new Map();
-    const category={id:'cat',event_id:'event',name:'Categoria geral',price:100,modality_ids:['mod'],batches:[],custom_fields:[]};
+    const category={id:'cat',event_id:'event',name:'Categoria geral',price:100,gender:'ambos',min_age:null,max_age:null,modality_ids:['mod'],batches:[],custom_fields:[]};
     const kits=[{id:'kit',name:'Kit com camiseta',price:20,category_ids:['cat'],products:[{id:'shirt',name:'Camiseta',type:'variable',variants:[{id:'m',name:'Azul - M',available_quantity:8},{id:'g',name:'Azul - G',available_quantity:8}]}]}];
     await page.route('**/*',async route=> {
       const request=route.request(),url=new URL(request.url());
@@ -38,6 +38,10 @@ try {
       }
       if(path.startsWith('checkout-participants/')) {
         const id=path.split('/')[1];
+        if(path.endsWith('/eligibility-batch')) {
+          const ids=body?.category_ids ?? [];
+          return ok({results:ids.map(category_id=>({category_id,eligible:id!=='11144477735',message:id==='11144477735'?'Participante não elegível para a categoria.':undefined}))});
+        }
         if(path.endsWith('/eligibility')) return ok({eligible:id!=='11144477735',message:'Participante não elegível para a categoria.'});
         if(method==='PATCH') {const p={...people.get(id),...body,ready:true};people.set(id,p);return ok(p);}
         return ok(people.get(id));
@@ -99,7 +103,8 @@ try {
     await panel.getByRole('radio',{name:'Kit com camiseta',exact:true}).locator('..').click();await page.waitForTimeout(1300);
     await panel.getByRole('radio',{name:'Azul - M',exact:true}).locator('..').click();await page.waitForTimeout(1300);
     await panel.getByRole('button',{name:'Concluir participante',exact:true}).click();
-    // Concluir já abre o próximo incompleto; não clicar de novo (toggle fecha o painel).
+    // Concluir volta à lista; abrir o próximo incompleto manualmente.
+    await page.getByRole('button',{name:/Maria Corredora.*Não iniciado/}).click();
     await page.locator('#choices-16899535009').waitFor({state:'visible'});
     await page.locator('#choices-16899535009').getByRole('button',{name:'Copiar de outro participante',exact:true}).click();
     await page.locator('[aria-label="Escolher origem da cópia"]').getByRole('radio',{name:'Participante 1',exact:true}).check();

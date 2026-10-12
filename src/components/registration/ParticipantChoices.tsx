@@ -51,9 +51,12 @@ function firstIncomplete(steps:StepDef[]):StepKey {
   return steps.find(s=>!s.done)?.key ?? steps[steps.length-1]?.key ?? 'category';
 }
 
-export function ParticipantChoices({value,onChange,categories,kits,modalities,embedNav=true,onNavChange,initialStep}:{
+export type CategoryFitMap=Record<string,{eligible:boolean;message?:string}>;
+
+export function ParticipantChoices({value,onChange,categories,kits,modalities,embedNav=true,onNavChange,initialStep,categoryFit,categoryFitLoading=false}:{
   value:OrderChoices;onChange:(v:OrderChoices)=>void;categories:Category[];kits:EventKit[];modalities:Modality[];
   embedNav?:boolean;onNavChange?:(nav:ChoicesNav|null)=>void;initialStep?:StepKey;
+  categoryFit?:CategoryFitMap|null;categoryFitLoading?:boolean;
 }) {
   const id=useId();
   const category=categories.find(c=>c.id===value.category_id);
@@ -62,6 +65,25 @@ export function ParticipantChoices({value,onChange,categories,kits,modalities,em
   const batches=activeBatches(category);
   const steps=useMemo(()=>buildSteps(value,categories,kits,modalities),[value,categories,kits,modalities]);
   const [step,setStep]=useState<StepKey>(()=>initialStep ?? firstIncomplete(steps));
+  const categoryOptions=useMemo(()=> {
+    const selected=value.category_id?categories.find(c=>c.id===value.category_id):undefined;
+    const visible=categoryFit
+      ? categories.filter(c=>categoryFit[c.id]?.eligible || c.id===value.category_id)
+      : categories;
+    const list=selected && !visible.some(c=>c.id===selected.id)?[...visible,selected]:visible;
+    return list.map(c=>{
+      const fit=categoryFit?.[c.id];
+      const ineligible=!!categoryFit && fit && !fit.eligible;
+      const reason=fit?.message || 'Indisponível para este participante';
+      const shortReason=reason.replace(/\.$/,'').replace(/^Categoria exclusiva para /i,'Só para ')
+        .replace(/^Idade mínima desta categoria: /i,'Mín. ').replace(/^Idade máxima desta categoria: /i,'Máx. ');
+      return {
+        id:c.id,title:c.name,price:`${price(activeBatches(c)[0]?.price ?? c.price)} pela categoria`,
+        description:[c.gender==='masculino'?'Masculino':c.gender==='feminino'?'Feminino':null,c.min_age!=null?`A partir de ${c.min_age} anos`:null,c.max_age!=null?`Até ${c.max_age} anos`:null].filter(Boolean).join(' · '),
+        disabled:ineligible,disabledLabel:ineligible?shortReason:undefined,
+      };
+    });
+  },[categories,categoryFit,value.category_id]);
 
   useEffect(()=> {
     if(!steps.some(s=>s.key===step)) setStep(firstIncomplete(steps));
@@ -74,6 +96,7 @@ export function ParticipantChoices({value,onChange,categories,kits,modalities,em
   }
 
   function chooseCategory(categoryId:string) {
+    if(categoryFit && categoryFit[categoryId] && !categoryFit[categoryId].eligible) return;
     if(categoryId===value.category_id) {goNext('category');return;}
     if(value.category_id && !window.confirm('Trocar a categoria? Modalidade, lote, kit e respostas desta categoria precisarão ser conferidos novamente.')) return;
     const next=categories.find(c=>c.id===categoryId);
@@ -125,10 +148,12 @@ export function ParticipantChoices({value,onChange,categories,kits,modalities,em
     </div>
 
     <div className={`flex min-h-0 flex-1 flex-col gap-3 ${embedNav?'':'lg:mx-auto lg:w-full lg:max-w-2xl'}`}>
-      {step==='category' && <ChoiceCards compact stepId={`${id}-category`} label="Categoria" hint="Em qual categoria este participante vai correr?"
-        value={value.category_id} onChange={chooseCategory}
-        options={categories.map(c=>({id:c.id,title:c.name,price:`${price(activeBatches(c)[0]?.price ?? c.price)} pela categoria`,
-          description:[c.gender==='masculino'?'Masculino':c.gender==='feminino'?'Feminino':null,c.min_age!=null?`A partir de ${c.min_age} anos`:null,c.max_age!=null?`Até ${c.max_age} anos`:null].filter(Boolean).join(' · ')}))}/>}
+      {step==='category' && <>
+        {categoryFitLoading && <p className="text-xs text-muted-foreground" role="status">Conferindo categorias disponíveis…</p>}
+        {!categoryFitLoading && categoryFit && !categoryOptions.some(o=>!o.disabled) && <p className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950" role="status">Nenhuma categoria disponível para este participante com os dados atuais (idade/sexo).</p>}
+        <ChoiceCards compact stepId={`${id}-category`} label="Categoria" hint="Em qual categoria este participante vai correr?"
+          value={value.category_id} onChange={chooseCategory} options={categoryOptions}/>
+      </>}
 
       {step==='modality' && category && <ChoiceCards compact key={`modality-${category.id}`} label="Modalidade" hint="Escolha a modalidade desta categoria."
         value={value.modality_id}

@@ -3,12 +3,12 @@ import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/compone
 import { Button } from '@/components/ui/button';
 import { Calendar, CheckCircle2, ChevronDown, ChevronLeft, Clock, Copy, Loader2, MapPin, Plus, Trash2 } from 'lucide-react';
 import { ParticipantIdentityForm } from './ParticipantIdentityForm';
-import { ParticipantChoices, type ChoicesNav } from './ParticipantChoices';
+import { ParticipantChoices, type CategoryFitMap, type ChoicesNav } from './ParticipantChoices';
 import { useGroupCheckout } from './useGroupCheckout';
 import { CheckoutLeaveGuard } from './CheckoutLeaveGuard';
 import { CheckoutActionBar, CheckoutPaymentPanel } from './CheckoutPaymentPanel';
-import { checkParticipantEligibility } from '@/lib/api/checkoutParticipants';
-import { choiceProblems, copyChoices, money, paymentMethodAvailable, participantProgress, choicesSignature, type ParticipantDraft } from './groupCheckoutModel';
+import { checkParticipantEligibility, checkParticipantEligibilityBatch } from '@/lib/api/checkoutParticipants';
+import { choiceProblems, copyChoices, money, paymentMethodAvailable, participantProgress, choicesSignature, type CategoryEligibilityProfile, type ParticipantDraft } from './groupCheckoutModel';
 import { formatDateOnlyBrasilia, formatTimeBrasilia } from '@/lib/utils';
 import heroImage from '@/assets/hero-running.jpg';
 
@@ -53,6 +53,8 @@ export function GroupRegistrationFlow({open,onOpenChange,event,buyerId,mode='dia
   const onChoicesNav=useCallback((nav:ChoicesNav|null)=>setChoicesNav(nav),[]);
   const [editingChoices,setEditingChoices]=useState<string|null>(null);
   const [choicesEditSession,setChoicesEditSession]=useState(0);
+  const [categoryFitByParticipant,setCategoryFitByParticipant]=useState<Record<string,CategoryFitMap>>({});
+  const [categoryFitLoadingId,setCategoryFitLoadingId]=useState<string|null>(null);
   const [paymentFooterHost,setPaymentFooterHost]=useState<HTMLElement|null>(null);
   const [shellHeight,setShellHeight]=useState<number|null>(null);
   const midRef=useRef<HTMLDivElement>(null);
@@ -84,11 +86,26 @@ export function GroupRegistrationFlow({open,onOpenChange,event,buyerId,mode='dia
     :paymentMethodAvailable(event,method,now)?method:paymentMethodAvailable(event,'PIX',now)?'PIX':paymentMethodAvailable(event,'CREDIT_CARD',now)?'CREDIT_CARD':'PIX';
   const identityReady=(id:string)=>!!participants[id]?.ready && new Date(participants[id].expires_at).getTime()>now;
   const needsIdentity=draft.some(d=>!identityReady(d.participant_id));
+  function eligibilityProfile(id:string):CategoryEligibilityProfile|undefined {
+    const person=participants[id];
+    if(!person?.ready) return undefined;
+    // Conta registrada: demografia só no servidor (publicParticipant omite). Usar eligibility-batch.
+    if(person.registered && person.birth_date==null && person.gender==null) return undefined;
+    return {birth_date:person.birth_date,gender:person.gender,ready:person.ready};
+  }
+  function problemsFor(item:ParticipantDraft) {
+    return choiceProblems(item.choices,catalog.categories,catalog.kits,{
+      profile:eligibilityProfile(item.participant_id),
+      categoryFit:categoryFitByParticipant[item.participant_id],
+    });
+  }
   function progress(item:ParticipantDraft) {
     const issue=issues[item.participant_id];
     return participantProgress(item.choices,catalog.categories,catalog.kits,{identityReady:identityReady(item.participant_id),
       savedChoices:order?.items.find(i=>i.participant_id===item.participant_id)?.choices,
-      reviewIssue:issue?.signature===choicesSignature(item.choices)?issue.message:undefined});
+      reviewIssue:issue?.signature===choicesSignature(item.choices)?issue.message:undefined,
+      profile:eligibilityProfile(item.participant_id),
+      categoryFit:categoryFitByParticipant[item.participant_id]});
   }
   const completed=draft.filter(d=>progress(d).state==='complete').length;
   function selectionSummary(item:ParticipantDraft) {
@@ -199,7 +216,7 @@ export function GroupRegistrationFlow({open,onOpenChange,event,buyerId,mode='dia
     const source=draft.find(d=>d.participant_id===copyPickSource);
     const target=draft.find(d=>d.participant_id===copyTarget);
     if(!source || !target) return;
-    const problems=choiceProblems(source.choices,catalog.categories,catalog.kits);
+    const problems=problemsFor(source);
     if(problems.length) {flow.setError(`Complete as escolhas antes de copiar: ${problems.join(' ')}`);return;}
     if(progress(source).state!=='complete') {flow.setError('Salve e confira as escolhas da origem antes de copiar.');return;}
     if(!identityReady(target.participant_id)) {flow.setError('Identifique novamente este participante.');return;}
@@ -224,7 +241,7 @@ export function GroupRegistrationFlow({open,onOpenChange,event,buyerId,mode='dia
     setCopyTarget(null);setCopyPickSource(null);setEditingChoices(null);setExpanded(null);
   }
   async function finishParticipant(item:ParticipantDraft) {
-    if(!identityReady(item.participant_id) || choiceProblems(item.choices,catalog.categories,catalog.kits).length) return;
+    if(!identityReady(item.participant_id) || problemsFor(item).length) return;
     setCopyBusy(true);setNotice('');
     try {
       const result=await checkParticipantEligibility(item.participant_id,item.choices.category_id!);
@@ -236,8 +253,9 @@ export function GroupRegistrationFlow({open,onOpenChange,event,buyerId,mode='dia
       if(!await flow.save()) return;
       const others=draft.filter(d=>d.participant_id!==item.participant_id);
       const next=others.find(d=>progress(d).state!=='complete');
-      setEditingChoices(null);
-      setExpanded(next?.participant_id ?? null);
+      setEditingChoices(null);setCopyTarget(null);setCopyPickSource(null);setChoicesNav(null);
+      // Sempre volta à lista; o próximo incompleto fica visível nos cards sem abrir o resumo.
+      setExpanded(null);
       setNotice(next?'Escolhas salvas. Continue com o próximo participante.':'');
       window.requestAnimationFrame(()=>document.getElementById(`participant-${next?.participant_id ?? item.participant_id}`)?.focus());
     } catch {flow.setError('Não foi possível conferir o participante. Tente novamente.');}
@@ -245,7 +263,7 @@ export function GroupRegistrationFlow({open,onOpenChange,event,buyerId,mode='dia
   }
   async function review() {
     for(const [index,item] of draft.entries()) {
-      const problems=choiceProblems(item.choices,catalog.categories,catalog.kits);
+      const problems=problemsFor(item);
       if(problems.length) {setExpanded(item.participant_id);flow.setError(`Participante ${index+1}: ${problems.join(' ')}`);return;}
     }
     await flow.review();
@@ -255,7 +273,25 @@ export function GroupRegistrationFlow({open,onOpenChange,event,buyerId,mode='dia
   const Title=pageMode?'h1':DialogTitle;
   const Description=pageMode?'p':DialogDescription;
   const expandedItem=expanded?draft.find(d=>d.participant_id===expanded):undefined;
-  const expandedProblems=expandedItem?choiceProblems(expandedItem.choices,catalog.categories,catalog.kits):[];
+  const expandedProblems=expandedItem?problemsFor(expandedItem):[];
+  const expandedParticipant=expanded?participants[expanded]:undefined;
+  const categoryIdsKey=catalog.categories.map(c=>c.id).join(',');
+  useEffect(()=> {
+    if(!expanded || !expandedParticipant?.ready || !categoryIdsKey) return;
+    if(new Date(expandedParticipant.expires_at).getTime()<=Date.now()) return;
+    const participantId=expanded;
+    const categoryIds=categoryIdsKey.split(',').filter(Boolean);
+    let cancelled=false;
+    setCategoryFitLoadingId(participantId);
+    void checkParticipantEligibilityBatch(participantId,categoryIds).then(result=>{
+      if(cancelled || !result.success || !result.data?.results) return;
+      setCategoryFitByParticipant(prev=>({
+        ...prev,
+        [participantId]:Object.fromEntries(result.data.results.map(r=>[r.category_id,{eligible:r.eligible,message:r.message}])),
+      }));
+    }).finally(()=>{if(!cancelled) setCategoryFitLoadingId(current=>current===participantId?null:current);});
+    return()=>{cancelled=true;};
+  },[expanded,expandedParticipant?.ready,expandedParticipant?.expires_at,categoryIdsKey]);
   const expandedReady=!!expandedItem && identityReady(expandedItem.participant_id);
   const editingExpanded=expandedReady && (editingChoices===expandedItem!.participant_id || !expandedItem!.choices.category_id);
   const viewingSummary=!!expandedItem && identity===null && !copyTarget && expandedReady && !!expandedItem.choices.category_id && editingChoices!==expandedItem.participant_id;
@@ -366,7 +402,7 @@ export function GroupRegistrationFlow({open,onOpenChange,event,buyerId,mode='dia
               <fieldset disabled={disabled} className="min-w-0 space-y-3 sm:space-y-4">
                 {draft.map((item,index)=> {
                   const person=participants[item.participant_id];
-                  const problems=choiceProblems(item.choices,catalog.categories,catalog.kits);
+                  const problems=problemsFor(item);
                   const stage=progress(item);
                   const sources=draft.filter(d=>d.participant_id!==item.participant_id && progress(d).state==='complete');
                   const expandedNow=expanded===item.participant_id;
@@ -390,6 +426,7 @@ export function GroupRegistrationFlow({open,onOpenChange,event,buyerId,mode='dia
                       </> : editingChoices===item.participant_id || !item.choices.category_id ? <>
                         <ParticipantChoices key={`${item.participant_id}-edit-${choicesEditSession}`} value={item.choices} categories={catalog.categories} kits={catalog.kits} modalities={catalog.modalities}
                           embedNav={!pageMode} initialStep={item.choices.category_id?'category':undefined} onNavChange={expandedNow?onChoicesNav:undefined}
+                          categoryFit={categoryFitByParticipant[item.participant_id]} categoryFitLoading={categoryFitLoadingId===item.participant_id}
                           onChange={choices=>flow.change(draft.map(d=>d.participant_id===item.participant_id?{...d,choices}:d))}/>
                         {!!stage.problems.length && <ul className="list-inside list-disc space-y-1 rounded-xl bg-amber-50 p-3 text-sm text-amber-950" aria-label="Pendências deste participante">{stage.problems.map((problem,i)=><li key={i}>{problem}</li>)}</ul>}
                         {!stage.saved && <p className="text-xs text-muted-foreground">{busy?'Salvando alterações…':error?'Não foi possível salvar. Use “Salvar agora” para tentar novamente.':'Alterações aguardando salvamento.'}</p>}
@@ -415,7 +452,7 @@ export function GroupRegistrationFlow({open,onOpenChange,event,buyerId,mode='dia
                         </div>}
                         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                           <div className="flex flex-col gap-2 sm:min-w-0 sm:flex-1 sm:flex-row sm:items-center">
-                            {item.choices.category_id && <Button type="button" className="min-h-12 w-full sm:flex-[2]" onClick={()=>setEditingChoices(null)}>Completar inscrição</Button>}
+                            {item.choices.category_id && <Button type="button" className="min-h-12 w-full sm:flex-[2]" disabled={!!problems.length || copyBusy} onClick={()=>void finishParticipant(item)}>Completar inscrição</Button>}
                             {draft.length>1 && <Button type="button" variant="outline" className="min-h-11 w-full sm:flex-1" disabled={!sources.length || copyTarget===item.participant_id} onClick={()=>{setCopyTarget(item.participant_id);setCopyPickSource(null);}}><Copy className="mr-2 h-4 w-4 shrink-0"/>Copiar de outro participante</Button>}
                           </div>
                           {!item.choices.category_id && <Button type="button" variant="ghost" className="min-h-11 w-full text-destructive sm:ml-auto sm:w-auto" onClick={()=>removeParticipant(item.participant_id,index)} aria-label={`Remover participante ${index+1}`}><Trash2 className="mr-2 h-4 w-4"/>Remover</Button>}

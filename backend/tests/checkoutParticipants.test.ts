@@ -170,11 +170,23 @@ it('valida elegibilidade sem revelar nascimento, sexo ou idade da conta',async()
   await addAccount(); const p=await prepare();
   await query("UPDATE categories SET gender='masculino'");
   const denied=await service.eligibility(p.id,buyer,category);
-  assert.equal(denied.eligible,false); assert.deepEqual(Object.keys(denied).sort(),['eligible','message']);
+  assert.equal(denied.eligible,false); assert.match(denied.message || '',/masculino/i);
   await query("UPDATE categories SET gender='feminino',min_age=18");
   assert.deepEqual(await service.eligibility(p.id,buyer,category),{eligible:true});
   await query('UPDATE categories SET min_age=100');
-  assert.equal((await service.eligibility(p.id,buyer,category)).eligible,false);
+  const tooYoung=await service.eligibility(p.id,buyer,category);
+  assert.equal(tooYoung.eligible,false); assert.match(tooYoung.message || '',/mínima/i);
+});
+it('eligibility-batch avalia várias categorias com a mesma identidade',async()=> {
+  await addAccount(); const p=await prepare();
+  const other=randomUUID(), missing=randomUUID();
+  await query('INSERT INTO categories(id,event_id) VALUES ($1,$2)',[other,event]);
+  await query("UPDATE categories SET gender='feminino',min_age=18 WHERE id=$1",[category]);
+  await query("UPDATE categories SET gender='masculino',min_age=NULL,max_age=NULL WHERE id=$1",[other]);
+  const batch=await service.eligibilityBatch(p.id,buyer,[category,other,missing]);
+  assert.equal(batch.results.find(r=>r.category_id===category)?.eligible,true);
+  assert.equal(batch.results.find(r=>r.category_id===other)?.eligible,false);
+  assert.equal(batch.results.find(r=>r.category_id===missing)?.eligible,false);
 });
 it('resolução interna impede inscrição ativa duplicada e rascunho incompleto',async()=> {
   const p=await prepare();
