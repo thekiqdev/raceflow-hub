@@ -24,7 +24,7 @@ async function account(cpf: string) {
   const result = await query(`SELECT p.id FROM profiles p JOIN users u ON u.id = p.id
     WHERE regexp_replace(COALESCE(p.cpf::text,''), '[^0-9]', '', 'g') = $1 LIMIT 2`, [cpf]);
   if (result.rows.length > 1) throw fail('Não foi possível identificar este participante. Contate o suporte.', 409);
-  return result.rows[0]?.id as string | undefined;
+  return (result.rows[0]?.id as string | undefined) ?? null;
 }
 export async function checkParticipantCpf(rawCpf: string) {
   return { registered: Boolean(await account(cpfDigits(rawCpf))) };
