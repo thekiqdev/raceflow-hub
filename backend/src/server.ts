@@ -1,4 +1,4 @@
-import { isEnvironmentFlagEnabled } from './config/environment.js';
+import { isCheckoutDeliveryEnabled, isMultiRegistrationCheckoutEnabled } from './services/checkoutFeatureFlags.js';
 import express, { Express, Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import path from 'path';
@@ -45,7 +45,9 @@ import { updateRegistrationStatuses } from './services/registrationStatusService
 import { cancelExpiredRegistrations } from './services/expiredRegistrationsService.js';
 import { purgeCpfLookupMetricsOlderThan } from './services/cpfAuditService.js';
 
-console.log('Checkout em grupo:',isEnvironmentFlagEnabled('MULTI_REGISTRATION_CHECKOUT_ENABLED')?'habilitado':'desabilitado');
+void isMultiRegistrationCheckoutEnabled().then(enabled=>{
+  console.log('Checkout em grupo:',enabled?'habilitado':'desabilitado');
+}).catch(()=>console.log('Checkout em grupo: status indisponível na inicialização'));
 
 // Debug: Log if Asaas key is loaded
 if (process.env.ASAAS_API_KEY) {
@@ -379,7 +381,9 @@ app.listen(PORT, () => {
   };
   expireGroupReservations();
   const deliverCheckout=()=>{
-    if(isEnvironmentFlagEnabled('CHECKOUT_DELIVERY_ENABLED')) checkoutDelivery.sweep().catch(()=>console.error('Falha no processamento da entrega de pedidos.'));
+    void isCheckoutDeliveryEnabled().then(enabled=>{
+      if(enabled) checkoutDelivery.sweep().catch(()=>console.error('Falha no processamento da entrega de pedidos.'));
+    }).catch(()=>console.error('Falha ao verificar módulo de entrega de pedidos.'));
   };
   deliverCheckout();
   setInterval(deliverCheckout,60000);

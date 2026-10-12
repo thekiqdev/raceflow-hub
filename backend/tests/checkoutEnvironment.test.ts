@@ -32,3 +32,13 @@ it('ativação exige true; aceita espaços/maiúsculas e nunca usa a flag do fro
   for(const value of [undefined,'false','','1','yes']) assert.equal(isEnvironmentFlagEnabled(key,{[key]:value}),false);
   assert.equal(isEnvironmentFlagEnabled(key,{VITE_MULTI_REGISTRATION_CHECKOUT_ENABLED:'true'}),false);
 });
+
+it('checkoutFeatureFlags: módulo habilita, env true é fallback e env false força off',async()=>{
+  const {resolveCheckoutFeatureFlag}=await import('../src/services/checkoutFeatureFlags.js');
+  assert.equal(resolveCheckoutFeatureFlag(true,undefined),true);
+  assert.equal(resolveCheckoutFeatureFlag(false,'true'),true);
+  assert.equal(resolveCheckoutFeatureFlag(undefined,'true'),true);
+  assert.equal(resolveCheckoutFeatureFlag(true,'false'),false);
+  assert.equal(resolveCheckoutFeatureFlag(false,undefined),false);
+  assert.equal(resolveCheckoutFeatureFlag(undefined,undefined),false);
+});

@@ -36,6 +36,7 @@ import { validateFullName, FULL_NAME_VALIDATION_MESSAGE, validatePhone, PHONE_VA
 import { normalizePersonName, normalizePhoneDigits } from "@/lib/utils/profileNormalization";
 import { useCpfBrasilLookup } from "@/hooks/useCpfBrasilLookup";
 import type { LookupCpfData } from "@/lib/api/auth";
+import { isMultiRegistrationCheckoutEnabled } from "@/lib/utils/checkoutFeature";
 
 // Re-export ProductVariant type for use in component
 type ProductVariantType = ProductVariant;
@@ -197,10 +198,20 @@ const formatPrice = (price: number): string => {
 
 export function RegistrationFlow(props:RegistrationFlowProps) {
   const {user}=useAuth();
+  const [checkoutEnabled,setCheckoutEnabled]=useState<boolean|null>(null);
+  useEffect(()=>{
+    let active=true;
+    getEnabledModules().then(result=>{
+      if(!active) return;
+      setCheckoutEnabled(isMultiRegistrationCheckoutEnabled(result.data?.enabled_modules));
+    }).catch(()=>{if(active) setCheckoutEnabled(false);});
+    return()=>{active=false;};
+  },[]);
   // Login/cadastro inline permanecem disponíveis antes de abrir a compra em grupo.
-  if(import.meta.env.VITE_MULTI_REGISTRATION_CHECKOUT_ENABLED==='true' && user) {
+  if(checkoutEnabled && user) {
     return <GroupRegistrationFlow key={`${user.id}:${props.event.id}`} open={props.open} onOpenChange={props.onOpenChange} event={props.event} buyerId={user.id}/>;
   }
+  if(checkoutEnabled===null && user) return null;
   return <LegacyRegistrationFlow {...props}/>;
 }
 

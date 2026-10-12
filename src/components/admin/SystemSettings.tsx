@@ -71,6 +71,8 @@ const SystemSettings = () => {
     organizer_edit_attributes: false,
     /** true = apenas CPF na tela de login; false = e-mail ou CPF */
     login_cpf_only: false,
+    multi_registration_checkout: false,
+    checkout_delivery: false,
   });
 
   const [feesForm, setFeesForm] = useState({
@@ -919,6 +921,35 @@ const SystemSettings = () => {
                 <Switch 
                   checked={modulesForm.transfers || false}
                   onCheckedChange={(checked) => setModulesForm({ ...modulesForm, transfers: checked })}
+                />
+              </div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="font-medium">Checkout multi-ingressos</p>
+                  <p className="text-sm text-muted-foreground">
+                    Ativar compra em grupo (vários participantes no mesmo pedido). Pedidos já criados continuam acessíveis.
+                  </p>
+                </div>
+                <Switch
+                  checked={modulesForm.multi_registration_checkout || false}
+                  onCheckedChange={(checked) => setModulesForm({
+                    ...modulesForm,
+                    multi_registration_checkout: checked,
+                    // Entrega acompanha a ativação; pode ser desligada depois se necessário.
+                    checkout_delivery: checked ? true : modulesForm.checkout_delivery,
+                  })}
+                />
+              </div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="font-medium">Entrega de pedidos (e-mail/ingressos)</p>
+                  <p className="text-sm text-muted-foreground">
+                    Processar envio e conciliação de ingressos dos pedidos confirmados
+                  </p>
+                </div>
+                <Switch
+                  checked={modulesForm.checkout_delivery || false}
+                  onCheckedChange={(checked) => setModulesForm({ ...modulesForm, checkout_delivery: checked })}
                 />
               </div>
               <div className="flex items-center justify-between">

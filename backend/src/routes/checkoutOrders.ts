@@ -1,5 +1,4 @@
 import { Router } from 'express';
-import { isEnvironmentFlagEnabled } from '../config/environment.js';
 import type { Response } from 'express';
 import { z } from 'zod';
 import { authenticate, type AuthRequest } from '../middleware/auth.js';
@@ -7,6 +6,7 @@ import { asyncHandler } from '../middleware/errorHandler.js';
 import { requireRole } from '../middleware/authorization.js';
 import { hasRole } from '../services/userRolesService.js';
 import { query } from '../config/database.js';
+import { isMultiRegistrationCheckoutEnabled } from '../services/checkoutFeatureFlags.js';
 import { checkoutPayments } from '../services/checkoutPaymentsService.js';
 import { createCheckoutOrder,addCheckoutBuyer,saveCheckoutOrder,reviewCheckoutOrder,reserveCheckoutOrder,unreserveCheckoutOrder,getCheckoutOrder } from '../services/checkoutOrdersService.js';
 import { previewCheckoutRegistrationEdit, applyCheckoutRegistrationEdit } from '../services/checkoutOrderEditService.js';
@@ -16,8 +16,11 @@ const router=Router();
 router.use((req,res,next)=> {
   res.setHeader('Cache-Control','no-store');
   const maintenance=req.method==='GET' || /\/(cancel|refund|payment\/switch|payment\/tokenize)$/.test(req.path);
-  if(!maintenance && !isEnvironmentFlagEnabled('MULTI_REGISTRATION_CHECKOUT_ENABLED')) { res.status(503).json({success:false,code:'CHECKOUT_DISABLED',error:'Compra em grupo ainda não habilitada.'}); return; }
-  next();
+  if(maintenance) { next(); return; }
+  void isMultiRegistrationCheckoutEnabled().then(enabled=>{
+    if(!enabled) { res.status(503).json({success:false,code:'CHECKOUT_DISABLED',error:'Compra em grupo ainda não habilitada.'}); return; }
+    next();
+  }).catch(next);
 });
 router.use(authenticate);
 const uuid=z.string().uuid(), version=z.number().int().positive();

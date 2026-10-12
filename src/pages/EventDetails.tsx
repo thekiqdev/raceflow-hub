@@ -44,6 +44,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { getReferralCoupon, saveReferralCoupon } from "@/lib/referralCouponCache";
+import { getEnabledModules } from "@/lib/api/systemSettings";
+import { isMultiRegistrationCheckoutEnabled } from "@/lib/utils/checkoutFeature";
 
 interface EventDetail {
   id: string;
@@ -168,8 +170,9 @@ const EventDetails = () => {
   const [kits, setKits] = useState<Kit[]>([]);
   const [pickupLocations, setPickupLocations] = useState<any[]>([]);
   const [isRegistrationOpen, setIsRegistrationOpen] = useState(false);
+  const [multiRegistrationCheckout, setMultiRegistrationCheckout] = useState(false);
   const startRegistration = () => {
-    if(import.meta.env.VITE_MULTI_REGISTRATION_CHECKOUT_ENABLED==='true') {
+    if(multiRegistrationCheckout) {
       const path=slug?`/evento/${encodeURIComponent(slug)}/inscricao`:`/events/${encodeURIComponent(id || '')}/inscricao`;
       const cached=event?getReferralCoupon(event.id):null;
       const cupom=searchParams.get('cupom')?.trim() || cached?.cupom?.trim();
@@ -214,12 +217,14 @@ const EventDetails = () => {
           }
         }
 
-        const [categoriesResponse, kitsResponse, modalitiesResponse, pickupResponse] = await Promise.all([
+        const [categoriesResponse, kitsResponse, modalitiesResponse, pickupResponse, modulesResponse] = await Promise.all([
           getCategories(eventIdOrSlug),
           getEventKits(eventIdOrSlug, { context: 'public' }),
           getModalities(eventIdOrSlug).catch(() => ({ success: true, data: [] })),
           getEventPickupLocations(eventIdOrSlug).catch(() => ({ success: true, data: [] })),
+          getEnabledModules().catch(() => ({ success: false as const, data: undefined })),
         ]);
+        setMultiRegistrationCheckout(isMultiRegistrationCheckoutEnabled(modulesResponse.data?.enabled_modules));
 
         if (eventResponse.success && eventResponse.data) {
           setEvent({
