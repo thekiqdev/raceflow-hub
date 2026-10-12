@@ -16,6 +16,16 @@ function isOrderOperationalAccess(req:Request) {
   return false;
 }
 
+/** DELETE de inscrição cancelada do pedido: limpeza admin (hard delete), sem reabrir mutação de escolhas/pagamento. */
+async function isCancelledOrderRegistrationDelete(req:Request,registrationId:string) {
+  if(req.method!=='DELETE') return false;
+  const row=(await query(
+    `SELECT status, to_jsonb(r)->>'order_id' AS order_id FROM registrations r WHERE id=$1`,
+    [registrationId],
+  )).rows[0];
+  return !!row?.order_id && row.status==='cancelled';
+}
+
 /** Evita cobrança/mutação individual e sub-rotas legadas; permite detalhe/prévia/confirmação de diferença operacional. */
 export const orderRegistrationGuard=asyncHandler(async(req:Request,res:Response,next:NextFunction)=> {
   const id=req.path.split('/')[1];
@@ -23,7 +33,7 @@ export const orderRegistrationGuard=asyncHandler(async(req:Request,res:Response,
   if(typeof candidate==='string' && uuid.test(candidate)) {
     // Compatível com o período anterior à execução da migração 120.
     const row=(await query("SELECT to_jsonb(r)->>'order_id' AS order_id FROM registrations r WHERE id=$1",[candidate])).rows[0];
-    if(row?.order_id && !isOrderOperationalAccess(req)) {
+    if(row?.order_id && !isOrderOperationalAccess(req) && !(await isCancelledOrderRegistrationDelete(req,candidate))) {
       res.status(409).json({success:false,code:'ORDER_REGISTRATION_REQUIRED',error:'Esta inscrição deve ser acessada pelo pedido.'});
       return;
     }

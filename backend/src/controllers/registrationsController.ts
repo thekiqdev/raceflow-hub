@@ -4566,6 +4566,16 @@ export const deleteRegistrationController = asyncHandler(async (req: AuthRequest
   }
   const eventIdForRevoke = registration.event_id;
 
+  // Pedido multi: só hard delete de canceladas (legado sem order_id segue liberado para admin).
+  if ((registration as {order_id?: string | null}).order_id && registration.status !== 'cancelled') {
+    res.status(409).json({
+      success: false,
+      code: 'ORDER_REGISTRATION_NOT_CANCELLED',
+      error: 'Só é possível excluir permanentemente inscrições canceladas deste pedido.',
+    });
+    return;
+  }
+
   // Delete registration
   try {
     const { deleteRegistration } = await import('../services/registrationsService.js');
@@ -4596,9 +4606,11 @@ export const deleteRegistrationController = asyncHandler(async (req: AuthRequest
     });
   } catch (error: any) {
     console.error('[deleteRegistrationController] Erro ao excluir inscrição:', error);
-    res.status(500).json({
+    const statusCode = Number(error?.statusCode) || 500;
+    res.status(statusCode).json({
       success: false,
-      error: 'Internal server error',
+      code: error?.code,
+      error: statusCode === 409 ? error.message : 'Internal server error',
       message: error.message || 'Erro ao excluir inscrição',
     });
   }

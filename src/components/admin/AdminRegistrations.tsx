@@ -29,7 +29,7 @@ import { Search, MoreVertical, Eye, FileDown, Loader2, Edit2, Save, X, Trash2, L
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { useNavigate } from "react-router-dom";
-import { getRegistrations, exportRegistrations, getRegistrationById, getRegistrationEditableKitContext, updateRegistration, previewRegistrationEdit, confirmDifferencePayment, completeRegistrationAttributes, removeRegistrationAttributes, attachRegistrationToCommission, getRegistrationCommission as getRegistrationCommissionForAttach, detachCommission, type Registration, type RegistrationCommissionInfo, type PreviewRegistrationEditResponse, type EditableKitIssue } from "@/lib/api/registrations";
+import { getRegistrations, exportRegistrations, getRegistrationById, getRegistrationEditableKitContext, updateRegistration, previewRegistrationEdit, confirmDifferencePayment, completeRegistrationAttributes, removeRegistrationAttributes, attachRegistrationToCommission, getRegistrationCommission as getRegistrationCommissionForAttach, detachCommission, deleteRegistration, type Registration, type RegistrationCommissionInfo, type PreviewRegistrationEditResponse, type EditableKitIssue } from "@/lib/api/registrations";
 import { cancelCheckoutOrder, refundCheckoutOrder, previewCheckoutRegistrationEdit, updateCheckoutRegistrationChoices } from "@/lib/api/checkoutOrders";
 import { getEventCommissionsByEvent, type EventCommissionOption } from "@/lib/api/leaderEventCommissions";
 import { getRegistrationCommission, removeCommission, type LeaderCommissionRecord } from "@/lib/api/admin";
@@ -340,6 +340,29 @@ const AdminRegistrations = () => {
       void loadRegistrations();
     } catch (error: any) {
       toast.error(error?.message || "Não foi possível estornar este ingresso.");
+    } finally {
+      setOrderActionBusy(false);
+    }
+  };
+
+  const handleDeleteCancelledRegistration = async () => {
+    if (!registrationDetails || registrationDetails.status !== "cancelled") return;
+    if (!window.confirm("ATENÇÃO: excluir permanentemente esta inscrição cancelada?")) return;
+    if (!window.confirm("Confirma exclusão definitiva? Esta ação não pode ser desfeita.")) return;
+    setOrderActionBusy(true);
+    try {
+      const response = await deleteRegistration(registrationDetails.id);
+      if (!response.success) {
+        toast.error(response.error || "Não foi possível excluir a inscrição.");
+        return;
+      }
+      toast.success("Inscrição cancelada excluída.");
+      setIsDetailsDialogOpen(false);
+      setRegistrationDetails(null);
+      setSelectedRegistration(null);
+      void loadRegistrations();
+    } catch (error: any) {
+      toast.error(error?.message || "Não foi possível excluir a inscrição.");
     } finally {
       setOrderActionBusy(false);
     }
@@ -2050,6 +2073,12 @@ const AdminRegistrations = () => {
                         Estornar este ingresso
                       </Button>
                     )}
+                    {registrationDetails.status === "cancelled" && (
+                      <Button variant="destructive" className="min-h-11" disabled={orderActionBusy || loadingDetails} onClick={() => void handleDeleteCancelledRegistration()}>
+                        {orderActionBusy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
+                        Excluir inscrição cancelada
+                      </Button>
+                    )}
                     {canAdminTransferRegistration(registrationDetails) && (
                       <Button
                         variant="outline"
@@ -2207,6 +2236,12 @@ const AdminRegistrations = () => {
                   <Button variant="default" onClick={handleEditClick}>
                     <Edit2 className="w-4 h-4 mr-2" />
                     Editar escolhas
+                  </Button>
+                )}
+                {registrationDetails.status === "cancelled" && !registrationDetails.order_id && (
+                  <Button variant="destructive" disabled={orderActionBusy} onClick={() => void handleDeleteCancelledRegistration()}>
+                    {orderActionBusy ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Trash2 className="w-4 h-4 mr-2" />}
+                    Excluir inscrição cancelada
                   </Button>
                 )}
               </>

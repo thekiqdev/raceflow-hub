@@ -2089,20 +2089,66 @@ export const cancelRegistration = async (registrationId: string) => {
   return result.rows[0];
 };
 
-// Delete registration (hard delete - only for admin)
-export const deleteRegistration = async (registrationId: string) => {
-  // Delete registration (cascade will handle related records)
-  // Note: The controller should verify the registration exists before calling this
-  const result = await query(
-    `DELETE FROM registrations 
-     WHERE id = $1
-     RETURNING *`,
-    [registrationId]
-  );
-
-  if (result.rows.length === 0) {
-    return null;
+/** Remove vínculos de checkout sem CASCADE (alocações, efeitos, entrega) antes do hard delete. */
+async function detachCheckoutRegistrationDependencies(registrationId: string, orderId: string) {
+  await query("SELECT set_config('cronoteam.order_write',$1,true)", [orderId]);
+  // Comissões apontam para efeitos; liberar antes de apagar o efeito.
+  if ((await query("SELECT to_regclass('public.checkout_payment_effects') AS t")).rows[0]?.t) {
+    const hasEffectCol=(await query(
+      `SELECT 1 FROM information_schema.columns
+       WHERE table_schema='public' AND table_name='leader_commissions' AND column_name='checkout_effect_id'`,
+    )).rows.length > 0;
+    if (hasEffectCol) {
+      await query(
+        `UPDATE leader_commissions SET checkout_effect_id=NULL
+         WHERE checkout_effect_id IN (SELECT id FROM checkout_payment_effects WHERE registration_id=$1)`,
+        [registrationId],
+      );
+    }
+    await query('DELETE FROM checkout_payment_effects WHERE registration_id=$1', [registrationId]);
   }
+  if ((await query("SELECT to_regclass('public.checkout_payment_refunds') AS t")).rows[0]?.t) {
+    await query('DELETE FROM checkout_payment_refunds WHERE registration_id=$1', [registrationId]);
+  }
+  if ((await query("SELECT to_regclass('public.checkout_payment_allocations') AS t")).rows[0]?.t) {
+    await query('DELETE FROM checkout_payment_allocations WHERE registration_id=$1', [registrationId]);
+  }
+  if ((await query("SELECT to_regclass('public.checkout_ticket_transfers') AS t")).rows[0]?.t) {
+    await query('DELETE FROM checkout_ticket_transfers WHERE registration_id=$1', [registrationId]);
+  }
+  if ((await query("SELECT to_regclass('public.checkout_identity_links') AS t")).rows[0]?.t) {
+    await query('DELETE FROM checkout_identity_links WHERE registration_id=$1', [registrationId]);
+  }
+  if ((await query("SELECT to_regclass('public.checkout_delivery_jobs') AS t")).rows[0]?.t) {
+    await query('UPDATE checkout_delivery_jobs SET registration_id=NULL WHERE registration_id=$1', [registrationId]);
+  }
+  // Mantém o item do pedido; só remove o vínculo para liberar o FK.
+  await query('UPDATE checkout_order_items SET registration_id=NULL WHERE registration_id=$1', [registrationId]);
+}
 
-  return result.rows[0];
+// Delete registration (hard delete - only for admin; pedido multi só se já cancelada)
+export const deleteRegistration = async (registrationId: string) => {
+  return withTransaction(async () => {
+    const existing = await query(
+      `SELECT id, status, order_id FROM registrations WHERE id = $1 FOR UPDATE`,
+      [registrationId],
+    );
+    if (!existing.rows.length) return null;
+    const registration = existing.rows[0] as {id:string;status:string;order_id:string|null};
+    if (registration.order_id) {
+      if (registration.status !== 'cancelled') {
+        const err = Object.assign(
+          new Error('Só é possível excluir permanentemente inscrições canceladas deste pedido.'),
+          { statusCode: 409, code: 'ORDER_REGISTRATION_NOT_CANCELLED' },
+        );
+        throw err;
+      }
+      await detachCheckoutRegistrationDependencies(registrationId, registration.order_id);
+    }
+    const result = await query(
+      `DELETE FROM registrations WHERE id = $1 RETURNING *`,
+      [registrationId],
+    );
+    return result.rows[0] ?? null;
+  });
 };

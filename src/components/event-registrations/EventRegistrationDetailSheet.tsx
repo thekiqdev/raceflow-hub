@@ -809,7 +809,7 @@ export function EventRegistrationDetailSheet({
                     {cancellingId === detail.id ? <Loader2 className="h-4 w-4 animate-spin" /> : "Cancelar inscrição"}
                   </Button>
                 )}
-                {!editMode && isAdmin && onDeleteRegistration && (
+                {!editMode && isAdmin && onDeleteRegistration && (detail.status === "cancelled" || !detail.order_id) && (
                   <Button
                     type="button"
                     size="sm"
@@ -817,7 +817,7 @@ export function EventRegistrationDetailSheet({
                     disabled={deletingId === detail.id}
                     onClick={() => onDeleteRegistration(detail.id)}
                   >
-                    {deletingId === detail.id ? <Loader2 className="h-4 w-4 animate-spin" /> : "Excluir"}
+                    {deletingId === detail.id ? <Loader2 className="h-4 w-4 animate-spin" /> : detail.status === "cancelled" ? "Excluir inscrição cancelada" : "Excluir"}
                   </Button>
                 )}
               </div>

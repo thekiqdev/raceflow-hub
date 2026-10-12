@@ -425,6 +425,7 @@ export function EventRegistrationsPanel({ eventId, rolePage, backPath }: EventRe
         toast({ title: "Inscrição excluída" });
         setDetailOpen(false);
         setDetailRegistrationId(null);
+        if (orderDetailId === id) setOrderDetailId(null);
         setDetailRefreshToken((t) => t + 1);
         void loadList();
       } else {
@@ -1001,6 +1002,17 @@ export function EventRegistrationsPanel({ eventId, rolePage, backPath }: EventRe
                                   Transferir
                                 </Button>
                               )}
+                              {rolePage === "admin" && reg.status === "cancelled" && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="text-destructive"
+                                  disabled={deletingId === reg.id}
+                                  onClick={() => void handleDelete(reg.id)}
+                                >
+                                  {deletingId === reg.id ? <Loader2 className="h-4 w-4 animate-spin" /> : "Excluir"}
+                                </Button>
+                              )}
                             </div>
                           ) : <DropdownMenu>
                             <DropdownMenuTrigger asChild>
@@ -1157,7 +1169,16 @@ export function EventRegistrationsPanel({ eventId, rolePage, backPath }: EventRe
         }}
       />
 
-      <OrderRegistrationDetailSheet key={orderDetailId ?? 'closed'} registrationId={orderDetailId} eventId={eventId} allowAdminTransfer={rolePage==='admin'} onClose={()=>setOrderDetailId(null)} onRefreshList={()=>void loadList()}/>
+      <OrderRegistrationDetailSheet
+        key={orderDetailId ?? 'closed'}
+        registrationId={orderDetailId}
+        eventId={eventId}
+        allowAdminTransfer={rolePage==='admin'}
+        onClose={()=>setOrderDetailId(null)}
+        onRefreshList={()=>void loadList()}
+        onDeleteCancelled={rolePage==='admin' ? (id)=>void handleDelete(id) : undefined}
+        deleting={!!orderDetailId && deletingId===orderDetailId}
+      />
       <EventRegistrationDetailSheet
         open={detailOpen}
         onOpenChange={(o) => {

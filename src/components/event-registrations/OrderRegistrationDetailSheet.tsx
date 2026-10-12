@@ -1,5 +1,6 @@
 import {useEffect,useRef,useState} from 'react';
 import {Link} from 'react-router-dom';
+import {Loader2} from 'lucide-react';
 import {Button} from '@/components/ui/button';
 import {Sheet,SheetContent,SheetHeader,SheetTitle,SheetDescription} from '@/components/ui/sheet';
 import {getManagedCheckoutTicket,getCheckoutTicket,getCheckoutTickets,collectCheckoutKit,returnCheckoutKit,type CheckoutTicket} from '@/lib/api/checkoutDelivery';
@@ -8,7 +9,10 @@ import {canAdminTransferRegistration} from '@/components/admin/TransferRegistrat
 import {AdminCheckoutTransferDialog} from '@/components/admin/AdminCheckoutTransferDialog';
 
 /** Detalhe da linha selecionada; a tabela continua sendo a única listagem. */
-export function OrderRegistrationDetailSheet({registrationId,eventId,onClose,onRefreshList,allowAdminTransfer=false}:{registrationId:string|null;eventId:string;onClose:()=>void;onRefreshList:()=>void;allowAdminTransfer?:boolean}) {
+export function OrderRegistrationDetailSheet({registrationId,eventId,onClose,onRefreshList,allowAdminTransfer=false,onDeleteCancelled,deleting=false}:{
+  registrationId:string|null;eventId:string;onClose:()=>void;onRefreshList:()=>void;allowAdminTransfer?:boolean;
+  onDeleteCancelled?:(id:string)=>void;deleting?:boolean;
+}) {
   const [ticket,setTicket]=useState<CheckoutTicket|null>(null);
   const [busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('');
   const [transferOpen,setTransferOpen]=useState(false);
@@ -73,6 +77,12 @@ export function OrderRegistrationDetailSheet({registrationId,eventId,onClose,onR
               {ticket.labels.kit && !ticket.kit_collected_at && <Button disabled={busy} onClick={()=>void act(()=>kitAction(false))}>Confirmar entrega do kit</Button>}</>}
             {canTransfer && <Button variant="outline" disabled={busy} onClick={()=>setTransferOpen(true)}>Transferir inscrição</Button>}
             {ticket.payment_status==='refunded' && ticket.kit_collected_at && !ticket.kit_returned_at && <><p>O kit continua fora do estoque até sua devolução física.</p><Button disabled={busy} onClick={()=>void act(()=>kitAction(true))}>Confirmar recebimento do kit devolvido</Button></>}
+            {onDeleteCancelled && ticket.status==='cancelled' && (
+              <Button variant="destructive" disabled={busy || deleting} onClick={()=>onDeleteCancelled(ticket.id)}>
+                {deleting ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : null}
+                Excluir inscrição cancelada
+              </Button>
+            )}
           </div>
           <details className="rounded-lg border p-3"><summary className="cursor-pointer">Pedido da compra</summary><p className="mt-2 break-all text-sm">{ticket.order_id}</p></details>
         </div>}
