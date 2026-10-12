@@ -44,18 +44,18 @@ export function GroupRegistrationFlow({open,onOpenChange,event,buyerId,mode='dia
   },[flow.ready,order,buyerAlreadyRegistered,draft.length,identity]);
   const [method,setMethod]=useState<'PIX'|'CREDIT_CARD'>('PIX');
   const [now,setNow]=useState(Date.now());
-  const [copySource,setCopySource]=useState<string|null>(null),[copyBusy,setCopyBusy]=useState(false);
-  const [copyTarget,setCopyTarget]=useState<string|null>(null),[copyCoupon,setCopyCoupon]=useState(false),[replaceConfirmed,setReplaceConfirmed]=useState(false);
+  const [copyBusy,setCopyBusy]=useState(false);
+  const [copyTarget,setCopyTarget]=useState<string|null>(null);
+  const [copyPickSource,setCopyPickSource]=useState<string|null>(null);
   const [issues,setIssues]=useState<Record<string,{signature:string;message:string}>>({});
   const [notice,setNotice]=useState('');
-  const [copyPreview,setCopyPreview]=useState<Array<{id:string;eligible:boolean;reason:string;selected:boolean}>>([]);
   const [choicesNav,setChoicesNav]=useState<ChoicesNav|null>(null);
   const onChoicesNav=useCallback((nav:ChoicesNav|null)=>setChoicesNav(nav),[]);
+  const [editingChoices,setEditingChoices]=useState<string|null>(null);
+  const [choicesEditSession,setChoicesEditSession]=useState(0);
   const [paymentFooterHost,setPaymentFooterHost]=useState<HTMLElement|null>(null);
   const [shellHeight,setShellHeight]=useState<number|null>(null);
   const midRef=useRef<HTMLDivElement>(null);
-  const copyRef=useRef<HTMLElement>(null);
-  const copySignature=useRef('');
   const errorRef=useRef<HTMLDivElement>(null),headingRef=useRef<HTMLHeadingElement>(null);
   const editable=!!order && ['draft','reviewed'].includes(order.status);
   const step=!order?0:editable ? (editing || dirty || order.status==='draft' ? 0 : 1) : 2;
@@ -91,7 +91,6 @@ export function GroupRegistrationFlow({open,onOpenChange,event,buyerId,mode='dia
       reviewIssue:issue?.signature===choicesSignature(item.choices)?issue.message:undefined});
   }
   const completed=draft.filter(d=>progress(d).state==='complete').length;
-  const copyReplaces=copyPreview.some(p=>p.selected && p.eligible && !!draft.find(d=>d.participant_id===p.id)?.choices.category_id);
   function selectionSummary(item:ParticipantDraft) {
     return [catalog.categories.find(c=>c.id===item.choices.category_id)?.name,catalog.modalities.find(m=>m.id===item.choices.modality_id)?.name,
       catalog.kits.find(k=>k.id===item.choices.kit_id)?.name].filter(Boolean).join(' · ');
@@ -101,12 +100,50 @@ export function GroupRegistrationFlow({open,onOpenChange,event,buyerId,mode='dia
     const identified=participants[id];const snapshot=order?.items.find(i=>i.participant_id===id)?.participant;
     return identified?.full_name || snapshot?.full_name || `Participante ${index+1}`;
   }
+  function participantDisplayName(id:string,index:number) {
+    if(id===order?.buyer?.participant_id) return order.buyer.full_name || 'Complete seu nome no perfil';
+    const identified=participants[id];const snapshot=order?.items.find(i=>i.participant_id===id)?.participant;
+    return identified?.full_name || snapshot?.full_name || `Participante ${index+1}`;
+  }
   function participantCpf(id:string) {return participants[id]?.cpf_masked || order?.items.find(i=>i.participant_id===id)?.participant?.cpf_masked;}
+  function participantEmail(id:string) {
+    if(id===order?.buyer?.participant_id) return order.buyer.email;
+    return participants[id]?.email || order?.items.find(i=>i.participant_id===id)?.participant?.email || undefined;
+  }
   const label=(id:string,index:number)=>`${participantName(id,index)}${participantCpf(id)?` · ${participantCpf(id)}`:''}`;
+  function ticketChoiceRows(item:ParticipantDraft) {
+    const labels=order?.items.find(i=>i.participant_id===item.participant_id)?.labels;
+    const category=catalog.categories.find(c=>c.id===item.choices.category_id);
+    const modality=catalog.modalities.find(m=>m.id===item.choices.modality_id);
+    const batch=category?.batches?.find(b=>b.id===item.choices.category_batch_id);
+    const kit=catalog.kits.find(k=>k.id===item.choices.kit_id);
+    const rows:Array<{label:string;value:string}>=[];
+    const categoryName=labels?.category || category?.name;
+    if(categoryName) rows.push({label:'Categoria',value:categoryName});
+    const modalityName=labels?.modality || modality?.name;
+    if(modalityName) rows.push({label:'Modalidade',value:modalityName});
+    const batchName=labels?.batch || batch?.name;
+    if(batchName) rows.push({label:'Lote',value:batchName});
+    const kitName=labels?.kit || kit?.name;
+    if(kitName) rows.push({label:'Kit',value:kitName});
+    for(const sel of item.choices.product_selections ?? []) {
+      const labeled=labels?.products?.find(p=>p.product_id===sel.product_id);
+      const product=kit?.products?.find(p=>p.id===sel.product_id);
+      const variant=product?.variants?.find(v=>v.id===sel.variant_id);
+      const productName=labeled?.product_name || product?.name;
+      const variantName=labeled?.variant_name || variant?.name;
+      if(productName && variantName) rows.push({label:productName,value:variantName});
+    }
+    if(item.choices.coupon_code) rows.push({label:'Cupom',value:item.choices.coupon_code});
+    for(const field of category?.custom_fields ?? []) {
+      const value=item.choices.custom_field_values?.[field.id]?.trim();
+      if(value) rows.push({label:field.label,value});
+    }
+    return rows;
+  }
   useEffect(()=> {if(open) {const timer=window.setInterval(()=>setNow(Date.now()),1000);return()=>window.clearInterval(timer);}},[open]);
   useEffect(()=> {if(error) errorRef.current?.focus();},[error]);
   useEffect(()=> {headingRef.current?.focus();},[step]);
-  useEffect(()=> {if(copySource) copyRef.current?.scrollIntoView({block:'nearest'});},[copySource]);
   useEffect(()=> {
     if(!pageMode) return;
     const vv=window.visualViewport;
@@ -154,35 +191,37 @@ export function GroupRegistrationFlow({open,onOpenChange,event,buyerId,mode='dia
     if(!pageMode && !next && pendingChanges && !window.confirm('Há alterações ainda não salvas. Deseja sair e descartar essas alterações?')) return;
     onOpenChange(next);
   }
-  async function previewCopy(id:string,targetId?:string) {
-    const source=draft.find(d=>d.participant_id===id)!;
+  function backToList() {
+    setExpanded(null);setEditingChoices(null);setCopyTarget(null);setCopyPickSource(null);setChoicesNav(null);
+  }
+  async function confirmCopyFromSource() {
+    if(!copyTarget || !copyPickSource || copyBusy) return;
+    const source=draft.find(d=>d.participant_id===copyPickSource);
+    const target=draft.find(d=>d.participant_id===copyTarget);
+    if(!source || !target) return;
     const problems=choiceProblems(source.choices,catalog.categories,catalog.kits);
     if(problems.length) {flow.setError(`Complete as escolhas antes de copiar: ${problems.join(' ')}`);return;}
     if(progress(source).state!=='complete') {flow.setError('Salve e confira as escolhas da origem antes de copiar.');return;}
-    setCopyBusy(true);setCopySource(id);setCopyTarget(targetId ?? null);setCopyCoupon(false);setReplaceConfirmed(false);setCopyPreview([]);copySignature.current=choicesSignature(draft);
+    if(!identityReady(target.participant_id)) {flow.setError('Identifique novamente este participante.');return;}
+    setCopyBusy(true);
     try {
-      const results:Array<{id:string;eligible:boolean;reason:string;selected:boolean}>=[];
-      for(const target of draft.filter(d=>d.participant_id!==id && (!targetId || d.participant_id===targetId))) {
-        if(!identityReady(target.participant_id)) {results.push({id:target.participant_id,eligible:false,reason:'Identifique novamente este participante.',selected:false});continue;}
-        const result=await checkParticipantEligibility(target.participant_id,source.choices.category_id!);
-        const eligible=result.success && result.data?.eligible===true;
-        results.push({id:target.participant_id,eligible,selected:eligible,reason:eligible?'Compatível com a categoria.':result.data?.message || result.error || 'Não foi possível confirmar a compatibilidade.'});
+      const result=await checkParticipantEligibility(target.participant_id,source.choices.category_id!);
+      if(!result.success || !result.data?.eligible) {
+        flow.setError(result.data?.message || result.error || 'Participante não elegível para a categoria.');
+        return;
       }
-      setCopyPreview(results);
-    } catch {flow.setError('Não foi possível conferir a cópia. Tente novamente.');setCopySource(null);}
+      const targetId=target.participant_id;
+      flow.change(draft.map(d=>d.participant_id===targetId?{...d,choices:copyChoices(source.choices,d.choices,false)}:d));
+      setCopyTarget(null);setCopyPickSource(null);setNotice('');
+      setExpanded(targetId);
+    } catch {flow.setError('Não foi possível conferir a cópia. Tente novamente.');}
     finally {setCopyBusy(false);}
   }
-  function applyCopy() {
-    if(choicesSignature(draft)!==copySignature.current) {flow.setError('As escolhas mudaram. Confira novamente quem receberá a cópia.');setCopySource(null);return;}
-    const source=draft.find(d=>d.participant_id===copySource)!;
-    if(progress(source).state!=='complete' || copyReplaces && !replaceConfirmed) return;
-    if(copyPreview.some(p=>p.selected && p.eligible && !identityReady(p.id))) {
-      flow.setError('A identificação de um participante venceu. Renove os dados e confira a cópia novamente.');setCopySource(null);return;
-    }
-    flow.change(draft.map(d=>copyPreview.some(p=>p.id===d.participant_id && p.eligible && p.selected)
-      ? {...d,choices:copyChoices(source.choices,d.choices,copyCoupon)} : d));
-    if(copyTarget) setExpanded(copyTarget);
-    setCopySource(null);setCopyTarget(null);setCopyPreview([]);setNotice('Escolhas copiadas. Confira as opções e as informações individuais antes de concluir.');
+  function removeParticipant(id:string,index:number) {
+    const name=participantDisplayName(id,index);
+    if(!window.confirm(`Remover ${name} deste pedido?`)) return;
+    flow.change(draft.filter(d=>d.participant_id!==id));
+    setCopyTarget(null);setCopyPickSource(null);setEditingChoices(null);setExpanded(null);
   }
   async function finishParticipant(item:ParticipantDraft) {
     if(!identityReady(item.participant_id) || choiceProblems(item.choices,catalog.categories,catalog.kits).length) return;
@@ -197,8 +236,9 @@ export function GroupRegistrationFlow({open,onOpenChange,event,buyerId,mode='dia
       if(!await flow.save()) return;
       const others=draft.filter(d=>d.participant_id!==item.participant_id);
       const next=others.find(d=>progress(d).state!=='complete');
+      setEditingChoices(null);
       setExpanded(next?.participant_id ?? null);
-      setNotice(next?'Escolhas salvas. Continue com o próximo participante.':'Escolhas salvas. Você pode adicionar participantes ou revisar o pedido.');
+      setNotice(next?'Escolhas salvas. Continue com o próximo participante.':'');
       window.requestAnimationFrame(()=>document.getElementById(`participant-${next?.participant_id ?? item.participant_id}`)?.focus());
     } catch {flow.setError('Não foi possível conferir o participante. Tente novamente.');}
     finally {setCopyBusy(false);}
@@ -216,11 +256,23 @@ export function GroupRegistrationFlow({open,onOpenChange,event,buyerId,mode='dia
   const Description=pageMode?'p':DialogDescription;
   const expandedItem=expanded?draft.find(d=>d.participant_id===expanded):undefined;
   const expandedProblems=expandedItem?choiceProblems(expandedItem.choices,catalog.categories,catalog.kits):[];
-  const canConcludeExpanded=!!expandedItem && identity===null && !copySource && identityReady(expandedItem.participant_id) && !expandedProblems.length && (!pageMode || !!choicesNav?.isExtras);
+  const expandedReady=!!expandedItem && identityReady(expandedItem.participant_id);
+  const editingExpanded=expandedReady && (editingChoices===expandedItem!.participant_id || !expandedItem!.choices.category_id);
+  const viewingSummary=!!expandedItem && identity===null && !copyTarget && expandedReady && !!expandedItem.choices.category_id && editingChoices!==expandedItem.participant_id;
+  const focusChoices=!!expandedItem && identity===null && !copyTarget && editingExpanded;
+  const focusPanel=focusChoices || viewingSummary;
+  const canConcludeExpanded=focusChoices && !expandedProblems.length && (!pageMode || !!choicesNav?.isExtras);
   const primaryChoiceAction=canConcludeExpanded?'conclude':choicesNav?.canContinue?'continue':null;
   const locationLine=[event.location,event.city && event.state?`${event.city} - ${event.state}`:event.city || event.state].filter(Boolean).join(', ');
-  const showShellFooter=pageMode && flow.ready && ((step===0 && identity===null && !copySource) || step===1 || step===2);
-  useEffect(()=> {if(!expanded) setChoicesNav(null);},[expanded]);
+  const showShellFooter=pageMode && flow.ready && ((step===0 && identity===null && !copyTarget) || step===1 || step===2);
+  useEffect(()=> {
+    if(!expanded) {setChoicesNav(null);setEditingChoices(null);return;}
+    const item=draft.find(d=>d.participant_id===expanded);
+    if(!item) {setEditingChoices(null);return;}
+    if(!identityReady(item.participant_id)) return;
+    if(!item.choices.category_id) setEditingChoices(expanded);
+    else setEditingChoices(prev=>prev===expanded?prev:null);
+  },[expanded,participants,now]);
   const content=<>
       {pageMode && <CheckoutLeaveGuard unsaved={pendingChanges}/>}
       <header className={`relative shrink-0 overflow-hidden text-left ${pageMode?'text-white':''}`}>
@@ -258,7 +310,10 @@ export function GroupRegistrationFlow({open,onOpenChange,event,buyerId,mode='dia
           </ol>
         </div>
       </header>
-      <div ref={midRef} className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-3 sm:p-6 lg:px-8">
+      <div ref={midRef} className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-3 sm:p-6 lg:px-8" onClick={e=>{
+        if(!pageMode || step!==0 || !focusPanel || disabled) return;
+        if(e.target===e.currentTarget) backToList();
+      }}>
         {error && <div ref={errorRef} tabIndex={-1} role="alert" className="mx-auto mb-4 max-w-3xl rounded-lg border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive lg:max-w-4xl">
           <p>{error}</p>{order && <Button type="button" variant="outline" className="mt-3 text-foreground" disabled={disabled} onClick={()=> {
             if(!dirty || window.confirm('Recarregar as escolhas salvas no servidor? As alterações locais ainda não salvas serão substituídas.')) void flow.reload();
@@ -266,10 +321,13 @@ export function GroupRegistrationFlow({open,onOpenChange,event,buyerId,mode='dia
         </div>}
         {!flow.ready ? <div className="flex min-h-48 flex-col items-center justify-center gap-4" role="status">
           {busy?<><Loader2 className="animate-spin" aria-hidden="true"/>Preparando sua inscrição…</>:<Button onClick={()=>void flow.load()}>Tentar carregar novamente</Button>}
-        </div> : <div className={`min-w-0 ${pageMode?'mx-auto w-full max-w-3xl lg:max-w-4xl':''}`}>
+        </div> : <div className={`min-w-0 ${pageMode?'mx-auto w-full max-w-3xl lg:max-w-4xl':''} ${pageMode && focusPanel?'min-h-full':''}`} onClick={e=>{
+          if(!pageMode || step!==0 || !focusPanel || disabled) return;
+          if(e.target===e.currentTarget) backToList();
+        }}>
           <main className="min-w-0 space-y-3 sm:space-y-5" aria-busy={disabled}>
             {flow.storageWarning && <p className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">Seu navegador não permite guardar a referência do pedido. Mantenha esta página aberta até concluir.</p>}
-            <div className={`space-y-1 ${step===0 && expanded?'hidden sm:block':''}`}>
+            <div className={`space-y-1 ${step===0 && focusPanel?'hidden':''}`}>
               <h2 ref={headingRef} tabIndex={-1} className="text-lg font-semibold outline-none sm:text-xl">{step===0?'Quem vai correr?':step===1?'Confira as inscrições':'Conclua seu pedido'}</h2>
               {step===0 && <p className="text-xs text-muted-foreground sm:text-sm">
                 {buyerAlreadyRegistered
@@ -278,7 +336,7 @@ export function GroupRegistrationFlow({open,onOpenChange,event,buyerId,mode='dia
               </p>}
             </div>
             {step===0 && <>
-              {order?.buyer && !buyerAlreadyRegistered && <section className="space-y-3 rounded-xl border bg-muted/20 p-4" aria-label="Dados do comprador">
+              {order?.buyer && !buyerAlreadyRegistered && !draft.some(d=>d.participant_id===order.buyer!.participant_id) && <section className={`space-y-3 rounded-xl border bg-muted/20 p-4 ${focusPanel?'hidden':''}`} aria-label="Dados do comprador">
                 <h3 className="font-semibold">Sua inscrição</h3>
                 <p className="break-words text-sm">{order.buyer.full_name || 'Complete seu nome no perfil'}</p>
                 <p className="break-all text-sm text-muted-foreground">{order.buyer.email}{order.buyer.cpf_masked && ` · ${order.buyer.cpf_masked}`}</p>
@@ -292,14 +350,12 @@ export function GroupRegistrationFlow({open,onOpenChange,event,buyerId,mode='dia
                   <p>Você não precisa adicionar outra pessoa para comprar seu próprio ingresso.</p>
                   <Button variant="outline" className="min-h-11 h-auto whitespace-normal" disabled={disabled} onClick={()=>void flow.reload()}>Já corrigi meus dados · verificar novamente</Button>
                 </div>}
-                {order.buyer.status==='ready' && (draft.some(d=>d.participant_id===order.buyer!.participant_id)
-                  ? <Button variant="outline" className="h-auto min-h-11 max-w-full whitespace-normal" disabled={disabled} onClick={()=>flow.change(draft.filter(d=>d.participant_id!==order.buyer!.participant_id))}>Vou comprar apenas para outras pessoas</Button>
-                  : <><p className="text-sm">Seus dados estão prontos. Inclua sua inscrição para escolher categoria, modalidade e kit.</p><Button className="min-h-12" disabled={disabled || draft.length>=20} onClick={()=>void flow.addBuyer()}>Adicionar minha inscrição</Button></>)}
+                {order.buyer.status==='ready' && <><p className="text-sm">Seus dados estão prontos. Inclua sua inscrição para escolher categoria, modalidade e kit.</p><Button className="min-h-12" disabled={disabled || draft.length>=20} onClick={()=>void flow.addBuyer()}>Adicionar minha inscrição</Button></>}
               </section>}
               {buyerAlreadyRegistered && identity===null && draft.length===0 && (
                 <p className="text-sm text-muted-foreground" role="status">Você já possui uma inscrição neste evento. Informe o CPF de outra pessoa para continuar.</p>
               )}
-              {draft.length>0 && <section className={`space-y-1.5 rounded-lg bg-muted/30 px-3 py-2.5 sm:space-y-2 sm:rounded-xl sm:p-4 ${expanded?'hidden sm:block':''}`} aria-label="Progresso dos participantes">
+              {draft.length>0 && <section className={`space-y-1.5 rounded-lg bg-muted/30 px-3 py-2.5 sm:space-y-2 sm:rounded-xl sm:p-4 ${focusPanel?'hidden':''}`} aria-label="Progresso dos participantes">
                 <div className="flex items-center justify-between gap-2">
                   <p className="text-xs font-semibold sm:text-sm">{completed}/{draft.length} com escolhas completas</p>
                   <p className="text-[11px] text-muted-foreground sm:text-xs">Após revisão e pagamento</p>
@@ -314,38 +370,80 @@ export function GroupRegistrationFlow({open,onOpenChange,event,buyerId,mode='dia
                   const stage=progress(item);
                   const sources=draft.filter(d=>d.participant_id!==item.participant_id && progress(d).state==='complete');
                   const expandedNow=expanded===item.participant_id;
-                  return <section key={item.participant_id} className={`overflow-hidden rounded-xl border ${expandedNow?'border-primary/50 shadow-sm':''}`}>
-                    <button id={`participant-${item.participant_id}`} type="button" className="flex min-h-14 w-full items-center justify-between gap-3 p-3 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary sm:min-h-20 sm:p-4" aria-expanded={expandedNow} aria-controls={`choices-${item.participant_id}`} onClick={()=>setExpanded(expandedNow?null:item.participant_id)}>
+                  return <section key={item.participant_id} className={`overflow-hidden rounded-xl border ${expandedNow?'border-primary/50 shadow-sm':''} ${pageMode && focusPanel && !expandedNow?'hidden':''}`} onClick={e=>e.stopPropagation()}>
+                    <button id={`participant-${item.participant_id}`} type="button" className="flex min-h-14 w-full items-center justify-between gap-3 p-3 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary sm:min-h-20 sm:p-4" aria-expanded={expandedNow} aria-controls={`choices-${item.participant_id}`} onClick={()=>expandedNow?backToList():setExpanded(item.participant_id)}>
                       <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-semibold sm:h-9 sm:w-9 ${stage.state==='complete'?'bg-green-100 text-green-800':'bg-muted text-muted-foreground'}`} aria-hidden="true">{stage.state==='complete'?<CheckCircle2 className="h-5 w-5"/>:index+1}</span>
-                      <span className="min-w-0"><span className="block break-words text-sm font-medium sm:text-base">{label(item.participant_id,index)}</span>
+                      <span className="min-w-0 flex-1 text-left"><span className="block break-words text-sm font-medium sm:text-base">{label(item.participant_id,index)}</span>
                         <span className={`mt-0.5 inline-block rounded-full px-2 py-0.5 text-[11px] font-medium sm:mt-1 sm:text-xs ${stage.state==='complete'?'bg-green-100 text-green-800':stage.state==='needs_review'?'bg-amber-100 text-amber-900':'bg-muted text-muted-foreground'}`}>{stage.label}</span>
                         {selectionSummary(item) && <span className="mt-1 block break-words text-[11px] text-muted-foreground sm:mt-2 sm:text-xs">{selectionSummary(item)}</span>}
                       </span><ChevronDown className={`h-5 w-5 shrink-0 ${expandedNow?'rotate-180':''}`} aria-hidden="true"/>
                     </button>
                     <div id={`choices-${item.participant_id}`} hidden={!expandedNow} className="space-y-4 border-t p-3 sm:p-4">
-                      {draft.length>1 && identityReady(item.participant_id) && <div className="space-y-3">
-                        <Button type="button" variant="outline" className="h-auto min-h-12 w-full whitespace-normal" disabled={!sources.length} onClick={()=>{setCopyTarget(item.participant_id);setCopySource(null);}}><Copy className="mr-2 h-4 w-4 shrink-0"/>Copiar de outro participante</Button>
-                        {!sources.length && <p className="text-xs text-muted-foreground">Complete e salve outro participante para aproveitar suas escolhas.</p>}
-                        {copyTarget===item.participant_id && !copySource && <div className="space-y-2 rounded-xl bg-muted/40 p-3" aria-label="Escolher origem da cópia">
+                      {!identityReady(item.participant_id) ? <>
+                        <p className="text-sm">{item.participant_id===order?.buyer?.participant_id?'Atualize seus dados para continuar com as escolhas já preenchidas.':'Informe o CPF novamente para conferir os dados e continuar.'}</p>
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                          {item.participant_id===order?.buyer?.participant_id && (
+                            <Button type="button" variant="outline" className="min-h-11 w-full sm:flex-1" onClick={()=>void flow.addBuyer()}>Atualizar meus dados</Button>
+                          )}
+                          <Button type="button" variant="ghost" className="min-h-11 w-full text-destructive sm:ml-auto sm:w-auto" onClick={()=>removeParticipant(item.participant_id,index)} aria-label={`Remover participante ${index+1}`}><Trash2 className="mr-2 h-4 w-4"/>Remover</Button>
+                        </div>
+                      </> : editingChoices===item.participant_id || !item.choices.category_id ? <>
+                        <ParticipantChoices key={`${item.participant_id}-edit-${choicesEditSession}`} value={item.choices} categories={catalog.categories} kits={catalog.kits} modalities={catalog.modalities}
+                          embedNav={!pageMode} initialStep={item.choices.category_id?'category':undefined} onNavChange={expandedNow?onChoicesNav:undefined}
+                          onChange={choices=>flow.change(draft.map(d=>d.participant_id===item.participant_id?{...d,choices}:d))}/>
+                        {!!stage.problems.length && <ul className="list-inside list-disc space-y-1 rounded-xl bg-amber-50 p-3 text-sm text-amber-950" aria-label="Pendências deste participante">{stage.problems.map((problem,i)=><li key={i}>{problem}</li>)}</ul>}
+                        {!stage.saved && <p className="text-xs text-muted-foreground">{busy?'Salvando alterações…':error?'Não foi possível salvar. Use “Salvar agora” para tentar novamente.':'Alterações aguardando salvamento.'}</p>}
+                        {!pageMode && <Button type="button" className="h-auto min-h-12 w-full whitespace-normal" disabled={!!problems.length} onClick={()=>void finishParticipant(item)}>Concluir participante</Button>}
+                        {draft.length>1 && copyTarget===item.participant_id && <div className="space-y-3 rounded-xl bg-muted/40 p-3" aria-label="Escolher origem da cópia">
                           <p className="text-sm font-medium">De quem deseja copiar?</p>
-                          {sources.map(source=><Button key={source.participant_id} type="button" variant="outline" className="h-auto min-h-12 w-full justify-start whitespace-normal text-left" onClick={()=>void previewCopy(source.participant_id,item.participant_id)}>{participantName(source.participant_id,draft.indexOf(source))}</Button>)}
-                          <Button type="button" variant="ghost" onClick={()=>setCopyTarget(null)}>Cancelar escolha da origem</Button>
+                          {sources.length
+                            ? <div className="space-y-2" role="radiogroup" aria-label="Origem da cópia">
+                                {sources.map(source=>{
+                                  const sourceId=source.participant_id;
+                                  const selected=copyPickSource===sourceId;
+                                  return <label key={sourceId} className={`flex min-h-12 cursor-pointer items-center gap-3 rounded-lg border px-3 py-2 text-sm ${selected?'border-primary bg-primary/10':'border-border bg-background'}`}>
+                                    <input type="radio" className="h-4 w-4 shrink-0" name={`copy-source-${item.participant_id}`} checked={selected} onChange={()=>setCopyPickSource(sourceId)}/>
+                                    <span className="min-w-0 break-words font-medium">{participantName(sourceId,draft.indexOf(source))}</span>
+                                  </label>;
+                                })}
+                              </div>
+                            : <p className="text-xs text-muted-foreground">Complete e salve outro participante para aproveitar suas escolhas.</p>}
+                          <div className="flex flex-wrap gap-2">
+                            <Button type="button" variant="ghost" className="min-h-11" disabled={copyBusy} onClick={()=>{setCopyTarget(null);setCopyPickSource(null);}}>Cancelar</Button>
+                            <Button type="button" className="min-h-11" disabled={!copyPickSource || copyBusy || !sources.length} onClick={()=>void confirmCopyFromSource()}>{copyBusy?'Copiando…':'OK'}</Button>
+                          </div>
                         </div>}
-                      </div>}
-                      {identityReady(item.participant_id) ? <ParticipantChoices value={item.choices} categories={catalog.categories} kits={catalog.kits} modalities={catalog.modalities}
-                        embedNav={!pageMode} onNavChange={expandedNow?onChoicesNav:undefined}
-                        onChange={choices=>flow.change(draft.map(d=>d.participant_id===item.participant_id?{...d,choices}:d))}/> :
-                        <p className="text-sm">{item.participant_id===order?.buyer?.participant_id?'Atualize seus dados para continuar com as escolhas já preenchidas.':'Informe o CPF novamente para conferir os dados e continuar.'}</p>}
-                      {!!stage.problems.length && <ul className="list-inside list-disc space-y-1 rounded-xl bg-amber-50 p-3 text-sm text-amber-950" aria-label="Pendências deste participante">{stage.problems.map((problem,i)=><li key={i}>{problem}</li>)}</ul>}
-                      <p className="text-xs text-muted-foreground">{!stage.saved?(busy?'Salvando alterações…':error?'Não foi possível salvar. Use “Salvar agora” para tentar novamente.':'Alterações aguardando salvamento.'):'Escolhas salvas.'}</p>
-                      {!pageMode && <Button type="button" className="h-auto min-h-12 w-full whitespace-normal" disabled={!identityReady(item.participant_id) || !!problems.length} onClick={()=>void finishParticipant(item)}>Concluir participante</Button>}
-                      {(!identityReady(item.participant_id) || (expandedNow && choicesNav?.isLastStep)) && <div className="flex flex-wrap gap-2">
-                        {item.participant_id===order?.buyer?.participant_id
-                          ? <Button type="button" variant="outline" onClick={()=>void flow.addBuyer()}>Atualizar meus dados</Button>
-                          : <Button type="button" variant="outline" onClick={()=>setIdentity(item.participant_id)}>Identificar novamente</Button>}
-                        {draft.length>1 && person?.ready && <Button type="button" variant="outline" disabled={stage.state!=='complete'} onClick={()=>void previewCopy(item.participant_id)}><Copy className="mr-2 h-4 w-4"/>Aplicar a outros</Button>}
-                        <Button type="button" variant="ghost" className="text-destructive" onClick={()=>{flow.change(draft.filter(d=>d.participant_id!==item.participant_id));setCopySource(null);}} aria-label={`Remover participante ${index+1}`}><Trash2 className="mr-2 h-4 w-4"/>Remover</Button>
-                      </div>}
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                          <div className="flex flex-col gap-2 sm:min-w-0 sm:flex-1 sm:flex-row sm:items-center">
+                            {item.choices.category_id && <Button type="button" className="min-h-12 w-full sm:flex-[2]" onClick={()=>setEditingChoices(null)}>Completar inscrição</Button>}
+                            {draft.length>1 && <Button type="button" variant="outline" className="min-h-11 w-full sm:flex-1" disabled={!sources.length || copyTarget===item.participant_id} onClick={()=>{setCopyTarget(item.participant_id);setCopyPickSource(null);}}><Copy className="mr-2 h-4 w-4 shrink-0"/>Copiar de outro participante</Button>}
+                          </div>
+                          {!item.choices.category_id && <Button type="button" variant="ghost" className="min-h-11 w-full text-destructive sm:ml-auto sm:w-auto" onClick={()=>removeParticipant(item.participant_id,index)} aria-label={`Remover participante ${index+1}`}><Trash2 className="mr-2 h-4 w-4"/>Remover</Button>}
+                        </div>
+                      </> : <>
+                        <section className="space-y-3" aria-label="Resumo do ingresso">
+                          <div className="space-y-1.5">
+                            <h3 className="text-sm font-semibold">Inscrito</h3>
+                            <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-sm">
+                              <dt className="text-muted-foreground">Nome</dt><dd className="min-w-0 break-words font-medium">{participantDisplayName(item.participant_id,index)}</dd>
+                              {participantCpf(item.participant_id) && <><dt className="text-muted-foreground">CPF</dt><dd className="font-medium">{participantCpf(item.participant_id)}</dd></>}
+                              {participantEmail(item.participant_id) && <><dt className="text-muted-foreground">E-mail</dt><dd className="min-w-0 break-all font-medium">{participantEmail(item.participant_id)}</dd></>}
+                            </dl>
+                          </div>
+                          <div className="border-t border-border pt-3 space-y-1.5">
+                            <h3 className="text-sm font-semibold">Inscrição</h3>
+                            {ticketChoiceRows(item).length
+                              ? <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-sm">{ticketChoiceRows(item).map(row=><div key={`${row.label}:${row.value}`} className="contents"><dt className="text-muted-foreground">{row.label}</dt><dd className="min-w-0 break-words font-medium">{row.value}</dd></div>)}</dl>
+                              : <p className="text-sm text-muted-foreground">Nenhuma escolha salva ainda.</p>}
+                          </div>
+                          {!!stage.problems.length && <ul className="list-inside list-disc space-y-1 rounded-xl bg-amber-50 p-3 text-sm text-amber-950" aria-label="Pendências deste participante">{stage.problems.map((problem,i)=><li key={i}>{problem}</li>)}</ul>}
+                          {!stage.saved && <p className="text-xs text-muted-foreground">{busy?'Salvando alterações…':error?'Não foi possível salvar. Use “Salvar agora” para tentar novamente.':'Alterações aguardando salvamento.'}</p>}
+                        </section>
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                          <Button type="button" className="min-h-12 w-full sm:flex-1" onClick={()=>{setChoicesEditSession(n=>n+1);setEditingChoices(item.participant_id);}}>Atualizar dados</Button>
+                          <Button type="button" variant="ghost" className="min-h-11 w-full text-destructive sm:ml-auto sm:w-auto" onClick={()=>removeParticipant(item.participant_id,index)} aria-label={`Remover participante ${index+1}`}><Trash2 className="mr-2 h-4 w-4"/>Remover</Button>
+                        </div>
+                      </>}
                     </div>
                   </section>;
                 })}
@@ -354,30 +452,16 @@ export function GroupRegistrationFlow({open,onOpenChange,event,buyerId,mode='dia
                   {buyerAlreadyRegistered && identity==='new' && <p className="text-xs text-muted-foreground sm:text-sm">Informe o CPF de quem ainda não está inscrito neste evento.</p>}
                   <ParticipantIdentityForm key={identity} eventId={event.id} excludedParticipantIds={draft.filter(d=>d.participant_id!==identity).map(d=>d.participant_id)} onReady={person=>{
                     if(flow.add(person,identity==='new'?undefined:identity)) {
-                      setExpanded(person.id);setIdentity(null);setCopySource(null);
+                      setExpanded(person.id);setIdentity(null);setCopyTarget(null);setCopyPickSource(null);
                       window.requestAnimationFrame(()=>document.getElementById(`participant-${person.id}`)?.scrollIntoView({behavior:'smooth',block:'start'}));
                     }
                   }}/>
                   <Button type="button" variant="ghost" onClick={()=>setIdentity(null)}>Voltar à lista</Button>
                 </section> : !pageMode && <Button type="button" variant={buyerAlreadyRegistered && draft.length===0?'default':'outline'} className={`min-h-12 w-full ${buyerAlreadyRegistered && draft.length===0?'':'border-dashed'}`} disabled={draft.length>=20} onClick={()=>setIdentity('new')}><Plus className="mr-2 h-4 w-4"/>{buyerAlreadyRegistered?'Inscrever outro participante':'Adicionar outro participante'}</Button>}
               </fieldset>
-              {copySource && <section ref={copyRef} className="space-y-3 rounded-xl border bg-muted/30 p-4" aria-label="Aplicar escolhas a outros participantes">
-                <h3 className="font-semibold">Aplicar estas escolhas</h3>
-                <p className="text-sm text-muted-foreground">Copia categoria, modalidade, lote, kit e variantes. Respostas pessoais não são copiadas. Vagas, estoque e descontos serão conferidos na revisão.</p>
-                {copyBusy?<p role="status">Verificando compatibilidade…</p>:<>
-                  {!copyTarget && <Button type="button" variant="ghost" disabled={disabled} onClick={()=>setCopyPreview(prev=>prev.map(p=>({...p,selected:p.eligible})))}>Selecionar todos os compatíveis</Button>}
-                  {copyPreview.map(p=><label key={p.id} className="flex min-h-12 items-start gap-3 rounded-md p-2 text-sm">
-                    <input type="checkbox" className="mt-1 h-5 w-5 shrink-0" disabled={!p.eligible || disabled} checked={p.selected} onChange={e=>setCopyPreview(prev=>prev.map(row=>row.id===p.id?{...row,selected:e.target.checked}:row))}/>
-                    <span><span className="block font-medium">{label(p.id,draft.findIndex(d=>d.participant_id===p.id))}</span><span className="text-muted-foreground">{p.reason}</span></span>
-                  </label>)}
-                  {draft.find(d=>d.participant_id===copySource)?.choices.coupon_code && <label className="flex min-h-12 items-center gap-3 text-sm"><input type="checkbox" className="h-5 w-5 shrink-0" checked={copyCoupon} onChange={e=>setCopyCoupon(e.target.checked)}/>Aplicar também o cupom da origem, sujeito à validação individual</label>}
-                  {copyReplaces && <label className="flex min-h-12 items-start gap-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-950"><input type="checkbox" className="mt-1 h-5 w-5 shrink-0" checked={replaceConfirmed} onChange={e=>setReplaceConfirmed(e.target.checked)}/>Confirmo substituir as escolhas existentes. Se a categoria mudar, as respostas individuais precisarão ser preenchidas novamente.</label>}
-                  <div className="flex flex-wrap gap-2"><Button type="button" disabled={disabled || !copyPreview.some(p=>p.selected) || copyReplaces && !replaceConfirmed} onClick={applyCopy}>Aplicar aos selecionados</Button><Button type="button" variant="ghost" onClick={()=>{setCopySource(null);setCopyTarget(null);}}>Cancelar cópia</Button></div>
-                </>}
-              </section>}
               {!pageMode && <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
                 {dirty && <Button variant="outline" disabled={disabled} onClick={()=>void flow.save()}>Salvar agora</Button>}
-                <Button className="min-h-12" disabled={disabled || !draft.length || needsIdentity || identity!==null || !!copySource} onClick={()=>void review()}>Revisar {draft.length===1?'inscrição':'inscrições'}</Button>
+                <Button className="min-h-12" disabled={disabled || !draft.length || needsIdentity || identity!==null || !!copyTarget} onClick={()=>void review()}>Revisar {draft.length===1?'inscrição':'inscrições'}</Button>
               </div>}
             </>}
             {step===1 && <>
@@ -423,7 +507,7 @@ export function GroupRegistrationFlow({open,onOpenChange,event,buyerId,mode='dia
       {showShellFooter && <footer className="shrink-0 border-t bg-background px-3 pt-2.5 shadow-[0_-6px_20px_rgba(0,0,0,0.06)] sm:px-6 lg:px-8" style={{paddingBottom:'max(0.75rem, env(safe-area-inset-bottom))'}}>
         <div className="mx-auto flex w-full max-w-3xl flex-col gap-2 lg:max-w-4xl">
           {step===0 && <>
-            {expandedItem && identityReady(expandedItem.participant_id) && <div className="space-y-1.5">
+            {focusChoices && expandedItem && <div className="space-y-1.5">
               <div className="flex gap-2" aria-live="polite">
                 {choicesNav?.canBack && <Button type="button" variant="outline" className="min-h-11 flex-1 sm:max-w-[9rem]" disabled={disabled} onClick={()=>choicesNav.back()}><ChevronLeft className="mr-1 h-4 w-4"/>Voltar</Button>}
                 {primaryChoiceAction==='conclude'
@@ -436,11 +520,12 @@ export function GroupRegistrationFlow({open,onOpenChange,event,buyerId,mode='dia
               </div>
               {primaryChoiceAction==='conclude' && <p className="text-center text-[11px] font-medium text-accent sm:text-xs" role="status">Escolhas prontas — conclua este participante</p>}
             </div>}
-            <div className={`flex-col gap-2 sm:flex-row ${expandedItem && identityReady(expandedItem.participant_id)?'hidden sm:flex':'flex'}`}>
+            {focusPanel && expandedItem && <Button type="button" variant="outline" className="min-h-11 w-full" disabled={disabled} onClick={backToList}>Voltar à lista</Button>}
+            <div className={`flex-col gap-2 sm:flex-row ${focusPanel?'hidden':'flex'}`}>
               <Button type="button" variant={buyerAlreadyRegistered && draft.length===0?'default':'outline'} className={`min-h-11 flex-1 ${buyerAlreadyRegistered && draft.length===0?'':'border-dashed'}`} disabled={disabled || draft.length>=20} onClick={()=>setIdentity('new')}>
                 <Plus className="mr-2 h-4 w-4"/>{buyerAlreadyRegistered?'Inscrever outro participante':'Adicionar outro participante'}
               </Button>
-              <Button type="button" className="min-h-11 flex-1" disabled={disabled || !draft.length || needsIdentity || !!copySource || completed<draft.length} onClick={()=>void review()}>
+              <Button type="button" className="min-h-11 flex-1" disabled={disabled || !draft.length || needsIdentity || !!copyTarget || completed<draft.length} onClick={()=>void review()}>
                 Revisar {draft.length===1?'inscrição':'inscrições'}
               </Button>
             </div>

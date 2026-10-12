@@ -12,9 +12,10 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Loader2 } from "lucide-react";
 import { maskCpf, maskEmailOrCpf, maskPhone } from "@/lib/utils/masks";
 import { getPublicBranding } from "@/lib/api/systemSettings";
-import { validatePhone as validatePhoneStrict, PHONE_VALIDATION_MESSAGE, validateFullName, FULL_NAME_VALIDATION_MESSAGE, validateBirthDateRange, BIRTH_DATE_VALIDATION_MESSAGE, validateGender, GENDER_VALIDATION_MESSAGE, normalizeGender } from "@/lib/utils/profileValidation";
+import { normalizeGender } from "@/lib/utils/profileValidation";
 import { normalizePhoneDigits, normalizePersonName } from "@/lib/utils/profileNormalization";
 import { normalizeBirthDateForCompare } from "@/lib/utils/validators";
+import { collectSignUpIssues } from "@/lib/utils/signUpValidation";
 import { useCpfBrasilLookup } from "@/hooks/useCpfBrasilLookup";
 import type { LookupCpfData } from "@/lib/api/auth";
 import { toast } from "sonner";
@@ -41,6 +42,7 @@ const Auth = () => {
   const [genderLockedFromLookup, setGenderLockedFromLookup] = useState(false);
   const [lgpdConsent, setLgpdConsent] = useState(false);
   const [cpfLookupProof, setCpfLookupProof] = useState<string | null>(null);
+  const [signUpIssues, setSignUpIssues] = useState<string[]>([]);
   /** CPF encontrado na API — aguarda confirmação da data de nascimento antes de liberar o proof. */
   const [pendingApiLookup, setPendingApiLookup] = useState<{
     data: LookupCpfData;
@@ -173,34 +175,23 @@ const Auth = () => {
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!lgpdConsent) {
-      return;
-    }
-
-    if (!cpfLookupProof) {
-      toast.error("Consulte o CPF para continuar");
+    const issues = collectSignUpIssues({
+      cpfLookupProof,
+      fullName,
+      birthDate,
+      gender,
+      phone,
+      email: signupEmail,
+      password: signupPassword,
+      lgpdConsent,
+    });
+    setSignUpIssues(issues);
+    if (issues.length) {
+      toast.error(issues[0]);
       return;
     }
 
     const normalizedName = normalizePersonName(fullName);
-    const fullNameCheck = validateFullName(normalizedName);
-    if (!fullNameCheck.valid) {
-      toast.error(fullNameCheck.message ?? FULL_NAME_VALIDATION_MESSAGE);
-      return;
-    }
-
-    const birthDateCheck = validateBirthDateRange(birthDate);
-    if (!birthDateCheck.valid) {
-      toast.error(birthDateCheck.message ?? BIRTH_DATE_VALIDATION_MESSAGE);
-      return;
-    }
-
-    const genderCheck = validateGender(gender);
-    if (!genderCheck.valid) {
-      toast.error(genderCheck.message ?? GENDER_VALIDATION_MESSAGE);
-      return;
-    }
-
     setLoading(true);
 
     try {
@@ -215,21 +206,11 @@ const Auth = () => {
         lgpd_consent: lgpdConsent,
         cpf_lookup_proof: cpfLookupProof,
       });
-
+      setSignUpIssues([]);
     } finally {
       setLoading(false);
     }
   };
-
-  const canSubmitSignUp =
-    Boolean(cpfLookupProof) &&
-    validateFullName(normalizePersonName(fullName)).valid &&
-    validateBirthDateRange(birthDate).valid &&
-    validateGender(gender).valid &&
-    validatePhoneStrict(phone).valid &&
-    Boolean(signupEmail) &&
-    signupPassword.length >= 6 &&
-    lgpdConsent;
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 p-4">
@@ -453,7 +434,17 @@ const Auth = () => {
                     Aceito os termos de uso e política de privacidade (LGPD)
                   </Label>
                 </div>
-                <Button type="submit" className="w-full" disabled={loading || !lgpdConsent || !canSubmitSignUp}>
+                {signUpIssues.length > 0 && (
+                  <div role="alert" className="rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">
+                    <p className="font-medium">Para criar a conta, ajuste:</p>
+                    <ul className="mt-2 list-disc space-y-1 pl-5">
+                      {signUpIssues.map((issue) => (
+                        <li key={issue}>{issue}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                <Button type="submit" className="w-full" disabled={loading}>
                   {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                   Criar Conta
                 </Button>

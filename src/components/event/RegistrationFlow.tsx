@@ -32,8 +32,9 @@ import type { Event } from "@/lib/api/events";
 import { getReferralCoupon, saveReferralCoupon, clearReferralCoupon } from "@/lib/referralCouponCache";
 import { maskCpf, maskEmailOrCpf, maskPhone } from "@/lib/utils/masks";
 import { validateCpf, normalizeBirthDateForCompare } from "@/lib/utils/validators";
-import { validateFullName, FULL_NAME_VALIDATION_MESSAGE, validatePhone, PHONE_VALIDATION_MESSAGE, validateBirthDateRange, BIRTH_DATE_VALIDATION_MESSAGE, validateGender, GENDER_VALIDATION_MESSAGE, normalizeGender } from "@/lib/utils/profileValidation";
+import { normalizeGender } from "@/lib/utils/profileValidation";
 import { normalizePersonName, normalizePhoneDigits } from "@/lib/utils/profileNormalization";
+import { collectSignUpIssues } from "@/lib/utils/signUpValidation";
 import { useCpfBrasilLookup } from "@/hooks/useCpfBrasilLookup";
 import type { LookupCpfData } from "@/lib/api/auth";
 import { isMultiRegistrationCheckoutEnabled } from "@/lib/utils/checkoutFeature";
@@ -394,6 +395,7 @@ function LegacyRegistrationFlow({
   const fieldsReadOnlyFromApi = cpfProofReady && !isManualMode;
 
   const [lgpdConsent, setLgpdConsent] = useState(false);
+  const [signUpIssues, setSignUpIssues] = useState<string[]>([]);
   const [isRegisteringAccount, setIsRegisteringAccount] = useState(false);
   const [isRegisteringOther, setIsRegisteringOther] = useState(false);
   const [searchCpf, setSearchCpf] = useState("");
@@ -1123,45 +1125,26 @@ function LegacyRegistrationFlow({
       toast.error("CPF inválido");
       return;
     }
-    if (!registerData.cpfLookupProof) {
-      toast.error("Consulte o CPF para continuar");
+
+    const issues = collectSignUpIssues({
+      cpfLookupProof: registerData.cpfLookupProof,
+      fullName: registerData.fullName,
+      birthDate: registerData.birthDate,
+      gender: registerData.gender,
+      phone: registerData.phone,
+      email: registerData.email,
+      password: registerData.password,
+      confirmPassword: registerData.confirmPassword,
+      lgpdConsent,
+      requireConfirmPassword: true,
+    });
+    setSignUpIssues(issues);
+    if (issues.length) {
+      toast.error(issues[0]);
       return;
     }
-    if (!registerData.fullName || !registerData.email || !registerData.password || !registerData.phone) {
-      toast.error("Por favor, preencha todos os campos obrigatórios");
-      return;
-    }
+
     const normalizedName = normalizePersonName(registerData.fullName);
-    const fullNameCheck = validateFullName(normalizedName);
-    if (!fullNameCheck.valid) {
-      toast.error(fullNameCheck.message ?? FULL_NAME_VALIDATION_MESSAGE);
-      return;
-    }
-    if (!validatePhone(registerData.phone).valid) {
-      toast.error(PHONE_VALIDATION_MESSAGE);
-      return;
-    }
-    const birthCheck = validateBirthDateRange(registerData.birthDate);
-    if (!birthCheck.valid) {
-      toast.error(birthCheck.message ?? BIRTH_DATE_VALIDATION_MESSAGE);
-      return;
-    }
-    const genderCheck = validateGender(registerData.gender);
-    if (!genderCheck.valid) {
-      toast.error(genderCheck.message ?? GENDER_VALIDATION_MESSAGE);
-      return;
-    }
-
-    if (registerData.password !== registerData.confirmPassword) {
-      toast.error("As senhas não coincidem");
-      return;
-    }
-
-    if (!lgpdConsent) {
-      toast.error("Você precisa concordar com os termos de privacidade");
-      return;
-    }
-
     setIsRegisteringAccount(true);
     try {
       // Get referral code from URL
@@ -1202,6 +1185,7 @@ function LegacyRegistrationFlow({
         });
         setRegisterGenderLockedFromLookup(false);
         setLgpdConsent(false);
+        setSignUpIssues([]);
         setIsRegistering(false); // Switch back to login view
         
         // Wait a bit for user data to be loaded, then redirect
@@ -2197,21 +2181,20 @@ function LegacyRegistrationFlow({
                           Concordo com os termos de privacidade e tratamento de dados pessoais (LGPD) *
                         </Label>
                       </div>
+                      {signUpIssues.length > 0 && (
+                        <div role="alert" className="rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">
+                          <p className="font-medium">Para criar a conta, ajuste:</p>
+                          <ul className="mt-2 list-disc space-y-1 pl-5">
+                            {signUpIssues.map((issue) => (
+                              <li key={issue}>{issue}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
                       <Button
                         type="button"
                         onClick={handleRegister}
-                        disabled={
-                          !registerData.cpfLookupProof ||
-                          !validateFullName(normalizePersonName(registerData.fullName)).valid ||
-                          !validateBirthDateRange(registerData.birthDate).valid ||
-                          !registerData.gender ||
-                          !validatePhone(registerData.phone).valid ||
-                          !registerData.email ||
-                          !registerData.password ||
-                          !registerData.confirmPassword ||
-                          !lgpdConsent ||
-                          isRegisteringAccount
-                        }
+                        disabled={isRegisteringAccount}
                         className="w-full"
                       >
                         {isRegisteringAccount ? "Criando conta..." : "Criar Conta"}

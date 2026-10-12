@@ -44,8 +44,8 @@ const router = createBrowserRouter(createRoutesFromElements(
           <Route path="/completar-cadastro" element={<CompletarCadastro />} />
           <Route path="/events" element={<Events />} />
           <Route path="/evento/:slug" element={<EventDetails />} />
-          <Route path="/evento/:slug/inscricao" element={<ProtectedRoute><EventCheckout /></ProtectedRoute>} />
-          <Route path="/events/:id/inscricao" element={<ProtectedRoute><EventCheckout /></ProtectedRoute>} />
+          <Route path="/evento/:slug/inscricao" element={<EventCheckout />} />
+          <Route path="/events/:id/inscricao" element={<EventCheckout />} />
           <Route path="/events/:id" element={<EventDetails />} /> {/* Compatibilidade com UUID */}
           <Route path="/results" element={<Results />} />
           <Route path="/orcamento" element={<Quote />} />

@@ -51,9 +51,9 @@ function firstIncomplete(steps:StepDef[]):StepKey {
   return steps.find(s=>!s.done)?.key ?? steps[steps.length-1]?.key ?? 'category';
 }
 
-export function ParticipantChoices({value,onChange,categories,kits,modalities,embedNav=true,onNavChange}:{
+export function ParticipantChoices({value,onChange,categories,kits,modalities,embedNav=true,onNavChange,initialStep}:{
   value:OrderChoices;onChange:(v:OrderChoices)=>void;categories:Category[];kits:EventKit[];modalities:Modality[];
-  embedNav?:boolean;onNavChange?:(nav:ChoicesNav|null)=>void;
+  embedNav?:boolean;onNavChange?:(nav:ChoicesNav|null)=>void;initialStep?:StepKey;
 }) {
   const id=useId();
   const category=categories.find(c=>c.id===value.category_id);
@@ -61,7 +61,7 @@ export function ParticipantChoices({value,onChange,categories,kits,modalities,em
   const kit=availableKits.find(k=>k.id===value.kit_id);
   const batches=activeBatches(category);
   const steps=useMemo(()=>buildSteps(value,categories,kits,modalities),[value,categories,kits,modalities]);
-  const [step,setStep]=useState<StepKey>(()=>firstIncomplete(steps));
+  const [step,setStep]=useState<StepKey>(()=>initialStep ?? firstIncomplete(steps));
 
   useEffect(()=> {
     if(!steps.some(s=>s.key===step)) setStep(firstIncomplete(steps));
