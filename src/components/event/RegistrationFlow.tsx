@@ -42,7 +42,6 @@ import { isMultiRegistrationCheckoutEnabled } from "@/lib/utils/checkoutFeature"
 // Re-export ProductVariant type for use in component
 type ProductVariantType = ProductVariant;
 import { toast } from "sonner";
-import { GroupRegistrationFlow } from '@/components/registration/GroupRegistrationFlow';
 
 // Utility function to calculate age from birth date
 const calculateAge = (birthDate: string): number => {
@@ -198,7 +197,7 @@ const formatPrice = (price: number): string => {
 };
 
 export function RegistrationFlow(props:RegistrationFlowProps) {
-  const {user}=useAuth();
+  const navigate=useNavigate();
   const [checkoutEnabled,setCheckoutEnabled]=useState<boolean|null>(null);
   useEffect(()=>{
     let active=true;
@@ -208,11 +207,13 @@ export function RegistrationFlow(props:RegistrationFlowProps) {
     }).catch(()=>{if(active) setCheckoutEnabled(false);});
     return()=>{active=false;};
   },[]);
-  // Login/cadastro inline permanecem disponíveis antes de abrir a compra em grupo.
-  if(checkoutEnabled && user) {
-    return <GroupRegistrationFlow key={`${user.id}:${props.event.id}`} open={props.open} onOpenChange={props.onOpenChange} event={props.event} buyerId={user.id}/>;
-  }
-  if(checkoutEnabled===null && user) return null;
+  // Com checkout multi ligado, qualquer abertura vai para /inscricao (auth + compra em página).
+  useEffect(()=>{
+    if(!props.open || checkoutEnabled!==true) return;
+    props.onOpenChange(false);
+    navigate(`/events/${encodeURIComponent(props.event.id)}/inscricao`,{viewTransition:true});
+  },[props.open,checkoutEnabled,props.event.id,props.onOpenChange,navigate]);
+  if(checkoutEnabled!==false) return null;
   return <LegacyRegistrationFlow {...props}/>;
 }
 

@@ -1,13 +1,12 @@
 import { useState, useEffect } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useNavigate, useLocation, Link } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { getDashboardRoute } from "@/lib/utils/navigation";
+import { checkoutReturnPath } from "@/lib/utils/checkoutReturnPath";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Loader2 } from "lucide-react";
 import { MultiStepRegistration } from "@/components/MultiStepRegistration";
 import { maskCpf, maskEmailOrCpf } from "@/lib/utils/masks";
@@ -20,6 +19,8 @@ interface LoginDialogProps {
 
 export function LoginDialog({ open, onOpenChange }: LoginDialogProps) {
   const navigate = useNavigate();
+  const location = useLocation();
+  const checkoutReturn = checkoutReturnPath(location);
   const { login } = useAuth();
   const [loading, setLoading] = useState(false);
   const [isMultiStepOpen, setIsMultiStepOpen] = useState(false);
@@ -46,6 +47,8 @@ export function LoginDialog({ open, onOpenChange }: LoginDialogProps) {
       const success = await login(loginEmail, loginPassword);
       if (success) {
         onOpenChange(false);
+        // Na página de inscrição, permanece (CheckoutAuthPanel → fluxo em página).
+        if (checkoutReturn) return;
         setTimeout(() => {
           const currentUser = JSON.parse(localStorage.getItem('auth_user') || '{}');
           navigate(getDashboardRoute(currentUser as any));
@@ -111,6 +114,7 @@ export function LoginDialog({ open, onOpenChange }: LoginDialogProps) {
                 <div className="flex items-center justify-end">
                   <Link
                     to="/forgot-password"
+                    state={checkoutReturn ? { from: { pathname: location.pathname, search: location.search } } : undefined}
                     onClick={() => onOpenChange(false)}
                     className="text-sm text-primary hover:underline"
                   >

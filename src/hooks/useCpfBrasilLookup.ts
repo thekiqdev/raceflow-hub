@@ -21,6 +21,8 @@ export interface UseCpfBrasilLookupOptions {
    * Ex.: exigir data de nascimento preenchida antes de consultar (conferência com a API).
    */
   canAutoLookup?: () => boolean;
+  /** Quando muda e canAutoLookup permite, reavalia o debounce (ex.: data de nascimento). */
+  autoLookupToken?: string;
 }
 
 /**
@@ -40,6 +42,7 @@ export function useCpfBrasilLookup({
   onInvalidate,
   onManualEntry,
   canAutoLookup,
+  autoLookupToken,
 }: UseCpfBrasilLookupOptions) {
   const [lookupLoading, setLookupLoading] = useState(false);
   const [lookupError, setLookupError] = useState<string | null>(null);
@@ -211,7 +214,7 @@ export function useCpfBrasilLookup({
         debounceRef.current = null;
       }
     };
-  }, [cpfMasked, runLookup]);
+  }, [cpfMasked, runLookup, autoLookupToken]);
 
   return {
     lookupLoading,

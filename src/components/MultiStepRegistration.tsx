@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useLocation, useSearchParams } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { getDashboardRoute } from "@/lib/utils/navigation";
+import { checkoutReturnPath } from "@/lib/utils/checkoutReturnPath";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -89,6 +90,8 @@ interface StepErrors {
 
 export function MultiStepRegistration({ open, onOpenChange }: MultiStepRegistrationProps) {
   const navigate = useNavigate();
+  const location = useLocation();
+  const checkoutReturn = checkoutReturnPath(location);
   const [searchParams] = useSearchParams();
   const { register } = useAuth();
   const [currentStep, setCurrentStep] = useState(1);
@@ -519,7 +522,8 @@ export function MultiStepRegistration({ open, onOpenChange }: MultiStepRegistrat
           ? 'Cadastro realizado com sucesso! Você foi referenciado por um líder de grupo.'
           : 'Cadastro realizado com sucesso!';
         toast.success(message);
-        
+        // Na página de inscrição, permanece no fluxo em página (não manda ao dashboard).
+        if (checkoutReturn) return;
         setTimeout(() => {
           const currentUser = JSON.parse(localStorage.getItem('auth_user') || '{}');
           navigate(getDashboardRoute(currentUser as any));

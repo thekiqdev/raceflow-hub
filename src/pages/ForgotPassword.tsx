@@ -1,15 +1,20 @@
 import { useState } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useLocation, Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Loader2, ArrowLeft, Mail } from "lucide-react";
 import { requestPasswordReset } from "@/lib/api/passwordReset";
+import { checkoutReturnPath } from "@/lib/utils/checkoutReturnPath";
 import { toast } from "sonner";
 
 export default function ForgotPassword() {
-  const navigate = useNavigate();
+  const location = useLocation();
+  const checkoutBack = checkoutReturnPath(location.state?.from);
+  const backTo = checkoutBack || "/auth";
+  const backState = checkoutBack ? undefined : location.state;
+  const backLabel = checkoutBack ? "Voltar para a inscrição" : "Voltar para o login";
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const [emailSent, setEmailSent] = useState(false);
@@ -78,11 +83,12 @@ export default function ForgotPassword() {
                 </Button>
                 <div className="text-center">
                   <Link
-                    to="/auth"
+                    to={backTo}
+                    state={backState}
                     className="text-sm text-primary hover:underline inline-flex items-center gap-1"
                   >
                     <ArrowLeft className="h-3 w-3" />
-                    Voltar para o login
+                    {backLabel}
                   </Link>
                 </div>
               </form>
@@ -110,10 +116,10 @@ export default function ForgotPassword() {
                 >
                   Enviar para outro e-mail
                 </Button>
-                <Link to="/auth">
+                <Link to={backTo} state={backState}>
                   <Button variant="ghost" className="w-full">
                     <ArrowLeft className="mr-2 h-4 w-4" />
-                    Voltar para o login
+                    {backLabel}
                   </Button>
                 </Link>
               </div>

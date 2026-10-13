@@ -170,8 +170,11 @@ const EventDetails = () => {
   const [kits, setKits] = useState<Kit[]>([]);
   const [pickupLocations, setPickupLocations] = useState<any[]>([]);
   const [isRegistrationOpen, setIsRegistrationOpen] = useState(false);
-  const [multiRegistrationCheckout, setMultiRegistrationCheckout] = useState(false);
+  /** null = módulos ainda carregando; evita abrir o popup legado por race. */
+  const [multiRegistrationCheckout, setMultiRegistrationCheckout] = useState<boolean|null>(null);
+  const checkoutModulesReady = multiRegistrationCheckout !== null;
   const startRegistration = () => {
+    if(multiRegistrationCheckout===null) return;
     if(multiRegistrationCheckout) {
       const path=slug?`/evento/${encodeURIComponent(slug)}/inscricao`:`/events/${encodeURIComponent(id || '')}/inscricao`;
       const cached=event?getReferralCoupon(event.id):null;
@@ -182,7 +185,9 @@ const EventDetails = () => {
       if(ref) q.set('ref',ref);
       const qs=q.toString();
       navigate(qs?`${path}?${qs}`:path,{viewTransition:true});
-    } else setIsRegistrationOpen(true);
+      return;
+    }
+    setIsRegistrationOpen(true);
   };
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
   const [showBottomBar, setShowBottomBar] = useState(false);
@@ -305,6 +310,7 @@ const EventDetails = () => {
       } catch (error: any) {
         console.error("Error loading event data:", error);
         toast.error(error.message || "Erro ao carregar dados do evento");
+        setMultiRegistrationCheckout((prev) => (prev === null ? false : prev));
       } finally {
         setLoading(false);
       }
@@ -1075,7 +1081,8 @@ const EventDetails = () => {
                   isPastEvent || 
                   !canRegisterByStatus ||
                   effectiveStatus === 'not_open' ||
-                  effectiveStatus === 'closed';
+                  effectiveStatus === 'closed' ||
+                  !checkoutModulesReady;
 
                 // ETAPA 7.4: Improved conditional display based on status
                 if (event.status === "cancelled") {
@@ -1210,6 +1217,7 @@ const EventDetails = () => {
                                 disabled={isDisabled}
                               >
                                 {isDisabled ? (
+                                  !checkoutModulesReady ? "Carregando..." :
                                   effectiveStatus === 'not_open' ? "Inscrições em Breve" :
                                   effectiveStatus === 'closed' ? "Inscrições Encerradas" :
                                   event.status === "draft" ? "Inscrições Indisponíveis" :
@@ -1251,7 +1259,9 @@ const EventDetails = () => {
                       )}
                       {!isDisabled && !isPastEvent && event.status !== "finished" && effectiveStatus !== 'not_open' && effectiveStatus !== 'closed' && (
                         <p className="text-xs text-center text-muted-foreground">
-                          Você será direcionado para fazer login ou criar uma conta
+                          {multiRegistrationCheckout
+                            ? 'Na página de inscrição você pode entrar ou criar sua conta, se ainda não estiver logado.'
+                            : 'Você será direcionado para fazer login ou criar uma conta'}
                         </p>
                       )}
                     </CardContent>
@@ -1403,8 +1413,8 @@ const EventDetails = () => {
         </div>
       </section>
 
-      {/* Registration Flow Dialog */}
-      {event && (
+      {/* Dialog legado só quando o checkout multi estiver desligado. */}
+      {event && multiRegistrationCheckout === false && (
         <RegistrationFlow
           open={isRegistrationOpen}
           onOpenChange={setIsRegistrationOpen}
@@ -1442,7 +1452,7 @@ const EventDetails = () => {
           ? (event.status === "published" || event.status === "ongoing")
           : effectiveStatus === 'open';
         
-        const canRegister = canRegisterByStatus && !isPastEvent;
+        const canRegister = canRegisterByStatus && !isPastEvent && checkoutModulesReady;
         
         if (event.status === "finished" || event.status === "cancelled" || event.status === "draft" || !canRegister || effectiveStatus === 'not_open' || effectiveStatus === 'closed') {
           return null;
@@ -1529,6 +1539,7 @@ const EventDetails = () => {
                           disabled={!canRegister}
                         >
                           {!canRegister ? (
+                            !checkoutModulesReady ? "Carregando..." :
                             effectiveStatus === 'not_open' ? "Inscrições em Breve" :
                             effectiveStatus === 'closed' ? "Inscrições Encerradas" :
                             "Inscrições Indisponíveis"

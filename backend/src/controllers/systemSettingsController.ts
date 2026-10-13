@@ -1,6 +1,7 @@
 import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth.js';
 import { getSystemSettings, updateSystemSettings } from '../services/systemSettingsService.js';
+import { resolveCheckoutFeatureFlag } from '../services/checkoutFeatureFlags.js';
 import { z } from 'zod';
 
 const brandingCacheTtlMs = parseInt(process.env.BRANDING_CACHE_TTL_MS || '30000', 10);
@@ -124,8 +125,8 @@ export const getSystemSettingsController = async (
 };
 
 /**
- * GET /api/settings/modules
- * Get enabled modules and transfer fee (public endpoint for runners)
+ * GET /api/registrations/settings/modules
+ * Módulos e taxas públicas (guest + logado) — usado na entrada da inscrição.
  */
 export const getEnabledModulesController = async (
   _req: AuthRequest,
@@ -133,11 +134,21 @@ export const getEnabledModulesController = async (
 ): Promise<void> => {
   try {
     const settings = await getSystemSettings();
+    // Espelha a regra do backend (módulo + env) para o FE não divergir na entrada da inscrição.
+    const enabled_modules = { ...(settings.enabled_modules || {}) };
+    enabled_modules.multi_registration_checkout = resolveCheckoutFeatureFlag(
+      enabled_modules.multi_registration_checkout,
+      process.env.MULTI_REGISTRATION_CHECKOUT_ENABLED,
+    );
+    enabled_modules.checkout_delivery = resolveCheckoutFeatureFlag(
+      enabled_modules.checkout_delivery,
+      process.env.CHECKOUT_DELIVERY_ENABLED,
+    );
 
     res.json({
       success: true,
       data: {
-        enabled_modules: settings.enabled_modules || {},
+        enabled_modules,
         transfer_fee: settings.transfer_fee || 0,
         platform_fee: settings.platform_fee || 0,
         platform_fee_type: settings.platform_fee_type || 'fixed',

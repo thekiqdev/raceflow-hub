@@ -62,6 +62,14 @@ try {
     await button('Fazer Inscrição').first().click();
     await page.waitForURL(/\/evento\/corrida-teste\/inscricao/);checks++;
     assert.ok(!page.url().includes('/auth'));
+    assert.ok(page.url().includes('cupom=LIDER1') && page.url().includes('ref=EHV892'));checks++;
+    await page.getByRole('heading',{name:'Entre para continuar a inscrição',exact:true}).waitFor();
+    // Esqueceu senha preserva retorno à inscrição (com query).
+    await page.getByRole('link',{name:'Esqueceu sua senha?',exact:true}).click();
+    await page.waitForURL(/\/forgot-password/);
+    await page.getByRole('link',{name:'Voltar para a inscrição',exact:true}).click();
+    await page.waitForURL(/\/evento\/corrida-teste\/inscricao/);
+    assert.ok(page.url().includes('cupom=LIDER1') && page.url().includes('ref=EHV892'));checks++;
     await page.getByRole('heading',{name:'Entre para continuar a inscrição',exact:true}).waitFor();
     await page.getByLabel('E-mail ou CPF',{exact:true}).fill(user.email);
     await page.getByLabel('Senha',{exact:true}).fill('test-only');
@@ -90,9 +98,11 @@ try {
     assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth));checks++;
     await page.screenshot({path:`tmp/ux-stage-c/page-${width}.png`,fullPage:true});
     await button('Completar inscrição').click();
-    // Completar volta à lista (não abre o resumo).
-    await page.getByRole('button',{name:/Escolhas completas/}).waitFor();
+    // Completar volta à lista (não abre o resumo). Esperar o CTA sumir — o rótulo
+    // "Escolhas completas" já pode estar no accordion antes do finish terminar.
+    await page.getByRole('button',{name:'Completar inscrição',exact:true}).waitFor({state:'hidden'});
     assert.equal(await page.getByRole('group',{name:'Categoria',exact:true}).count(),0);checks++;
+    await page.getByRole('button',{name:/Escolhas completas/}).waitFor();
     await page.getByRole('button',{name:/Escolhas completas/}).click();
     await page.getByRole('heading',{name:'Inscrição',exact:true}).waitFor();
     page.once('dialog',dialog=>dialog.accept());

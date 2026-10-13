@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -19,6 +19,8 @@ import { toast } from 'sonner';
 
 /** Entrar / criar conta embutidos na página de inscrição (sem redirecionar para /auth). */
 export function CheckoutAuthPanel({ referralCode }: { referralCode?: string }) {
+  const location = useLocation();
+  const forgotPasswordState = { from: { pathname: location.pathname, search: location.search } };
   const { login, register } = useAuth();
   const [mode, setMode] = useState<'login' | 'signup'>('login');
   const [loading, setLoading] = useState(false);
@@ -114,6 +116,9 @@ export function CheckoutAuthPanel({ referralCode }: { referralCode?: string }) {
       onSuccess: onLookupSuccess,
       onInvalidate: onLookupInvalidate,
       onManualEntry,
+      // Etapa 1: só consulta automática depois de CPF + data de nascimento.
+      canAutoLookup: () => Boolean(normalizeBirthDateForCompare(birthDateRef.current)),
+      autoLookupToken: birthDate,
     });
 
   useEffect(() => {
@@ -236,7 +241,7 @@ export function CheckoutAuthPanel({ referralCode }: { referralCode?: string }) {
               />
             </div>
             <div className="flex items-center justify-between">
-              <Link to="/forgot-password" className="text-sm text-primary hover:underline">
+              <Link to="/forgot-password" state={forgotPasswordState} className="text-sm text-primary hover:underline">
                 Esqueceu sua senha?
               </Link>
             </div>
@@ -249,6 +254,10 @@ export function CheckoutAuthPanel({ referralCode }: { referralCode?: string }) {
 
         <TabsContent value="signup" className="space-y-4">
           <form onSubmit={handleSignUp} className="space-y-4">
+            <p className="text-xs font-medium text-muted-foreground" aria-live="polite">
+              {cpfProofReady ? 'Etapa 2 de 2 — complete seus dados' : 'Etapa 1 de 2 — CPF e data de nascimento'}
+            </p>
+
             <div className="space-y-2">
               <Label htmlFor="checkout-signup-cpf">CPF *</Label>
               <Input
@@ -265,17 +274,17 @@ export function CheckoutAuthPanel({ referralCode }: { referralCode?: string }) {
                 <div className="space-y-2">
                   <p className="text-sm text-destructive">{lookupError}</p>
                   {cpfAlreadyRegistered && (
-                    <Link to="/forgot-password" className="text-sm font-medium text-primary hover:underline">
+                    <Link to="/forgot-password" state={forgotPasswordState} className="text-sm font-medium text-primary hover:underline">
                       Recuperar senha
                     </Link>
                   )}
                 </div>
               )}
               {!cpfProofReady && !pendingApiLookup && (
-                <p className="text-xs text-muted-foreground">Informe o CPF e clique em Consultar.</p>
+                <p className="text-xs text-muted-foreground">Informe CPF e data de nascimento e clique em Consultar.</p>
               )}
               {isManualMode && cpfProofReady && (
-                <p className="text-xs text-muted-foreground">Preencha nome, sexo e a data de nascimento.</p>
+                <p className="text-xs text-muted-foreground">Preencha nome, sexo e confira a data de nascimento.</p>
               )}
             </div>
 
@@ -296,14 +305,21 @@ export function CheckoutAuthPanel({ referralCode }: { referralCode?: string }) {
                   Deve ser a mesma data que consta no seu documento de identificação.
                 </p>
               )}
-              <Button
-                type="button"
-                className="w-full"
-                onClick={() => manualLookup()}
-                disabled={loading || lookupLoading || cpf.replace(/\D/g, '').length !== 11}
-              >
-                {lookupLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Consultar'}
-              </Button>
+              {!cpfProofReady && (
+                <Button
+                  type="button"
+                  className="w-full"
+                  onClick={() => manualLookup()}
+                  disabled={
+                    loading ||
+                    lookupLoading ||
+                    cpf.replace(/\D/g, '').length !== 11 ||
+                    !normalizeBirthDateForCompare(birthDate)
+                  }
+                >
+                  {lookupLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Consultar'}
+                </Button>
+              )}
             </div>
 
             {cpfProofReady && (
@@ -345,71 +361,71 @@ export function CheckoutAuthPanel({ referralCode }: { referralCode?: string }) {
                     </select>
                   )}
                 </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="checkout-signup-phone">Telefone *</Label>
+                  <Input
+                    id="checkout-signup-phone"
+                    placeholder="(00) 00000-0000"
+                    value={phone}
+                    onChange={(e) => setPhone(maskPhone(e.target.value))}
+                    maxLength={15}
+                    required
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="checkout-signup-email">Email</Label>
+                  <Input
+                    id="checkout-signup-email"
+                    type="email"
+                    placeholder="seu@email.com"
+                    value={signupEmail}
+                    onChange={(e) => setSignupEmail(e.target.value)}
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="checkout-signup-password">Senha</Label>
+                  <Input
+                    id="checkout-signup-password"
+                    type="password"
+                    placeholder="••••••••"
+                    value={signupPassword}
+                    onChange={(e) => setSignupPassword(e.target.value)}
+                    required
+                    minLength={6}
+                  />
+                </div>
+                <div className="flex items-start space-x-2">
+                  <Checkbox
+                    id="checkout-lgpd"
+                    checked={lgpdConsent}
+                    onCheckedChange={(checked) => setLgpdConsent(checked as boolean)}
+                  />
+                  <Label htmlFor="checkout-lgpd" className="text-sm leading-relaxed cursor-pointer">
+                    Aceito os termos de uso e política de privacidade (LGPD)
+                  </Label>
+                </div>
+                {signUpIssues.length > 0 && (
+                  <div
+                    role="alert"
+                    className="rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive"
+                  >
+                    <p className="font-medium">Para criar a conta, ajuste:</p>
+                    <ul className="mt-2 list-disc space-y-1 pl-5">
+                      {signUpIssues.map((issue) => (
+                        <li key={issue}>{issue}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                <Button type="submit" className="w-full" disabled={loading}>
+                  {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  Criar Conta
+                </Button>
               </>
             )}
-
-            <div className="space-y-2">
-              <Label htmlFor="checkout-signup-phone">Telefone *</Label>
-              <Input
-                id="checkout-signup-phone"
-                placeholder="(00) 00000-0000"
-                value={phone}
-                onChange={(e) => setPhone(maskPhone(e.target.value))}
-                maxLength={15}
-                required
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="checkout-signup-email">Email</Label>
-              <Input
-                id="checkout-signup-email"
-                type="email"
-                placeholder="seu@email.com"
-                value={signupEmail}
-                onChange={(e) => setSignupEmail(e.target.value)}
-                required
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="checkout-signup-password">Senha</Label>
-              <Input
-                id="checkout-signup-password"
-                type="password"
-                placeholder="••••••••"
-                value={signupPassword}
-                onChange={(e) => setSignupPassword(e.target.value)}
-                required
-                minLength={6}
-              />
-            </div>
-            <div className="flex items-start space-x-2">
-              <Checkbox
-                id="checkout-lgpd"
-                checked={lgpdConsent}
-                onCheckedChange={(checked) => setLgpdConsent(checked as boolean)}
-              />
-              <Label htmlFor="checkout-lgpd" className="text-sm leading-relaxed cursor-pointer">
-                Aceito os termos de uso e política de privacidade (LGPD)
-              </Label>
-            </div>
-            {signUpIssues.length > 0 && (
-              <div
-                role="alert"
-                className="rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive"
-              >
-                <p className="font-medium">Para criar a conta, ajuste:</p>
-                <ul className="mt-2 list-disc space-y-1 pl-5">
-                  {signUpIssues.map((issue) => (
-                    <li key={issue}>{issue}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            <Button type="submit" className="w-full" disabled={loading}>
-              {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Criar Conta
-            </Button>
           </form>
         </TabsContent>
       </Tabs>

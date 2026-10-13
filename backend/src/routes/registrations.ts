@@ -39,14 +39,12 @@ import { getEnabledModulesController } from '../controllers/systemSettingsContro
 const router = Router();
 router.use(orderRegistrationGuard);
 
-// Public route for validation (no authentication required)
+// Rotas públicas (antes do authenticate) — guest precisa ler módulos na página do evento.
+router.get('/settings/modules', getEnabledModulesController);
 router.get('/:id/validate', getRegistrationForValidation);
 
 // All other routes require authentication
 router.use(authenticate);
-
-// Public endpoint for enabled modules (accessible to authenticated users)
-router.get('/settings/modules', getEnabledModulesController);
 
 router.get('/export', exportRegistrationsController);
 router.get('/check-existing', checkExistingRegistrationController);
