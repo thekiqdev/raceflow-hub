@@ -178,16 +178,13 @@ export function useGroupCheckout(eventId:string,buyerId:string,open:boolean,incl
     const current=orderRef.current!;
     let payload=card;
     if(method==='CREDIT_CARD') {
-      if(card?.credit_card && card?.credit_card_holder_info && !card.credit_card_token) {
-        // Tokeniza antes da cobrança: PAN/CVV não seguem no POST de payment.
-        const tokenized=unwrap(await api.tokenizeCheckoutCard(current.id,{
-          credit_card:card.credit_card,credit_card_holder_info:card.credit_card_holder_info,
-        }));
-        payload={credit_card_token:tokenized.credit_card_token};
-      } else if(!card?.credit_card_token) {
-        throw new Error('Preencha os dados do cartão para pagar nesta tela.');
-      } else {
+      // Mesmo caminho do pagamento legado: POST /payments com creditCard + holder (sem tokenizeCreditCard).
+      if(card?.credit_card_token) {
         payload={credit_card_token:card.credit_card_token};
+      } else if(card?.credit_card && card?.credit_card_holder_info) {
+        payload={credit_card:card.credit_card,credit_card_holder_info:card.credit_card_holder_info};
+      } else {
+        throw new Error('Preencha os dados do cartão para pagar nesta tela.');
       }
     }
     if(payment?.status==='failed' || payment?.status==='cancelled') {

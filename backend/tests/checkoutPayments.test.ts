@@ -321,7 +321,7 @@ it('método desabilitado e reserva expirada não criam cobrança',async()=> {
 });
 it('cartão exige token ou formulário e rejeita tentativa sem dados',async()=> {
   const o=await reserved();
-  await assert.rejects(payments.start(o.id,buyer,randomUUID(),'CREDIT_CARD'),/Tokenize o cartão|dados do cartão/);
+  await assert.rejects(payments.start(o.id,buyer,randomUUID(),'CREDIT_CARD'),/dados do cartão/);
   assert.equal(creates,0);assert.equal(await state(o.id),'reserved');
 });
 it('estorno incerto sem confirmação bloqueia nova solicitação sem liberar ingresso',async()=> {
@@ -376,6 +376,14 @@ it('tokenização devolve token e cobrança CREDIT_CARD usa só token sem PAN',a
   assert.equal(paid?.method,'CREDIT_CARD');assert.equal(creates,1);
   assert.equal((remote[0] as any).creditCardToken,'tok_1111');
   assert.equal((remote[0] as any).creditCard,undefined);
+});
+it('cobrança CREDIT_CARD aceita cartão bruto no create (fluxo legado)',async()=> {
+  const o=await reserved();
+  const paid=await payments.start(o.id,buyer,randomUUID(),'CREDIT_CARD',{...rawCard,remote_ip:'203.0.113.10'});
+  assert.equal(paid?.method,'CREDIT_CARD');assert.equal(creates,1);
+  assert.equal((remote[0] as any).creditCard?.number,'4111111111111111');
+  assert.ok((remote[0] as any).creditCardHolderInfo);
+  assert.equal((remote[0] as any).creditCardToken,undefined);
 });
 it('timeout de cartão com token fica unknown e concilia sem repetir POST',async()=> {
   const o=await reserved();timeoutCreate=true;

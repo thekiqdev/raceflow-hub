@@ -43,7 +43,7 @@ function hasCardToken(card?:CheckoutCardInput) {return !!card?.credit_card_token
 function hasRawCard(card?:CheckoutCardInput) {return !!card?.credit_card && !!card?.credit_card_holder_info;}
 function requireCardInput(card?:CheckoutCardInput) {
   if(hasCardToken(card) || hasRawCard(card)) return;
-  throw fail('Tokenize o cartão antes de confirmar o pagamento.',400);
+  throw fail('Informe os dados do cartão para confirmar o pagamento.',400);
 }
 
 // Bloqueio de sessão serializa rede/DB por pedido sem manter transação aberta durante HTTP.
@@ -311,7 +311,7 @@ export function createCheckoutPaymentsService(gateway:CheckoutPaymentGateway) {
         });
       } else if(isNew || a.status==='preparing') {
         if(a.method==='CREDIT_CARD' && !hasCardToken(card) && !hasRawCard(card)) {
-          await issue(a,'Tokenize o cartão novamente para concluir o pagamento nesta tela.');
+          await issue(a,'Reenvie os dados do cartão para concluir o pagamento nesta tela.');
           return publicPayment(await latest(id));
         }
         let customer:string;

@@ -53,10 +53,7 @@ try {
         if(method==='GET') {refreshCalls++;return ok(payment);}
         payCalls++;keys.push(body.request_key);lastPayBody=body;
         if(body.method==='CREDIT_CARD' && !body.credit_card_token && (!body.credit_card || !body.credit_card_holder_info)) {
-          return route.fulfill({status:400,json:{success:false,error:'Tokenize o cartão antes de confirmar o pagamento.'}});
-        }
-        if(body.method==='CREDIT_CARD' && body.credit_card?.number) {
-          return route.fulfill({status:400,json:{success:false,error:'Envie apenas o token do cartão neste passo.'}});
+          return route.fulfill({status:400,json:{success:false,error:'Informe os dados do cartão para confirmar o pagamento.'}});
         }
         payment={...attempt(order.total_cents===0?'paid':'pending',order.total_cents===0?'FREE':body.method)};
         order.status=order.total_cents===0?'confirmed':'awaiting_payment';
@@ -121,7 +118,8 @@ try {
     await confirmCard().evaluate(el=>{el.click();el.click();});
     await page.getByRole('heading',{name:'Confirmando pagamento no cartão'}).waitFor();
     assert.equal(payCalls,1);assert.equal(payment.method,'CREDIT_CARD');
-    assert.ok(lastPayBody?.credit_card_token);assert.equal(lastPayBody?.credit_card,undefined);checks++;
+    assert.ok(lastPayBody?.credit_card?.number);assert.ok(lastPayBody?.credit_card_holder_info);
+    assert.equal(lastPayBody?.credit_card_token,undefined);checks++;
     await page.reload();await page.getByText('Meio escolhido:',{exact:false}).waitFor();assert.equal(payCalls,1);checks++;
     const beforeFocus=refreshCalls;await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
     await page.waitForTimeout(350);assert.ok(refreshCalls>beforeFocus);assert.equal(payCalls,1);checks++;

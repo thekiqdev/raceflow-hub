@@ -102,7 +102,7 @@ router.post('/:id/payment',asyncHandler(async(req:AuthRequest,res:Response)=> {
     if(value.method!=='CREDIT_CARD') return;
     if(value.credit_card_token) return;
     if(value.credit_card && value.credit_card_holder_info) return;
-    ctx.addIssue({code:z.ZodIssueCode.custom,message:'Tokenize o cartão antes de confirmar o pagamento.',path:['credit_card_token']});
+    ctx.addIssue({code:z.ZodIssueCode.custom,message:'Informe os dados do cartão para confirmar o pagamento.',path:['credit_card']});
   }),req.body);
   const remoteIp=String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
   const cardInput=body.method==='CREDIT_CARD'
