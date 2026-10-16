@@ -7,9 +7,23 @@ export interface AppError extends Error {
   details?: unknown;
 }
 
+function applyCorsOnError(req: Request, res: Response) {
+  // Em 4xx/5xx o proxy às vezes omite ACAO; o browser interpreta como CORS e esconde o JSON real.
+  const origin = typeof req.headers.origin === 'string' ? req.headers.origin : '';
+  if (!origin) return;
+  const allowed = (process.env.CORS_ORIGIN || '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean);
+  if (!allowed.includes(origin)) return;
+  res.setHeader('Access-Control-Allow-Origin', origin);
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  res.setHeader('Vary', 'Origin');
+}
+
 export const errorHandler = (
   err: AppError,
-  _req: Request,
+  req: Request,
   res: Response,
   _next: NextFunction
 ) => {
@@ -20,6 +34,8 @@ export const errorHandler = (
     code: err.code,
     name: err.name,
   });
+
+  applyCorsOnError(req, res);
 
   // Default error
   const statusCode = err.statusCode || 500;
@@ -80,6 +96,7 @@ export const errorHandler = (
       error: 'Token expired',
       message: 'Authentication token has expired',
     });
+    return;
   }
 
   // Send error response

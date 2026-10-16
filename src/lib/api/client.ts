@@ -137,17 +137,19 @@ class ApiClient {
       });
       
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      
-      // Provide more helpful error messages
-      let userMessage = 'Erro de conexão';
-      if (errorMessage.includes('Failed to fetch') || errorMessage.includes('NetworkError')) {
-        userMessage = `Não foi possível conectar ao servidor em ${url}. Verifique se o backend está rodando.`;
-      } else if (errorMessage.includes('CORS')) {
-        userMessage = 'Erro de CORS. Verifique a configuração do servidor.';
-      } else if (errorMessage.includes('Network request failed')) {
-        userMessage = 'Falha na rede. Verifique sua conexão com a internet.';
+      const isNetworkFailure =
+        errorMessage.includes('Failed to fetch') ||
+        errorMessage.includes('NetworkError') ||
+        errorMessage.includes('Network request failed') ||
+        errorMessage.includes('CORS');
+      // Mensagem amigável ao usuário; URL/detalhe técnico ficam só no console e em `message`.
+      let userMessage = 'Não foi possível concluir agora. Tente novamente em alguns instantes.';
+      if (isNetworkFailure) {
+        userMessage = endpoint.includes('/payment')
+          ? 'Não foi possível processar o pagamento agora. Confira sua conexão e tente novamente em alguns segundos.'
+          : 'Não foi possível conectar agora. Confira sua conexão e tente novamente.';
       }
-      
+
       return {
         success: false,
         error: userMessage,

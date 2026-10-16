@@ -8,6 +8,29 @@ const reference=(id:string)=>`ORDER-${id}`;
 const paid=(p:GatewayPayment)=>p.status==='RECEIVED' || (p.billingType==='CREDIT_CARD' && p.status==='CONFIRMED');
 const cents=(value:unknown)=>Math.round(Number(value)*100);
 const definitive=(error:any)=>error?.response?.status===400;
+/** Extrai status/códigos do Asaas sem registrar PAN, CVV ou body completo. */
+function gatewayErrorInfo(error:unknown) {
+  const err=error as {message?:string;code?:string;response?:{status?:number;data?:{errors?:Array<{code?:string;description?:string;message?:string}>}}};
+  if(!err?.response) {
+    return {httpStatus:null as number|null,network:true,codes:[] as string[],descriptions:[err?.code || err?.message || 'sem resposta do gateway']};
+  }
+  const list=Array.isArray(err.response.data?.errors)?err.response.data!.errors!:[];
+  return {
+    httpStatus:err.response.status ?? null,
+    network:false,
+    codes:list.map(e=>String(e?.code || '').trim()).filter(Boolean).slice(0,8),
+    descriptions:list.map(e=>String(e?.description || e?.message || '').trim()).filter(Boolean).slice(0,5),
+  };
+}
+function logGatewayFailure(context:string,error:unknown) {
+  const info=gatewayErrorInfo(error);
+  console.error(`❌ Gateway ${context}:`,{
+    httpStatus:info.httpStatus,
+    network:info.network,
+    codes:info.codes,
+    descriptions:info.descriptions,
+  });
+}
 
 export interface CheckoutCardInput {
   credit_card_token?:string;
@@ -232,7 +255,14 @@ export function createCheckoutPaymentsService(gateway:CheckoutPaymentGateway) {
           last4:token.creditCardNumber ?? null,
         };
       } catch(error) {
-        if(definitive(error)) throw fail('Cartão rejeitado na tokenização. Confira os dados e tente novamente.',400);
+        logGatewayFailure('tokenize',error);
+        if(definitive(error)) {
+          const hint=gatewayErrorInfo(error).descriptions[0];
+          const message=hint && hint.length<=160
+            ? `Cartão rejeitado na tokenização. ${hint}`
+            : 'Cartão rejeitado na tokenização. Confira os dados e tente novamente.';
+          throw fail(message,400);
+        }
         throw fail('Não foi possível tokenizar o cartão agora. Tente novamente.',502);
       }
     });
@@ -298,6 +328,7 @@ export function createCheckoutPaymentsService(gateway:CheckoutPaymentGateway) {
             creditCardToken:card?.credit_card_token,creditCard:card?.credit_card,creditCardHolderInfo:card?.credit_card_holder_info,
             remoteIp:card?.remote_ip});
         } catch(error) {
+          logGatewayFailure('payment-create',error);
           if(definitive(error)) {
             await withTransaction(async()=> {
               await order(id);
