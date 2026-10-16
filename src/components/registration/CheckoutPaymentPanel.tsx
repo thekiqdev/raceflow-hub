@@ -57,9 +57,9 @@ export function CheckoutPaymentPanel({order,payment,event,method,onMethod,busy,l
     || (waiting && !!payment && ['pending','preparing'].includes(payment.status) && !payment.cancel_requested)
   );
   const showMethodPicker=!free && (canStart || pickingMethod) && !expired;
-  const uncertainTitle=payment?.status==='creating'?'Registrando cobrança no gateway':'Conferindo a tentativa de pagamento';
+  const uncertainTitle=payment?.status==='creating'?'Registrando o pagamento':'Conferindo a tentativa de pagamento';
   const uncertainCopy=payment?.status==='creating'
-    ? 'A cobrança está sendo registrada. Não envie o cartão de novo — aguarde a confirmação nesta tela.'
+    ? 'O pagamento está sendo registrado. Não envie o cartão de novo — aguarde a confirmação nesta tela.'
     : 'Ainda não recebemos uma resposta definitiva. Aguarde a atualização desta tela antes de preencher o cartão novamente.';
   useEffect(()=> {
     if(order.status==='confirmed' || terminal || cancellingOrder) setPickingMethod(false);

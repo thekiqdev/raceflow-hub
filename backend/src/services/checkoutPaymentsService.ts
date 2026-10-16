@@ -31,6 +31,14 @@ function logGatewayFailure(context:string,error:unknown) {
     descriptions:info.descriptions,
   });
 }
+/** Mensagem para o comprador: sem jargão de gateway; usa hint da Asaas quando for clara. */
+function customerCardRejectMessage(error:unknown,fallback:string) {
+  const hint=gatewayErrorInfo(error).descriptions[0];
+  if(!hint || hint.length>160) return fallback;
+  const technical=/gateway|asaas|provider|tokeniz|http|api\b/i.test(hint);
+  if(technical) return fallback;
+  return hint.endsWith('.')?hint:`${hint}.`;
+}
 
 export interface CheckoutCardInput {
   credit_card_token?:string;
@@ -257,11 +265,7 @@ export function createCheckoutPaymentsService(gateway:CheckoutPaymentGateway) {
       } catch(error) {
         logGatewayFailure('tokenize',error);
         if(definitive(error)) {
-          const hint=gatewayErrorInfo(error).descriptions[0];
-          const message=hint && hint.length<=160
-            ? `Cartão rejeitado na tokenização. ${hint}`
-            : 'Cartão rejeitado na tokenização. Confira os dados e tente novamente.';
-          throw fail(message,400);
+          throw fail(customerCardRejectMessage(error,'Não foi possível validar este cartão. Confira os dados e tente novamente.'),400);
         }
         throw fail('Não foi possível tokenizar o cartão agora. Tente novamente.',502);
       }
@@ -330,13 +334,15 @@ export function createCheckoutPaymentsService(gateway:CheckoutPaymentGateway) {
         } catch(error) {
           logGatewayFailure('payment-create',error);
           if(definitive(error)) {
+            const issue=customerCardRejectMessage(error,
+              'Não foi possível concluir o pagamento com este cartão. Confira os dados, o limite disponível ou tente outro cartão.');
             await withTransaction(async()=> {
               await order(id);
-              await query("UPDATE checkout_payment_attempts SET status='failed',issue='Cobrança rejeitada pelo gateway.' WHERE id=$1",[a.id]);
+              await query("UPDATE checkout_payment_attempts SET status='failed',issue=$2 WHERE id=$1",[a.id,issue]);
               await query("UPDATE checkout_orders SET status='reserved',updated_at=now() WHERE id=$1",[id]);
             });
           } else {
-            await query("UPDATE checkout_payment_attempts SET status='unknown',issue='Resultado incerto. Consultando a cobrança existente.' WHERE id=$1",[a.id]);
+            await query("UPDATE checkout_payment_attempts SET status='unknown',issue='Ainda não temos a confirmação do pagamento. Aguarde a atualização nesta tela.' WHERE id=$1",[a.id]);
           }
           return publicPayment(await latest(id));
         }

@@ -180,14 +180,14 @@ try {
     await copyPix().waitFor();assert.equal(payCalls,afterFailure);checks++;
     for(const status of ['unknown','creating','preparing']) {
       order.status='awaiting_payment';payment=attempt(status,'PIX');await visit();
-      await page.getByRole('heading',{name:status==='creating'?'Registrando cobrança no gateway':status==='unknown'?'Conferindo a tentativa de pagamento':'Preparando seu pagamento'}).waitFor();
+      await page.getByRole('heading',{name:status==='creating'?'Registrando o pagamento':status==='unknown'?'Conferindo a tentativa de pagamento':'Preparando seu pagamento'}).waitFor();
       assert.equal(await start().count(),0);assert.equal(await copyPix().count(),0);
       assert.equal(await button('Tentar preparar pagamento novamente').count(),status==='preparing'?1:0);checks++;
     }
     // Cartão em creating/unknown: sem formulário; preparing libera reenvio tokenizado.
     order.status='awaiting_payment';payment=attempt('creating','CREDIT_CARD');await visit();
     assert.equal(await confirmCard().count(),0);
-    await page.getByRole('heading',{name:'Registrando cobrança no gateway'}).waitFor();checks++;
+    await page.getByRole('heading',{name:'Registrando o pagamento'}).waitFor();checks++;
     payment=attempt('unknown','CREDIT_CARD');await visit();
     assert.equal(await confirmCard().count(),0);
     await page.getByText('antes de preencher o cartão novamente',{exact:false}).waitFor();checks++;
