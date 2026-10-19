@@ -726,14 +726,12 @@ export const getRegistrationById = async (registrationId: string, viewerId?: str
     );
     const item = snap.rows[0];
     if (item?.snapshot) {
+      // Identidade do pedido (convidado/comprador); nomes de categoria/kit/modalidade
+      // vêm do JOIN atual — o snapshot é atualizado na edição, mas não deve mascarar o estado vivo.
       const identity = item.current_identity ?? item.snapshot.identity ?? {};
-      const labels = item.snapshot.labels ?? {};
       if (identity.fullName) row.runner_name = identity.fullName;
       if (identity.cpf) row.runner_cpf = identity.cpf;
       else if (row.participant_cpf) row.runner_cpf = row.participant_cpf;
-      if (labels.category) row.category_name = labels.category;
-      if (labels.modality) row.modality_name = labels.modality;
-      if (labels.kit) row.kit_name = labels.kit;
     } else if (row.participant_cpf && !row.runner_cpf) {
       row.runner_cpf = row.participant_cpf;
     }

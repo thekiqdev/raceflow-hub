@@ -149,6 +149,169 @@ export async function previewCheckoutRegistrationEdit(
   return computePreview(reg, input);
 }
 
+/**
+ * Reconstrói labels/selections/choices do snapshot a partir do estado atual da inscrição.
+ * Sem isso, ingresso e detalhe do pedido continuam mostrando a compra original.
+ */
+async function syncCheckoutItemSnapshotAfterEdit(
+  registrationId: string,
+  pricePreview: CheckoutRegistrationEditPreview | null,
+  anyPriceChange: boolean
+) {
+  const item = (
+    await query('SELECT id, snapshot FROM checkout_order_items WHERE registration_id=$1 FOR UPDATE', [
+      registrationId,
+    ])
+  ).rows[0];
+  if (!item?.snapshot) return;
+
+  const reg = (
+    await query(
+      `SELECT r.category_id, r.kit_id, r.modality_id, r.category_batch_id, r.total_amount, r.coupon_code,
+              c.name AS category_name, m.name AS modality_name, k.name AS kit_name, b.name AS batch_name
+       FROM registrations r
+       LEFT JOIN categories c ON c.id = r.category_id
+       LEFT JOIN modalities m ON m.id = r.modality_id
+       LEFT JOIN event_kits k ON k.id = r.kit_id
+       LEFT JOIN category_batches b ON b.id = r.category_batch_id
+       WHERE r.id = $1`,
+      [registrationId]
+    )
+  ).rows[0];
+  if (!reg) return;
+
+  const selectionRows = (
+    await query(
+      `SELECT rps.product_id, rps.variant_id, rps.attribute_name, rps.attribute_value,
+              p.name AS product_name, v.name AS variant_name, p.type AS product_type
+       FROM registration_product_selections rps
+       JOIN kit_products p ON p.id = rps.product_id
+       LEFT JOIN product_variants v ON v.id = rps.variant_id
+       WHERE rps.registration_id = $1
+       ORDER BY p.name, rps.attribute_name`,
+      [registrationId]
+    )
+  ).rows;
+
+  const byProduct = new Map<
+    string,
+    {
+      product_id: string;
+      variant_id: string;
+      product_name: string;
+      variant_name: string | null;
+      attributes: Record<string, string>;
+    }
+  >();
+  for (const row of selectionRows) {
+    const key = `${row.product_id}:${row.variant_id || ''}`;
+    let entry = byProduct.get(key);
+    if (!entry) {
+      entry = {
+        product_id: row.product_id,
+        variant_id: row.variant_id,
+        product_name: row.product_name,
+        variant_name: row.variant_name,
+        attributes: {},
+      };
+      byProduct.set(key, entry);
+    }
+    if (row.attribute_name) entry.attributes[row.attribute_name] = row.attribute_value ?? '';
+  }
+
+  const selections = [...byProduct.values()].map((s) => ({
+    product_id: s.product_id,
+    variant_id: s.variant_id,
+    attributes: s.attributes,
+  }));
+  const productLabels = [...byProduct.values()].map((s) => ({
+    product_id: s.product_id,
+    product_name: s.product_name,
+    variant_id: s.variant_id || '',
+    variant_name: s.variant_name || '',
+  }));
+
+  if (reg.kit_id) {
+    const selectedIds = selections.map((s) => s.product_id);
+    const uniqueProducts = (
+      await query(
+        `SELECT id AS product_id, name AS product_name, ''::text AS variant_id, ''::text AS variant_name
+         FROM kit_products
+         WHERE kit_id = $1 AND type = 'unique'
+           AND ($2::uuid[] = '{}' OR id <> ALL($2::uuid[]))
+         ORDER BY id`,
+        [reg.kit_id, selectedIds]
+      )
+    ).rows;
+    productLabels.push(...uniqueProducts);
+  }
+
+  const customRows = (
+    await query(
+      `SELECT category_custom_field_id, value FROM registration_custom_field_values WHERE registration_id = $1`,
+      [registrationId]
+    )
+  ).rows;
+  const custom_field_values = Object.fromEntries(
+    customRows.map((r: { category_custom_field_id: string; value: string | null }) => [
+      r.category_custom_field_id,
+      r.value ?? '',
+    ])
+  );
+
+  const fieldDefs = reg.category_id
+    ? (
+        await query('SELECT id, label FROM category_custom_fields WHERE category_id = $1', [reg.category_id])
+      ).rows
+    : [];
+  const customFieldLabels = Object.fromEntries(fieldDefs.map((f: { id: string; label: string }) => [f.id, f.label]));
+
+  const prev = item.snapshot as Record<string, any>;
+  const product_selections = selections.map((s) => ({
+    product_id: s.product_id,
+    variant_id: s.variant_id,
+    attribute_selections: s.attributes,
+  }));
+
+  let pricing = prev.pricing ?? {};
+  if (anyPriceChange && pricePreview) {
+    pricing = {
+      ...pricing,
+      total: pricePreview.new_total,
+      amountAfterDiscounts: pricePreview.new_subtotal,
+    };
+  } else if (reg.total_amount != null) {
+    pricing = { ...pricing, total: Number(reg.total_amount) };
+  }
+
+  const snapshot = {
+    ...prev,
+    pricing,
+    selections,
+    labels: {
+      ...(prev.labels ?? {}),
+      category: reg.category_name ?? null,
+      modality: reg.modality_name ?? null,
+      kit: reg.kit_name ?? null,
+      batch: reg.batch_name ?? null,
+      products: productLabels,
+      custom_fields: { ...(prev.labels?.custom_fields ?? {}), ...customFieldLabels },
+    },
+    choices: {
+      ...(prev.choices ?? {}),
+      category_id: reg.category_id,
+      kit_id: reg.kit_id ?? null,
+      modality_id: reg.modality_id ?? null,
+      category_batch_id: reg.category_batch_id ?? null,
+      coupon_code: reg.coupon_code ?? prev.choices?.coupon_code ?? null,
+      product_selections,
+      custom_field_values,
+    },
+  };
+
+  await query('UPDATE checkout_order_items SET snapshot = $2::jsonb WHERE id = $1', [item.id, snapshot]);
+}
+
 export async function applyCheckoutRegistrationEdit(
   orderId: string,
   registrationId: string,
@@ -183,6 +346,8 @@ export async function applyCheckoutRegistrationEdit(
     const categoryChanging = input.category_id !== undefined && input.category_id !== reg.category_id;
     const kitChanging = input.kit_id !== undefined && input.kit_id !== reg.kit_id;
     const explicitKitRemoval = Object.prototype.hasOwnProperty.call(input, 'kit_id') && input.kit_id === null;
+    const hasIncomingSelections =
+      Array.isArray(input.product_selections) && input.product_selections.length > 0;
 
     let selectionPlan: Awaited<ReturnType<typeof planRegistrationKitCategorySelectionSync>> | null = null;
     if (categoryChanging || kitChanging) {
@@ -212,14 +377,12 @@ export async function applyCheckoutRegistrationEdit(
 
     if (selectionPlan?.kind === 'replace') {
       await replaceRegistrationProductSelectionsForEdit(tx, registrationId, reg.event_id, selectionPlan.selections);
-    } else if (
-      !categoryChanging &&
-      !kitChanging &&
-      Array.isArray(input.product_selections) &&
-      input.product_selections.length > 0
-    ) {
-      await replaceRegistrationProductSelectionsForEdit(tx, registrationId, reg.event_id, input.product_selections);
+    } else if (hasIncomingSelections) {
+      // Mesmo com troca de kit/categoria em noop, ou só troca de tamanho: persiste o payload enviado.
+      await replaceRegistrationProductSelectionsForEdit(tx, registrationId, reg.event_id, input.product_selections!);
     }
+
+    await syncCheckoutItemSnapshotAfterEdit(registrationId, pricePreview, anyPriceChange);
 
     return { reg, updated, pricePreview, anyPriceChange };
   });
