@@ -88,13 +88,21 @@ export async function calculateRegistrationTotal(
       [categoryId]
     );
     const selected = batchId ? batches.rows.find((batch) => batch.id === batchId) : null;
-    if (batchId && (!selected || !selected.is_active)) {
-      throw new RegistrationPricingError('O lote selecionado não está disponível. Selecione um lote vigente.');
+    const hasConfiguredBatches = batches.rows.length > 0;
+    const hasActiveBatch = batches.rows.some((batch) => batch.is_active);
+    // Se a categoria usa lotes, nunca cair no preço base (evita inscrição R$ 0 com lotes mal datados).
+    if (hasConfiguredBatches) {
+      if (!batchId || !selected || !selected.is_active) {
+        throw new RegistrationPricingError(
+          hasActiveBatch
+            ? 'Selecione um lote vigente antes de finalizar a inscrição.'
+            : 'Não há lote vigente no momento. As inscrições serão liberadas quando o próximo lote começar.'
+        );
+      }
+      categoryPrice = Number(selected.price);
+    } else {
+      categoryPrice = categoryBasePrice;
     }
-    if (!batchId && batches.rows.some((batch) => batch.is_active)) {
-      throw new RegistrationPricingError('Selecione um lote vigente antes de finalizar a inscrição.');
-    }
-    categoryPrice = selected ? Number(selected.price) : categoryBasePrice;
   } else if (batchId) {
     const batchResult = await query(
       'SELECT id, category_id, price FROM category_batches WHERE id = $1 AND category_id = $2',

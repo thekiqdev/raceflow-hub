@@ -11,54 +11,40 @@ import {
 import { getCategoryById } from '../services/categoriesService.js';
 import { z } from 'zod';
 
-// Validation schemas
-const createBatchSchema = z.object({
-  name: z.string().max(255, 'Nome deve ter no máximo 255 caracteres').optional().nullable(),
-  price: z.number().nonnegative('Preço deve ser maior ou igual a zero'),
-  valid_from: z.string().optional().nullable().or(z.null()),
-  valid_to: z.string().optional().nullable().or(z.null()),
-}).refine(
-  (data) => {
-    // Se ambos valid_from e valid_to estão definidos, valid_to deve ser >= valid_from
-    if (data.valid_from && data.valid_to) {
-      const from = new Date(data.valid_from);
-      const to = new Date(data.valid_to);
-      if (isNaN(from.getTime()) || isNaN(to.getTime())) {
-        return false;
-      }
-      return to >= from;
-    }
-    return true;
-  },
-  {
-    message: 'Data de término deve ser maior ou igual à data de início',
-    path: ['valid_to'],
-  }
+const batchDateOrder = (data: { valid_from?: string | null; valid_to?: string | null }) => {
+  if (!data.valid_from || !data.valid_to) return true;
+  const from = new Date(data.valid_from);
+  const to = new Date(data.valid_to);
+  if (isNaN(from.getTime()) || isNaN(to.getTime())) return false;
+  return to >= from;
+};
+
+const optionalEndDate = z.preprocess(
+  (v) => (v === '' || v === undefined ? null : v),
+  z.string().trim().min(1).nullable().optional()
 );
 
+/** Lote precisa de nome + início para entrar na regra de preço do checkout. Término opcional (lote aberto). */
+const createBatchSchema = z.object({
+  name: z.string().trim().min(1, 'Informe o nome do lote').max(255, 'Nome deve ter no máximo 255 caracteres'),
+  price: z.number().nonnegative('Preço deve ser maior ou igual a zero'),
+  valid_from: z.string().trim().min(1, 'Informe a data de início do lote'),
+  valid_to: optionalEndDate,
+}).refine(batchDateOrder, {
+  message: 'Data de término deve ser maior ou igual à data de início',
+  path: ['valid_to'],
+});
+
 const updateBatchSchema = z.object({
-  name: z.string().max(255, 'Nome deve ter no máximo 255 caracteres').optional().nullable(),
+  name: z.string().trim().min(1, 'Informe o nome do lote').max(255, 'Nome deve ter no máximo 255 caracteres').optional(),
   price: z.number().nonnegative('Preço deve ser maior ou igual a zero').optional(),
-  valid_from: z.string().optional().nullable().or(z.null()),
-  valid_to: z.string().optional().nullable().or(z.null()),
-}).refine(
-  (data) => {
-    // Se ambos valid_from e valid_to estão definidos, valid_to deve ser >= valid_from
-    if (data.valid_from && data.valid_to) {
-      const from = new Date(data.valid_from);
-      const to = new Date(data.valid_to);
-      if (isNaN(from.getTime()) || isNaN(to.getTime())) {
-        return false;
-      }
-      return to >= from;
-    }
-    return true;
-  },
-  {
-    message: 'Data de término deve ser maior ou igual à data de início',
-    path: ['valid_to'],
-  }
-);
+  // Não permitir limpar a data de início (lote sem vigência fica invisível no checkout).
+  valid_from: z.string().trim().min(1, 'Informe a data de início do lote').optional(),
+  valid_to: optionalEndDate,
+}).refine(batchDateOrder, {
+  message: 'Data de término deve ser maior ou igual à data de início',
+  path: ['valid_to'],
+});
 
 /**
  * GET /api/categories/:categoryId/batches
@@ -244,8 +230,16 @@ export const createCategoryBatchController = asyncHandler(
           validFrom = dateFrom;
         }
       }
+      if (!validFrom) {
+        res.status(400).json({
+          success: false,
+          error: 'Bad Request',
+          message: 'Informe uma data de início válida para o lote',
+        });
+        return;
+      }
 
-      if (validation.data.valid_to && validation.data.valid_to !== 'null' && validation.data.valid_to.trim() !== '') {
+      if (validation.data.valid_to && validation.data.valid_to !== 'null' && String(validation.data.valid_to).trim() !== '') {
         const dateTo = new Date(validation.data.valid_to);
         if (!isNaN(dateTo.getTime())) {
           validTo = dateTo;
@@ -261,7 +255,7 @@ export const createCategoryBatchController = asyncHandler(
 
       const batch = await createCategoryBatch({
         category_id: categoryId,
-        name: validation.data.name || null,
+        name: validation.data.name,
         price: validation.data.price,
         valid_from: validFrom,
         valid_to: validTo,
@@ -378,12 +372,16 @@ export const updateCategoryBatchController = asyncHandler(
         updateData.price = validation.data.price;
       }
       if (validation.data.valid_from !== undefined) {
-        if (validation.data.valid_from && validation.data.valid_from !== 'null' && validation.data.valid_from.trim() !== '') {
-          const dateFrom = new Date(validation.data.valid_from);
-          updateData.valid_from = !isNaN(dateFrom.getTime()) ? dateFrom : null;
-        } else {
-          updateData.valid_from = null;
+        const dateFrom = new Date(validation.data.valid_from);
+        if (isNaN(dateFrom.getTime())) {
+          res.status(400).json({
+            success: false,
+            error: 'Bad Request',
+            message: 'Informe uma data de início válida para o lote',
+          });
+          return;
         }
+        updateData.valid_from = dateFrom;
       }
       if (validation.data.valid_to !== undefined) {
         if (validation.data.valid_to && validation.data.valid_to !== 'null' && validation.data.valid_to.trim() !== '') {

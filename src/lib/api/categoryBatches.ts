@@ -2,9 +2,9 @@ import { apiClient } from './client.js';
 import { CategoryBatch } from './categories.js';
 
 export interface CreateCategoryBatchData {
-  name?: string | null;
+  name: string;
   price: number;
-  valid_from?: string | null;
+  valid_from: string;
   valid_to?: string | null;
 }
 

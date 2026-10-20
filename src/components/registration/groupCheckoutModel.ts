@@ -73,7 +73,9 @@ export function choiceProblems(choices:OrderChoices,categories:Category[],kits:E
   }
   if(category.modality_ids?.length && !category.modality_ids.includes(choices.modality_id ?? '')) errors.push('Selecione uma modalidade da categoria.');
   const batches=activeBatches(category);
-  if(batches.length && !batches.some(b=>b.id===choices.category_batch_id)) errors.push('Selecione um lote vigente.');
+  const configuredBatches=(category.batches ?? []).length;
+  if(configuredBatches && !batches.length) errors.push('Não há lote vigente no momento. As inscrições serão liberadas quando o próximo lote começar.');
+  else if(batches.length && !batches.some(b=>b.id===choices.category_batch_id)) errors.push('Selecione um lote vigente.');
   if(!batches.length && choices.category_batch_id) errors.push('Atualize o lote que não está mais vigente.');
   const availableKits=categoryKits(category.id,kits);
   const kit=availableKits.find(k=>k.id===choices.kit_id);

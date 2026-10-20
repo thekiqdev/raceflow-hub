@@ -74,13 +74,24 @@ describe('Precificação do checkout público', () => {
   it('rejeita lote vencido, futuro ou de outra categoria', async t => {
     fixture(t, { batches: [{ id: 'expired', price: '10', is_active: false }] });
     for (const batchId of ['expired', 'future', 'other-category']) {
-      await assert.rejects(() => calculateRegistrationTotal({ ...base, batchId }), /lote selecionado não está disponível/);
+      await assert.rejects(
+        () => calculateRegistrationTotal({ ...base, batchId }),
+        /lote vigente|lote selecionado não está disponível/
+      );
     }
   });
 
-  it('usa preço base quando não existem lotes vigentes e nenhum foi enviado', async t => {
-    fixture(t, { batches: [{ id: 'expired', price: '10', is_active: false }] });
+  it('usa preço base quando a categoria não tem lotes cadastrados', async t => {
+    fixture(t, { batches: [] });
     assert.equal((await calculateRegistrationTotal(base)).total, 100);
+  });
+
+  it('bloqueia inscrição se há lotes cadastrados mas nenhum vigente (evita fallback R$0)', async t => {
+    fixture(t, { categoryPrice: '0', batches: [{ id: 'expired', price: '90', is_active: false }] });
+    await assert.rejects(
+      () => calculateRegistrationTotal(base),
+      /Não há lote vigente|Selecione um lote vigente/
+    );
   });
 
   it('não aceita categoria ou kit de outro evento', async t => {

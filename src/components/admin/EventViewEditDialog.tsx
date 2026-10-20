@@ -490,6 +490,7 @@ export function EventViewEditDialog({
     const updated = [...categories];
     const category = updated[categoryIndex];
     const currentBatches = category.batches || [];
+    const nextIndex = currentBatches.length + 1;
     updated[categoryIndex] = {
       ...category,
       batches: [
@@ -497,7 +498,7 @@ export function EventViewEditDialog({
         {
           id: `temp-batch-${Date.now()}`,
           category_id: category.id || "",
-          name: null,
+          name: `${nextIndex}º Lote`,
           price: category.price || 0,
           valid_from: null,
           valid_to: null,
@@ -778,6 +779,18 @@ export function EventViewEditDialog({
 
     setSaving(true);
     try {
+      const { validateCategoryBatchesForSave } = await import("@/lib/utils/categoryBatchValidation");
+      const batchError = validateCategoryBatchesForSave(categories);
+      if (batchError) {
+        toast({
+          title: "Lotes incompletos",
+          description: batchError,
+          variant: "destructive",
+        });
+        setSaving(false);
+        return;
+      }
+
       // Combinar data e horário em ISO datetime
       let eventDateISO: string | null = null;
       if (formData.event_date) {
@@ -1080,17 +1093,22 @@ export function EventViewEditDialog({
 
               if (batch.id && batch.id.startsWith('temp-')) {
                 // Create new batch
+                if (!validFrom || !(batch.name || '').trim()) {
+                  throw new Error('Lote incompleto: preencha nome e data de início.');
+                }
                 const createResponse = await createCategoryBatch(categoryId, {
-                  name: batch.name || null,
+                  name: String(batch.name).trim(),
                   price: batch.price,
                   valid_from: validFrom,
                   valid_to: validTo,
                 });
                 console.log('✅ Batch criado:', createResponse);
               } else if (batch.id && existingBatchIds.has(batch.id)) {
-                // Update existing batch
+                if (!validFrom || !(batch.name || '').trim()) {
+                  throw new Error('Lote incompleto: preencha nome e data de início.');
+                }
                 const updateResponse = await updateCategoryBatch(categoryId, batch.id, {
-                  name: batch.name || null,
+                  name: String(batch.name).trim(),
                   price: batch.price,
                   valid_from: validFrom,
                   valid_to: validTo,
@@ -2144,7 +2162,7 @@ export function EventViewEditDialog({
                                   Lotes de Preço
                                 </label>
                                 <p className="text-xs text-muted-foreground">
-                                  Configure diferentes preços baseados em datas
+                                  Nome, preço e data de início são obrigatórios. Sem lote vigente a inscrição fica bloqueada.
                                 </p>
                               </div>
                               <Button
@@ -2170,7 +2188,7 @@ export function EventViewEditDialog({
                                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                                         <div>
                                           <label className="text-xs font-medium text-muted-foreground">
-                                            Nome do Lote (opcional)
+                                            Nome do Lote *
                                           </label>
                                           <Input
                                             placeholder="Ex: 1º Lote, 2º Lote, Promocional"
@@ -2205,11 +2223,12 @@ export function EventViewEditDialog({
                                         </div>
                                         <div>
                                           <label className="text-xs font-medium text-muted-foreground">
-                                            Data de Início (opcional)
+                                            Data de Início *
                                           </label>
                                           <div className="flex gap-2">
                                             <Input
                                               type="date"
+                                              required
                                               key={`date-from-${batch.id || batchIndex}-${batch.valid_from || 'empty'}`}
                                               defaultValue={(() => {
                                                 if (!batch.valid_from) return "";

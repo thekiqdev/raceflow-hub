@@ -51,7 +51,11 @@ it('lotes vencidos ou futuros não são oferecidos',()=> {
   const c={...category,batches:[{id:'past',valid_from:'2020-01-01',valid_to:'2020-01-02'},
     {id:'active',valid_from:'2020-01-01',valid_to:null},{id:'future',valid_from:'2099-01-01',valid_to:null}]} as Category;
   assert.deepEqual(activeBatches(c,new Date('2026-01-01').getTime()).map(b=>b.id),['active']);
-  assert.match(choiceProblems({...choices,category_batch_id:'past'},[category],kits).join(' '),/lote/);
+  assert.match(choiceProblems({...choices,category_batch_id:'past'},[c],kits).join(' '),/lote/);
+});
+it('bloqueia escolhas quando há lotes cadastrados mas nenhum vigente',()=> {
+  const c={...category,batches:[{id:'past',valid_from:'2020-01-01',valid_to:'2020-01-02'}]} as Category;
+  assert.match(choiceProblems({...choices,category_batch_id:null},[c],kits).join(' '),/Não há lote vigente/);
 });
 it('métodos desativados ou fora do prazo não permitem iniciar cobrança',()=> {
   assert.equal(paymentMethodAvailable({pix_enabled:false},'PIX'),false);
