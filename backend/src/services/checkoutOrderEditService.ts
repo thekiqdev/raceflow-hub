@@ -21,6 +21,9 @@ export interface CheckoutRegistrationEditInput {
   category_batch_id?: string | null;
   product_selections?: SelectionInput[];
   custom_field_values?: Record<string, string>;
+  /** Admin: cancelamento operacional (ex.: pedido FREE R$ 0) sem gateway. */
+  status?: 'pending' | 'confirmed' | 'cancelled' | 'refund_requested' | 'refunded' | 'transferred';
+  payment_status?: 'pending' | 'paid' | 'partially_paid' | 'refunded' | 'failed' | 'convidado' | 'transferred';
 }
 
 export interface CheckoutRegistrationEditPreview {
@@ -312,6 +315,52 @@ async function syncCheckoutItemSnapshotAfterEdit(
   await query('UPDATE checkout_order_items SET snapshot = $2::jsonb WHERE id = $1', [item.id, snapshot]);
 }
 
+/**
+ * Cancela ingresso do pedido sem gateway (FREE / R$ 0).
+ * Libera cupom e marca alocação; estoque deixa de consumir quando status = cancelled.
+ */
+async function applyOperationalCancel(orderId: string, registrationId: string, nextStatus: string, nextPayment: string) {
+  const attempt = (
+    await query(
+      `SELECT * FROM checkout_payment_attempts WHERE order_id=$1 ORDER BY created_at DESC, id DESC LIMIT 1`,
+      [orderId]
+    )
+  ).rows[0];
+  const allocation = attempt
+    ? (
+        await query('SELECT * FROM checkout_payment_allocations WHERE attempt_id=$1 AND registration_id=$2 FOR UPDATE', [
+          attempt.id,
+          registrationId,
+        ])
+      ).rows[0]
+    : null;
+
+  if (attempt && attempt.method !== 'FREE' && Number(allocation?.gross_cents || 0) > 0) {
+    throw fail(
+      'Ingresso pago: use «Estornar este ingresso» para devolver o valor no gateway. A edição de status só cancela pedidos gratuitos (R$ 0).',
+      409
+    );
+  }
+
+  const before = (await query('SELECT status, payment_status FROM registrations WHERE id=$1 FOR UPDATE', [registrationId])).rows[0];
+  await query(
+    `UPDATE registrations SET status=$2, payment_status=$3, updated_at=now() WHERE id=$1`,
+    [registrationId, nextStatus, nextPayment]
+  );
+  if (allocation) {
+    await query('UPDATE checkout_payment_allocations SET refunded_cents=gross_cents WHERE registration_id=$1', [registrationId]);
+  }
+  const coupon = (await query('SELECT coupon_id FROM checkout_order_items WHERE registration_id=$1', [registrationId])).rows[0]
+    ?.coupon_id;
+  if (coupon && before?.status !== 'cancelled' && before?.status !== 'refunded') {
+    await query('UPDATE coupons SET current_uses=GREATEST(0,current_uses-1),updated_at=now() WHERE id=$1', [coupon]);
+  }
+  await query(
+    `INSERT INTO checkout_payment_effects(registration_id,kind) VALUES ($1,'refunded') ON CONFLICT DO NOTHING`,
+    [registrationId]
+  );
+}
+
 export async function applyCheckoutRegistrationEdit(
   orderId: string,
   registrationId: string,
@@ -325,7 +374,27 @@ export async function applyCheckoutRegistrationEdit(
     await query("SELECT set_config('cronoteam.order_write',$1,true)", [orderId]);
     await validateRefs(reg, input);
 
-    const pricePreview = await computePreview(reg, input);
+    const statusOnly =
+      (input.status !== undefined || input.payment_status !== undefined) &&
+      input.category_id === undefined &&
+      input.modality_id === undefined &&
+      input.kit_id === undefined &&
+      input.category_batch_id === undefined &&
+      input.product_selections === undefined &&
+      input.custom_field_values === undefined;
+
+    const pricePreview = statusOnly
+      ? {
+          old_total: parseFloat(String(reg.total_amount)) || 0,
+          new_subtotal: 0,
+          update_fee: 0,
+          new_total: parseFloat(String(reg.total_amount)) || 0,
+          amount_paid: 0,
+          amount_paid_for_organizer: 0,
+          difference_to_pay: 0,
+          difference_to_refund: 0,
+        }
+      : await computePreview(reg, input);
     const updatePayload: Record<string, unknown> = {};
     if (input.category_id !== undefined) updatePayload.category_id = input.category_id;
     if (input.modality_id !== undefined) updatePayload.modality_id = input.modality_id;
@@ -369,8 +438,29 @@ export async function applyCheckoutRegistrationEdit(
       }
     }
 
-    const updated = await updateRegistration(registrationId, updatePayload as any);
+    const becomingCancelled =
+      input.status === 'cancelled' ||
+      input.status === 'refunded' ||
+      input.payment_status === 'refunded';
+
+    let updated = await updateRegistration(registrationId, updatePayload as any);
     if (!updated) throw fail('Não foi possível atualizar a inscrição.', 500);
+
+    if (becomingCancelled) {
+      const nextStatus = input.status === 'refunded' ? 'refunded' : input.status === 'cancelled' ? 'cancelled' : 'cancelled';
+      const nextPayment =
+        input.payment_status === 'refunded' || nextStatus === 'refunded' || updated.payment_status === 'paid'
+          ? 'refunded'
+          : input.payment_status || updated.payment_status;
+      await applyOperationalCancel(orderId, registrationId, nextStatus, String(nextPayment));
+      updated = (await query('SELECT * FROM registrations WHERE id=$1', [registrationId])).rows[0];
+    } else if (input.status !== undefined || input.payment_status !== undefined) {
+      const statusPatch: Record<string, unknown> = {};
+      if (input.status !== undefined) statusPatch.status = input.status;
+      if (input.payment_status !== undefined) statusPatch.payment_status = input.payment_status;
+      updated = await updateRegistration(registrationId, statusPatch as any);
+      if (!updated) throw fail('Não foi possível atualizar o status da inscrição.', 500);
+    }
 
     const tx = getTransactionClient();
     if (!tx) throw fail('Contexto de transação indisponível.', 500);
@@ -382,13 +472,22 @@ export async function applyCheckoutRegistrationEdit(
       await replaceRegistrationProductSelectionsForEdit(tx, registrationId, reg.event_id, input.product_selections!);
     }
 
-    await syncCheckoutItemSnapshotAfterEdit(registrationId, pricePreview, anyPriceChange);
+    if (!statusOnly) await syncCheckoutItemSnapshotAfterEdit(registrationId, pricePreview, anyPriceChange);
 
-    return { reg, updated, pricePreview, anyPriceChange };
+    return { reg, updated, pricePreview, anyPriceChange, becomingCancelled };
   });
 
-  const { reg, updated, pricePreview, anyPriceChange } = applied;
+  const { reg, updated, pricePreview, anyPriceChange, becomingCancelled } = applied;
   let payment_status = updated.payment_status as string;
+  if (becomingCancelled) {
+    return {
+      registration_id: registrationId,
+      order_id: orderId,
+      payment_status,
+      preview: pricePreview,
+      operational_cancel: true,
+    };
+  }
 
   if (anyPriceChange) {
     const newTotalForOrganizer = Math.round((pricePreview.new_subtotal + pricePreview.update_fee) * 100) / 100;

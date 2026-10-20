@@ -491,12 +491,12 @@ export function EventRegistrationDetailSheet({
     }
     const body: UpdateRegistrationData = {};
 
-    if (isAdmin && !detail.order_id) {
+    if (isAdmin) {
       if (editStatus !== detail.status) body.status = editStatus as UpdateRegistrationData["status"];
       if (editPayment !== detail.payment_status) {
         body.payment_status = editPayment as UpdateRegistrationData["payment_status"];
       }
-      if (editPayment !== "convidado") {
+      if (!detail.order_id && editPayment !== "convidado") {
         const leavingConvite = detail.payment_status === "convidado" && editPayment !== "convidado";
         const methodChanged = editPaymentMethod !== (detail.payment_method || "");
         if (leavingConvite || methodChanged) {
@@ -586,6 +586,8 @@ export function EventRegistrationDetailSheet({
           category_batch_id: body.batch_id,
           product_selections: body.product_selections,
           custom_field_values: body.custom_field_values,
+          status: body.status,
+          payment_status: body.payment_status,
         });
         if (!orderRes.success) {
           const det = orderRes.details as { requires_product_reselection?: boolean; reasons?: string[] } | null;
@@ -603,13 +605,14 @@ export function EventRegistrationDetailSheet({
         const diffPay = orderRes.data?.preview?.difference_to_pay ?? 0;
         const diffRefund = orderRes.data?.preview?.difference_to_refund ?? 0;
         toast({
-          title: "Inscrição do pedido atualizada",
-          description:
-            diffPay >= 0.01
+          title: orderRes.data?.operational_cancel ? "Inscrição cancelada" : "Inscrição do pedido atualizada",
+          description: orderRes.data?.operational_cancel
+            ? "Vaga liberada (pedido gratuito / R$ 0)."
+            : diffPay >= 0.01
               ? "Diferença pendente de pagamento."
               : diffRefund >= 0.01
                 ? "Reembolso manual pendente."
-                : "Escolhas salvas. A listagem será atualizada.",
+                : "Alterações salvas. A listagem será atualizada.",
         });
         setReselectionRequired(null);
         setEditingProductAttributes({});

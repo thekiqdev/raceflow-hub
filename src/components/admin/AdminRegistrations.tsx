@@ -789,7 +789,7 @@ const AdminRegistrations = () => {
         if (built.length > 0) productSelectionsForVariableKit = built;
       }
 
-      // Compra em grupo: mutação só pela API de pedido (estoque + diferença).
+      // Compra em grupo: mutação só pela API de pedido (estoque + diferença + status operacional).
       if (registrationDetails.order_id) {
         const orderChoices: {
           category_id?: string;
@@ -798,6 +798,8 @@ const AdminRegistrations = () => {
           category_batch_id?: string | null;
           product_selections?: typeof productSelectionsForVariableKit;
           custom_field_values?: Record<string, string>;
+          status?: string;
+          payment_status?: string;
         } = {};
         if (editingCategoryId && editingCategoryId !== registrationDetails.category_id) {
           orderChoices.category_id = editingCategoryId;
@@ -817,6 +819,12 @@ const AdminRegistrations = () => {
         }
         if (productSelectionsForVariableKit?.length) {
           orderChoices.product_selections = productSelectionsForVariableKit;
+        }
+        if (editingStatus !== (registrationDetails.status || "")) {
+          orderChoices.status = editingStatus;
+        }
+        if (editingPaymentStatus !== (registrationDetails.payment_status || "")) {
+          orderChoices.payment_status = editingPaymentStatus;
         }
         if (Object.keys(orderChoices).length === 0) {
           toast.message("Nenhuma alteração para salvar.");
@@ -838,7 +846,9 @@ const AdminRegistrations = () => {
           setSaving(false);
           return;
         }
-        if (orderRes.data?.preview?.difference_to_pay && orderRes.data.preview.difference_to_pay >= 0.01) {
+        if (orderRes.data?.operational_cancel) {
+          toast.success("Inscrição cancelada. Vaga liberada.");
+        } else if (orderRes.data?.preview?.difference_to_pay && orderRes.data.preview.difference_to_pay >= 0.01) {
           toast.success("Escolhas atualizadas. Diferença pendente de pagamento.");
         } else if (orderRes.data?.preview?.difference_to_refund && orderRes.data.preview.difference_to_refund >= 0.01) {
           toast.success("Escolhas atualizadas. Reembolso manual pendente.");
@@ -1841,7 +1851,7 @@ const AdminRegistrations = () => {
                   </div>
                   <div>
                     <Label className="text-sm text-muted-foreground">Status</Label>
-                    {isEditMode && !registrationDetails.order_id ? (
+                    {isEditMode ? (
                       <Select value={editingStatus} onValueChange={setEditingStatus}>
                         <SelectTrigger className="mt-1">
                           <SelectValue />
@@ -1857,10 +1867,15 @@ const AdminRegistrations = () => {
                     ) : (
                       <div className="mt-1">{getStatusBadge(registrationDetails.status || "pending")}</div>
                     )}
+                    {isEditMode && !!registrationDetails.order_id && (
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Pedido gratuito (R$ 0): cancelar aqui libera a vaga. Ingresso pago: use «Estornar este ingresso».
+                      </p>
+                    )}
                   </div>
                   <div>
                     <Label className="text-sm text-muted-foreground">Status do Pagamento</Label>
-                    {isEditMode && !registrationDetails.order_id ? (
+                    {isEditMode ? (
                       <Select
                         value={editingPaymentStatus}
                         onValueChange={(v) => {

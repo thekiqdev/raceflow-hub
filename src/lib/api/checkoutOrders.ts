@@ -39,7 +39,8 @@ export const previewCheckoutRegistrationEdit=(orderId:string,registrationId:stri
 export const updateCheckoutRegistrationChoices=(orderId:string,registrationId:string,body:{
   category_id?:string; modality_id?:string|null; kit_id?:string|null; category_batch_id?:string|null;
   product_selections?:OrderChoices['product_selections']; custom_field_values?:Record<string,string>;
-})=>apiClient.put<{registration_id:string;order_id:string;payment_status:string;preview:CheckoutRegistrationEditPreview}>(
+  status?:string; payment_status?:string;
+})=>apiClient.put<{registration_id:string;order_id:string;payment_status:string;preview:CheckoutRegistrationEditPreview;operational_cancel?:boolean}>(
   `/checkout-orders/${orderId}/registrations/${registrationId}/choices`,body);
 
 export interface CheckoutPayment {

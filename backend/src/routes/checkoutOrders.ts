@@ -159,6 +159,8 @@ const editBody=z.object({
   category_batch_id:uuid.nullable().optional(),
   product_selections:selections.optional(),
   custom_field_values:z.record(uuid,z.string().max(2000)).optional(),
+  status:z.enum(['pending','confirmed','cancelled','refund_requested','refunded','transferred']).optional(),
+  payment_status:z.enum(['pending','paid','partially_paid','refunded','failed','convidado','transferred']).optional(),
 }).strict();
 async function assertOrderEditAccess(orderId:string,userId:string,write:boolean) {
   const row=(await query(`SELECT o.buyer_id, e.organizer_id FROM checkout_orders o JOIN events e ON e.id=o.event_id WHERE o.id=$1`,[orderId])).rows[0];
