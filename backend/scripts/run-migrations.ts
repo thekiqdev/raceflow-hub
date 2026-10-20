@@ -155,6 +155,7 @@ const migrations = [
   '125_checkout_payment_pix_qr.sql',
   '126_checkout_payment_keep_reservation.sql',
   '127_checkout_transfer_payment_pix_qr.sql',
+  '128_checkout_payment_refunds_allow_zero.sql',
 ];
 
 // Create migrations tracking table

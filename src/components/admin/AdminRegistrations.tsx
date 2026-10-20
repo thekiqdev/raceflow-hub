@@ -801,7 +801,7 @@ const AdminRegistrations = () => {
         if (built.length > 0) productSelectionsForVariableKit = built;
       }
 
-      // Compra em grupo: mutação só pela API de pedido (estoque + diferença).
+      // Compra em grupo: mutação só pela API de pedido (estoque + diferença / cancelamento operacional FREE).
       if (registrationDetails.order_id) {
         const orderChoices: {
           category_id?: string;
@@ -810,6 +810,8 @@ const AdminRegistrations = () => {
           category_batch_id?: string | null;
           product_selections?: typeof productSelectionsForVariableKit;
           custom_field_values?: Record<string, string>;
+          status?: string;
+          payment_status?: string;
         } = {};
         if (editingCategoryId && editingCategoryId !== registrationDetails.category_id) {
           orderChoices.category_id = editingCategoryId;
@@ -829,6 +831,12 @@ const AdminRegistrations = () => {
         }
         if (productSelectionsForVariableKit?.length) {
           orderChoices.product_selections = productSelectionsForVariableKit;
+        }
+        if (editingStatus !== registrationDetails.status) {
+          orderChoices.status = editingStatus;
+        }
+        if (editingPaymentStatus !== registrationDetails.payment_status) {
+          orderChoices.payment_status = editingPaymentStatus;
         }
         if (Object.keys(orderChoices).length === 0) {
           toast.message("Nenhuma alteração para salvar.");
@@ -850,7 +858,9 @@ const AdminRegistrations = () => {
           setSaving(false);
           return;
         }
-        if (orderRes.data?.preview?.difference_to_pay && orderRes.data.preview.difference_to_pay >= 0.01) {
+        if (orderRes.data?.operational_cancel) {
+          toast.success("Inscrição cancelada (pedido gratuito — sem gateway).");
+        } else if (orderRes.data?.preview?.difference_to_pay && orderRes.data.preview.difference_to_pay >= 0.01) {
           toast.success("Escolhas atualizadas. Diferença pendente de pagamento.");
         } else if (orderRes.data?.preview?.difference_to_refund && orderRes.data.preview.difference_to_refund >= 0.01) {
           toast.success("Escolhas atualizadas. Reembolso manual pendente.");
@@ -1853,7 +1863,7 @@ const AdminRegistrations = () => {
                   </div>
                   <div>
                     <Label className="text-sm text-muted-foreground">Status</Label>
-                    {isEditMode && !registrationDetails.order_id ? (
+                    {isEditMode ? (
                       <Select value={editingStatus} onValueChange={setEditingStatus}>
                         <SelectTrigger className="mt-1">
                           <SelectValue />
@@ -1869,10 +1879,15 @@ const AdminRegistrations = () => {
                     ) : (
                       <div className="mt-1">{getStatusBadge(registrationDetails.status || "pending")}</div>
                     )}
+                    {isEditMode && !!registrationDetails.order_id && (
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Pedido gratuito (R$ 0): cancelar/reembolsar aqui não aciona o Asaas.
+                      </p>
+                    )}
                   </div>
                   <div>
                     <Label className="text-sm text-muted-foreground">Status do Pagamento</Label>
-                    {isEditMode && !registrationDetails.order_id ? (
+                    {isEditMode ? (
                       <Select
                         value={editingPaymentStatus}
                         onValueChange={(v) => {
@@ -1975,6 +1990,9 @@ const AdminRegistrations = () => {
                      registrationDetails.payment_method === 'credit_card' ? 'Cartão de Crédito' :
                      registrationDetails.payment_method === 'boleto' ? 'Boleto' :
                      registrationDetails.payment_method === 'free_bonus' ? 'Convite' :
+                     (registrationDetails.order_id &&
+                       (registrationDetails.order_total_cents === 0 || Number(registrationDetails.total_amount) === 0))
+                       ? 'Gratuito (sem cobrança)' :
                      registrationDetails.payment_status === 'convidado' ? 'Convite' :
                      'N/A'}
                   </p>
@@ -2245,11 +2263,11 @@ const AdminRegistrations = () => {
                   </Button>
                 )}
                 {!!registrationDetails.order_id &&
-                  ["paid", "partially_paid"].includes(registrationDetails.payment_status || "") &&
+                  ["paid", "partially_paid", "convidado"].includes(registrationDetails.payment_status || "") &&
                   !["cancelled", "refunded", "transferred"].includes(registrationDetails.status || "") && (
                   <Button variant="default" onClick={handleEditClick}>
                     <Edit2 className="w-4 h-4 mr-2" />
-                    Editar escolhas
+                    Editar
                   </Button>
                 )}
                 {registrationDetails.status === "cancelled" && !registrationDetails.order_id && (
