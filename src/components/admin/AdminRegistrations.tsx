@@ -327,7 +327,13 @@ const AdminRegistrations = () => {
 
   const handleRefundCheckoutParticipant = async () => {
     if (!registrationDetails?.order_id || !canRefundCheckoutParticipant(registrationDetails)) return;
-    if (!window.confirm(`Estornar o ingresso de ${registrationDetails.runner_name || "este participante"}? O valor alocado será devolvido no gateway.`)) return;
+    const freeOrder =
+      registrationDetails.order_total_cents === 0 ||
+      Number(registrationDetails.total_amount) === 0;
+    const confirmMsg = freeOrder
+      ? `Cancelar o ingresso de ${registrationDetails.runner_name || "este participante"}? Não houve cobrança no gateway — a inscrição será cancelada localmente e a vaga liberada.`
+      : `Estornar o ingresso de ${registrationDetails.runner_name || "este participante"}? O valor alocado será devolvido no gateway.`;
+    if (!window.confirm(confirmMsg)) return;
     setOrderActionBusy(true);
     try {
       const response = await refundCheckoutOrder(registrationDetails.order_id, registrationDetails.id);
@@ -335,7 +341,13 @@ const AdminRegistrations = () => {
         toast.error(response.error || "Não foi possível estornar este ingresso.");
         return;
       }
-      toast.success(response.data?.status === "done" ? "Estorno concluído." : `Estorno registrado (${response.data?.status || "pendente"}).`);
+      toast.success(
+        response.data?.status === "done"
+          ? freeOrder
+            ? "Ingresso cancelado."
+            : "Estorno concluído."
+          : `Estorno registrado (${response.data?.status || "pendente"}).`
+      );
       await handleViewDetails({ id: registrationDetails.id } as Registration);
       void loadRegistrations();
     } catch (error: any) {
@@ -789,7 +801,7 @@ const AdminRegistrations = () => {
         if (built.length > 0) productSelectionsForVariableKit = built;
       }
 
-      // Compra em grupo: mutação só pela API de pedido (estoque + diferença + status operacional).
+      // Compra em grupo: mutação só pela API de pedido (estoque + diferença).
       if (registrationDetails.order_id) {
         const orderChoices: {
           category_id?: string;
@@ -798,8 +810,6 @@ const AdminRegistrations = () => {
           category_batch_id?: string | null;
           product_selections?: typeof productSelectionsForVariableKit;
           custom_field_values?: Record<string, string>;
-          status?: string;
-          payment_status?: string;
         } = {};
         if (editingCategoryId && editingCategoryId !== registrationDetails.category_id) {
           orderChoices.category_id = editingCategoryId;
@@ -819,12 +829,6 @@ const AdminRegistrations = () => {
         }
         if (productSelectionsForVariableKit?.length) {
           orderChoices.product_selections = productSelectionsForVariableKit;
-        }
-        if (editingStatus !== (registrationDetails.status || "")) {
-          orderChoices.status = editingStatus;
-        }
-        if (editingPaymentStatus !== (registrationDetails.payment_status || "")) {
-          orderChoices.payment_status = editingPaymentStatus;
         }
         if (Object.keys(orderChoices).length === 0) {
           toast.message("Nenhuma alteração para salvar.");
@@ -846,9 +850,7 @@ const AdminRegistrations = () => {
           setSaving(false);
           return;
         }
-        if (orderRes.data?.operational_cancel) {
-          toast.success("Inscrição cancelada. Vaga liberada.");
-        } else if (orderRes.data?.preview?.difference_to_pay && orderRes.data.preview.difference_to_pay >= 0.01) {
+        if (orderRes.data?.preview?.difference_to_pay && orderRes.data.preview.difference_to_pay >= 0.01) {
           toast.success("Escolhas atualizadas. Diferença pendente de pagamento.");
         } else if (orderRes.data?.preview?.difference_to_refund && orderRes.data.preview.difference_to_refund >= 0.01) {
           toast.success("Escolhas atualizadas. Reembolso manual pendente.");
@@ -1851,7 +1853,7 @@ const AdminRegistrations = () => {
                   </div>
                   <div>
                     <Label className="text-sm text-muted-foreground">Status</Label>
-                    {isEditMode ? (
+                    {isEditMode && !registrationDetails.order_id ? (
                       <Select value={editingStatus} onValueChange={setEditingStatus}>
                         <SelectTrigger className="mt-1">
                           <SelectValue />
@@ -1867,15 +1869,10 @@ const AdminRegistrations = () => {
                     ) : (
                       <div className="mt-1">{getStatusBadge(registrationDetails.status || "pending")}</div>
                     )}
-                    {isEditMode && !!registrationDetails.order_id && (
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        Pedido gratuito (R$ 0): cancelar aqui libera a vaga. Ingresso pago: use «Estornar este ingresso».
-                      </p>
-                    )}
                   </div>
                   <div>
                     <Label className="text-sm text-muted-foreground">Status do Pagamento</Label>
-                    {isEditMode ? (
+                    {isEditMode && !registrationDetails.order_id ? (
                       <Select
                         value={editingPaymentStatus}
                         onValueChange={(v) => {
@@ -2085,7 +2082,9 @@ const AdminRegistrations = () => {
                     {canRefundCheckoutParticipant(registrationDetails) && (
                       <Button variant="destructive" className="min-h-11" disabled={orderActionBusy || loadingDetails} onClick={() => void handleRefundCheckoutParticipant()}>
                         {orderActionBusy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Undo2 className="mr-2 h-4 w-4" />}
-                        Estornar este ingresso
+                        {registrationDetails.order_total_cents === 0 || Number(registrationDetails.total_amount) === 0
+                          ? "Cancelar este ingresso"
+                          : "Estornar este ingresso"}
                       </Button>
                     )}
                     {registrationDetails.status === "cancelled" && (

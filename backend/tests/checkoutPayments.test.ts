@@ -226,6 +226,22 @@ it('gratuito confirma conjunto sem gateway',async()=> {
   assert.equal((await payments.start(o.id,buyer,key,'PIX'))?.method,'FREE');await payments.start(o.id,buyer,key,'PIX');
   assert.equal(creates,0);assert.equal(await state(o.id),'confirmed');assert.equal(await count('checkout_payment_effects'),2);
 });
+it('estorno de ingresso FREE cancela localmente sem gateway e marca pedido reembolsado',async()=> {
+  await query('UPDATE categories SET price=0');await query('UPDATE event_kits SET price=0');
+  const o=await reserved();
+  await payments.start(o.id,buyer,randomUUID(),'PIX');
+  assert.equal(await state(o.id),'confirmed');
+  const id=o.items[0].registration_id!;
+  const r=await payments.refund(o.id,id,randomUUID(),buyer);
+  assert.equal(r.status,'done');assert.equal(r.amount_cents,0);assert.equal(refundCalls,0);
+  assert.equal((await query('SELECT status,payment_status FROM registrations WHERE id=$1',[id])).rows[0].status,'cancelled');
+  assert.equal((await query('SELECT status,payment_status FROM registrations WHERE id=$1',[id])).rows[0].payment_status,'refunded');
+  // Segundo participante ainda ativo → pedido permanece confirmed.
+  assert.equal(await state(o.id),'confirmed');
+  const other=o.items[1].registration_id!;
+  await payments.refund(o.id,other,randomUUID(),buyer);
+  assert.equal(await state(o.id),'refunded');assert.equal(refundCalls,0);
+});
 it('pedido misto mantém item gratuito pendente até confirmação do total',async()=> {
   await query('UPDATE coupons SET discount_value=120');
   const created=await orders.createCheckoutOrder(buyer,event,randomUUID());

@@ -429,22 +429,48 @@ export function createCheckoutPaymentsService(gateway:CheckoutPaymentGateway) {
     });
     return true;
   }
+  async function markOrderRefundedIfComplete(attemptId:string,orderId:string) {
+    const pending=(await query(`SELECT COUNT(*)::int AS n
+      FROM checkout_payment_allocations a
+      JOIN registrations r ON r.id=a.registration_id
+      WHERE a.attempt_id=$1 AND COALESCE(r.payment_status,'')<>'refunded'`,[attemptId])).rows[0].n;
+    if(Number(pending)!==0) return;
+    await query("UPDATE checkout_payment_attempts SET status='refunded',updated_at=now() WHERE id=$1",[attemptId]);
+    await query("UPDATE checkout_orders SET status='refunded',version=version+1,updated_at=now() WHERE id=$1 AND status<>'refunded'",[orderId]);
+  }
   async function refund(id:string,registrationId:string,key:string,actorId:string) {
     return serialized(id,async()=> {
       const a=await latest(id);
       if(!a) throw fail('Pagamento não encontrado.',404);
       await reconcileUnlocked(a);
+      const localOnly=a.method==='FREE' || Number(a.amount_cents)===0;
       let send=false;
       const r=await withTransaction(async()=> {
         const o=await order(id);
         const previous=(await query('SELECT * FROM checkout_payment_refunds WHERE attempt_id=$1 AND request_key=$2',[a.id,key])).rows[0];
         if(previous) {if(previous.registration_id!==registrationId) throw fail('Chave já utilizada.');return previous;}
-        if(o.status!=='confirmed' || a.method==='FREE') throw fail('Pedido não disponível para estorno.');
+        if(o.status!=='confirmed') throw fail('Pedido não disponível para estorno.');
         const current=await latest(id);
         if(current.issue || current.status!=='paid') throw fail('Concilie o pagamento antes de estornar.');
         const allocation=(await query('SELECT * FROM checkout_payment_allocations WHERE attempt_id=$1 AND registration_id=$2',[a.id,registrationId])).rows[0];
-        if(!allocation || Number(allocation.gross_cents)<=0 || Number(allocation.refunded_cents)>0) throw fail('Inscrição não disponível para estorno.');
-        if((await query("SELECT 1 FROM checkout_payment_refunds WHERE attempt_id=$1 AND (status IN ('sending','unknown','pending') OR registration_id=$2 AND status='done')",[a.id,registrationId])).rows.length) throw fail('Existe estorno pendente ou concluído.');
+        const reg=(await query('SELECT status,payment_status FROM registrations WHERE id=$1 FOR UPDATE',[registrationId])).rows[0];
+        if(!allocation || !reg) throw fail('Inscrição não disponível para estorno.');
+        if(reg.payment_status==='refunded' || reg.status==='cancelled' || Number(allocation.refunded_cents)>0) {
+          throw fail('Inscrição não disponível para estorno.');
+        }
+        // Cobrança paga: precisa de valor alocado. FREE/R$0: estorno local sem gateway.
+        if(!localOnly && Number(allocation.gross_cents)<=0) throw fail('Inscrição não disponível para estorno.');
+        if((await query("SELECT 1 FROM checkout_payment_refunds WHERE attempt_id=$1 AND (status IN ('sending','unknown','pending') OR registration_id=$2 AND status='done')",[a.id,registrationId])).rows.length) {
+          throw fail('Existe estorno pendente ou concluído.');
+        }
+        if(localOnly) {
+          await query("SELECT set_config('cronoteam.order_write',$1,true)",[id]);
+          const created=(await query(`INSERT INTO checkout_payment_refunds(attempt_id,registration_id,request_key,requested_by,amount_cents,status)
+            VALUES ($1,$2,$3,$4,$5,'done') RETURNING *`,[a.id,registrationId,key,actorId,Number(allocation.gross_cents)||0])).rows[0];
+          await refundItems(a,[registrationId]);
+          await markOrderRefundedIfComplete(a.id,id);
+          return created;
+        }
         const created=(await query(`INSERT INTO checkout_payment_refunds(attempt_id,registration_id,request_key,requested_by,amount_cents,status)
           VALUES ($1,$2,$3,$4,$5,'sending') RETURNING *`,[a.id,registrationId,key,actorId,allocation.gross_cents])).rows[0];
         send=true;return created;
