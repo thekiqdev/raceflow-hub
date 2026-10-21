@@ -3869,8 +3869,12 @@ export const exportRegistrationsController = asyncHandler(async (req: AuthReques
   };
 
   // Helper function to format payment method
-  const formatPaymentMethod = (paymentMethod: string | null | undefined): string => {
-    if (!paymentMethod) return '';
+  const formatPaymentMethod = (paymentMethod: string | null | undefined, reg?: any): string => {
+    if (!paymentMethod) {
+      const total = Number(reg?.total_amount);
+      if (Number.isFinite(total) && total === 0) return 'Gratuito';
+      return '';
+    }
     const methodMap: { [key: string]: string } = {
       'pix': 'PIX',
       'credit_card': 'Cartão de Crédito',
@@ -3880,8 +3884,9 @@ export const exportRegistrationsController = asyncHandler(async (req: AuthReques
     return methodMap[paymentMethod] || paymentMethod;
   };
 
-  // Helper function to get modality name (first available)
+  // Modalidade selecionada na inscrição; fallback legado: primeira da categoria
   const getModalityName = (reg: any): string => {
+    if (reg.modality_name) return String(reg.modality_name);
     if (reg.modality_names && reg.modality_names.length > 0) {
       return reg.modality_names[0] || '';
     }
@@ -4045,7 +4050,7 @@ export const exportRegistrationsController = asyncHandler(async (req: AuthReques
     
     const modality = getModalityName(reg);
     const registrationDateTime = formatDateTime(reg.created_at);
-    const paymentMethod = formatPaymentMethod(reg.payment_method);
+    const paymentMethod = formatPaymentMethod(reg.payment_method, reg);
     // Valor líquido canônico (igual ao PDF / eventFinancialReportService)
     const liquidValue = getLiquidRegistrationValue(reg, liquidFallback);
     const totalAmount = liquidValue.toFixed(2).replace('.', ',');

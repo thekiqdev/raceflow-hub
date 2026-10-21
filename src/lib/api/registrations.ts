@@ -75,6 +75,14 @@ export interface Registration {
   leader_id?: string | null;
   leader_name?: string | null;
   runner_email?: string | null;
+  runner_phone?: string | null;
+  runner_gender?: string | null;
+  runner_birth_date?: string | null;
+  /**
+   * Sprint 2: inscrição de pedido multi sem runner_id (pré-cadastro ainda não ligado).
+   * Fonte canônica de identidade permanece no snapshot do pedido.
+   */
+  needs_preregistration?: boolean;
   /** Inscrição substituída por split de transferência admin (casca; não contar como ativa). */
   transferred_to_registration_id?: string | null;
   transferred_from_registration_id?: string | null;

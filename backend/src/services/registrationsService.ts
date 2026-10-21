@@ -337,25 +337,35 @@ async function mapRegistrationRows(
   const orderLinkedIds=resultRows.filter(row=>row.order_id).map(row=>row.id);
   const orderSnapshots=new Map<string,any>();
   const orderParticipantCounts=new Map<string,number>();
+  const orderBuyers=new Map<string,{email:string|null;phone:string|null}>();
   if(orderLinkedIds.length) {
     const items=await query("SELECT i.registration_id,i.snapshot,to_jsonb(r)->'checkout_current_identity' AS current_identity,r.order_id FROM checkout_order_items i JOIN registrations r ON r.id=i.registration_id WHERE i.registration_id=ANY($1::uuid[])",[orderLinkedIds]);
-    for(const item of items.rows) orderSnapshots.set(item.registration_id,{...item.snapshot,identity:item.current_identity ?? item.snapshot.identity});
+    for(const item of items.rows) orderSnapshots.set(item.registration_id,{...item.snapshot,identity:item.current_identity ?? item.snapshot?.identity});
     const orderIds=[...new Set(items.rows.map((item:any)=>item.order_id).filter(Boolean))];
     if(orderIds.length) {
       const counts=await query('SELECT order_id, COUNT(*)::int AS n FROM registrations WHERE order_id=ANY($1::uuid[]) GROUP BY order_id',[orderIds]);
       for(const row of counts.rows) orderParticipantCounts.set(row.order_id,Number(row.n));
+      const buyers=await query(
+        `SELECT o.id AS order_id, u.email AS buyer_email, p.phone AS buyer_phone
+         FROM checkout_orders o
+         JOIN users u ON u.id = o.buyer_id
+         LEFT JOIN profiles p ON p.id = o.buyer_id
+         WHERE o.id = ANY($1::uuid[])`,
+        [orderIds]
+      );
+      for(const b of buyers.rows) {
+        orderBuyers.set(b.order_id, { email: b.buyer_email ?? null, phone: b.buyer_phone ?? null });
+      }
     }
   }
 
+  const { applyCheckoutIdentityOverlay } = await import('./checkoutTicketIdentity.js');
+
   return resultRows.map((row: any) => {
     const snapshot=orderSnapshots.get(row.id);
-    if(snapshot) {
-      row.runner_name=snapshot.identity.fullName;
-      row.runner_cpf=snapshot.identity.cpf;
-      row.category_name=snapshot.labels.category;
-      row.modality_name=snapshot.labels.modality;
-      row.kit_name=snapshot.labels.kit;
-    }
+    applyCheckoutIdentityOverlay(row, snapshot, row.order_id ? orderBuyers.get(row.order_id) : null, {
+      overlayLabels: true,
+    });
     let finalStatus = row.display_status || row.status;
 
     if (filters?.runner_id && row.is_transferred && row.registered_by === filters.runner_id) {
@@ -388,6 +398,7 @@ async function mapRegistrationRows(
       registration_edit_fee: registrationEditFee,
       custom_field_values: customFieldValuesMap.get(row.id) ?? {},
       order_participant_count: row.order_id ? (orderParticipantCounts.get(row.order_id) ?? null) : null,
+      needs_preregistration: Boolean(row.needs_preregistration),
     };
   });
 }
@@ -718,6 +729,7 @@ export const getRegistrationById = async (registrationId: string, viewerId?: str
 
   const row = result.rows[0];
   if (row.order_id) {
+    const { applyCheckoutIdentityOverlay } = await import('./checkoutTicketIdentity.js');
     const snap = await query(
       `SELECT i.snapshot, to_jsonb(r)->'checkout_current_identity' AS current_identity
        FROM checkout_order_items i JOIN registrations r ON r.id=i.registration_id
@@ -725,16 +737,31 @@ export const getRegistrationById = async (registrationId: string, viewerId?: str
       [registrationId]
     );
     const item = snap.rows[0];
-    if (item?.snapshot) {
-      // Identidade do pedido (convidado/comprador); nomes de categoria/kit/modalidade
-      // vêm do JOIN atual — o snapshot é atualizado na edição, mas não deve mascarar o estado vivo.
-      const identity = item.current_identity ?? item.snapshot.identity ?? {};
-      if (identity.fullName) row.runner_name = identity.fullName;
-      if (identity.cpf) row.runner_cpf = identity.cpf;
-      else if (row.participant_cpf) row.runner_cpf = row.participant_cpf;
-    } else if (row.participant_cpf && !row.runner_cpf) {
-      row.runner_cpf = row.participant_cpf;
-    }
+    const buyerRow = (
+      await query(
+        `SELECT u.email AS buyer_email, p.phone AS buyer_phone
+         FROM checkout_orders o
+         JOIN users u ON u.id = o.buyer_id
+         LEFT JOIN profiles p ON p.id = o.buyer_id
+         WHERE o.id = $1`,
+        [row.order_id]
+      )
+    ).rows[0];
+    const snapshot = item?.snapshot
+      ? { ...item.snapshot, identity: item.current_identity ?? item.snapshot.identity }
+      : item?.current_identity
+        ? { identity: item.current_identity }
+        : null;
+    // Labels (categoria/kit/modalidade) ficam do JOIN vivo; identidade + contato do comprador no overlay.
+    applyCheckoutIdentityOverlay(
+      row,
+      snapshot,
+      buyerRow ? { email: buyerRow.buyer_email, phone: buyerRow.buyer_phone } : null,
+      { overlayLabels: false }
+    );
+    if (!row.runner_cpf && row.participant_cpf) row.runner_cpf = row.participant_cpf;
+  } else {
+    row.needs_preregistration = false;
   }
   const [pendingDifferenceAmount, amountPaid, settings, customFieldValuesMap] = await Promise.all([
     getPendingDifferenceAmountForRegistration(registrationId),
